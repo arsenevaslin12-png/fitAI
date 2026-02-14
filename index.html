@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitAI V18 - Coach Adaptatif</title>
+    <style>
+        /* Design Cyberpunk / Dark Mode */
+        body { 
+            background: #0b0c0f; 
+            color: #b7ff2a; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .card { 
+            border: 2px solid #b7ff2a; 
+            padding: 30px; 
+            border-radius: 15px; 
+            background: #12131a; 
+            box-shadow: 0 0 20px rgba(183, 255, 42, 0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+        h1 { font-size: 2rem; margin-bottom: 10px; letter-spacing: 2px; }
+        #workout-box { 
+            margin: 20px 0; 
+            padding: 15px; 
+            border: 1px solid #333; 
+            border-radius: 8px; 
+            min-height: 60px;
+            color: white;
+        }
+        button { 
+            background: #b7ff2a; 
+            color: #000; 
+            border: none; 
+            padding: 12px 25px; 
+            font-weight: bold; 
+            text-transform: uppercase;
+            cursor: pointer; 
+            border-radius: 5px; 
+            transition: 0.3s;
+        }
+        button:hover { background: #96d120; transform: scale(1.05); }
+        
+        .log-section { 
+            margin-top: 30px; 
+            padding-top: 20px; 
+            border-top: 1px dashed #333; 
+        }
+        .input-group { margin: 10px 0; }
+        input { 
+            background: #1a1b23; 
+            border: 1px solid #b7ff2a; 
+            color: white; 
+            padding: 8px; 
+            width: 60px; 
+            text-align: center;
+            border-radius: 4px;
+        }
+        label { font-size: 0.9rem; display: block; margin-bottom: 5px; color: #888; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>FITAI <small style="font-size: 0.5em; vertical-align: middle;">V18</small></h1>
+        
+        <div id="workout-box">Prêt pour l'entraînement ?</div>
+        
+        <button onclick="getWorkout()">Générer ma séance</button>
+
+        <div class="log-section">
+            <h3 style="margin-top: 0;">Log de séance</h3>
+            <div class="input-group">
+                <label>Répétitions faites</label>
+                <input type="number" id="reps" value="10">
+            </div>
+            <div class="input-group">
+                <label>Difficulté (RPE 1-10)</label>
+                <input type="number" id="rpe" value="7" min="1" max="10">
+            </div>
+            <button onclick="savePerf()" style="background: #333; color: white; font-size: 0.8rem;">Valider Record</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
