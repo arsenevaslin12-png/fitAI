@@ -1,13 +1,1035 @@
-// ============ MODIFIÉ : renderWorkoutPlan avec ExerciseMediaManager ============
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+/* ============================================================
+   ExerciseMediaManager — FitAI (autonomous module)
+   - Double-buffering (2 <img> stacked) + opacity toggle (no flicker)
+   - Singleton IntersectionObserver (1 for the whole app)
+   - XSS-safe (no innerHTML)
+   - Placeholder if both frames fail
+   - Optional SW prefetch via postMessage (works if SW is registered elsewhere)
+   ============================================================ */
+const ExerciseMediaManager = {
+  // ----- Config -----
+  cfg: {
+    cssId: "fitai-ex-media-css",
+    injectCss: true,
+
+    baseUrl: "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/",
+    framePaths: ["0.jpg", "1.jpg"],
+
+    intervalMs: 650,
+    ioThreshold: 0.25,
+    ioRootMargin: "200px 0px",
+
+    useCacheStorage: true,   // cache-first when CacheStorage is available
+    swPrefetch: true,        // postMessage to SW controller (if present)
+    swMessageDebounceMs: 400,
+
+    placeholderIcon: "🏋️",
+    placeholderText: "Démo indisponible"
+  },
+
+  // ----- State -----
+  _io: null,
+  _observed: new Set(),         // Set<HTMLElement>
+  _timers: new Map(),           // Map<HTMLElement, number>
+  _meta: new WeakMap(),         // WeakMap<HTMLElement, Meta>
+  _objectUrls: new Set(),       // Set<string>
+  _swQueue: new Set(),
+  _swFlushT: null,
+  _inited: false,
+
+  // ----- Public API -----
+  init(userCfg = {}) {
+    if (this._inited) return;
+    this._inited = true;
+
+    this.cfg = { ...this.cfg, ...userCfg };
+
+    if (this.cfg.injectCss) this._injectCssOnce();
+    this._ensureIntersectionObserver();
+
+    document.addEventListener(
+      "visibilitychange",
+      () => {
+        if (document.hidden) this.pauseAll();
+        else this._resumeVisible();
+      },
+      { passive: true }
+    );
+  },
+
+  reset() {
+    // stop animations
+    for (const [, t] of this._timers) clearInterval(t);
+    this._timers.clear();
+
+    // unobserve
+    if (this._io) {
+      for (const el of this._observed) {
+        try { this._io.unobserve(el); } catch {}
+      }
+    }
+    this._observed.clear();
+
+    // revoke blob URLs
+    for (const u of this._objectUrls) {
+      try { URL.revokeObjectURL(u); } catch {}
+    }
+    this._objectUrls.clear();
+
+    // SW queue
+    this._swQueue.clear();
+    clearTimeout(this._swFlushT);
+    this._swFlushT = null;
+  },
+
+  pauseAll() {
+    for (const el of this._observed) this._stopAnim(el);
+  },
+
+  create(exName) {
+    const urls = this._getFrameUrls(exName);
+    if (!urls.length) return null;
+
+    if (this.cfg.injectCss) this._injectCssOnce();
+    this._ensureIntersectionObserver();
+
+    const wrap = document.createElement("div");
+    wrap.className = "exMedia";
+
+    const stack = document.createElement("div");
+    stack.className = "exMediaStack";
+
+    const img0 = document.createElement("img");
+    img0.className = "exFrame exFrame0";
+    img0.loading = "lazy";
+    img0.decoding = "async";
+    img0.referrerPolicy = "no-referrer";
+    img0.alt = `Démo: ${String(exName || "exercice")}`;
+
+    const img1 = document.createElement("img");
+    img1.className = "exFrame exFrame1";
+    img1.loading = "lazy";
+    img1.decoding = "async";
+    img1.referrerPolicy = "no-referrer";
+    img1.alt = ""; // decorative overlay
+
+    const skel = document.createElement("div");
+    skel.className = "exMediaSkeleton";
+
+    const ph = document.createElement("div");
+    ph.className = "exPlaceholder";
+
+    const phIcon = document.createElement("div");
+    phIcon.className = "exPlaceholderIcon";
+    phIcon.textContent = String(this.cfg.placeholderIcon || "🏋️");
+
+    const phText = document.createElement("div");
+    phText.className = "exPlaceholderText";
+    phText.textContent = String(this.cfg.placeholderText || "Démo indisponible");
+
+    ph.appendChild(phIcon);
+    ph.appendChild(phText);
+
+    stack.appendChild(img0);
+    stack.appendChild(img1);
+    stack.appendChild(skel);
+    stack.appendChild(ph);
+    wrap.appendChild(stack);
+
+    const meta = {
+      urls,
+      img0,
+      img1,
+      skel,
+      wrap,
+      loaded0: false,
+      loaded1: false,
+      failed0: false,
+      failed1: false
+    };
+    this._meta.set(wrap, meta);
+
+    img0.addEventListener("load", () => { meta.loaded0 = true; this._onFrameSettled(wrap); }, { passive: true });
+    img0.addEventListener("error", () => { meta.failed0 = true; this._onFrameSettled(wrap); }, { passive: true });
+
+    img1.addEventListener("load", () => { meta.loaded1 = true; this._onFrameSettled(wrap); }, { passive: true });
+    img1.addEventListener("error", () => { meta.failed1 = true; this._onFrameSettled(wrap); }, { passive: true });
+
+    // Observe once globally (singleton IO)
+    this._io.observe(wrap);
+    this._observed.add(wrap);
+
+    // Hydrate sources async (cache-first if possible)
+    this._hydrateSources(exName, wrap).catch(() => {
+      this._forcePlaceholder(wrap);
+    });
+
+    // Ask SW to cache (optional)
+    if (this.cfg.swPrefetch) this._queueForSW(urls);
+
+    return wrap;
+  },
+
+  // ----- Internals -----
+  _injectCssOnce() {
+    if (document.getElementById(this.cfg.cssId)) return;
+
+    const st = document.createElement("style");
+    st.id = this.cfg.cssId;
+    st.textContent = `
+      .exMedia{margin-top:10px;border-radius:14px;overflow:hidden;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);position:relative}
+      .exMediaStack{position:relative;width:100%;aspect-ratio:16/9}
+      .exFrame{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;will-change:opacity;transition:opacity 280ms ease;opacity:1}
+      .exFrame1{opacity:0;pointer-events:none}
+      .exMedia.isAlt .exFrame1{opacity:1}
+      .exMedia.isAlt .exFrame0{opacity:0}
+      .exMediaSkeleton{position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.08),rgba(255,255,255,.04));background-size:200% 100%;animation:exSk 1.1s ease-in-out infinite}
+      @keyframes exSk{0%{background-position:0% 0}100%{background-position:200% 0}}
+      .exPlaceholder{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:8px;background:rgba(255,255,255,.02)}
+      .exMedia.isPlaceholder .exPlaceholder{display:flex}
+      .exMedia.isPlaceholder .exFrame{display:none}
+      .exMedia.isPlaceholder .exMediaSkeleton{display:none}
+      .exPlaceholderIcon{font-size:28px;line-height:1;filter:drop-shadow(0 10px 30px rgba(0,0,0,.35))}
+      .exPlaceholderText{font-size:12px;color:rgba(255,255,255,.70)}
+      @media (prefers-reduced-motion: reduce){.exFrame{transition:none !important}}
+    `;
+    document.head.appendChild(st);
+  },
+
+  _ensureIntersectionObserver() {
+    if (this._io) return;
+
+    this._io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const wrap = e.target;
+          if (!(wrap instanceof HTMLElement)) continue;
+
+          if (!e.isIntersecting || document.hidden) {
+            this._stopAnim(wrap);
+            continue;
+          }
+
+          this._maybeStartAnim(wrap);
+        }
+      },
+      { threshold: this.cfg.ioThreshold, rootMargin: this.cfg.ioRootMargin }
+    );
+  },
+
+  _resumeVisible() {
+    for (const wrap of this._observed) {
+      if (!wrap.isConnected) continue;
+      this._maybeStartAnim(wrap);
+    }
+  },
+
+  _normalizeExerciseFileName(exName) {
+    const raw = String(exName || "").trim();
+    if (!raw) return "";
+
+    const candidate = raw.replace(/[\/\\]/g, "").replace(/\s+/g, "_");
+    if (/^[A-Za-z0-9_]+$/.test(candidate) && candidate.length >= 3) return candidate;
+
+    const ascii = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const cleaned = ascii
+      .replace(/['’]/g, "")
+      .replace(/[^A-Za-z0-9]+/g, " ")
+      .trim();
+
+    if (!cleaned) return "";
+
+    const cap = (w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : "");
+    return cleaned.split(/\s+/).filter(Boolean).map(cap).join("_");
+  },
+
+  _getFrameUrls(exName) {
+    const file = this._normalizeExerciseFileName(exName);
+    if (!file) return [];
+    const base = this.cfg.baseUrl + encodeURIComponent(file) + "/";
+    return this.cfg.framePaths.map((p) => base + p);
+  },
+
+  async _hydrateSources(_exName, wrap) {
+    const meta = this._meta.get(wrap);
+    if (!meta) return;
+
+    const [u0, u1] = meta.urls;
+
+    const canCache =
+      this.cfg.useCacheStorage &&
+      typeof caches !== "undefined" &&
+      typeof caches.match === "function";
+
+    if (!canCache) {
+      meta.img0.src = u0;
+      meta.img1.src = u1;
+      return;
+    }
+
+    const r0 = await caches.match(u0).catch(() => null);
+    const r1 = await caches.match(u1).catch(() => null);
+
+    const toObj = async (resp) => {
+      const b = await resp.blob();
+      const obj = URL.createObjectURL(b);
+      this._objectUrls.add(obj);
+      return obj;
+    };
+
+    meta.img0.src = r0 ? await toObj(r0) : u0;
+    meta.img1.src = r1 ? await toObj(r1) : u1;
+  },
+
+  _onFrameSettled(wrap) {
+    const meta = this._meta.get(wrap);
+    if (!meta) return;
+
+    if ((meta.loaded0 || meta.loaded1) && meta.skel?.isConnected) {
+      meta.skel.remove();
+    }
+
+    if (meta.failed0 && meta.failed1) {
+      this._forcePlaceholder(wrap);
+      return;
+    }
+
+    if (meta.loaded0 && meta.loaded1) {
+      this._maybeStartAnim(wrap);
+      return;
+    }
+
+    if (meta.loaded0 || meta.loaded1) {
+      this._stopAnim(wrap);
+    }
+  },
+
+  _forcePlaceholder(wrap) {
+    const meta = this._meta.get(wrap);
+    if (meta?.skel?.isConnected) meta.skel.remove();
+    this._stopAnim(wrap);
+    wrap.classList.add("isPlaceholder");
+  },
+
+  _canAnimate(wrap) {
+    const meta = this._meta.get(wrap);
+    if (!meta) return false;
+    if (wrap.classList.contains("isPlaceholder")) return false;
+    if (!meta.loaded0 || !meta.loaded1) return false;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return false;
+    return true;
+  },
+
+  _maybeStartAnim(wrap) {
+    if (!wrap?.isConnected) return;
+    if (document.hidden) return;
+    if (!this._canAnimate(wrap)) return;
+    this._startAnim(wrap);
+  },
+
+  _startAnim(wrap) {
+    if (this._timers.has(wrap)) return;
+
+    let alt = false;
+    const t = window.setInterval(() => {
+      if (!wrap.isConnected) {
+        this._stopAnim(wrap);
+        return;
+      }
+      if (document.hidden) return;
+
+      alt = !alt;
+      wrap.classList.toggle("isAlt", alt);
+    }, this.cfg.intervalMs);
+
+    this._timers.set(wrap, t);
+  },
+
+  _stopAnim(wrap) {
+    const t = this._timers.get(wrap);
+    if (t) clearInterval(t);
+    this._timers.delete(wrap);
+    if (wrap?.classList) wrap.classList.remove("isAlt");
+  },
+
+  _queueForSW(urls) {
+    if (!("serviceWorker" in navigator)) return;
+    if (!navigator.serviceWorker.controller) return;
+
+    for (const u of urls || []) {
+      if (typeof u === "string" && u.startsWith("https://")) this._swQueue.add(u);
+    }
+
+    clearTimeout(this._swFlushT);
+    this._swFlushT = setTimeout(() => this._flushSW(), this.cfg.swMessageDebounceMs);
+  },
+
+  _flushSW() {
+    const ctrl = navigator.serviceWorker.controller;
+    if (!ctrl) return;
+
+    const urls = Array.from(this._swQueue);
+    if (!urls.length) return;
+
+    ctrl.postMessage({ type: "FITAI_CACHE_URLS", urls });
+    this._swQueue.clear();
+  }
+};
+
+const CLIENT_TOKEN = "fitai-v18";
+
+const BADGES = {
+  STREAK:     { emoji: "🔥", title: "STREAK",     desc: "3 jours consécutifs (au moins 1 séance/jour)." },
+  CLOWN:      { emoji: "🤡", title: "CLOWN",      desc: "Séance Light avec Recovery ≥ 90%." },
+  MACHINE:    { emoji: "🦾", title: "MACHINE",    desc: "3 séances Hard dans la semaine ISO." },
+  KUDOS_KING: { emoji: "👑", title: "KUDOS KING", desc: "Une séance qui dépasse 10 kudos." }
+};
+
+const App = {
+  cfg: null,
+  supabase: null,
+  session: null,
+  user: null,
+  profile: null,
+  publicProfile: null,
+  feedItems: [],
+  likedSet: new Set(),
+  kudosBusy: new Set(),
+  kpiSaveTimer: null,
+  kpiSteps: { recovery: 1, weight: 0.5, sleep: 0.25 },
+  meals: [],
+  chartVolume: null,
+
+  // ============ NOUVEAU : Timer Workout ============
+  workoutTimer: null,
+  currentExerciseIndex: 0,
+  currentPhase: "work", // "work" ou "rest"
+  timerInterval: null,
+  audioContext: null,
+
+  $: (id) => document.getElementById(id),
+
+  el(tag, opts = {}, children = []) {
+    const n = document.createElement(tag);
+    if (opts.className) n.className = opts.className;
+    if (opts.type) n.type = opts.type;
+    if (opts.text != null) n.textContent = String(opts.text);
+    if (opts.attrs) for (const [k, v] of Object.entries(opts.attrs)) n.setAttribute(k, String(v));
+    if (opts.style) for (const [k, v] of Object.entries(opts.style)) n.style[k] = v;
+    for (const c of children) if (c) n.appendChild(c);
+    return n;
+  },
+
+  clamp(min, v, max) { return Math.max(min, Math.min(max, v)); },
+
+  getAggressiveRoast() {
+    const roasts = [
+      "48h sans séance. Ton canapé vient de demander ta main en mariage.",
+      "Deux jours off ? Même ta motivation s'est mise en arrêt maladie.",
+      "Ton cardio fait la grève. Et apparemment, toi aussi.",
+      "Aucun entraînement depuis 48h : tu collectes des excuses ou tu veux des résultats ?",
+      "Tu t'es évaporé 48h. Reviens : barre fixe, haltères, ou au moins des squats."
+    ];
+    return roasts[Math.floor(Math.random() * roasts.length)];
+  },
+
+  hint(id, msg, type = "info") {
+    const el = this.$(id);
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color =
+      type === "err" ? "rgba(255,59,48,.95)" :
+      type === "ok"  ? "rgba(183,255,42,.95)" :
+                       "rgba(255,255,255,.65)";
+  },
+
+  async init() {
+    // ✅ init media manager early
+    ExerciseMediaManager.init();
+
+    this.bindTabs();
+    this.bindUI();
+    this.cfg = await this.fetchConfig();
+    this.supabase = createClient(this.cfg.supabaseUrl, this.cfg.supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        storage: window.sessionStorage,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    });
+    await this.initAuth();
+    this.setTab("dash");
+    await this.refreshFeed();
+    this.initCharts();
+    this.initAudioContext(); // Pour les sons du timer
+  },
+
+  bindTabs() {
+    this.$("tabBtnDash").addEventListener("click", () => this.setTab("dash"));
+    this.$("tabBtnCoach").addEventListener("click", () => this.setTab("coach"));
+    this.$("tabBtnNutrition").addEventListener("click", () => this.setTab("nutrition"));
+    this.$("tabBtnCommunity").addEventListener("click", () => this.setTab("community"));
+    this.$("tabBtnProfile").addEventListener("click", () => this.setTab("profile"));
+  },
+
+  setTab(tab) {
+    const tabs = ["dash", "coach", "nutrition", "community", "profile"];
+    tabs.forEach(t => {
+      this.$(`tab-${t}`).style.display = t === tab ? "block" : "none";
+      const btn = this.$(`tabBtn${t.charAt(0).toUpperCase() + t.slice(1)}`);
+      btn.classList.toggle("active", t === tab);
+      btn.setAttribute("aria-selected", String(t === tab));
+    });
+  },
+
+  bindUI() {
+    this.$("btnMagicLink").addEventListener("click", () => this.sendMagicLink());
+    this.$("btnLogout").addEventListener("click", () => this.logout());
+    this.$("btnSaveName").addEventListener("click", () => this.saveDisplayName());
+    this.$("btnSaveEquipment").addEventListener("click", () => this.saveEquipment());
+    this.$("btnRefreshTrophies").addEventListener("click", () => this.refreshTrophies());
+    this.$("btnCoachAsk").addEventListener("click", () => this.generateWorkout());
+    this.$("btnRefreshFeed").addEventListener("click", () => this.refreshFeed());
+    this.$("btnAddMeal").addEventListener("click", () => this.showMealModal());
+    this.$("btnSaveMeal").addEventListener("click", () => this.saveMeal());
+    this.$("btnCancelMeal").addEventListener("click", () => this.hideMealModal());
+
+    // ============ NOUVEAU : Bindings Profil ============
+    const ageInput = this.$("profileAge");
+    const weightInput = this.$("profileWeight");
+    const heightInput = this.$("profileHeight");
+
+    if (ageInput) ageInput.addEventListener("change", () => this.saveProfileData());
+    if (weightInput) weightInput.addEventListener("change", () => this.saveProfileData());
+    if (heightInput) heightInput.addEventListener("change", () => this.saveProfileData());
+
+    document.querySelectorAll("button.kpiBtn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const key = btn.getAttribute("data-kpi");
+        const dir = Number(btn.getAttribute("data-dir") || "0");
+        if (!key || !dir) return;
+        this.adjustKpi(key, dir);
+      });
+    });
+  },
+
+  async fetchConfig() {
+    const r = await fetch("/api/workout?config=1", {
+      method: "GET",
+      headers: { "X-FitAI-Client": CLIENT_TOKEN }
+    });
+    if (!r.ok) throw new Error(`Config failed (${r.status})`);
+    const data = await r.json();
+    if (!data?.supabaseUrl || !data?.supabaseAnonKey) throw new Error("Invalid config.");
+    return data;
+  },
+
+  async initAuth() {
+    const { data } = await this.supabase.auth.getSession();
+    this.session = data.session || null;
+    this.user = this.session?.user || null;
+    this.supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      this.session = newSession || null;
+      this.user = newSession?.user || null;
+      await this.afterAuthChanged();
+    });
+    await this.afterAuthChanged();
+  },
+
+  async afterAuthChanged() {
+    this.$("authStatus").textContent = this.user ? `Connecté : ${this.user.email || this.user.id}` : "Non connecté";
+
+    if (!this.user) {
+      this.profile = null;
+      this.publicProfile = null;
+      this.renderProfileForm(null, null);
+      this.renderKpis(null);
+      this.renderRoastState(null);
+      this.renderRecent([]);
+      this.renderStats(null);
+      this.renderHeatmap(null);
+      this.setCoachEmpty("Connecte-toi pour activer le Coach IA.");
+      this.$("feedStatus").textContent = "Lecture seule";
+      this.hint("trophyHint", "Connecte-toi pour voir tes trophées.", "info");
+      this.renderTrophyWall(new Map());
+      this.renderNutrition();
+      await this.refreshFeed();
+      return;
+    }
+
+    await this.ensureProfiles(this.user.id);
+    this.renderProfileForm(this.profile, this.publicProfile);
+    this.renderKpis(this.profile);
+    this.renderRoastState(this.profile);
+    await this.refreshRecent();
+    await this.refreshStats();
+    await this.refreshHeatmap();
+    await this.refreshFeed();
+    await this.evaluateAchievements();
+    await this.refreshTrophies();
+    this.renderNutrition();
+    this.loadProfileData(); // ============ NOUVEAU ============
+  },
+
+  async ensureProfiles(userId) {
+    const selP = await this.supabase
+      .from("profiles")
+      .select("kpis,equipment,last_workout_date,age,weight,height")
+      .eq("user_id", userId)
+      .maybeSingle();
+    this.profile = selP.data || null;
+
+    const selPub = await this.supabase
+      .from("public_profiles")
+      .select("display_name")
+      .eq("user_id", userId)
+      .maybeSingle();
+    this.publicProfile = selPub.data || null;
+
+    this.hint("profileHint", "Profil synchronisé ✅", "ok");
+  },
+
+  loadProfileData() {
+    if (!this.profile) return;
+
+    const ageInput = this.$("profileAge");
+    const weightInput = this.$("profileWeight");
+    const heightInput = this.$("profileHeight");
+
+    if (ageInput && this.profile.age) ageInput.value = this.profile.age;
+    if (weightInput && this.profile.weight) weightInput.value = this.profile.weight;
+    if (heightInput && this.profile.height) heightInput.value = this.profile.height;
+  },
+
+  async saveProfileData() {
+    if (!this.user) return;
+
+    const ageInput = this.$("profileAge");
+    const weightInput = this.$("profileWeight");
+    const heightInput = this.$("profileHeight");
+
+    const updates = {};
+    if (ageInput && ageInput.value) updates.age = Number(ageInput.value);
+    if (weightInput && weightInput.value) updates.weight = Number(weightInput.value);
+    if (heightInput && heightInput.value) updates.height = Number(heightInput.value);
+
+    if (Object.keys(updates).length === 0) return;
+
+    const { error } = await this.supabase
+      .from("profiles")
+      .update(updates)
+      .eq("user_id", this.user.id);
+
+    if (error) {
+      console.error("Save profile error:", error);
+      this.hint("profileHint", "Erreur sauvegarde profil", "err");
+    } else {
+      this.hint("profileHint", "✅ Profil sauvegardé", "ok");
+      Object.assign(this.profile, updates);
+    }
+  },
+
+  renderProfileForm(p, pub) {
+    this.$("eqDumbbells").checked = !!p?.equipment?.dumbbells;
+    this.$("eqBarbell").checked = !!p?.equipment?.barbell;
+    this.$("eqBodyweight").checked = p ? (p.equipment?.bodyweight !== false) : true;
+    this.$("eqMachines").checked = !!p?.equipment?.machines;
+    this.$("displayName").value = pub?.display_name || "";
+  },
+
+  renderKpis(p) {
+    if (!p?.kpis) {
+      this.$("val-recovery").textContent = "--";
+      this.$("val-weight").textContent = "--";
+      this.$("val-sleep").textContent = "--";
+      this.$("morningBrief").textContent = "Connecte-toi pour activer le suivi.";
+      return;
+    }
+    const k = p.kpis;
+    const rec = Number(k.recovery || 0);
+    this.$("val-recovery").textContent = `${Math.round(rec)}%`;
+    this.$("val-weight").textContent = `${Number(k.weight || 0).toFixed(1)}`;
+    this.$("val-sleep").textContent = `${Number(k.sleep || 0).toFixed(2)}`;
+
+    this.$("morningBrief").textContent =
+      rec < 40 ? "🛑 Recovery basse : mobilité / récupération."
+      : rec < 70 ? "⚠️ Recovery modérée : technique / volume léger."
+      : "🔥 Recovery haute : tu sais ce qu'il te reste à faire.";
+  },
+
+  renderRoastState(profile) {
+    const banner = this.$("roastBanner");
+    banner.classList.remove("on");
+    banner.textContent = "";
+
+    if (!this.user || !profile) return;
+
+    const last = profile.last_workout_date ? new Date(profile.last_workout_date) : null;
+    if (!last) {
+      banner.classList.add("on");
+      banner.textContent = `🔴 Aucun historique. ${this.getAggressiveRoast()}`;
+      return;
+    }
+
+    const diffH = (Date.now() - last.getTime()) / 36e5;
+    if (diffH >= 48) {
+      banner.classList.add("on");
+      banner.textContent = `🔴 Honte officielle : 48h sans séance. ${this.getAggressiveRoast()}`;
+    }
+  },
+
+  adjustKpi(key, dir) {
+    if (!this.profile?.kpis) return;
+    const step = this.kpiSteps[key] || 1;
+    const current = Number(this.profile.kpis[key] || 0);
+    let newVal = current + (dir * step);
+
+    if (key === "recovery") newVal = this.clamp(0, newVal, 100);
+    if (key === "weight") newVal = this.clamp(40, newVal, 200);
+    if (key === "sleep") newVal = this.clamp(0, newVal, 12);
+
+    this.profile.kpis[key] = newVal;
+    this.renderKpis(this.profile);
+
+    clearTimeout(this.kpiSaveTimer);
+    this.kpiSaveTimer = setTimeout(() => this.saveKpis(), 1500);
+  },
+
+  async saveKpis() {
+    if (!this.user || !this.profile) return;
+    const { error } = await this.supabase
+      .from("profiles")
+      .update({ kpis: this.profile.kpis })
+      .eq("user_id", this.user.id);
+    if (error) console.error("Save KPI error:", error);
+  },
+
+  async sendMagicLink() {
+    const email = this.$("email").value.trim();
+    if (!email) return this.hint("profileHint", "Email requis.", "err");
+    this.hint("profileHint", "Envoi en cours...", "info");
+    const { error } = await this.supabase.auth.signInWithOtp({ email });
+    if (error) return this.hint("profileHint", error.message, "err");
+    this.hint("profileHint", "✅ Magic link envoyé ! Vérifie tes emails.", "ok");
+  },
+
+  async logout() {
+    await this.supabase.auth.signOut();
+    this.hint("profileHint", "Déconnecté.", "info");
+  },
+
+  async saveDisplayName() {
+    if (!this.user) return;
+    const name = this.$("displayName").value.trim();
+    const { error } = await this.supabase
+      .from("public_profiles")
+      .upsert({ user_id: this.user.id, display_name: name });
+    if (error) return this.hint("profileHint", error.message, "err");
+    this.hint("profileHint", "✅ Prénom sauvegardé.", "ok");
+    this.publicProfile = { display_name: name };
+  },
+
+  async saveEquipment() {
+    if (!this.user) return;
+    const equipment = {
+      dumbbells: this.$("eqDumbbells").checked,
+      barbell: this.$("eqBarbell").checked,
+      bodyweight: this.$("eqBodyweight").checked,
+      machines: this.$("eqMachines").checked
+    };
+    const { error } = await this.supabase
+      .from("profiles")
+      .update({ equipment })
+      .eq("user_id", this.user.id);
+    if (error) return this.hint("profileHint", error.message, "err");
+    this.hint("profileHint", "✅ Matériel sauvegardé.", "ok");
+    this.profile.equipment = equipment;
+  },
+
+  async refreshRecent() {
+    if (!this.user) return this.renderRecent([]);
+    const { data, error } = await this.supabase
+      .from("workouts")
+      .select("id,created_at,title,intensity")
+      .eq("user_id", this.user.id)
+      .order("created_at", { ascending: false })
+      .limit(5);
+    if (error) return console.error(error);
+    this.renderRecent(data || []);
+  },
+
+  renderRecent(workouts) {
+    const c = this.$("recentWorkouts");
+    c.textContent = "";
+    if (!workouts.length) {
+      c.appendChild(this.el("div", { className: "empty", text: "Aucune séance enregistrée." }));
+      return;
+    }
+    workouts.forEach(w => {
+      const badge = w.intensity === "hard" ? "🔴 HARD" : w.intensity === "medium" ? "🟠 MEDIUM" : "🟢 LIGHT";
+      const card = this.el("div", { className: "mealCard" }, [
+        this.el("div", { className: "mealHeader" }, [
+          this.el("div", { className: "mealType", text: w.title }),
+          this.el("span", { className: "badge orange", text: badge })
+        ]),
+        this.el("div", { style: { fontSize: "11px", color: "var(--muted)" }, text: new Date(w.created_at).toLocaleString("fr-FR") })
+      ]);
+      c.appendChild(card);
+    });
+  },
+
+  async refreshStats() {
+    if (!this.user) return this.renderStats(null);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 864e5).toISOString();
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 864e5).toISOString();
+
+    const { data: current } = await this.supabase
+      .from("workouts")
+      .select("id")
+      .eq("user_id", this.user.id)
+      .gte("created_at", sevenDaysAgo);
+
+    const { data: previous } = await this.supabase
+      .from("workouts")
+      .select("id")
+      .eq("user_id", this.user.id)
+      .gte("created_at", fourteenDaysAgo)
+      .lt("created_at", sevenDaysAgo);
+
+    const currentCount = current?.length || 0;
+    const previousCount = previous?.length || 0;
+    const change = previousCount ? Math.round(((currentCount - previousCount) / previousCount) * 100) : 0;
+
+    this.renderStats({ workouts: currentCount, volume: currentCount * 1000, change });
+  },
+
+  renderStats(stats) {
+    const trendEl = this.$("stat-workouts-trend");
+    const volTrendEl = this.$("stat-volume-trend");
+
+    if (!stats) {
+      this.$("stat-workouts").textContent = "0";
+      this.$("stat-volume").textContent = "0";
+
+      if (trendEl) {
+        trendEl.className = "statTrend";
+        trendEl.replaceChildren(
+          this.el("span", { text: "→" }),
+          this.el("span", { text: "+0%" })
+        );
+      }
+      if (volTrendEl) {
+        volTrendEl.className = "statTrend";
+        volTrendEl.replaceChildren(
+          this.el("span", { text: "→" }),
+          this.el("span", { text: "+0%" })
+        );
+      }
+      return;
+    }
+
+    this.$("stat-workouts").textContent = String(stats.workouts);
+    this.$("stat-volume").textContent = Math.round(stats.volume / 1000) + "k";
+
+    const arrow = stats.change > 0 ? "↗" : stats.change < 0 ? "↘" : "→";
+    if (trendEl) {
+      trendEl.className = "statTrend " + (stats.change > 0 ? "up" : stats.change < 0 ? "down" : "");
+      trendEl.replaceChildren(
+        this.el("span", { text: arrow }),
+        this.el("span", { text: `${stats.change > 0 ? "+" : ""}${stats.change}%` })
+      );
+    }
+  },
+
+  async refreshHeatmap() {
+    if (!this.user) return this.renderHeatmap(null);
+    const twentyEightDaysAgo = new Date(Date.now() - 28 * 864e5).toISOString();
+    const { data } = await this.supabase
+      .from("workouts")
+      .select("created_at")
+      .eq("user_id", this.user.id)
+      .gte("created_at", twentyEightDaysAgo);
+
+    const workoutDates = new Set((data || []).map(w => new Date(w.created_at).toDateString()));
+    const days = [];
+    for (let i = 27; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 864e5);
+      days.push({ date: d.toDateString(), active: workoutDates.has(d.toDateString()), label: d.getDate() });
+    }
+    this.renderHeatmap(days);
+  },
+
+  renderHeatmap(days) {
+    const c = this.$("activityHeatmap");
+    c.textContent = "";
+    if (!days) {
+      for (let i = 0; i < 28; i++) {
+        c.appendChild(this.el("div", { className: "heatmapDay" }));
+      }
+      return;
+    }
+    days.forEach(d => {
+      const el = this.el("div", {
+        className: "heatmapDay" + (d.active ? " active" : ""),
+        text: d.label
+      });
+      c.appendChild(el);
+    });
+  },
+
+  async generateWorkout() {
+    if (!this.user) return this.setCoachEmpty("Connecte-toi.");
+    const prompt = this.$("coachPrompt").value.trim();
+    if (!prompt) return this.setCoachEmpty("Décris ta séance souhaitée.");
+
+    this.setCoachLoading();
+
+    try {
+      const enhancedPrompt = this.buildStructuredPrompt(prompt);
+
+      const r = await fetch("/api/workout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-FitAI-Client": CLIENT_TOKEN },
+        body: JSON.stringify({ prompt: enhancedPrompt, userId: this.user.id })
+      });
+
+      if (!r.ok) throw new Error("Erreur API");
+      const data = await r.json();
+
+      this.handleAIResponse(data);
+
+    } catch (err) {
+      this.setCoachEmpty("Erreur : " + (err?.message || "inconnue"));
+    }
+  },
+
+  buildStructuredPrompt(userPrompt) {
+    const lowerPrompt = userPrompt.toLowerCase();
+    const isRecipe =
+      lowerPrompt.includes("recette") ||
+      lowerPrompt.includes("ingrédients") ||
+      lowerPrompt.includes("cuisine") ||
+      lowerPrompt.includes("plat");
+
+    if (isRecipe) {
+      return `Tu es un chef cuisinier expert. L'utilisateur demande : "${userPrompt}"
+
+RÉPONDS UNIQUEMENT avec ce JSON STRICT (sans markdown, sans texte avant/après) :
+{
+  "type": "recipe",
+  "title": "Nom de la recette",
+  "ingredients": ["Ingrédient 1", "Ingrédient 2", "..."],
+  "steps": ["Étape 1", "Étape 2", "..."],
+  "prep_time": 15,
+  "cook_time": 30
+}`;
+    }
+
+    return `Tu es un coach sportif expert. L'utilisateur demande : "${userPrompt}"
+
+Recovery actuelle : ${this.profile?.kpis?.recovery || 70}%
+Équipement : ${Object.keys(this.profile?.equipment || {}).filter(k => this.profile?.equipment[k]).join(", ")}
+
+RÉPONDS UNIQUEMENT avec ce JSON STRICT (sans markdown, sans texte avant/après) :
+{
+  "type": "workout",
+  "note": "Conseil du coach en 1-2 phrases",
+  "exercises": [
+    {
+      "name": "Nom de l'exercice",
+      "duration": 30,
+      "rest": 10,
+      "sets": 3,
+      "reps": "10-12"
+    }
+  ]
+}
+
+IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des répétitions, mets duration à 0.`;
+  },
+
+  // ✅ TERMINÉE: gère "workout" et "recipe" + fallback ancien format
+  handleAIResponse(data) {
+    let parsedData = data;
+
+    if (typeof data === "string") {
+      try {
+        const cleaned = data.replace(/```json|```/g, "").trim();
+        parsedData = JSON.parse(cleaned);
+      } catch (e) {
+        console.error("Parse error:", e);
+        this.setCoachEmpty("Erreur : réponse invalide de l'IA");
+        return;
+      }
+    }
+
+    // fallback ancien format
+    if (parsedData && typeof parsedData === "object" && !parsedData.type && parsedData.exercises) {
+      parsedData.type = "workout";
+    }
+
+    if (!parsedData || typeof parsedData !== "object") {
+      this.setCoachEmpty("Erreur : réponse vide/invalide.");
+      return;
+    }
+
+    if (parsedData.type === "recipe") {
+      this.renderRecipe(parsedData);
+      return;
+    }
+
+    if (parsedData.type === "workout") {
+      this.renderWorkoutPlan(parsedData);
+      return;
+    }
+
+    // Dernier fallback
+    if (parsedData.exercises) {
+      this.renderWorkoutPlan(parsedData);
+      return;
+    }
+
+    this.setCoachEmpty("Erreur : format inconnu.");
+  },
+
+  setCoachLoading() {
+    const c = this.$("coachOutput");
+    c.textContent = "";
+
+    const card = this.el("div", { className: "card" });
+    const row = this.el("div", { style: { display: "flex", alignItems: "center", gap: "12px" } }, [
+      this.el("div", { className: "spinner" }),
+      this.el("span", { text: "Génération en cours..." })
+    ]);
+
+    card.appendChild(row);
+    c.appendChild(card);
+  },
+
+  setCoachEmpty(msg) {
+    const c = this.$("coachOutput");
+    c.textContent = "";
+
+    const card = this.el("div", { className: "card" }, [
+      this.el("div", { className: "empty", text: msg })
+    ]);
+
+    c.appendChild(card);
+  },
+
+  // ✅ MODIFIÉ : renderWorkoutPlan utilise ExerciseMediaManager.create(ex.name)
   renderWorkoutPlan(data) {
-    // ✅ NEW: prevent leaks (timers/observers/blob URLs)
+    // prevent leaks (timers/observers/blob URLs)
     ExerciseMediaManager.reset();
 
     const c = this.$("coachOutput");
-    c.innerHTML = "";
+    c.textContent = "";
 
     const card = this.el("div", { className: "card" });
-    
+
     if (data.note) {
       const note = this.el("div", { className: "coachNote" }, [
         this.el("div", { className: "coachNoteHeader", text: "📋 Note du Coach" }),
@@ -17,45 +1039,40 @@
     }
 
     if (data.exercises?.length) {
+      const frag = document.createDocumentFragment();
+
       data.exercises.forEach(ex => {
-        const specs = ex.duration > 0 
+        const specs = ex.duration > 0
           ? `${ex.duration}s work • ${ex.rest}s rest`
           : `${ex.sets} × ${ex.reps} • Repos ${ex.rest || "2min"}`;
 
-        // ✅ NEW: media node (double-buffering, lazy, observer)
         const media = ExerciseMediaManager.create(ex?.name);
 
-        const exCardChildren = [
+        const exCard = this.el("div", { className: "exerciseCard" }, [
           this.el("div", { className: "exerciseInfo" }, [
             this.el("div", { className: "exerciseName", text: ex.name }),
             this.el("div", { className: "exerciseSpecs", text: specs })
           ]),
           this.el("div", { className: "exerciseRPE", text: `RPE ${ex.rpe || "7-8"}` })
-        ];
+        ]);
 
-        const exCard = this.el("div", { className: "exerciseCard" }, exCardChildren);
-
-        // append media if created
         if (media) exCard.appendChild(media);
-
-        card.appendChild(exCard);
+        frag.appendChild(exCard);
       });
+
+      card.appendChild(frag);
     }
 
-    const btnRow = this.el(
-      "div",
-      { style: { display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap" } },
-      [
-        this.el("button", { className: "btn primary", text: "💾 Sauvegarder", style: { flex: "1", minWidth: "140px" } }),
-        this.el("button", { className: "btn cyan", text: "⏱️ Lancer Timer", style: { flex: "1", minWidth: "140px" } }),
-        this.el("button", { className: "btn", text: "🔄 Régénérer", style: { flex: "1", minWidth: "140px" } })
-      ]
-    );
-    
+    const btnRow = this.el("div", { style: { display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap" } }, [
+      this.el("button", { className: "btn primary", text: "💾 Sauvegarder", style: { flex: "1", minWidth: "140px" } }),
+      this.el("button", { className: "btn cyan", text: "⏱️ Lancer Timer", style: { flex: "1", minWidth: "140px" } }),
+      this.el("button", { className: "btn", text: "🔄 Régénérer", style: { flex: "1", minWidth: "140px" } })
+    ]);
+
     btnRow.children[0].addEventListener("click", () => this.saveWorkout(data));
-    btnRow.children[1].addEventListener("click", () => this.startWorkout(data)); // ============ NOUVEAU ============
+    btnRow.children[1].addEventListener("click", () => this.startWorkout(data));
     btnRow.children[2].addEventListener("click", () => this.generateWorkout());
-    
+
     card.appendChild(btnRow);
     c.appendChild(card);
   },
@@ -63,29 +1080,27 @@
   // ============ NOUVEAU : Affichage Recette ============
   renderRecipe(data) {
     const c = this.$("coachOutput");
-    c.innerHTML = "";
+    c.textContent = "";
 
     const card = this.el("div", { className: "card" });
-    
-    // Titre
-    const title = this.el("div", { 
-      style: { 
-        fontSize: "24px", 
-        fontWeight: "950", 
-        color: "var(--lime)", 
+
+    const title = this.el("div", {
+      style: {
+        fontSize: "24px",
+        fontWeight: "950",
+        color: "var(--lime)",
         marginBottom: "16px",
         letterSpacing: ".5px"
-      }, 
-      text: `🍳 ${data.title}` 
+      },
+      text: `🍳 ${data.title}`
     });
     card.appendChild(title);
 
-    // Temps
     if (data.prep_time || data.cook_time) {
-      const timingRow = this.el("div", { 
-        style: { 
-          display: "flex", 
-          gap: "16px", 
+      const timingRow = this.el("div", {
+        style: {
+          display: "flex",
+          gap: "16px",
           marginBottom: "20px",
           fontSize: "13px",
           color: "var(--muted)"
@@ -97,24 +1112,23 @@
       card.appendChild(timingRow);
     }
 
-    // Ingrédients
     const ingredientsSection = this.el("div", { style: { marginBottom: "24px" } });
-    ingredientsSection.appendChild(this.el("div", { 
-      className: "coachNoteHeader", 
+    ingredientsSection.appendChild(this.el("div", {
+      className: "coachNoteHeader",
       text: "🛒 Ingrédients",
       style: { marginBottom: "12px" }
     }));
-    
-    const ingredientsList = this.el("ul", { 
-      style: { 
-        listStyle: "none", 
-        padding: "0", 
-        display: "grid", 
-        gap: "8px" 
-      } 
+
+    const ingredientsList = this.el("ul", {
+      style: {
+        listStyle: "none",
+        padding: "0",
+        display: "grid",
+        gap: "8px"
+      }
     });
-    
-    data.ingredients.forEach(ing => {
+
+    (data.ingredients || []).forEach(ing => {
       const li = this.el("li", {
         style: {
           padding: "10px 14px",
@@ -130,62 +1144,60 @@
     ingredientsSection.appendChild(ingredientsList);
     card.appendChild(ingredientsSection);
 
-    // Étapes
     const stepsSection = this.el("div");
-    stepsSection.appendChild(this.el("div", { 
-      className: "coachNoteHeader", 
+    stepsSection.appendChild(this.el("div", {
+      className: "coachNoteHeader",
       text: "👨‍🍳 Préparation",
       style: { marginBottom: "12px" }
     }));
-    
-    data.steps.forEach((step, idx) => {
+
+    (data.steps || []).forEach((step, idx) => {
       const stepCard = this.el("div", {
         className: "exerciseCard",
         style: { marginBottom: "12px" }
       }, [
-        this.el("div", { 
-          style: { 
-            width: "32px", 
-            height: "32px", 
-            borderRadius: "50%", 
-            background: "var(--lime)", 
-            color: "#000", 
-            display: "flex", 
-            alignItems: "center", 
-            justifyContent: "center", 
+        this.el("div", {
+          style: {
+            width: "32px",
+            height: "32px",
+            borderRadius: "50%",
+            background: "var(--lime)",
+            color: "#000",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             fontWeight: "950",
             fontSize: "14px",
             flexShrink: "0"
-          }, 
-          text: idx + 1 
+          },
+          text: idx + 1
         }),
-        this.el("div", { 
-          style: { flex: "1", fontSize: "14px", lineHeight: "1.6" }, 
-          text: step 
+        this.el("div", {
+          style: { flex: "1", fontSize: "14px", lineHeight: "1.6" },
+          text: step
         })
       ]);
       stepsSection.appendChild(stepCard);
     });
     card.appendChild(stepsSection);
 
-    // Boutons
     const btnRow = this.el("div", { style: { display: "flex", gap: "12px", marginTop: "20px" } }, [
       this.el("button", { className: "btn primary", text: "📋 Copier Recette", style: { flex: "1" } }),
       this.el("button", { className: "btn", text: "🔄 Nouvelle Recette", style: { flex: "1" } })
     ]);
-    
+
     btnRow.children[0].addEventListener("click", () => this.copyRecipe(data));
     btnRow.children[1].addEventListener("click", () => this.generateWorkout());
-    
+
     card.appendChild(btnRow);
     c.appendChild(card);
   },
 
   copyRecipe(data) {
     const text = `${data.title}\n\n` +
-      `Ingrédients:\n${data.ingredients.map(i => `- ${i}`).join('\n')}\n\n` +
-      `Préparation:\n${data.steps.map((s, i) => `${i+1}. ${s}`).join('\n')}`;
-    
+      `Ingrédients:\n${(data.ingredients || []).map(i => `- ${i}`).join("\n")}\n\n` +
+      `Préparation:\n${(data.steps || []).map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
+
     navigator.clipboard.writeText(text).then(() => {
       alert("✅ Recette copiée dans le presse-papier !");
     }).catch(() => {
@@ -204,25 +1216,24 @@
 
   playBeep(frequency = 800, duration = 200) {
     if (!this.audioContext) return;
-    
+
     const oscillator = this.audioContext.createOscillator();
     const gainNode = this.audioContext.createGain();
-    
+
     oscillator.connect(gainNode);
     gainNode.connect(this.audioContext.destination);
-    
+
     oscillator.frequency.value = frequency;
     oscillator.type = "sine";
-    
+
     gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration / 1000);
-    
+
     oscillator.start(this.audioContext.currentTime);
     oscillator.stop(this.audioContext.currentTime + duration / 1000);
   },
 
   startWorkout(data) {
-    // Vérifier qu'il y a des exercices avec duration
     const timerExercises = data.exercises.filter(ex => ex.duration > 0);
     if (timerExercises.length === 0) {
       alert("ℹ️ Ce workout n'a pas de timer (exercices basés sur répétitions)");
@@ -232,7 +1243,7 @@
     this.workoutTimer = {
       exercises: timerExercises,
       currentIndex: 0,
-      phase: "work", // "work" ou "rest"
+      phase: "work",
       timeLeft: timerExercises[0].duration,
       isPaused: false
     };
@@ -243,14 +1254,13 @@
 
   renderTimerUI() {
     const c = this.$("coachOutput");
-    c.innerHTML = "";
+    c.textContent = "";
 
     const card = this.el("div", { className: "card", style: { textAlign: "center" } });
-    
+
     const wt = this.workoutTimer;
     const currentEx = wt.exercises[wt.currentIndex];
-    
-    // Progress
+
     const progress = this.el("div", {
       style: {
         fontSize: "14px",
@@ -262,7 +1272,6 @@
     });
     card.appendChild(progress);
 
-    // Exercise name
     const exName = this.el("div", {
       style: {
         fontSize: "28px",
@@ -275,7 +1284,6 @@
     });
     card.appendChild(exName);
 
-    // Phase
     const phase = this.el("div", {
       style: {
         fontSize: "16px",
@@ -288,7 +1296,6 @@
     });
     card.appendChild(phase);
 
-    // Timer display
     const timerDisplay = this.el("div", {
       id: "timerDisplay",
       style: {
@@ -303,48 +1310,45 @@
     });
     card.appendChild(timerDisplay);
 
-    // Controls
     const controls = this.el("div", { style: { display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" } }, [
-      this.el("button", { 
-        className: "btn cyan", 
+      this.el("button", {
+        className: "btn cyan",
         id: "btnPauseResume",
         text: wt.isPaused ? "▶️ Reprendre" : "⏸️ Pause",
         style: { minWidth: "140px" }
       }),
-      this.el("button", { 
-        className: "btn", 
+      this.el("button", {
+        className: "btn",
         text: "⏭️ Skip",
         style: { minWidth: "120px" }
       }),
-      this.el("button", { 
-        className: "btn pink", 
+      this.el("button", {
+        className: "btn pink",
         text: "🛑 Arrêter",
         style: { minWidth: "120px" }
       })
     ]);
-    
+
     controls.children[0].addEventListener("click", () => this.togglePause());
     controls.children[1].addEventListener("click", () => this.skipExercise());
     controls.children[2].addEventListener("click", () => this.stopWorkout());
-    
+
     card.appendChild(controls);
     c.appendChild(card);
   },
 
   startTimerLoop() {
     if (this.timerInterval) clearInterval(this.timerInterval);
-    
+
     this.timerInterval = setInterval(() => {
       if (this.workoutTimer.isPaused) return;
-      
+
       this.workoutTimer.timeLeft--;
-      
-      // Update display
+
       const display = this.$("timerDisplay");
       if (display) {
         display.textContent = this.workoutTimer.timeLeft;
-        
-        // Color change on last 3 seconds
+
         if (this.workoutTimer.timeLeft <= 3 && this.workoutTimer.timeLeft > 0) {
           display.style.color = "var(--red)";
           this.playBeep(600, 100);
@@ -352,8 +1356,7 @@
           display.style.color = "#fff";
         }
       }
-      
-      // Phase transition
+
       if (this.workoutTimer.timeLeft <= 0) {
         this.playBeep(1000, 300);
         this.nextPhase();
@@ -363,37 +1366,34 @@
 
   nextPhase() {
     const wt = this.workoutTimer;
-    
+
     if (wt.phase === "work") {
-      // Passer au repos
       wt.phase = "rest";
       wt.timeLeft = wt.exercises[wt.currentIndex].rest || 10;
     } else {
-      // Passer à l'exercice suivant
       wt.currentIndex++;
-      
+
       if (wt.currentIndex >= wt.exercises.length) {
-        // Workout terminé
         this.completeWorkout();
         return;
       }
-      
+
       wt.phase = "work";
       wt.timeLeft = wt.exercises[wt.currentIndex].duration;
     }
-    
+
     this.renderTimerUI();
   },
 
   skipExercise() {
     const wt = this.workoutTimer;
     wt.currentIndex++;
-    
+
     if (wt.currentIndex >= wt.exercises.length) {
       this.completeWorkout();
       return;
     }
-    
+
     wt.phase = "work";
     wt.timeLeft = wt.exercises[wt.currentIndex].duration;
     this.renderTimerUI();
@@ -421,44 +1421,23 @@
       clearInterval(this.timerInterval);
       this.timerInterval = null;
     }
-    
+
     this.playBeep(1200, 500);
-    
+
     const c = this.$("coachOutput");
-    c.innerHTML = "";
-    
+    c.textContent = "";
+
     const card = this.el("div", { className: "card", style: { textAlign: "center" } });
-    card.appendChild(this.el("div", {
-      style: {
-        fontSize: "60px",
-        marginBottom: "20px"
-      },
-      text: "🎉"
-    }));
-    card.appendChild(this.el("div", {
-      style: {
-        fontSize: "32px",
-        fontWeight: "950",
-        color: "var(--lime)",
-        marginBottom: "16px"
-      },
-      text: "Workout Terminé !"
-    }));
-    card.appendChild(this.el("div", {
-      style: {
-        fontSize: "16px",
-        color: "var(--muted)",
-        marginBottom: "30px"
-      },
-      text: "Bravo ! N'oublie pas de t'étirer."
-    }));
-    
+    card.appendChild(this.el("div", { style: { fontSize: "60px", marginBottom: "20px" }, text: "🎉" }));
+    card.appendChild(this.el("div", { style: { fontSize: "32px", fontWeight: "950", color: "var(--lime)", marginBottom: "16px" }, text: "Workout Terminé !" }));
+    card.appendChild(this.el("div", { style: { fontSize: "16px", color: "var(--muted)", marginBottom: "30px" }, text: "Bravo ! N'oublie pas de t'étirer." }));
+
     const btnRow = this.el("div", { style: { display: "flex", gap: "12px", justifyContent: "center" } }, [
       this.el("button", { className: "btn primary", text: "🔄 Nouveau Workout" })
     ]);
     btnRow.children[0].addEventListener("click", () => this.generateWorkout());
     card.appendChild(btnRow);
-    
+
     c.appendChild(card);
     this.workoutTimer = null;
   },
@@ -511,7 +1490,7 @@
 
   renderFeed() {
     const c = this.$("feedContainer");
-    c.innerHTML = "";
+    c.textContent = "";
     if (!this.feedItems.length) {
       c.appendChild(this.el("div", { className: "empty", text: "Aucune séance publique." }));
       return;
@@ -574,7 +1553,7 @@
 
   async evaluateAchievements() {
     if (!this.user) return;
-    
+
     const threeDaysAgo = new Date(Date.now() - 3 * 864e5).toISOString();
     const { data: recentWorkouts } = await this.supabase
       .from("workouts")
@@ -645,7 +1624,7 @@
 
   renderTrophyWall(unlocked) {
     const c = this.$("trophyWall");
-    c.innerHTML = "";
+    c.textContent = "";
     Object.entries(BADGES).forEach(([key, badge]) => {
       const unlockedAt = unlocked.get(key);
       const isUnlocked = !!unlockedAt;
@@ -654,8 +1633,8 @@
         this.el("div", { className: "trophyInfo" }, [
           this.el("div", { className: "trophyTitle", text: badge.title }),
           this.el("div", { className: "trophyDesc", text: badge.desc }),
-          isUnlocked 
-            ? this.el("div", { className: "trophyMeta", text: `Débloqué le ${new Date(unlockedAt).toLocaleDateString("fr-FR")}` }) 
+          isUnlocked
+            ? this.el("div", { className: "trophyMeta", text: `Débloqué le ${new Date(unlockedAt).toLocaleDateString("fr-FR")}` })
             : this.el("div", { className: "trophyMeta", text: "🔒 Non débloqué" })
         ])
       ]);
@@ -709,7 +1688,7 @@
     this.$("macro-fats").textContent = totalFats;
 
     const c = this.$("mealsContainer");
-    c.innerHTML = "";
+    c.textContent = "";
     if (!today.length) {
       c.appendChild(this.el("div", { className: "empty", text: "Aucun repas enregistré aujourd'hui." }));
       return;
@@ -762,7 +1741,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { 
+        plugins: {
           legend: { display: false },
           tooltip: {
             backgroundColor: "rgba(0,0,0,.85)",
@@ -773,14 +1752,14 @@
           }
         },
         scales: {
-          y: { 
-            beginAtZero: true, 
-            ticks: { color: "#a7adbd", font: { size: 11 } }, 
-            grid: { color: "rgba(255,255,255,.05)" } 
+          y: {
+            beginAtZero: true,
+            ticks: { color: "#a7adbd", font: { size: 11 } },
+            grid: { color: "rgba(255,255,255,.05)" }
           },
-          x: { 
-            ticks: { color: "#a7adbd", font: { size: 11 } }, 
-            grid: { display: false } 
+          x: {
+            ticks: { color: "#a7adbd", font: { size: 11 } },
+            grid: { display: false }
           }
         }
       }
@@ -793,15 +1772,15 @@
 
     const weeks = [];
     const volumes = [];
-    
+
     for (let i = 4; i >= 0; i--) {
       const weekStart = new Date();
       weekStart.setDate(weekStart.getDate() - (i * 7));
       weekStart.setHours(0, 0, 0, 0);
-      
+
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 7);
-      
+
       const { data } = await this.supabase
         .from("workouts")
         .select("exercises")
@@ -816,15 +1795,15 @@
             w.exercises.forEach(ex => {
               const sets = ex.sets || 3;
               const repsRange = String(ex.reps || "8-10").split("-");
-              const avgReps = repsRange.length === 2 
-                ? (Number(repsRange[0]) + Number(repsRange[1])) / 2 
+              const avgReps = repsRange.length === 2
+                ? (Number(repsRange[0]) + Number(repsRange[1])) / 2
                 : Number(repsRange[0]) || 8;
               weekVolume += sets * avgReps * 50;
             });
           }
         });
       }
-      
+
       weeks.push(i === 0 ? "Maintenant" : `S-${i}`);
       volumes.push(Math.round(weekVolume));
     }
@@ -836,4 +1815,5 @@
 };
 
 document.addEventListener("DOMContentLoaded", () => App.init());
+
           
