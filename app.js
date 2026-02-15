@@ -2,14 +2,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 /* ============================================================
    ExerciseMediaManager — FitAI (autonomous module)
-   - Double-buffering (2 <img> stacked) + opacity toggle (no flicker)
+   - Double-buffering (2 <img> stacked) + opacity toggle
    - Singleton IntersectionObserver (1 for the whole app)
    - XSS-safe (no innerHTML)
    - Placeholder if both frames fail
-   - Optional SW prefetch via postMessage (works if SW is registered elsewhere)
+   - Optional SW prefetch via postMessage (if SW is registered elsewhere)
    ============================================================ */
 const ExerciseMediaManager = {
-  // ----- Config -----
   cfg: {
     cssId: "fitai-ex-media-css",
     injectCss: true,
@@ -21,31 +20,28 @@ const ExerciseMediaManager = {
     ioThreshold: 0.25,
     ioRootMargin: "200px 0px",
 
-    useCacheStorage: true,   // cache-first when CacheStorage is available
-    swPrefetch: true,        // postMessage to SW controller (if present)
+    useCacheStorage: true,
+    swPrefetch: true,
     swMessageDebounceMs: 400,
 
     placeholderIcon: "🏋️",
     placeholderText: "Démo indisponible"
   },
 
-  // ----- State -----
   _io: null,
-  _observed: new Set(),         // Set<HTMLElement>
-  _timers: new Map(),           // Map<HTMLElement, number>
-  _meta: new WeakMap(),         // WeakMap<HTMLElement, Meta>
-  _objectUrls: new Set(),       // Set<string>
+  _observed: new Set(),
+  _timers: new Map(),
+  _meta: new WeakMap(),
+  _objectUrls: new Set(),
   _swQueue: new Set(),
   _swFlushT: null,
   _inited: false,
 
-  // ----- Public API -----
   init(userCfg = {}) {
     if (this._inited) return;
     this._inited = true;
 
     this.cfg = { ...this.cfg, ...userCfg };
-
     if (this.cfg.injectCss) this._injectCssOnce();
     this._ensureIntersectionObserver();
 
@@ -60,11 +56,9 @@ const ExerciseMediaManager = {
   },
 
   reset() {
-    // stop animations
     for (const [, t] of this._timers) clearInterval(t);
     this._timers.clear();
 
-    // unobserve
     if (this._io) {
       for (const el of this._observed) {
         try { this._io.unobserve(el); } catch {}
@@ -72,13 +66,11 @@ const ExerciseMediaManager = {
     }
     this._observed.clear();
 
-    // revoke blob URLs
     for (const u of this._objectUrls) {
       try { URL.revokeObjectURL(u); } catch {}
     }
     this._objectUrls.clear();
 
-    // SW queue
     this._swQueue.clear();
     clearTimeout(this._swFlushT);
     this._swFlushT = null;
@@ -113,7 +105,7 @@ const ExerciseMediaManager = {
     img1.loading = "lazy";
     img1.decoding = "async";
     img1.referrerPolicy = "no-referrer";
-    img1.alt = ""; // decorative overlay
+    img1.alt = "";
 
     const skel = document.createElement("div");
     skel.className = "exMediaSkeleton";
@@ -153,26 +145,19 @@ const ExerciseMediaManager = {
 
     img0.addEventListener("load", () => { meta.loaded0 = true; this._onFrameSettled(wrap); }, { passive: true });
     img0.addEventListener("error", () => { meta.failed0 = true; this._onFrameSettled(wrap); }, { passive: true });
-
     img1.addEventListener("load", () => { meta.loaded1 = true; this._onFrameSettled(wrap); }, { passive: true });
     img1.addEventListener("error", () => { meta.failed1 = true; this._onFrameSettled(wrap); }, { passive: true });
 
-    // Observe once globally (singleton IO)
     this._io.observe(wrap);
     this._observed.add(wrap);
 
-    // Hydrate sources async (cache-first if possible)
-    this._hydrateSources(exName, wrap).catch(() => {
-      this._forcePlaceholder(wrap);
-    });
+    this._hydrateSources(exName, wrap).catch(() => this._forcePlaceholder(wrap));
 
-    // Ask SW to cache (optional)
     if (this.cfg.swPrefetch) this._queueForSW(urls);
 
     return wrap;
   },
 
-  // ----- Internals -----
   _injectCssOnce() {
     if (document.getElementById(this.cfg.cssId)) return;
 
@@ -211,7 +196,6 @@ const ExerciseMediaManager = {
             this._stopAnim(wrap);
             continue;
           }
-
           this._maybeStartAnim(wrap);
         }
       },
@@ -287,9 +271,7 @@ const ExerciseMediaManager = {
     const meta = this._meta.get(wrap);
     if (!meta) return;
 
-    if ((meta.loaded0 || meta.loaded1) && meta.skel?.isConnected) {
-      meta.skel.remove();
-    }
+    if ((meta.loaded0 || meta.loaded1) && meta.skel?.isConnected) meta.skel.remove();
 
     if (meta.failed0 && meta.failed1) {
       this._forcePlaceholder(wrap);
@@ -301,9 +283,7 @@ const ExerciseMediaManager = {
       return;
     }
 
-    if (meta.loaded0 || meta.loaded1) {
-      this._stopAnim(wrap);
-    }
+    if (meta.loaded0 || meta.loaded1) this._stopAnim(wrap);
   },
 
   _forcePlaceholder(wrap) {
@@ -334,12 +314,8 @@ const ExerciseMediaManager = {
 
     let alt = false;
     const t = window.setInterval(() => {
-      if (!wrap.isConnected) {
-        this._stopAnim(wrap);
-        return;
-      }
+      if (!wrap.isConnected) { this._stopAnim(wrap); return; }
       if (document.hidden) return;
-
       alt = !alt;
       wrap.classList.toggle("isAlt", alt);
     }, this.cfg.intervalMs);
@@ -378,15 +354,26 @@ const ExerciseMediaManager = {
   }
 };
 
+/* ============================================================
+   Constantes
+   ============================================================ */
 const CLIENT_TOKEN = "fitai-v18";
 
 const BADGES = {
-  STREAK:     { emoji: "🔥", title: "STREAK",     desc: "3 jours consécutifs (au moins 1 séance/jour)." },
-  CLOWN:      { emoji: "🤡", title: "CLOWN",      desc: "Séance Light avec Recovery ≥ 90%." },
-  MACHINE:    { emoji: "🦾", title: "MACHINE",    desc: "3 séances Hard dans la semaine ISO." },
-  KUDOS_KING: { emoji: "👑", title: "KUDOS KING", desc: "Une séance qui dépasse 10 kudos." }
+  STREAK:     { icon: "flame",    title: "STREAK",     desc: "3 jours consécutifs (au moins 1 séance/jour)." },
+  CLOWN:      { icon: "user-x",   title: "CLOWN",      desc: "Séance Light avec Recovery ≥ 90%." },
+  MACHINE:    { icon: "dumbbell", title: "MACHINE",    desc: "3 séances Hard dans la semaine ISO." },
+  KUDOS_KING: { icon: "crown",    title: "KUDOS KING", desc: "Une séance qui dépasse 10 kudos." }
 };
 
+/* ============================================================
+   App (toutes tes fonctions conservées)
+   - Session stable: persistSession + localStorage
+   - Lucide: initLucide + refreshLucideIcons + trophies en <i data-lucide>
+   - Boot session: bootstrapSessionAndHydrateKpis()
+   - Render workout: ExerciseMediaManager.reset() + create(ex.name)
+   - Anti-XSS: pas de innerHTML avec contenu dynamique
+   ============================================================ */
 const App = {
   cfg: null,
   supabase: null,
@@ -402,10 +389,9 @@ const App = {
   meals: [],
   chartVolume: null,
 
-  // ============ NOUVEAU : Timer Workout ============
   workoutTimer: null,
   currentExerciseIndex: 0,
-  currentPhase: "work", // "work" ou "rest"
+  currentPhase: "work",
   timerInterval: null,
   audioContext: null,
 
@@ -415,6 +401,7 @@ const App = {
     const n = document.createElement(tag);
     if (opts.className) n.className = opts.className;
     if (opts.type) n.type = opts.type;
+    if (opts.id) n.id = opts.id;
     if (opts.text != null) n.textContent = String(opts.text);
     if (opts.attrs) for (const [k, v] of Object.entries(opts.attrs)) n.setAttribute(k, String(v));
     if (opts.style) for (const [k, v] of Object.entries(opts.style)) n.style[k] = v;
@@ -423,6 +410,48 @@ const App = {
   },
 
   clamp(min, v, max) { return Math.max(min, Math.min(max, v)); },
+
+  // ===== Lucide (NEW) =====
+  async initLucide() {
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+      return;
+    }
+    await new Promise((resolve) => {
+      const s = document.createElement("script");
+      s.src = "https://unpkg.com/lucide@latest";
+      s.onload = () => resolve();
+      s.onerror = () => resolve();
+      document.head.appendChild(s);
+    });
+    if (window.lucide && typeof window.lucide.createIcons === "function") window.lucide.createIcons();
+  },
+
+  refreshLucideIcons() {
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+    }
+  },
+
+  // ===== Session bootstrap (NEW) =====
+  async bootstrapSessionAndHydrateKpis() {
+    const { data } = await this.supabase.auth.getSession();
+    this.session = data.session || null;
+    this.user = this.session?.user || null;
+
+    this.supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      this.session = newSession || null;
+      this.user = newSession?.user || null;
+      await this.afterAuthChanged();
+    });
+
+    await this.afterAuthChanged();
+  },
+
+  // Compat: ton code appelait initAuth() auparavant, on le garde
+  async initAuth() {
+    return this.bootstrapSessionAndHydrateKpis();
+  },
 
   getAggressiveRoast() {
     const roasts = [
@@ -446,62 +475,71 @@ const App = {
   },
 
   async init() {
-    // ✅ init media manager early
+    // 1) Media manager (singleton observer)
     ExerciseMediaManager.init();
 
+    // 2) Lucide
+    await this.initLucide();
+
+    // 3) UI
     this.bindTabs();
     this.bindUI();
+
+    // 4) Config + Supabase (session stable localStorage)
     this.cfg = await this.fetchConfig();
     this.supabase = createClient(this.cfg.supabaseUrl, this.cfg.supabaseAnonKey, {
       auth: {
         persistSession: true,
-        storage: window.sessionStorage,
+        storage: window.localStorage,
         autoRefreshToken: true,
         detectSessionInUrl: true
       }
     });
-    await this.initAuth();
+
+    // 5) Session bootstrap + hydrate KPIs
+    await this.bootstrapSessionAndHydrateKpis();
+
     this.setTab("dash");
     await this.refreshFeed();
     this.initCharts();
-    this.initAudioContext(); // Pour les sons du timer
+    this.initAudioContext();
   },
 
   bindTabs() {
-    this.$("tabBtnDash").addEventListener("click", () => this.setTab("dash"));
-    this.$("tabBtnCoach").addEventListener("click", () => this.setTab("coach"));
-    this.$("tabBtnNutrition").addEventListener("click", () => this.setTab("nutrition"));
-    this.$("tabBtnCommunity").addEventListener("click", () => this.setTab("community"));
-    this.$("tabBtnProfile").addEventListener("click", () => this.setTab("profile"));
+    this.$("tabBtnDash")?.addEventListener("click", () => this.setTab("dash"));
+    this.$("tabBtnCoach")?.addEventListener("click", () => this.setTab("coach"));
+    this.$("tabBtnNutrition")?.addEventListener("click", () => this.setTab("nutrition"));
+    this.$("tabBtnCommunity")?.addEventListener("click", () => this.setTab("community"));
+    this.$("tabBtnProfile")?.addEventListener("click", () => this.setTab("profile"));
   },
 
   setTab(tab) {
     const tabs = ["dash", "coach", "nutrition", "community", "profile"];
     tabs.forEach(t => {
-      this.$(`tab-${t}`).style.display = t === tab ? "block" : "none";
+      const panel = this.$(`tab-${t}`);
+      if (panel) panel.style.display = t === tab ? "block" : "none";
       const btn = this.$(`tabBtn${t.charAt(0).toUpperCase() + t.slice(1)}`);
+      if (!btn) return;
       btn.classList.toggle("active", t === tab);
       btn.setAttribute("aria-selected", String(t === tab));
     });
   },
 
   bindUI() {
-    this.$("btnMagicLink").addEventListener("click", () => this.sendMagicLink());
-    this.$("btnLogout").addEventListener("click", () => this.logout());
-    this.$("btnSaveName").addEventListener("click", () => this.saveDisplayName());
-    this.$("btnSaveEquipment").addEventListener("click", () => this.saveEquipment());
-    this.$("btnRefreshTrophies").addEventListener("click", () => this.refreshTrophies());
-    this.$("btnCoachAsk").addEventListener("click", () => this.generateWorkout());
-    this.$("btnRefreshFeed").addEventListener("click", () => this.refreshFeed());
-    this.$("btnAddMeal").addEventListener("click", () => this.showMealModal());
-    this.$("btnSaveMeal").addEventListener("click", () => this.saveMeal());
-    this.$("btnCancelMeal").addEventListener("click", () => this.hideMealModal());
+    this.$("btnMagicLink")?.addEventListener("click", () => this.sendMagicLink());
+    this.$("btnLogout")?.addEventListener("click", () => this.logout());
+    this.$("btnSaveName")?.addEventListener("click", () => this.saveDisplayName());
+    this.$("btnSaveEquipment")?.addEventListener("click", () => this.saveEquipment());
+    this.$("btnRefreshTrophies")?.addEventListener("click", () => this.refreshTrophies());
+    this.$("btnCoachAsk")?.addEventListener("click", () => this.generateWorkout());
+    this.$("btnRefreshFeed")?.addEventListener("click", () => this.refreshFeed());
+    this.$("btnAddMeal")?.addEventListener("click", () => this.showMealModal());
+    this.$("btnSaveMeal")?.addEventListener("click", () => this.saveMeal());
+    this.$("btnCancelMeal")?.addEventListener("click", () => this.hideMealModal());
 
-    // ============ NOUVEAU : Bindings Profil ============
     const ageInput = this.$("profileAge");
     const weightInput = this.$("profileWeight");
     const heightInput = this.$("profileHeight");
-
     if (ageInput) ageInput.addEventListener("change", () => this.saveProfileData());
     if (weightInput) weightInput.addEventListener("change", () => this.saveProfileData());
     if (heightInput) heightInput.addEventListener("change", () => this.saveProfileData());
@@ -527,20 +565,9 @@ const App = {
     return data;
   },
 
-  async initAuth() {
-    const { data } = await this.supabase.auth.getSession();
-    this.session = data.session || null;
-    this.user = this.session?.user || null;
-    this.supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      this.session = newSession || null;
-      this.user = newSession?.user || null;
-      await this.afterAuthChanged();
-    });
-    await this.afterAuthChanged();
-  },
-
   async afterAuthChanged() {
-    this.$("authStatus").textContent = this.user ? `Connecté : ${this.user.email || this.user.id}` : "Non connecté";
+    const authStatus = this.$("authStatus");
+    if (authStatus) authStatus.textContent = this.user ? `Connecté : ${this.user.email || this.user.id}` : "Non connecté";
 
     if (!this.user) {
       this.profile = null;
@@ -552,11 +579,13 @@ const App = {
       this.renderStats(null);
       this.renderHeatmap(null);
       this.setCoachEmpty("Connecte-toi pour activer le Coach IA.");
-      this.$("feedStatus").textContent = "Lecture seule";
+      const feedStatus = this.$("feedStatus");
+      if (feedStatus) feedStatus.textContent = "Lecture seule";
       this.hint("trophyHint", "Connecte-toi pour voir tes trophées.", "info");
       this.renderTrophyWall(new Map());
       this.renderNutrition();
       await this.refreshFeed();
+      this.refreshLucideIcons();
       return;
     }
 
@@ -571,7 +600,8 @@ const App = {
     await this.evaluateAchievements();
     await this.refreshTrophies();
     this.renderNutrition();
-    this.loadProfileData(); // ============ NOUVEAU ============
+    this.loadProfileData();
+    this.refreshLucideIcons();
   },
 
   async ensureProfiles(userId) {
@@ -633,35 +663,43 @@ const App = {
   },
 
   renderProfileForm(p, pub) {
-    this.$("eqDumbbells").checked = !!p?.equipment?.dumbbells;
-    this.$("eqBarbell").checked = !!p?.equipment?.barbell;
-    this.$("eqBodyweight").checked = p ? (p.equipment?.bodyweight !== false) : true;
-    this.$("eqMachines").checked = !!p?.equipment?.machines;
-    this.$("displayName").value = pub?.display_name || "";
+    const d = this.$("eqDumbbells"); if (d) d.checked = !!p?.equipment?.dumbbells;
+    const b = this.$("eqBarbell");   if (b) b.checked = !!p?.equipment?.barbell;
+    const bw = this.$("eqBodyweight"); if (bw) bw.checked = p ? (p.equipment?.bodyweight !== false) : true;
+    const m = this.$("eqMachines");  if (m) m.checked = !!p?.equipment?.machines;
+    const name = this.$("displayName"); if (name) name.value = pub?.display_name || "";
   },
 
   renderKpis(p) {
+    const vr = this.$("val-recovery");
+    const vw = this.$("val-weight");
+    const vs = this.$("val-sleep");
+    const brief = this.$("morningBrief");
+
     if (!p?.kpis) {
-      this.$("val-recovery").textContent = "--";
-      this.$("val-weight").textContent = "--";
-      this.$("val-sleep").textContent = "--";
-      this.$("morningBrief").textContent = "Connecte-toi pour activer le suivi.";
+      if (vr) vr.textContent = "--";
+      if (vw) vw.textContent = "--";
+      if (vs) vs.textContent = "--";
+      if (brief) brief.textContent = "Connecte-toi pour activer le suivi.";
       return;
     }
     const k = p.kpis;
     const rec = Number(k.recovery || 0);
-    this.$("val-recovery").textContent = `${Math.round(rec)}%`;
-    this.$("val-weight").textContent = `${Number(k.weight || 0).toFixed(1)}`;
-    this.$("val-sleep").textContent = `${Number(k.sleep || 0).toFixed(2)}`;
+    if (vr) vr.textContent = `${Math.round(rec)}%`;
+    if (vw) vw.textContent = `${Number(k.weight || 0).toFixed(1)}`;
+    if (vs) vs.textContent = `${Number(k.sleep || 0).toFixed(2)}`;
 
-    this.$("morningBrief").textContent =
-      rec < 40 ? "🛑 Recovery basse : mobilité / récupération."
-      : rec < 70 ? "⚠️ Recovery modérée : technique / volume léger."
-      : "🔥 Recovery haute : tu sais ce qu'il te reste à faire.";
+    if (brief) {
+      brief.textContent =
+        rec < 40 ? "🛑 Recovery basse : mobilité / récupération."
+        : rec < 70 ? "⚠️ Recovery modérée : technique / volume léger."
+        : "🔥 Recovery haute : tu sais ce qu'il te reste à faire.";
+    }
   },
 
   renderRoastState(profile) {
     const banner = this.$("roastBanner");
+    if (!banner) return;
     banner.classList.remove("on");
     banner.textContent = "";
 
@@ -708,7 +746,8 @@ const App = {
   },
 
   async sendMagicLink() {
-    const email = this.$("email").value.trim();
+    const emailEl = this.$("email");
+    const email = emailEl ? emailEl.value.trim() : "";
     if (!email) return this.hint("profileHint", "Email requis.", "err");
     this.hint("profileHint", "Envoi en cours...", "info");
     const { error } = await this.supabase.auth.signInWithOtp({ email });
@@ -723,7 +762,8 @@ const App = {
 
   async saveDisplayName() {
     if (!this.user) return;
-    const name = this.$("displayName").value.trim();
+    const nameEl = this.$("displayName");
+    const name = nameEl ? nameEl.value.trim() : "";
     const { error } = await this.supabase
       .from("public_profiles")
       .upsert({ user_id: this.user.id, display_name: name });
@@ -735,10 +775,10 @@ const App = {
   async saveEquipment() {
     if (!this.user) return;
     const equipment = {
-      dumbbells: this.$("eqDumbbells").checked,
-      barbell: this.$("eqBarbell").checked,
-      bodyweight: this.$("eqBodyweight").checked,
-      machines: this.$("eqMachines").checked
+      dumbbells: !!this.$("eqDumbbells")?.checked,
+      barbell: !!this.$("eqBarbell")?.checked,
+      bodyweight: this.$("eqBodyweight") ? (this.$("eqBodyweight").checked) : true,
+      machines: !!this.$("eqMachines")?.checked
     };
     const { error } = await this.supabase
       .from("profiles")
@@ -746,7 +786,7 @@ const App = {
       .eq("user_id", this.user.id);
     if (error) return this.hint("profileHint", error.message, "err");
     this.hint("profileHint", "✅ Matériel sauvegardé.", "ok");
-    this.profile.equipment = equipment;
+    if (this.profile) this.profile.equipment = equipment;
   },
 
   async refreshRecent() {
@@ -763,11 +803,14 @@ const App = {
 
   renderRecent(workouts) {
     const c = this.$("recentWorkouts");
-    c.textContent = "";
+    if (!c) return;
+    c.replaceChildren();
+
     if (!workouts.length) {
       c.appendChild(this.el("div", { className: "empty", text: "Aucune séance enregistrée." }));
       return;
     }
+
     workouts.forEach(w => {
       const badge = w.intensity === "hard" ? "🔴 HARD" : w.intensity === "medium" ? "🟠 MEDIUM" : "🟢 LIGHT";
       const card = this.el("div", { className: "mealCard" }, [
@@ -807,41 +850,32 @@ const App = {
   },
 
   renderStats(stats) {
-    const trendEl = this.$("stat-workouts-trend");
-    const volTrendEl = this.$("stat-volume-trend");
+    const w = this.$("stat-workouts");
+    const v = this.$("stat-volume");
+    const trend = this.$("stat-workouts-trend");
+
+    if (!w || !v || !trend) return;
 
     if (!stats) {
-      this.$("stat-workouts").textContent = "0";
-      this.$("stat-volume").textContent = "0";
-
-      if (trendEl) {
-        trendEl.className = "statTrend";
-        trendEl.replaceChildren(
-          this.el("span", { text: "→" }),
-          this.el("span", { text: "+0%" })
-        );
-      }
-      if (volTrendEl) {
-        volTrendEl.className = "statTrend";
-        volTrendEl.replaceChildren(
-          this.el("span", { text: "→" }),
-          this.el("span", { text: "+0%" })
-        );
-      }
+      w.textContent = "0";
+      v.textContent = "0";
+      trend.className = "statTrend";
+      trend.replaceChildren(
+        this.el("span", { text: "→" }),
+        this.el("span", { text: "+0%" })
+      );
       return;
     }
 
-    this.$("stat-workouts").textContent = String(stats.workouts);
-    this.$("stat-volume").textContent = Math.round(stats.volume / 1000) + "k";
+    w.textContent = String(stats.workouts);
+    v.textContent = Math.round(stats.volume / 1000) + "k";
 
     const arrow = stats.change > 0 ? "↗" : stats.change < 0 ? "↘" : "→";
-    if (trendEl) {
-      trendEl.className = "statTrend " + (stats.change > 0 ? "up" : stats.change < 0 ? "down" : "");
-      trendEl.replaceChildren(
-        this.el("span", { text: arrow }),
-        this.el("span", { text: `${stats.change > 0 ? "+" : ""}${stats.change}%` })
-      );
-    }
+    trend.className = "statTrend " + (stats.change > 0 ? "up" : stats.change < 0 ? "down" : "");
+    trend.replaceChildren(
+      this.el("span", { text: arrow }),
+      this.el("span", { text: `${stats.change > 0 ? "+" : ""}${stats.change}%` })
+    );
   },
 
   async refreshHeatmap() {
@@ -864,25 +898,24 @@ const App = {
 
   renderHeatmap(days) {
     const c = this.$("activityHeatmap");
-    c.textContent = "";
+    if (!c) return;
+    c.replaceChildren();
+
     if (!days) {
-      for (let i = 0; i < 28; i++) {
-        c.appendChild(this.el("div", { className: "heatmapDay" }));
-      }
+      for (let i = 0; i < 28; i++) c.appendChild(this.el("div", { className: "heatmapDay" }));
       return;
     }
+
     days.forEach(d => {
-      const el = this.el("div", {
-        className: "heatmapDay" + (d.active ? " active" : ""),
-        text: d.label
-      });
+      const el = this.el("div", { className: "heatmapDay" + (d.active ? " active" : ""), text: d.label });
       c.appendChild(el);
     });
   },
 
   async generateWorkout() {
     if (!this.user) return this.setCoachEmpty("Connecte-toi.");
-    const prompt = this.$("coachPrompt").value.trim();
+    const promptEl = this.$("coachPrompt");
+    const prompt = promptEl ? promptEl.value.trim() : "";
     if (!prompt) return this.setCoachEmpty("Décris ta séance souhaitée.");
 
     this.setCoachLoading();
@@ -898,7 +931,6 @@ const App = {
 
       if (!r.ok) throw new Error("Erreur API");
       const data = await r.json();
-
       this.handleAIResponse(data);
 
     } catch (err) {
@@ -951,7 +983,7 @@ RÉPONDS UNIQUEMENT avec ce JSON STRICT (sans markdown, sans texte avant/après)
 IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des répétitions, mets duration à 0.`;
   },
 
-  // ✅ TERMINÉE: gère "workout" et "recipe" + fallback ancien format
+  // ✅ Terminé: gère "recipe" et "workout" + fallback ancien format
   handleAIResponse(data) {
     let parsedData = data;
 
@@ -966,67 +998,49 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
       }
     }
 
-    // fallback ancien format
-    if (parsedData && typeof parsedData === "object" && !parsedData.type && parsedData.exercises) {
-      parsedData.type = "workout";
-    }
+    // Fallback si ancien format (sans type)
+    if (!parsedData?.type && parsedData?.exercises) parsedData.type = "workout";
 
-    if (!parsedData || typeof parsedData !== "object") {
-      this.setCoachEmpty("Erreur : réponse vide/invalide.");
-      return;
-    }
-
-    if (parsedData.type === "recipe") {
+    if (parsedData?.type === "recipe") {
       this.renderRecipe(parsedData);
-      return;
-    }
-
-    if (parsedData.type === "workout") {
+    } else if (parsedData?.type === "workout") {
       this.renderWorkoutPlan(parsedData);
-      return;
-    }
-
-    // Dernier fallback
-    if (parsedData.exercises) {
+    } else {
       this.renderWorkoutPlan(parsedData);
-      return;
     }
 
-    this.setCoachEmpty("Erreur : format inconnu.");
+    this.refreshLucideIcons();
   },
 
   setCoachLoading() {
     const c = this.$("coachOutput");
-    c.textContent = "";
-
-    const card = this.el("div", { className: "card" });
-    const row = this.el("div", { style: { display: "flex", alignItems: "center", gap: "12px" } }, [
-      this.el("div", { className: "spinner" }),
-      this.el("span", { text: "Génération en cours..." })
+    if (!c) return;
+    const row = this.el("div", { className: "card" }, [
+      this.el("div", { style: { display: "flex", alignItems: "center", gap: "12px" } }, [
+        this.el("div", { className: "spinner" }),
+        this.el("span", { text: "Génération en cours..." })
+      ])
     ]);
-
-    card.appendChild(row);
-    c.appendChild(card);
+    c.replaceChildren(row);
   },
 
   setCoachEmpty(msg) {
     const c = this.$("coachOutput");
-    c.textContent = "";
-
-    const card = this.el("div", { className: "card" }, [
-      this.el("div", { className: "empty", text: msg })
-    ]);
-
-    c.appendChild(card);
+    if (!c) return;
+    c.replaceChildren(
+      this.el("div", { className: "card" }, [
+        this.el("div", { className: "empty", text: msg })
+      ])
+    );
   },
 
-  // ✅ MODIFIÉ : renderWorkoutPlan utilise ExerciseMediaManager.create(ex.name)
   renderWorkoutPlan(data) {
-    // prevent leaks (timers/observers/blob URLs)
+    // ✅ Anti-fuite: timers/observers/blob URLs
     ExerciseMediaManager.reset();
 
     const c = this.$("coachOutput");
-    c.textContent = "";
+    if (!c) return;
+    c.replaceChildren();
 
     const card = this.el("div", { className: "card" });
 
@@ -1039,14 +1053,10 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
     }
 
     if (data.exercises?.length) {
-      const frag = document.createDocumentFragment();
-
       data.exercises.forEach(ex => {
         const specs = ex.duration > 0
           ? `${ex.duration}s work • ${ex.rest}s rest`
           : `${ex.sets} × ${ex.reps} • Repos ${ex.rest || "2min"}`;
-
-        const media = ExerciseMediaManager.create(ex?.name);
 
         const exCard = this.el("div", { className: "exerciseCard" }, [
           this.el("div", { className: "exerciseInfo" }, [
@@ -1056,11 +1066,11 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
           this.el("div", { className: "exerciseRPE", text: `RPE ${ex.rpe || "7-8"}` })
         ]);
 
+        const media = ExerciseMediaManager.create(ex?.name);
         if (media) exCard.appendChild(media);
-        frag.appendChild(exCard);
-      });
 
-      card.appendChild(frag);
+        card.appendChild(exCard);
+      });
     }
 
     const btnRow = this.el("div", { style: { display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap" } }, [
@@ -1077,10 +1087,10 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
     c.appendChild(card);
   },
 
-  // ============ NOUVEAU : Affichage Recette ============
   renderRecipe(data) {
     const c = this.$("coachOutput");
-    c.textContent = "";
+    if (!c) return;
+    c.replaceChildren();
 
     const card = this.el("div", { className: "card" });
 
@@ -1129,7 +1139,7 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
     });
 
     (data.ingredients || []).forEach(ing => {
-      const li = this.el("li", {
+      ingredientsList.appendChild(this.el("li", {
         style: {
           padding: "10px 14px",
           background: "rgba(255,255,255,.03)",
@@ -1138,9 +1148,9 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
           fontSize: "14px"
         },
         text: `• ${ing}`
-      });
-      ingredientsList.appendChild(li);
+      }));
     });
+
     ingredientsSection.appendChild(ingredientsList);
     card.appendChild(ingredientsSection);
 
@@ -1152,33 +1162,29 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
     }));
 
     (data.steps || []).forEach((step, idx) => {
-      const stepCard = this.el("div", {
-        className: "exerciseCard",
-        style: { marginBottom: "12px" }
-      }, [
-        this.el("div", {
-          style: {
-            width: "32px",
-            height: "32px",
-            borderRadius: "50%",
-            background: "var(--lime)",
-            color: "#000",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontWeight: "950",
-            fontSize: "14px",
-            flexShrink: "0"
-          },
-          text: idx + 1
-        }),
-        this.el("div", {
-          style: { flex: "1", fontSize: "14px", lineHeight: "1.6" },
-          text: step
-        })
-      ]);
-      stepsSection.appendChild(stepCard);
+      stepsSection.appendChild(
+        this.el("div", { className: "exerciseCard", style: { marginBottom: "12px" } }, [
+          this.el("div", {
+            style: {
+              width: "32px",
+              height: "32px",
+              borderRadius: "50%",
+              background: "var(--lime)",
+              color: "#000",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: "950",
+              fontSize: "14px",
+              flexShrink: "0"
+            },
+            text: idx + 1
+          }),
+          this.el("div", { style: { flex: "1", fontSize: "14px", lineHeight: "1.6" }, text: step })
+        ])
+      );
     });
+
     card.appendChild(stepsSection);
 
     const btnRow = this.el("div", { style: { display: "flex", gap: "12px", marginTop: "20px" } }, [
@@ -1194,7 +1200,8 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
   },
 
   copyRecipe(data) {
-    const text = `${data.title}\n\n` +
+    const text =
+      `${data.title}\n\n` +
       `Ingrédients:\n${(data.ingredients || []).map(i => `- ${i}`).join("\n")}\n\n` +
       `Préparation:\n${(data.steps || []).map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
 
@@ -1205,7 +1212,6 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
     });
   },
 
-  // ============ NOUVEAU : Timer Workout ============
   initAudioContext() {
     try {
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -1234,7 +1240,7 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
   },
 
   startWorkout(data) {
-    const timerExercises = data.exercises.filter(ex => ex.duration > 0);
+    const timerExercises = (data.exercises || []).filter(ex => ex.duration > 0);
     if (timerExercises.length === 0) {
       alert("ℹ️ Ce workout n'a pas de timer (exercices basés sur répétitions)");
       return;
@@ -1254,37 +1260,25 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
 
   renderTimerUI() {
     const c = this.$("coachOutput");
-    c.textContent = "";
+    if (!c) return;
+    c.replaceChildren();
 
     const card = this.el("div", { className: "card", style: { textAlign: "center" } });
 
     const wt = this.workoutTimer;
     const currentEx = wt.exercises[wt.currentIndex];
 
-    const progress = this.el("div", {
-      style: {
-        fontSize: "14px",
-        color: "var(--muted)",
-        marginBottom: "20px",
-        fontWeight: "900"
-      },
+    card.appendChild(this.el("div", {
+      style: { fontSize: "14px", color: "var(--muted)", marginBottom: "20px", fontWeight: "900" },
       text: `Exercice ${wt.currentIndex + 1} / ${wt.exercises.length}`
-    });
-    card.appendChild(progress);
+    }));
 
-    const exName = this.el("div", {
-      style: {
-        fontSize: "28px",
-        fontWeight: "950",
-        color: "var(--lime)",
-        marginBottom: "10px",
-        letterSpacing: ".5px"
-      },
+    card.appendChild(this.el("div", {
+      style: { fontSize: "28px", fontWeight: "950", color: "var(--lime)", marginBottom: "10px", letterSpacing: ".5px" },
       text: currentEx.name
-    });
-    card.appendChild(exName);
+    }));
 
-    const phase = this.el("div", {
+    card.appendChild(this.el("div", {
       style: {
         fontSize: "16px",
         color: wt.phase === "work" ? "var(--lime)" : "var(--cyan)",
@@ -1293,40 +1287,18 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
         textTransform: "uppercase"
       },
       text: wt.phase === "work" ? "🏋️ TRAVAIL" : "😌 REPOS"
-    });
-    card.appendChild(phase);
+    }));
 
-    const timerDisplay = this.el("div", {
+    card.appendChild(this.el("div", {
       id: "timerDisplay",
-      style: {
-        fontSize: "80px",
-        fontWeight: "950",
-        color: "#fff",
-        marginBottom: "30px",
-        letterSpacing: "-2px",
-        fontVariantNumeric: "tabular-nums"
-      },
+      style: { fontSize: "80px", fontWeight: "950", color: "#fff", marginBottom: "30px", letterSpacing: "-2px", fontVariantNumeric: "tabular-nums" },
       text: wt.timeLeft
-    });
-    card.appendChild(timerDisplay);
+    }));
 
     const controls = this.el("div", { style: { display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" } }, [
-      this.el("button", {
-        className: "btn cyan",
-        id: "btnPauseResume",
-        text: wt.isPaused ? "▶️ Reprendre" : "⏸️ Pause",
-        style: { minWidth: "140px" }
-      }),
-      this.el("button", {
-        className: "btn",
-        text: "⏭️ Skip",
-        style: { minWidth: "120px" }
-      }),
-      this.el("button", {
-        className: "btn pink",
-        text: "🛑 Arrêter",
-        style: { minWidth: "120px" }
-      })
+      this.el("button", { className: "btn cyan", id: "btnPauseResume", text: wt.isPaused ? "▶️ Reprendre" : "⏸️ Pause", style: { minWidth: "140px" } }),
+      this.el("button", { className: "btn", text: "⏭️ Skip", style: { minWidth: "120px" } }),
+      this.el("button", { className: "btn pink", text: "🛑 Arrêter", style: { minWidth: "120px" } })
     ]);
 
     controls.children[0].addEventListener("click", () => this.togglePause());
@@ -1347,7 +1319,7 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
 
       const display = this.$("timerDisplay");
       if (display) {
-        display.textContent = this.workoutTimer.timeLeft;
+        display.textContent = String(this.workoutTimer.timeLeft);
 
         if (this.workoutTimer.timeLeft <= 3 && this.workoutTimer.timeLeft > 0) {
           display.style.color = "var(--red)";
@@ -1372,12 +1344,10 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
       wt.timeLeft = wt.exercises[wt.currentIndex].rest || 10;
     } else {
       wt.currentIndex++;
-
       if (wt.currentIndex >= wt.exercises.length) {
         this.completeWorkout();
         return;
       }
-
       wt.phase = "work";
       wt.timeLeft = wt.exercises[wt.currentIndex].duration;
     }
@@ -1402,9 +1372,7 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
   togglePause() {
     this.workoutTimer.isPaused = !this.workoutTimer.isPaused;
     const btn = this.$("btnPauseResume");
-    if (btn) {
-      btn.textContent = this.workoutTimer.isPaused ? "▶️ Reprendre" : "⏸️ Pause";
-    }
+    if (btn) btn.textContent = this.workoutTimer.isPaused ? "▶️ Reprendre" : "⏸️ Pause";
   },
 
   stopWorkout() {
@@ -1425,7 +1393,8 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
     this.playBeep(1200, 500);
 
     const c = this.$("coachOutput");
-    c.textContent = "";
+    if (!c) return;
+    c.replaceChildren();
 
     const card = this.el("div", { className: "card", style: { textAlign: "center" } });
     card.appendChild(this.el("div", { style: { fontSize: "60px", marginBottom: "20px" }, text: "🎉" }));
@@ -1436,9 +1405,10 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
       this.el("button", { className: "btn primary", text: "🔄 Nouveau Workout" })
     ]);
     btnRow.children[0].addEventListener("click", () => this.generateWorkout());
-    card.appendChild(btnRow);
 
+    card.appendChild(btnRow);
     c.appendChild(card);
+
     this.workoutTimer = null;
   },
 
@@ -1461,7 +1431,9 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
   },
 
   async refreshFeed() {
-    this.$("feedStatus").textContent = "Chargement...";
+    const fs = this.$("feedStatus");
+    if (fs) fs.textContent = "Chargement...";
+
     const { data, error } = await this.supabase
       .from("workouts_feed")
       .select("*")
@@ -1469,12 +1441,13 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
       .limit(20);
 
     if (error) {
-      this.$("feedStatus").textContent = "Erreur";
-      return console.error(error);
+      if (fs) fs.textContent = "Erreur";
+      console.error(error);
+      return;
     }
 
     this.feedItems = data || [];
-    this.$("feedStatus").textContent = `${this.feedItems.length} séances`;
+    if (fs) fs.textContent = `${this.feedItems.length} séances`;
     await this.loadLikedWorkouts();
     this.renderFeed();
   },
@@ -1490,7 +1463,9 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
 
   renderFeed() {
     const c = this.$("feedContainer");
-    c.textContent = "";
+    if (!c) return;
+    c.replaceChildren();
+
     if (!this.feedItems.length) {
       c.appendChild(this.el("div", { className: "empty", text: "Aucune séance publique." }));
       return;
@@ -1498,6 +1473,7 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
 
     this.feedItems.forEach(item => {
       const liked = this.likedSet.has(item.id);
+
       const card = this.el("div", { className: "feedCard" }, [
         this.el("div", { className: "feedHeader" }, [
           this.el("div", { className: "feedUser" }, [
@@ -1509,19 +1485,16 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
         this.el("div", { className: "feedTitle", text: item.title }),
         this.el("div", { className: "feedActions" }, [
           this.el("div", {}, [
-            this.el("span", { className: `badge ${item.intensity === "hard" ? "red" : item.intensity === "medium" ? "orange" : "lime"}`, text: item.intensity.toUpperCase() })
+            this.el("span", { className: `badge ${item.intensity === "hard" ? "red" : item.intensity === "medium" ? "orange" : "lime"}`, text: String(item.intensity || "").toUpperCase() })
           ]),
           this.el("div", { style: { display: "flex", gap: "10px", alignItems: "center" } }, [
-            this.el("button", {
-              className: "kudosBtn" + (liked ? " liked" : ""),
-              text: (liked ? "💖" : "🤍") + " " + (item.kudos_count || 0)
-            }),
+            this.el("button", { className: "kudosBtn" + (liked ? " liked" : ""), text: (liked ? "💖" : "🤍") + " " + (item.kudos_count || 0) })
           ])
         ])
       ]);
 
       const kudosBtn = card.querySelector(".kudosBtn");
-      kudosBtn.addEventListener("click", () => this.toggleKudos(item.id));
+      if (kudosBtn) kudosBtn.addEventListener("click", () => this.toggleKudos(item.id));
 
       c.appendChild(card);
     });
@@ -1622,48 +1595,64 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
     this.hint("trophyHint", `${unlocked.size}/4 trophées débloqués.`, "ok");
   },
 
+  // ✅ REWRITE: Lucide icons (no emoji), no innerHTML, call refreshLucideIcons()
   renderTrophyWall(unlocked) {
     const c = this.$("trophyWall");
-    c.textContent = "";
-    Object.entries(BADGES).forEach(([key, badge]) => {
-      const unlockedAt = unlocked.get(key);
+    if (!c) return;
+    c.replaceChildren();
+
+    for (const [key, badge] of Object.entries(BADGES)) {
+      const unlockedAt = unlocked?.get?.(key);
       const isUnlocked = !!unlockedAt;
-      const card = this.el("div", { className: "trophyCard" + (isUnlocked ? " unlocked" : " locked") }, [
-        this.el("div", { className: "trophyIcon", text: badge.emoji }),
-        this.el("div", { className: "trophyInfo" }, [
-          this.el("div", { className: "trophyTitle", text: badge.title }),
-          this.el("div", { className: "trophyDesc", text: badge.desc }),
-          isUnlocked
-            ? this.el("div", { className: "trophyMeta", text: `Débloqué le ${new Date(unlockedAt).toLocaleDateString("fr-FR")}` })
-            : this.el("div", { className: "trophyMeta", text: "🔒 Non débloqué" })
-        ])
+
+      const card = this.el("div", { className: "trophyCard" + (isUnlocked ? " unlocked" : " locked") });
+
+      const iconWrap = this.el("div", { className: "trophyIcon" });
+      const icon = document.createElement("i");
+      icon.setAttribute("data-lucide", String(badge.icon || "award"));
+      icon.setAttribute("aria-hidden", "true");
+      iconWrap.appendChild(icon);
+
+      const info = this.el("div", { className: "trophyInfo" }, [
+        this.el("div", { className: "trophyTitle", text: badge.title }),
+        this.el("div", { className: "trophyDesc", text: badge.desc }),
+        isUnlocked
+          ? this.el("div", { className: "trophyMeta", text: `Débloqué le ${new Date(unlockedAt).toLocaleDateString("fr-FR")}` })
+          : this.el("div", { className: "trophyMeta", text: "🔒 Non débloqué" })
       ]);
+
+      card.appendChild(iconWrap);
+      card.appendChild(info);
       c.appendChild(card);
-    });
+    }
+
+    this.refreshLucideIcons();
   },
 
   showMealModal() {
-    this.$("mealModal").style.display = "block";
-    this.$("mealType").value = "Petit-déj";
-    this.$("mealDesc").value = "";
-    this.$("mealCal").value = "";
-    this.$("mealProt").value = "";
-    this.$("mealCarbs").value = "";
-    this.$("mealFats").value = "";
+    const mm = this.$("mealModal");
+    if (mm) mm.style.display = "block";
+    const t = this.$("mealType"); if (t) t.value = "Petit-déj";
+    const d = this.$("mealDesc"); if (d) d.value = "";
+    const c = this.$("mealCal");  if (c) c.value = "";
+    const p = this.$("mealProt"); if (p) p.value = "";
+    const carbs = this.$("mealCarbs"); if (carbs) carbs.value = "";
+    const f = this.$("mealFats"); if (f) f.value = "";
   },
 
   hideMealModal() {
-    this.$("mealModal").style.display = "none";
+    const mm = this.$("mealModal");
+    if (mm) mm.style.display = "none";
   },
 
   async saveMeal() {
     const meal = {
-      type: this.$("mealType").value,
-      desc: this.$("mealDesc").value.trim(),
-      cal: Number(this.$("mealCal").value) || 0,
-      prot: Number(this.$("mealProt").value) || 0,
-      carbs: Number(this.$("mealCarbs").value) || 0,
-      fats: Number(this.$("mealFats").value) || 0,
+      type: this.$("mealType")?.value || "",
+      desc: (this.$("mealDesc")?.value || "").trim(),
+      cal: Number(this.$("mealCal")?.value) || 0,
+      prot: Number(this.$("mealProt")?.value) || 0,
+      carbs: Number(this.$("mealCarbs")?.value) || 0,
+      fats: Number(this.$("mealFats")?.value) || 0,
       date: new Date().toISOString()
     };
     if (!meal.desc || meal.cal === 0) {
@@ -1682,17 +1671,20 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
     const totalCarbs = today.reduce((s, m) => s + m.carbs, 0);
     const totalFats = today.reduce((s, m) => s + m.fats, 0);
 
-    this.$("cal-total").textContent = totalCal;
-    this.$("macro-protein").textContent = totalProt + "g";
-    this.$("macro-carbs").textContent = totalCarbs;
-    this.$("macro-fats").textContent = totalFats;
+    const cal = this.$("cal-total"); if (cal) cal.textContent = String(totalCal);
+    const mp = this.$("macro-protein"); if (mp) mp.textContent = totalProt + "g";
+    const mc = this.$("macro-carbs"); if (mc) mc.textContent = String(totalCarbs);
+    const mf = this.$("macro-fats"); if (mf) mf.textContent = String(totalFats);
 
     const c = this.$("mealsContainer");
-    c.textContent = "";
+    if (!c) return;
+    c.replaceChildren();
+
     if (!today.length) {
       c.appendChild(this.el("div", { className: "empty", text: "Aucun repas enregistré aujourd'hui." }));
       return;
     }
+
     today.forEach(m => {
       const card = this.el("div", { className: "mealCard" }, [
         this.el("div", { className: "mealHeader" }, [
@@ -1713,13 +1705,13 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
       const weight = Number(this.profile.kpis.weight);
       const proteinTarget = Math.round(weight * 2);
       const calTarget = Math.round(weight * 30);
-      this.$("protein-target").textContent = proteinTarget;
-      this.$("cal-target").textContent = calTarget;
+      const pt = this.$("protein-target"); if (pt) pt.textContent = String(proteinTarget);
+      const ct = this.$("cal-target"); if (ct) ct.textContent = String(calTarget);
     }
   },
 
   initCharts() {
-    const ctx = this.$("chartVolume")?.getContext("2d");
+    const ctx = this.$("chartVolume")?.getContext?.("2d");
     if (!ctx) return;
 
     this.chartVolume = new Chart(ctx, {
@@ -1752,15 +1744,8 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
           }
         },
         scales: {
-          y: {
-            beginAtZero: true,
-            ticks: { color: "#a7adbd", font: { size: 11 } },
-            grid: { color: "rgba(255,255,255,.05)" }
-          },
-          x: {
-            ticks: { color: "#a7adbd", font: { size: 11 } },
-            grid: { display: false }
-          }
+          y: { beginAtZero: true, ticks: { color: "#a7adbd", font: { size: 11 } }, grid: { color: "rgba(255,255,255,.05)" } },
+          x: { ticks: { color: "#a7adbd", font: { size: 11 } }, grid: { display: false } }
         }
       }
     });
@@ -1814,6 +1799,9 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
   }
 };
 
+/* ============================================================
+   Boot
+   ============================================================ */
 document.addEventListener("DOMContentLoaded", () => App.init());
 
           
