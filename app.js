@@ -1,341 +1,330 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+async evaluateAchievements() {
+    // Client-side achievement evaluation (complémentaire aux triggers DB)
+    if (!this.user) return;
+    
+    // Check STREAK (3 jours consécutifs)
+    const threeDaysAgo = new Date(Date.now() - 3 * 864e5).toISOString();
+    const { data: recentWorkouts } = await this.supabase
+      .from("workouts")
+      .select("created_at")
+      .eq("user_id", this.user.id)
+      .gte("created_at", threeDaysAgo)
+      .order("created_at", { ascending: true });
 
-const CLIENT_TOKEN = "fitai-v18"; // doit matcher ton backend si tu l'as verrouillé
-
-const App = {
-  cfg: null,
-  supabase: null,
-  session: null,
-  user: null,
-  profile: { kpis: { recovery: 80, weight: 75, sleep: 7.5 } },
-
-  kpiSteps: { recovery: 1, weight: 0.5, sleep: 0.25 },
-  kpiSaveTimer: null,
-
-  $: (id) => document.getElementById(id),
-
-  el(tag, opts = {}, children = []) {
-    const n = document.createElement(tag);
-    if (opts.className) n.className = opts.className;
-    if (opts.type) n.type = opts.type;
-    if (opts.text != null) n.textContent = String(opts.text);
-    if (opts.attrs) for (const [k, v] of Object.entries(opts.attrs)) n.setAttribute(k, String(v));
-    for (const c of children) if (c) n.appendChild(c);
-    return n;
-  },
-
-  clamp(min, v, max) { return Math.max(min, Math.min(max, v)); },
-
-  async init() {
-    this.bindTabs();
-    this.bindUI();
-
-    this.cfg = await this.fetchConfig();
-    this.supabase = createClient(this.cfg.supabaseUrl, this.cfg.supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        storage: window.sessionStorage,
-        autoRefreshToken: true,
-        detectSessionInUrl: true
+    if (recentWorkouts && recentWorkouts.length >= 3) {
+      // Vérifier si c'est bien 3 jours différents
+      const uniqueDays = new Set(recentWorkouts.map(w => new Date(w.created_at).toDateString()));
+      if (uniqueDays.size >= 3) {
+        await this.supabase
+          .from("achievements")
+          .insert({ user_id: this.user.id, badge_type: "STREAK" })
+          .onConflict("user_id,badge_type")
+          .ignore();
       }
+    }
+
+    // Check MACHINE (3 séances Hard dans la semaine ISO)
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1); // Lundi
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const { data: hardWorkouts } = await this.supabase
+      .from("workouts")
+      .select("id")
+      .eq("user_id", this.user.id)
+      .eq("intensity", "hard")
+      .gte("created_at", startOfWeek.toISOString());
+
+    if (hardWorkouts && hardWorkouts.length >= 3) {
+      await this.supabase
+        .from("achievements")
+        .insert({ user_id: this.user.id, badge_type: "MACHINE" })
+        .onConflict("user_id,badge_type")
+        .ignore();
+    }
+
+    // Check CLOWN (Séance Light avec Recovery ≥ 90%)
+    if (this.profile?.kpis?.recovery >= 90) {
+      const { data: lightWorkouts } = await this.supabase
+        .from("workouts")
+        .select("id")
+        .eq("user_id", this.user.id)
+        .eq("intensity", "light")
+        .limit(1);
+
+      if (lightWorkouts && lightWorkouts.length > 0) {
+        await this.supabase
+          .from("achievements")
+          .insert({ user_id: this.user.id, badge_type: "CLOWN" })
+          .onConflict("user_id,badge_type")
+          .ignore();
+      }
+    }
+
+    // KUDOS_KING est géré par le trigger DB (auto-award à 11 kudos)
+  },
+
+  async refreshTrophies() {
+    if (!this.user) return this.renderTrophyWall(new Map());
+    
+    const { data, error } = await this.supabase
+      .from("achievements")
+      .select("badge_type,unlocked_at")
+      .eq("user_id", this.user.id);
+
+    if (error) {
+      console.error("Error loading trophies:", error);
+      this.hint("trophyHint", "Erreur lors du chargement des trophées.", "err");
+      return this.renderTrophyWall(new Map());
+    }
+
+    const unlocked = new Map((data || []).map(a => [a.badge_type, a.unlocked_at]));
+    this.renderTrophyWall(unlocked);
+    this.hint("trophyHint", `${unlocked.size}/4 trophées débloqués.`, "ok");
+  },
+
+  renderTrophyWall(unlocked) {
+    const c = this.$("trophyWall");
+    c.innerHTML = "";
+    
+    Object.entries(BADGES).forEach(([key, badge]) => {
+      const unlockedAt = unlocked.get(key);
+      const isUnlocked = !!unlockedAt;
+      
+      const card = this.el("div", { 
+        className: "trophyCard" + (isUnlocked ? " unlocked" : " locked") 
+      }, [
+        this.el("div", { className: "trophyIcon", text: badge.emoji }),
+        this.el("div", { className: "trophyInfo" }, [
+          this.el("div", { className: "trophyTitle", text: badge.title }),
+          this.el("div", { className: "trophyDesc", text: badge.desc }),
+          isUnlocked 
+            ? this.el("div", { 
+                className: "trophyMeta", 
+                text: `Débloqué le ${new Date(unlockedAt).toLocaleDateString("fr-FR")}` 
+              }) 
+            : this.el("div", { 
+                className: "trophyMeta", 
+                text: "🔒 Non débloqué" 
+              })
+        ])
+      ]);
+      c.appendChild(card);
     });
-
-    await this.initAuth();
-    this.setTab("dash");
-    this.renderKpis();
   },
 
-  bindTabs() {
-    this.$("tabBtnDash").addEventListener("click", () => this.setTab("dash"));
-    this.$("tabBtnCoach").addEventListener("click", () => this.setTab("coach"));
-    this.$("tabBtnProfile").addEventListener("click", () => this.setTab("profile"));
+  // ==================== NUTRITION ====================
+  showMealModal() {
+    this.$("mealModal").style.display = "block";
+    // Reset form
+    this.$("mealType").value = "Petit-déj";
+    this.$("mealDesc").value = "";
+    this.$("mealCal").value = "";
+    this.$("mealProt").value = "";
+    this.$("mealCarbs").value = "";
+    this.$("mealFats").value = "";
   },
 
-  setTab(tab) {
-    const show = (id, on) => { this.$(id).style.display = on ? "block" : "none"; };
-    show("tab-dash", tab === "dash");
-    show("tab-coach", tab === "coach");
-    show("tab-profile", tab === "profile");
+  hideMealModal() {
+    this.$("mealModal").style.display = "none";
+  },
 
-    const setActive = (btnId, on) => {
-      const b = this.$(btnId);
-      b.classList.toggle("active", on);
-      b.setAttribute("aria-selected", String(on));
+  async saveMeal() {
+    const meal = {
+      type: this.$("mealType").value,
+      desc: this.$("mealDesc").value.trim(),
+      cal: Number(this.$("mealCal").value) || 0,
+      prot: Number(this.$("mealProt").value) || 0,
+      carbs: Number(this.$("mealCarbs").value) || 0,
+      fats: Number(this.$("mealFats").value) || 0,
+      date: new Date().toISOString()
     };
-    setActive("tabBtnDash", tab === "dash");
-    setActive("tabBtnCoach", tab === "coach");
-    setActive("tabBtnProfile", tab === "profile");
-  },
 
-  bindUI() {
-    // KPI +/- buttons
-    document.querySelectorAll("button.kpiBtn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const key = btn.getAttribute("data-kpi");
-        const dir = Number(btn.getAttribute("data-dir") || "0");
-        if (!key || !dir) return;
-        this.adjustKpi(key, dir);
-      });
-    });
-
-    // Coach
-    this.$("btnCoachAsk").addEventListener("click", () => this.generateWorkout());
-
-    // RPE display
-    const rpe = this.$("rpeRange");
-    const rpeValue = this.$("rpeValue");
-    const syncRpe = () => { rpeValue.textContent = String(rpe.value); };
-    rpe.addEventListener("input", syncRpe);
-    syncRpe();
-
-    // Auth
-    this.$("btnMagicLink").addEventListener("click", () => this.sendMagicLink());
-    this.$("btnLogout").addEventListener("click", () => this.logout());
-  },
-
-  async fetchConfig() {
-    const r = await fetch("/api/workout?config=1", {
-      method: "GET",
-      headers: { "X-FitAI-Client": CLIENT_TOKEN }
-    });
-    if (!r.ok) {
-      const t = await r.text().catch(() => "");
-      throw new Error(`Config failed (${r.status}): ${t.slice(0, 160)}`);
-    }
-    const data = await r.json();
-    if (!data?.supabaseUrl || !data?.supabaseAnonKey) throw new Error("Invalid config payload.");
-    return data;
-  },
-
-  async initAuth() {
-    const { data } = await this.supabase.auth.getSession();
-    this.session = data.session || null;
-    this.user = this.session?.user || null;
-
-    this.supabase.auth.onAuthStateChange((_event, newSession) => {
-      this.session = newSession || null;
-      this.user = newSession?.user || null;
-      this.renderAuthStatus();
-    });
-
-    this.renderAuthStatus();
-  },
-
-  renderAuthStatus() {
-    this.$("authStatus").textContent = this.user
-      ? `Connecté : ${this.user.email || this.user.id}`
-      : "Non connecté";
-
-    this.$("morningBrief").textContent = this.user
-      ? "✅ Mode pro activé. Génère une séance propre."
-      : "Connecte-toi pour générer via backend (JWT).";
-  },
-
-  renderKpis() {
-    const k = this.profile.kpis;
-    this.$("val-recovery").textContent = `${Math.round(k.recovery)}%`;
-    this.$("val-weight").textContent = `${Number(k.weight).toFixed(1)}`;
-    this.$("val-sleep").textContent = `${Number(k.sleep).toFixed(2)}`;
-  },
-
-  adjustKpi(key, dir) {
-    const k = this.profile.kpis;
-    const step = Number(this.kpiSteps[key] || 1) * (dir > 0 ? 1 : -1);
-
-    if (key === "recovery") k.recovery = this.clamp(0, k.recovery + step, 100);
-    if (key === "weight") k.weight = this.clamp(0, Number((k.weight + step).toFixed(1)), 400);
-    if (key === "sleep") k.sleep = this.clamp(0, Number((k.sleep + step).toFixed(2)), 24);
-
-    this.renderKpis();
-
-    // optionnel : si tu as une table profiles.kpis, tu peux l'enregistrer ici en debounce
-    // (gardé “pro” et non intrusif : on ne force pas Supabase DB si tu n'as pas le schema)
-  },
-
-  hint(id, msg) {
-    const el = this.$(id);
-    el.textContent = msg;
-  },
-
-  loadingUI(container) {
-    container.replaceChildren();
-    container.appendChild(this.el("div", { className: "card" }, [
-      this.el("div", { className: "loadingRow" }, [
-        this.el("div", { className: "spinner" }),
-        this.el("div", { text: "L’IA analyse ton contexte…" })
-      ]),
-      this.el("div", { className: "hint", text: "On simule un délai minimum pour un feeling “premium”." }),
-      this.el("div", { className: "skeleton" }),
-      this.el("div", { className: "skeleton" }),
-      this.el("div", { className: "skeleton" })
-    ]));
-  },
-
-  coachNote(text) {
-    return this.el("div", { className: "coachNote" }, [
-      this.el("div", { className: "coachNoteHeader" }, [
-        this.el("span", { text: "🤖" }),
-        this.el("span", { text: "Note du coach" })
-      ]),
-      this.el("p", { className: "coachNoteBody", text })
-    ]);
-  },
-
-  badge(text, kind = "cyan") {
-    return this.el("span", { className: `badge ${kind}`, text });
-  },
-
-  exerciseCard(ex) {
-    const left = this.el("div");
-    const name = this.el("div", { className: "exName", text: String(ex?.name || "Exercice") });
-
-    const meta = this.el("div", { className: "exMeta" }, [
-      this.badge(String(ex?.muscle || "—"), "cyan"),
-      this.badge(`${Number(ex?.sets || 3)} x ${String(ex?.reps || "8-10")}`, "lime")
-    ]);
-
-    left.append(name, meta);
-
-    return this.el("div", { className: "exerciseCard" }, [left]);
-  },
-
-  renderProgram(container, program, overload) {
-    container.replaceChildren();
-
-    const wrap = this.el("div", { className: "card" });
-
-    const top = this.el("div");
-    top.style.display = "flex";
-    top.style.alignItems = "center";
-    top.style.justifyContent = "space-between";
-    top.style.gap = "10px";
-    top.style.flexWrap = "wrap";
-
-    const title = this.el("div", { text: String(program?.title || "Séance") });
-    title.style.fontWeight = "950";
-    title.style.textTransform = "uppercase";
-    title.style.letterSpacing = ".8px";
-    title.style.color = "rgba(255,255,255,.8)";
-    title.style.fontSize = "12px";
-
-    const intensity = String(program?.intensity || "moderate");
-    const badgeKind = intensity === "hard" ? "red" : (intensity === "light" ? "lime" : "cyan");
-    top.append(title, this.badge(intensity, badgeKind));
-
-    wrap.appendChild(top);
-
-    const noteLines = [];
-    if (program?.notes) noteLines.push(String(program.notes));
-    if (overload?.nextReps != null) {
-      noteLines.push(
-        `\nSurcharge auto: ${overload.prevReps} reps @ RPE ${overload.rpe} → prochaine cible: ${overload.nextReps} reps`
-      );
-    }
-    if (noteLines.length) wrap.appendChild(this.coachNote(noteLines.join("\n")));
-
-    const exs = Array.isArray(program?.exercises) ? program.exercises : [];
-    for (const ex of exs) wrap.appendChild(this.exerciseCard(ex));
-
-    container.appendChild(wrap);
-  },
-
-  async generateWorkout() {
-    const out = this.$("coachOutput");
-
-    if (!this.user || !this.session) {
-      out.replaceChildren(this.el("div", { className: "card" }, [
-        this.el("div", { className: "badge red", text: "Auth requise" }),
-        this.el("div", { className: "hint", text: "Connecte-toi (magic link) pour utiliser le backend sécurisé." })
-      ]));
-      this.setTab("profile");
+    if (!meal.desc || meal.cal === 0) {
+      alert("Description et calories obligatoires.");
       return;
     }
 
-    const prompt = (this.$("coachPrompt").value || "").trim() || "Séance adaptée à mon état du jour.";
-    const prevReps = Number(this.$("prevReps").value || "");
-    const rpe = Number(this.$("rpeRange").value || "8");
+    // Save to local state (in production, save to Supabase nutrition table)
+    this.meals.push(meal);
+    this.hideMealModal();
+    this.renderNutrition();
 
-    // Loading animation “premium”: minimum delay
-    this.$("btnCoachAsk").disabled = true;
-    this.$("btnCoachAsk").textContent = "Génération…";
-    this.loadingUI(out);
-
-    const minDelay = new Promise((res) => setTimeout(res, 900));
-
-    try {
-      const req = fetch("/api/workout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${this.session.access_token}`,
-          "X-FitAI-Client": CLIENT_TOKEN
-        },
-        body: JSON.stringify({
-          prompt,
-          kpis: this.profile.kpis,
-          overload: {
-            prevReps: Number.isFinite(prevReps) ? prevReps : null,
-            rpe: Number.isFinite(rpe) ? rpe : null
-          }
-        })
+    // TODO: Uncomment when nutrition table exists
+    /*
+    if (this.user) {
+      await this.supabase.from("nutrition_logs").insert({
+        user_id: this.user.id,
+        meal_type: meal.type,
+        description: meal.desc,
+        calories: meal.cal,
+        protein: meal.prot,
+        carbs: meal.carbs,
+        fats: meal.fats,
+        logged_at: meal.date
       });
+    }
+    */
+  },
 
-      const [r] = await Promise.all([req, minDelay]);
+  renderNutrition() {
+    const today = this.meals.filter(m => 
+      new Date(m.date).toDateString() === new Date().toDateString()
+    );
+    
+    const totalCal = today.reduce((s, m) => s + m.cal, 0);
+    const totalProt = today.reduce((s, m) => s + m.prot, 0);
+    const totalCarbs = today.reduce((s, m) => s + m.carbs, 0);
+    const totalFats = today.reduce((s, m) => s + m.fats, 0);
 
-      const ct = String(r.headers.get("Content-Type") || "");
-      const payload = ct.includes("application/json") ? await r.json().catch(() => null) : null;
+    // Update summary
+    this.$("cal-total").textContent = totalCal;
+    this.$("macro-protein").textContent = totalProt + "g";
+    this.$("macro-carbs").textContent = totalCarbs;
+    this.$("macro-fats").textContent = totalFats;
 
-      if (!r.ok) {
-        const msg = payload?.message || payload?.error || `Erreur HTTP ${r.status}`;
-        out.replaceChildren(this.el("div", { className: "card" }, [
-          this.el("div", { className: "badge red", text: "Erreur" }),
-          this.el("div", { className: "hint", text: String(msg) })
-        ]));
-        return;
-      }
+    // Render meal cards
+    const c = this.$("mealsContainer");
+    c.innerHTML = "";
+    
+    if (!today.length) {
+      c.appendChild(this.el("div", { 
+        className: "empty", 
+        text: "Aucun repas enregistré aujourd'hui. Clique sur '+ Ajouter un Repas'." 
+      }));
+      return;
+    }
 
-      const program = payload?.program;
-      const overloadResult = payload?.overload || null;
+    today.forEach((m, idx) => {
+      const card = this.el("div", { className: "mealCard" }, [
+        this.el("div", { className: "mealHeader" }, [
+          this.el("div", { className: "mealType", text: m.type }),
+          this.el("span", { className: "badge cyan", text: `${m.cal} kcal` })
+        ]),
+        this.el("div", { 
+          text: m.desc, 
+          style: { fontSize: "13px", color: "var(--muted)", marginBottom: "8px" } 
+        }),
+        this.el("div", { className: "mealMacros" }, [
+          this.el("span", { text: `P: ${m.prot}g` }),
+          this.el("span", { text: `G: ${m.carbs}g` }),
+          this.el("span", { text: `L: ${m.fats}g` })
+        ])
+      ]);
+      c.appendChild(card);
+    });
 
-      if (!program) {
-        out.replaceChildren(this.el("div", { className: "card" }, [
-          this.el("div", { className: "badge red", text: "Sortie invalide" }),
-          this.el("div", { className: "hint", text: "Le backend n’a pas renvoyé de programme." })
-        ]));
-        return;
-      }
-
-      this.renderProgram(out, program, overloadResult);
-    } catch (e) {
-      out.replaceChildren(this.el("div", { className: "card" }, [
-        this.el("div", { className: "badge red", text: "Crash" }),
-        this.el("div", { className: "hint", text: String(e?.message || e) })
-      ]));
-    } finally {
-      this.$("btnCoachAsk").disabled = false;
-      this.$("btnCoachAsk").textContent = "Générer";
+    // Auto-calculate target based on weight (if available)
+    if (this.profile?.kpis?.weight) {
+      const weight = Number(this.profile.kpis.weight);
+      const proteinTarget = Math.round(weight * 2); // 2g/kg pour muscle building
+      const calTarget = Math.round(weight * 30); // Approximation maintenance
+      this.$("protein-target").textContent = proteinTarget;
+      this.$("cal-target").textContent = calTarget;
     }
   },
 
-  async sendMagicLink() {
-    const email = (this.$("email").value || "").trim();
-    if (!email) return this.hint("profileHint", "Entre un email.");
+  // ==================== CHARTS ====================
+  initCharts() {
+    const ctx = this.$("chartVolume")?.getContext("2d");
+    if (!ctx) return;
 
-    this.hint("profileHint", "Envoi du magic link…");
-    const { error } = await this.supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin }
+    this.chartVolume = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: ["S-4", "S-3", "S-2", "S-1", "Maintenant"],
+        datasets: [{
+          label: "Volume (kg)",
+          data: [0, 0, 0, 0, 0],
+          borderColor: "#b7ff2a",
+          backgroundColor: "rgba(183,255,42,.10)",
+          tension: 0.4,
+          fill: true,
+          borderWidth: 3,
+          pointRadius: 5,
+          pointBackgroundColor: "#b7ff2a"
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { 
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: "rgba(0,0,0,.85)",
+            titleColor: "#b7ff2a",
+            bodyColor: "#fff",
+            borderColor: "#b7ff2a",
+            borderWidth: 1
+          }
+        },
+        scales: {
+          y: { 
+            beginAtZero: true, 
+            ticks: { color: "#a7adbd", font: { size: 11 } }, 
+            grid: { color: "rgba(255,255,255,.05)" } 
+          },
+          x: { 
+            ticks: { color: "#a7adbd", font: { size: 11 } }, 
+            grid: { display: false } 
+          }
+        }
+      }
     });
-    if (error) return this.hint("profileHint", error.message);
-    this.hint("profileHint", "Magic link envoyé. Vérifie ta boîte mail.");
+
+    // Load initial data
+    this.updateVolumeChart();
   },
 
-  async logout() {
-    await this.supabase.auth.signOut();
-    this.hint("profileHint", "Déconnecté.");
+  async updateVolumeChart() {
+    if (!this.chartVolume || !this.user) return;
+
+    // Fetch workout volume for last 5 weeks
+    const weeks = [];
+    const volumes = [];
+    
+    for (let i = 4; i >= 0; i--) {
+      const weekStart = new Date();
+      weekStart.setDate(weekStart.getDate() - (i * 7));
+      weekStart.setHours(0, 0, 0, 0);
+      
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      
+      const { data } = await this.supabase
+        .from("workouts")
+        .select("exercises")
+        .eq("user_id", this.user.id)
+        .gte("created_at", weekStart.toISOString())
+        .lt("created_at", weekEnd.toISOString());
+
+      // Calculate total volume (sets × reps × estimated weight)
+      let weekVolume = 0;
+      if (data) {
+        data.forEach(w => {
+          if (w.exercises && Array.isArray(w.exercises)) {
+            w.exercises.forEach(ex => {
+              // Estimation: volume = sets × moyenne(reps) × 50kg
+              const sets = ex.sets || 3;
+              const repsRange = String(ex.reps || "8-10").split("-");
+              const avgReps = repsRange.length === 2 
+                ? (Number(repsRange[0]) + Number(repsRange[1])) / 2 
+                : Number(repsRange[0]) || 8;
+              weekVolume += sets * avgReps * 50; // 50kg estimation moyenne
+            });
+          }
+        });
+      }
+      
+      weeks.push(i === 0 ? "Maintenant" : `S-${i}`);
+      volumes.push(Math.round(weekVolume));
+    }
+
+    this.chartVolume.data.labels = weeks;
+    this.chartVolume.data.datasets[0].data = volumes;
+    this.chartVolume.update();
   }
 };
 
-window.addEventListener("DOMContentLoaded", () => {
-  App.init().catch((e) => alert("Init error: " + String(e?.message || e)));
-});
+// ==================== APP INIT ====================
+document.addEventListener("DOMContentLoaded", () => App.init());
