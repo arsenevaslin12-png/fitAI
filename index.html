@@ -3,417 +3,580 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FitAI V18 Pro</title>
+  <title>FitAI V18 - Hardcore Friends Edition</title>
   <style>
     :root{
-      --bg:#0b0c0f;
-      --panel:#12131a;
-      --panel2:#0f1016;
-      --text:#f4f5f7;
-      --muted:#a7adbd;
-      --lime:#b7ff2a;
-      --cyan:#27d9ff;
-      --pink:#ff2bd6;
-      --red:#ff3b30;
-      --stroke:rgba(255,255,255,.08);
-      --radius:18px;
-      --shadow:0 18px 45px rgba(0,0,0,.45);
-      --t:.18s ease;
+      --bg:#0b0c0f; --panel:#12131a; --text:#f4f5f7; --muted:#a7adbd;
+      --lime:#b7ff2a; --indigo:#6b67ff; --cyan:#27d9ff; --red:#ff3b30; --pink:#ff2bd6;
+      --orange:#ff9f0a; --green:#34c759;
+      --stroke:rgba(255,255,255,.08); --radius:18px; --shadow:0 18px 45px rgba(0,0,0,.45);
     }
-    *{ box-sizing:border-box; }
+    *{ box-sizing:border-box; margin:0; padding:0; }
     body{
-      margin:0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background:
-        radial-gradient(circle at 25% -10%, rgba(183,255,42,.12), transparent 55%),
-        radial-gradient(circle at 80% 0%, rgba(39,217,255,.10), transparent 55%),
-        radial-gradient(circle at 70% 120%, rgba(255,43,214,.08), transparent 60%),
-        var(--bg);
-      color:var(--text);
-      -webkit-font-smoothing: antialiased;
-      overflow-x:hidden;
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 30% -10%, rgba(107,103,255,.15), transparent 50%), var(--bg);
+      color:var(--text); overflow-x:hidden; -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
     }
-
-    .app{ max-width: 1040px; margin: 0 auto; padding: 18px; }
-
+    .app{ max-width:1400px; margin:0 auto; padding:20px; }
+    
+    /* Header */
     header{
-      position: sticky; top: 10px; z-index: 50;
-      display:flex; justify-content:space-between; align-items:center; gap:12px;
-      padding: 14px;
-      border-radius: var(--radius);
-      border:1px solid var(--stroke);
-      background: rgba(255,255,255,.04);
-      backdrop-filter: blur(12px);
+      display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;
+      padding:16px 20px; background: rgba(255,255,255,.04);
+      border:1px solid var(--stroke); border-radius: var(--radius);
+      backdrop-filter: blur(12px); position: sticky; top: 10px; z-index: 100;
       box-shadow: var(--shadow);
-      transition: transform var(--t), border-color var(--t);
     }
-
-    .brand{
-      font-weight: 950;
-      letter-spacing: .8px;
-      display:flex;
-      align-items:baseline;
-      gap:10px;
-      user-select:none;
+    .brand{ 
+      font-weight: 950; letter-spacing: 1px; display:flex; gap:10px; align-items:baseline; 
+      font-size: 20px;
     }
-    .brand span{ color: var(--lime); }
-    .brand small{ color: rgba(255,255,255,.55); font-weight: 900; letter-spacing: .9px; }
-
-    .tabs{ display:flex; gap:8px; flex-wrap:wrap; }
+    .brand small{ color: rgba(255,255,255,.55); font-weight:900; letter-spacing: 1px; font-size: 11px; }
+    .tabs{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .tab{
-      padding: 10px 14px;
-      border-radius: 999px;
-      border:1px solid var(--stroke);
-      background: rgba(255,255,255,.02);
-      color: var(--text);
-      cursor:pointer;
-      font-weight: 950;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: .6px;
-      transition: transform var(--t), background var(--t), border-color var(--t), color var(--t);
+      padding:10px 18px; border-radius: 999px; border:1px solid var(--stroke);
+      background: transparent; color: var(--text); cursor:pointer;
+      font-size:12px; font-weight:950; text-transform:uppercase; transition:.2s;
+      letter-spacing: .5px;
     }
-    .tab:hover{ transform: translateY(-1px); }
-    .tab.active{
-      border-color: rgba(183,255,42,.55);
-      background: rgba(183,255,42,.10);
+    .tab.active{ background: rgba(183,255,42,.12); border-color: var(--lime); color: var(--lime); }
+    .tab:hover:not(.active){ background: rgba(255,255,255,.05); }
+
+    /* Cards */
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border:1px solid var(--stroke); border-radius: var(--radius);
+      padding:24px; margin-top:20px; box-shadow: var(--shadow);
+    }
+    .cardHeader{
+      display:flex; justify-content:space-between; align-items:center; gap:12px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .cardTitle{
+      font-size: 14px; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 1.2px; font-weight: 950;
+    }
+
+    /* Grid layouts */
+    .grid2{ display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:16px; }
+    .grid3{ display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:16px; }
+    .grid4{ display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px; }
+
+    /* KPI Cards */
+    .kpiCard{
+      padding: 20px; border-radius: 16px;
+      background: rgba(0,0,0,0.25);
+      border:1px solid rgba(255,255,255,.08);
+      display:flex; flex-direction:column; gap:12px;
+    }
+    .kpiLabel{
+      font-size: 11px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 1px; font-weight: 900;
+    }
+    .kpiValue{
+      font-size: 42px; font-weight: 950; letter-spacing: -2px;
+      line-height: 1;
+    }
+    .kpiControls{
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+    }
+    .kpiBtns{ display:flex; gap:8px; }
+    .kpiBtn{
+      width: 44px; height: 44px; border-radius: 12px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.04);
+      color: rgba(255,255,255,.92);
+      font-weight: 950; font-size: 20px;
+      cursor:pointer; transition: .15s;
+      user-select:none; display:flex; align-items:center; justify-content:center;
+    }
+    .kpiBtn:hover{ transform: translateY(-2px); background: rgba(255,255,255,.08); }
+    .kpiBtn:active{ transform: scale(.95); }
+    .kpiSub{
+      font-size: 11px; color: rgba(255,255,255,.55);
+      line-height: 1.4; margin-top:4px;
+    }
+
+    /* Stat Card */
+    .statCard{
+      background: rgba(0,0,0,.20); border:1px solid rgba(255,255,255,.08);
+      border-radius: 14px; padding:18px;
+      display:flex; flex-direction:column; gap:8px;
+    }
+    .statLabel{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.8px; font-weight:900; }
+    .statValue{ font-size:32px; font-weight:950; letter-spacing:-1px; line-height:1; }
+    .statTrend{
+      font-size:12px; font-weight:900; display:flex; align-items:center; gap:6px;
+      margin-top:4px;
+    }
+    .statTrend.up{ color:var(--green); }
+    .statTrend.down{ color:var(--red); }
+
+    /* Buttons */
+    .btn{
+      padding:13px 22px; border-radius: 14px; border:1px solid rgba(255,255,255,0.1);
+      font-weight:950; cursor:pointer; transition:.2s; text-transform: uppercase; font-size:12px;
+      display:inline-flex; align-items:center; justify-content:center; gap:10px;
+      background: rgba(255,255,255,.04); color: var(--text); user-select:none;
+      letter-spacing: .5px;
+    }
+    .btn.primary{ background: var(--lime); color:#000; border:none; }
+    .btn.indigo{ background: var(--indigo); color:#fff; border:none; }
+    .btn.pink{ background: rgba(255,43,214,.14); color: var(--pink); border: 1px solid rgba(255,43,214,.35); }
+    .btn.cyan{ background: rgba(39,217,255,.14); color: var(--cyan); border: 1px solid rgba(39,217,255,.35); }
+    .btn:disabled{ opacity:.5; cursor:not-allowed; }
+    .btn:hover:not(:disabled){ transform: translateY(-2px); }
+    .btn:active:not(:disabled){ transform: scale(.97); }
+
+    /* Inputs */
+    .input, .textarea, .select{
+      width:100%; padding:15px 18px; background: rgba(0,0,0,.35);
+      border:1px solid var(--stroke); color:#fff; border-radius: 12px; outline:none;
+      font-size: 14px; font-family: inherit;
+    }
+    .textarea{ resize:vertical; min-height:100px; line-height:1.5; }
+    .input:focus, .textarea:focus, .select:focus{ 
+      outline: 2px solid rgba(39,217,255,.40); outline-offset: 2px; 
+    }
+    .inputGroup{ display:flex; gap:12px; align-items:stretch; flex-wrap:wrap; }
+    .inputGroup > *{ flex:1; min-width:200px; }
+
+    /* Badges */
+    .badge{
+      font-size:10px; padding:6px 12px; border-radius: 999px; font-weight: 950;
+      background: rgba(255,255,255,.05); border:1px solid var(--stroke);
+      text-transform: uppercase; letter-spacing: .6px; display:inline-flex; align-items:center; gap:6px;
+    }
+    .badge.cyan{ color: var(--cyan); border-color: rgba(39,217,255,.35); background: rgba(39,217,255,.10); }
+    .badge.lime{ color: var(--lime); border-color: rgba(183,255,42,.35); background: rgba(183,255,42,.10); }
+    .badge.pink{ color: var(--pink); border-color: rgba(255,43,214,.35); background: rgba(255,43,214,.10); }
+    .badge.red{ color: var(--red); border-color: rgba(255,59,48,.35); background: rgba(255,59,48,.10); }
+    .badge.orange{ color: var(--orange); border-color: rgba(255,159,10,.35); background: rgba(255,159,10,.10); }
+
+    /* Chart Container */
+    .chartBox{
+      background: rgba(0,0,0,.20); border:1px solid rgba(255,255,255,.06);
+      border-radius: 14px; padding:20px; height:280px; position:relative;
+    }
+    .chartBox canvas{ max-height:100%; }
+
+    /* Roast Banner */
+    .roastBanner{
+      display:none; padding: 14px 18px; border-radius: 14px;
+      border: 1px solid rgba(255,59,48,.85); background: rgba(255,59,48,.15);
+      color: #fff; font-weight: 950; margin: 14px 0;
+      letter-spacing: .3px; line-height:1.4;
+    }
+    .roastBanner.on{ display:block; }
+
+    /* Coach Output */
+    .coachNote{
+      margin: 16px 0; padding: 18px; border-radius: 14px;
+      border: 1px solid var(--cyan); background: rgba(39,217,255,.06);
+    }
+    .coachNoteHeader{
+      display:flex; gap:10px; align-items:center; color: var(--cyan); 
+      font-weight:950; text-transform: uppercase; font-size: 12px; margin-bottom: 10px;
+      letter-spacing: .8px;
+    }
+    .coachNoteBody{ font-size: 14px; opacity: .92; white-space: pre-wrap; line-height:1.6; }
+    
+    .exerciseCard{
+      background: rgba(255,255,255,.03); border:1px solid var(--stroke);
+      border-radius: 15px; padding: 20px; margin-bottom: 14px;
+      display:flex; justify-content: space-between; align-items:center; gap: 16px;
+      flex-wrap:wrap;
+    }
+    .exerciseInfo{ flex:1; min-width:200px; }
+    .exerciseName{ font-weight:950; font-size:15px; margin-bottom:6px; letter-spacing:.3px; }
+    .exerciseSpecs{ font-size:13px; color:var(--muted); }
+    .exerciseRPE{
+      background:rgba(183,255,42,.12); border:1px solid rgba(183,255,42,.3);
+      color:var(--lime); padding:10px 16px; border-radius:12px;
+      font-weight:950; font-size:13px; text-align:center; min-width:80px;
+    }
+
+    /* Feed */
+    .feedCard{
+      border-radius: 18px; border: 1px solid rgba(39,217,255,.18);
+      background:
+        radial-gradient(circle at 20% 0%, rgba(39,217,255,.12), transparent 52%),
+        radial-gradient(circle at 80% 120%, rgba(255,43,214,.10), transparent 55%),
+        rgba(0,0,0,.20);
+      padding: 20px; box-shadow: 0 16px 40px rgba(0,0,0,.35);
+      display:flex; flex-direction: column; gap: 12px;
+    }
+    .feedHeader{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    .feedUser{
+      display:flex; align-items:center; gap:10px;
+      color: rgba(255,255,255,.85); font-size: 13px; font-weight: 950;
+    }
+    .feedBadges{ display:flex; gap:4px; font-size:16px; }
+    .feedTime{ color: rgba(255,255,255,.5); font-size: 11px; }
+    .feedTitle{ font-weight: 950; letter-spacing: .4px; font-size: 15px; line-height: 1.3; margin:8px 0; }
+    .feedActions{ display:flex; justify-content:space-between; align-items:center; gap: 12px; margin-top: 8px; }
+    .kudosBtn{
+      padding: 11px 14px; border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03);
+      color: rgba(255,255,255,.88); font-weight: 950; letter-spacing: .4px;
+      cursor: pointer; display:inline-flex; align-items:center; gap: 8px;
+      transition: .15s; font-size:13px;
+    }
+    .kudosBtn:hover{ transform: translateY(-1px); }
+    .kudosBtn.liked{
+      border-color: rgba(255,43,214,.45); background: rgba(255,43,214,.14);
+      color: var(--pink);
+    }
+
+    /* Trophy */
+    .trophyCard{
+      border-radius: 16px; border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.22); padding: 18px;
+      display:flex; gap: 14px; align-items:flex-start;
+    }
+    .trophyIcon{
+      width: 48px; height: 48px; border-radius: 14px;
+      display:flex; align-items:center; justify-content:center;
+      border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.04);
+      font-size: 22px; flex: 0 0 auto;
+    }
+    .trophyInfo{ flex:1; }
+    .trophyTitle{ font-weight: 950; font-size: 13px; letter-spacing: .8px; text-transform: uppercase; }
+    .trophyDesc{ margin-top: 6px; font-size: 12px; color: rgba(255,255,255,.70); line-height: 1.4; }
+    .trophyMeta{ margin-top: 8px; font-size: 11px; color: rgba(255,255,255,.52); }
+    .trophyCard.locked{ opacity: .60; }
+    .trophyCard.unlocked{
+      border-color: rgba(183,255,42,.25);
+      box-shadow: 0 0 0 1px rgba(183,255,42,.12) inset;
+    }
+
+    /* Nutrition Log */
+    .mealCard{
+      background: rgba(0,0,0,.20); border:1px solid rgba(255,255,255,.08);
+      border-radius: 14px; padding:18px; margin-bottom:12px;
+    }
+    .mealHeader{
+      display:flex; justify-content:space-between; align-items:center; gap:12px;
+      margin-bottom:10px;
+    }
+    .mealType{ font-weight:950; font-size:14px; letter-spacing:.5px; text-transform:uppercase; }
+    .mealMacros{
+      display:flex; gap:16px; font-size:12px; color:var(--muted);
+    }
+    .mealMacros span{ font-weight:950; }
+
+    /* Heatmap */
+    .heatmap{
+      display:grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap:6px;
+      margin-top:12px;
+    }
+    .heatmapDay{
+      aspect-ratio: 1;
+      border-radius: 6px;
+      background: rgba(255,255,255,.04);
+      border:1px solid rgba(255,255,255,.06);
+      display:flex; align-items:center; justify-content:center;
+      font-size:10px; font-weight:900;
+      color: rgba(255,255,255,.5);
+    }
+    .heatmapDay.active{
+      background: rgba(183,255,42,.15);
+      border-color: rgba(183,255,42,.35);
       color: var(--lime);
     }
 
-    .card{
-      margin-top: 14px;
-      padding: 18px;
-      border-radius: var(--radius);
-      border:1px solid var(--stroke);
-      background:
-        linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
-      box-shadow: var(--shadow);
-      transition: transform var(--t), border-color var(--t), background var(--t);
-    }
-    .card:hover{ transform: translateY(-1px); border-color: rgba(255,255,255,.12); }
-
-    .grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
-
-    .pill{ color: rgba(255,255,255,.65); font-size: 12px; font-weight: 850; }
-
-    .btn{
-      padding: 12px 16px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.10);
-      background: rgba(255,255,255,.03);
-      color: var(--text);
-      font-weight: 950;
-      letter-spacing: .5px;
-      text-transform: uppercase;
-      font-size: 11px;
-      cursor:pointer;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      gap:8px;
-      transition: transform var(--t), box-shadow var(--t), background var(--t), border-color var(--t), color var(--t), opacity var(--t);
-      user-select:none;
-      touch-action: manipulation;
-    }
-    .btn:hover{ transform: translateY(-1px); border-color: rgba(255,255,255,.18); }
-    .btn:active{ transform: translateY(0px) scale(.99); }
-    .btn:disabled{ opacity:.6; cursor:not-allowed; }
-
-    .btn.primary{
-      background: var(--lime);
-      color: #000;
-      border: none;
-      box-shadow: 0 10px 25px rgba(183,255,42,.18);
-    }
-    .btn.primary:hover{ box-shadow: 0 12px 30px rgba(183,255,42,.22); }
-
-    .btn.ghost{
-      border-color: rgba(39,217,255,.22);
-      background: rgba(39,217,255,.06);
-      color: rgba(39,217,255,.95);
-    }
-
-    .input{
-      width:100%;
-      padding: 14px;
-      border-radius: 14px;
-      border: 1px solid var(--stroke);
-      background: rgba(0,0,0,.28);
-      color: var(--text);
-      outline: none;
-      transition: border-color var(--t), box-shadow var(--t);
-    }
-    .input:focus{
-      border-color: rgba(39,217,255,.35);
-      box-shadow: 0 0 0 3px rgba(39,217,255,.12);
-    }
-    .hint{ color: var(--muted); font-size: 12px; line-height: 1.4; margin-top: 10px; }
-
-    /* KPI mobile +/- */
-    .kpiCard{
-      padding: 14px;
-      border-radius: 16px;
-      border: 1px solid rgba(255,255,255,.08);
-      background: rgba(0,0,0,.18);
-      transition: transform var(--t), border-color var(--t), background var(--t);
-    }
-    .kpiCard:hover{ transform: translateY(-1px); border-color: rgba(255,255,255,.14); }
-    .kpiLabel{
-      font-size: 10px;
-      color: rgba(255,255,255,.55);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      font-weight: 950;
-    }
-    .kpiRow{
-      margin-top: 10px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-    }
-    .kpiVal{
-      min-width: 120px;
-      text-align:center;
-      font-size: 34px;
-      font-weight: 950;
-      letter-spacing: -1px;
-    }
-    .kpiBtns{ display:flex; gap:10px; }
-    .kpiBtn{
-      width: 44px;
-      height: 44px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.10);
-      background: rgba(255,255,255,.03);
-      color: rgba(255,255,255,.92);
-      font-weight: 950;
-      font-size: 18px;
-      cursor:pointer;
-      transition: transform var(--t), border-color var(--t), background var(--t);
-    }
-    .kpiBtn:hover{ transform: translateY(-1px); border-color: rgba(183,255,42,.30); }
-    .kpiBtn:active{ transform: translateY(0px) scale(.99); }
-
-    /* Badges / chips */
-    .badge{
-      font-size: 10px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      font-weight: 950;
-      letter-spacing: .6px;
-      text-transform: uppercase;
-      border: 1px solid rgba(255,255,255,.10);
-      background: rgba(255,255,255,.03);
-      color: rgba(255,255,255,.75);
-    }
-    .badge.cyan{ border-color: rgba(39,217,255,.28); background: rgba(39,217,255,.06); color: rgba(39,217,255,.95); }
-    .badge.lime{ border-color: rgba(183,255,42,.28); background: rgba(183,255,42,.06); color: rgba(183,255,42,.95); }
-    .badge.red{ border-color: rgba(255,59,48,.28); background: rgba(255,59,48,.08); color: rgba(255,59,48,.95); }
-
-    /* Loader + skeleton */
-    .loadingRow{
-      display:flex; align-items:center; gap: 10px;
-      padding: 12px 14px;
-      border-radius: 14px;
-      border: 1px solid var(--stroke);
-      background: rgba(0,0,0,.16);
-    }
+    /* Utils */
+    .hint{ color: var(--muted); font-size: 12px; margin-top: 10px; line-height: 1.4; }
+    .hr{ border:none; border-top:1px solid var(--stroke); margin: 20px 0; }
     .spinner{
-      width: 16px; height: 16px; border-radius: 999px;
-      border: 2px solid rgba(255,255,255,.22);
-      border-top-color: var(--lime);
-      animation: spin .85s linear infinite;
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.25);
+      border-top-color: var(--cyan);
+      animation: spin .9s linear infinite;
     }
     @keyframes spin{ to{ transform: rotate(360deg); } }
-
-    .skeleton{
-      position: relative;
-      overflow:hidden;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.08);
-      background: rgba(255,255,255,.04);
-      height: 78px;
-    }
-    .skeleton::after{
-      content:"";
-      position:absolute;
-      inset:0;
-      transform: translateX(-100%);
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
-      animation: shimmer 1.1s ease-in-out infinite;
-    }
-    @keyframes shimmer{
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(100%); }
+    
+    .pill{ 
+      font-size: 11px; color: rgba(255,255,255,.65); 
+      padding:6px 12px; background:rgba(0,0,0,.25); 
+      border-radius:999px; border:1px solid rgba(255,255,255,.08);
     }
 
-    .coachNote{
-      margin: 14px 0 16px;
-      padding: 14px;
-      border-radius: 16px;
-      border: 1px solid rgba(39,217,255,.40);
-      background: rgba(39,217,255,.06);
-      transition: border-color var(--t), transform var(--t);
-    }
-    .coachNote:hover{ transform: translateY(-1px); border-color: rgba(39,217,255,.55); }
-    .coachNoteHeader{
-      display:flex; align-items:center; gap:8px;
-      font-weight: 950;
-      color: rgba(39,217,255,.95);
-      text-transform: uppercase;
-      font-size: 11px;
-      letter-spacing: .6px;
-      margin-bottom: 8px;
-    }
-    .coachNoteBody{
-      margin:0;
-      font-size: 13px;
-      color: rgba(255,255,255,.88);
-      white-space: pre-wrap;
-      line-height: 1.4;
+    .empty{
+      text-align:center; padding:40px 20px;
+      color:var(--muted); font-size:14px;
     }
 
-    .exerciseCard{
-      padding: 16px;
-      border-radius: 16px;
-      border: 1px solid rgba(255,255,255,.08);
-      background: rgba(0,0,0,.16);
-      display:flex;
-      justify-content: space-between;
-      align-items:center;
-      gap: 14px;
-      transition: transform var(--t), border-color var(--t), background var(--t);
-      margin-bottom: 12px;
-    }
-    .exerciseCard:hover{ transform: translateY(-1px); border-color: rgba(183,255,42,.18); }
-    .exName{ font-weight: 950; font-size: 15px; letter-spacing: .2px; }
-    .exMeta{ margin-top: 8px; display:flex; gap:8px; flex-wrap:wrap; }
-    .hr{ border:none; border-top:1px solid var(--stroke); margin: 18px 0; }
-
-    .row{
-      display:flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      align-items:center;
-    }
-
-    .rpe{
-      display:flex;
-      gap: 10px;
-      align-items:center;
-      flex-wrap: wrap;
-    }
-
-    input[type="range"]{
-      width: 210px;
-      accent-color: var(--lime);
+    /* Responsive */
+    @media (max-width: 768px){
+      .app{ padding:12px; }
+      header{ padding:12px; top:8px; }
+      .brand{ font-size:16px; }
+      .tabs{ width:100%; }
+      .tab{ flex:1; min-width:80px; text-align:center; padding:8px 12px; }
+      .grid2, .grid3, .grid4{ grid-template-columns: 1fr; }
+      .kpiValue{ font-size:36px; }
+      .statValue{ font-size:28px; }
     }
   </style>
 </head>
 <body>
   <div class="app">
     <header>
-      <div class="brand">FITAI <span>V18</span> <small>PRO</small></div>
-      <div class="tabs" role="tablist" aria-label="Navigation">
-        <button class="tab active" id="tabBtnDash" type="button" role="tab" aria-selected="true">Dashboard</button>
-        <button class="tab" id="tabBtnCoach" type="button" role="tab" aria-selected="false">Coach</button>
-        <button class="tab" id="tabBtnProfile" type="button" role="tab" aria-selected="false">Profil</button>
+      <div class="brand">FITAI <span style="color:var(--lime)">V18</span> <small>HARDCORE FRIENDS</small></div>
+      <div class="tabs" role="tablist">
+        <button class="tab active" id="tabBtnDash" type="button">Dashboard</button>
+        <button class="tab" id="tabBtnCoach" type="button">Coach IA</button>
+        <button class="tab" id="tabBtnNutrition" type="button">Nutrition</button>
+        <button class="tab" id="tabBtnCommunity" type="button">Communauté</button>
+        <button class="tab" id="tabBtnProfile" type="button">Profil</button>
       </div>
     </header>
 
-    <!-- Dashboard -->
-    <section id="tab-dash" role="tabpanel" aria-label="Dashboard">
-      <div class="card">
-        <div class="pill" id="authStatus">Connexion : …</div>
-        <div id="morningBrief" style="margin-top:10px; font-weight:950; color: rgba(183,255,42,.95);">—</div>
+    <!-- DASHBOARD -->
+    <section id="tab-dash" role="tabpanel">
+      <div id="authStatus" class="pill" style="margin-top:20px;">Connexion : …</div>
 
-        <div class="grid" style="margin-top:14px;">
+      <div id="roastBanner" class="roastBanner"></div>
+
+      <div class="card">
+        <div class="cardHeader">
+          <h2 class="cardTitle">Vue d'ensemble</h2>
+          <div id="morningBrief" style="color:var(--lime); font-weight:950; font-size:13px;">—</div>
+        </div>
+
+        <div class="grid3" style="margin-bottom:24px;">
           <div class="kpiCard">
             <div class="kpiLabel">Récupération</div>
-            <div class="kpiRow">
+            <div class="kpiValue" id="val-recovery">--</div>
+            <div class="kpiControls">
               <div class="kpiBtns">
-                <button class="kpiBtn" type="button" data-kpi="recovery" data-dir="-1" aria-label="Diminuer la récupération">−</button>
-                <button class="kpiBtn" type="button" data-kpi="recovery" data-dir="1" aria-label="Augmenter la récupération">+</button>
+                <button class="kpiBtn" data-kpi="recovery" data-dir="-1">−</button>
+                <button class="kpiBtn" data-kpi="recovery" data-dir="1">+</button>
               </div>
-              <div class="kpiVal" id="val-recovery">--</div>
             </div>
-            <div class="hint">Step: 1%</div>
+            <div class="kpiSub">Honnêteté = résultats. Mentir ici = mentir au futur toi.</div>
           </div>
 
           <div class="kpiCard">
             <div class="kpiLabel">Poids (kg)</div>
-            <div class="kpiRow">
+            <div class="kpiValue" id="val-weight">--</div>
+            <div class="kpiControls">
               <div class="kpiBtns">
-                <button class="kpiBtn" type="button" data-kpi="weight" data-dir="-1" aria-label="Diminuer le poids">−</button>
-                <button class="kpiBtn" type="button" data-kpi="weight" data-dir="1" aria-label="Augmenter le poids">+</button>
+                <button class="kpiBtn" data-kpi="weight" data-dir="-1">−</button>
+                <button class="kpiBtn" data-kpi="weight" data-dir="1">+</button>
               </div>
-              <div class="kpiVal" id="val-weight">--</div>
             </div>
-            <div class="hint">Step: 0.5kg</div>
+            <div class="kpiSub">Pas de drama. Juste un chiffre, juste une tendance.</div>
           </div>
 
           <div class="kpiCard">
             <div class="kpiLabel">Sommeil (h)</div>
-            <div class="kpiRow">
+            <div class="kpiValue" id="val-sleep">--</div>
+            <div class="kpiControls">
               <div class="kpiBtns">
-                <button class="kpiBtn" type="button" data-kpi="sleep" data-dir="-1" aria-label="Diminuer le sommeil">−</button>
-                <button class="kpiBtn" type="button" data-kpi="sleep" data-dir="1" aria-label="Augmenter le sommeil">+</button>
+                <button class="kpiBtn" data-kpi="sleep" data-dir="-1">−</button>
+                <button class="kpiBtn" data-kpi="sleep" data-dir="1">+</button>
               </div>
-              <div class="kpiVal" id="val-sleep">--</div>
             </div>
-            <div class="hint">Step: 0.25h</div>
+            <div class="kpiSub">Le sommeil, c'est ton dopage légal.</div>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <h3 class="cardTitle" style="margin-bottom:14px;">Statistiques 7 jours</h3>
+            <div class="grid2" style="grid-template-columns:1fr 1fr;">
+              <div class="statCard">
+                <div class="statLabel">Séances</div>
+                <div class="statValue" id="stat-workouts">0</div>
+                <div class="statTrend up" id="stat-workouts-trend">
+                  <span>↗</span> <span>+0%</span>
+                </div>
+              </div>
+              <div class="statCard">
+                <div class="statLabel">Volume (kg)</div>
+                <div class="statValue" id="stat-volume">0</div>
+                <div class="statTrend" id="stat-volume-trend">
+                  <span>→</span> <span>+0%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 class="cardTitle" style="margin-bottom:14px;">Activité (28 derniers jours)</h3>
+            <div class="heatmap" id="activityHeatmap"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cardHeader">
+          <h2 class="cardTitle">Progression Volume</h2>
+        </div>
+        <div class="chartBox">
+          <canvas id="chartVolume"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="cardTitle" style="margin-bottom:16px;">Mes dernières séances</h2>
+        <div id="recentWorkouts"></div>
+      </div>
+    </section>
+
+    <!-- COACH IA -->
+    <section id="tab-coach" role="tabpanel" style="display:none;">
+      <div class="card">
+        <h2 class="cardTitle" style="margin-bottom:16px;">Générateur de Séance IA</h2>
+        <textarea id="coachPrompt" class="textarea" placeholder="Ex: 45min full-body, focus jambes + fessiers, RPE 7-8, j'ai haltères + barre..."></textarea>
+        <button class="btn primary" id="btnCoachAsk" style="width:100%; margin-top: 16px; font-size:14px;">
+          🤖 Générer la Séance
+        </button>
+        <div class="hint" id="coachHint">Le Coach analyse tes KPIs et ton historique pour calibrer l'intensité.</div>
+      </div>
+      <div id="coachOutput"></div>
+    </section>
+
+    <!-- NUTRITION -->
+    <section id="tab-nutrition" role="tabpanel" style="display:none;">
+      <div class="card">
+        <div class="cardHeader">
+          <h2 class="cardTitle">Journal Alimentaire</h2>
+          <button class="btn cyan" id="btnAddMeal">+ Ajouter un Repas</button>
+        </div>
+
+        <div id="nutritionSummary" class="grid3" style="margin-bottom:24px;">
+          <div class="statCard">
+            <div class="statLabel">Calories</div>
+            <div class="statValue" id="cal-total">0</div>
+            <div style="font-size:11px; color:var(--muted); margin-top:6px;">Objectif: <span id="cal-target">2200</span> kcal</div>
+          </div>
+          <div class="statCard">
+            <div class="statLabel">Protéines</div>
+            <div class="statValue" id="macro-protein">0g</div>
+            <div style="font-size:11px; color:var(--muted); margin-top:6px;">Objectif: <span id="protein-target">150</span>g</div>
+          </div>
+          <div class="statCard">
+            <div class="statLabel">Glucides / Lipides</div>
+            <div class="statValue" style="font-size:20px;"><span id="macro-carbs">0</span>g / <span id="macro-fats">0</span>g</div>
+          </div>
+        </div>
+
+        <div id="mealsContainer"></div>
+
+        <div class="hint">
+          💡 <strong>Pro Tip :</strong> 1g protéines/kg de poids de corps minimum. Le reste, adapte selon ton objectif (cut/bulk).
+        </div>
+      </div>
+
+      <!-- Modal Add Meal (simplified inline) -->
+      <div id="mealModal" style="display:none;">
+        <div class="card">
+          <h3 class="cardTitle" style="margin-bottom:16px;">Nouveau Repas</h3>
+          <div class="inputGroup">
+            <select id="mealType" class="select">
+              <option>Petit-déj</option>
+              <option>Déjeuner</option>
+              <option>Dîner</option>
+              <option>Snack</option>
+            </select>
+          </div>
+          <input id="mealDesc" class="input" style="margin-top:12px;" placeholder="Description (ex: Poulet riz brocoli)" />
+          <div class="inputGroup" style="margin-top:12px;">
+            <input id="mealCal" class="input" type="number" placeholder="Calories" />
+            <input id="mealProt" class="input" type="number" placeholder="Protéines (g)" />
+            <input id="mealCarbs" class="input" type="number" placeholder="Glucides (g)" />
+            <input id="mealFats" class="input" type="number" placeholder="Lipides (g)" />
+          </div>
+          <div style="display:flex; gap:12px; margin-top:16px;">
+            <button class="btn primary" id="btnSaveMeal" style="flex:1;">Sauvegarder</button>
+            <button class="btn" id="btnCancelMeal" style="flex:1;">Annuler</button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Coach -->
-    <section id="tab-coach" role="tabpanel" aria-label="Coach" style="display:none;">
+    <!-- COMMUNAUTÉ -->
+    <section id="tab-community" role="tabpanel" style="display:none;">
       <div class="card">
-        <div class="row">
-          <input id="coachPrompt" class="input" type="text" placeholder="Ex: 45min full-body, focus jambes…" aria-label="Demande au coach" />
-          <button class="btn primary" id="btnCoachAsk" type="button" aria-label="Générer une séance">
-            Générer
-          </button>
-        </div>
-
-        <hr class="hr" />
-
-        <div class="row" aria-label="Moteur de surcharge">
-          <div class="badge cyan">Surcharge auto</div>
-          <div class="hint" style="margin:0;">Renseigne ta perf précédente (reps) + RPE : le backend calcule la prochaine cible.</div>
-        </div>
-
-        <div class="row" style="margin-top:10px;">
-          <input id="prevReps" class="input" type="number" inputmode="numeric" min="1" step="1" placeholder="Reps précédentes (ex: 10)" style="max-width:260px;" aria-label="Reps précédentes" />
-          <div class="rpe">
-            <label class="pill" for="rpeRange">RPE</label>
-            <input id="rpeRange" type="range" min="6" max="10" step="0.5" value="8" aria-label="RPE" />
-            <span class="badge lime" id="rpeValue">8</span>
+        <div class="cardHeader">
+          <div>
+            <h2 class="cardTitle">Flux Public (avec Trophées)</h2>
+            <div class="hint" style="margin-top:6px;">
+              Les séances publiques + badges. Kudos = like (anti-auto-like).
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button class="btn pink" id="btnRefreshFeed">🔄 Rafraîchir</button>
+            <div id="feedStatus" class="pill">—</div>
           </div>
         </div>
-
-        <div class="hint" id="coachHint">Astuce: RPE &lt; 8 → +10% reps | RPE = 10 → -5% reps | sinon stable</div>
+        <div id="feedContainer" class="grid3" style="margin-top:20px;"></div>
       </div>
-
-      <div id="coachOutput" style="margin-top:14px;"></div>
     </section>
 
-    <!-- Profile -->
-    <section id="tab-profile" role="tabpanel" aria-label="Profil" style="display:none;">
+    <!-- PROFIL -->
+    <section id="tab-profile" role="tabpanel" style="display:none;">
       <div class="card">
-        <div class="badge cyan">Auth Supabase</div>
-        <div class="row" style="margin-top:12px;">
-          <input id="email" class="input" type="email" placeholder="Email" style="flex:1; min-width:220px;" aria-label="Email" />
-          <button class="btn ghost" id="btnMagicLink" type="button" aria-label="Envoyer un magic link">Magic Link</button>
-          <button class="btn" id="btnLogout" type="button" aria-label="Se déconnecter">Logout</button>
+        <h2 class="cardTitle" style="margin-bottom:16px;">Authentification</h2>
+        <div class="inputGroup">
+          <input id="email" class="input" type="email" placeholder="Email" style="flex:2;" />
+          <button class="btn indigo" id="btnMagicLink">📧 Magic Link</button>
+          <button class="btn" id="btnLogout">Logout</button>
         </div>
         <div class="hint" id="profileHint">—</div>
+      </div>
+
+      <div class="card">
+        <h2 class="cardTitle" style="margin-bottom:16px;">Profil Public</h2>
+        <div class="inputGroup">
+          <input id="displayName" class="input" type="text" placeholder="Ton prénom (affiché dans le feed)" style="flex:2;" />
+          <button class="btn pink" id="btnSaveName">💾 Sauvegarder</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="cardTitle" style="margin-bottom:16px;">Mon Matériel</h2>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:16px;">
+          <label style="display:flex; gap:10px; align-items:center; padding:12px; border:1px solid var(--stroke); border-radius:12px; background:rgba(0,0,0,.18); cursor:pointer;">
+            <input type="checkbox" id="eqDumbbells" />
+            <span style="font-weight:900; font-size:13px;">🏋️ Haltères</span>
+          </label>
+          <label style="display:flex; gap:10px; align-items:center; padding:12px; border:1px solid var(--stroke); border-radius:12px; background:rgba(0,0,0,.18); cursor:pointer;">
+            <input type="checkbox" id="eqBarbell" />
+            <span style="font-weight:900; font-size:13px;">💪 Barre</span>
+          </label>
+          <label style="display:flex; gap:10px; align-items:center; padding:12px; border:1px solid var(--stroke); border-radius:12px; background:rgba(0,0,0,.18); cursor:pointer;">
+            <input type="checkbox" id="eqBodyweight" />
+            <span style="font-weight:900; font-size:13px;">🤸 Poids du corps</span>
+          </label>
+          <label style="display:flex; gap:10px; align-items:center; padding:12px; border:1px solid var(--stroke); border-radius:12px; background:rgba(0,0,0,.18); cursor:pointer;">
+            <input type="checkbox" id="eqMachines" />
+            <span style="font-weight:900; font-size:13px;">⚙️ Machines</span>
+          </label>
+        </div>
+        <button class="btn primary" id="btnSaveEquipment">💾 Sauvegarder</button>
+      </div>
+
+      <div class="card">
+        <div class="cardHeader">
+          <div>
+            <h2 class="cardTitle">Mur des Trophées</h2>
+            <div class="hint" id="trophyHint" style="margin-top:6px;">—</div>
+          </div>
+          <button class="btn pink" id="btnRefreshTrophies">🔄 Rafraîchir</button>
+        </div>
+        <div id="trophyWall" class="grid3" style="margin-top:16px;"></div>
       </div>
     </section>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>
