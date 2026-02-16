@@ -1,5 +1,3 @@
-// OÙ COLLER : api/bodyscan.js
-
 const { Buffer } = require("node:buffer");
 const { createClient } = require("@supabase/supabase-js");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
@@ -9,6 +7,7 @@ const MODEL = "gemini-1.5-flash";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+const JSON_BODY_LIMIT = 256 * 1024; // 256KB
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -30,29 +29,50 @@ function getBearerToken(req) {
   return token || null;
 }
 
-function parseBody(req) {
-  const b = req.body;
-  if (!b) return null;
-  if (typeof b === "object") return b;
-  if (typeof b === "string") {
-    try { return JSON.parse(b); } catch { return null; }
-  }
-  return null;
-}
-
 function withTimeout(promise, ms, label) {
   let t;
   const timeout = new Promise((_, reject) => {
-    t = setTimeout(
-      () => reject(Object.assign(new Error(label || "TIMEOUT"), { code: "TIMEOUT" })),
-      ms
-    );
+    t = setTimeout(() => reject(Object.assign(new Error(label || "TIMEOUT"), { code: "TIMEOUT" })), ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
 }
 
+async function readJsonBody(req) {
+  // If a platform already parsed it
+  if (req.body && typeof req.body === "object") return req.body;
+
+  const ct = String(req.headers?.["content-type"] || "");
+  const isJson = ct.includes("application/json") || ct.includes("+json");
+  if (!isJson) return null;
+
+  const chunks = [];
+  let total = 0;
+
+  await new Promise((resolve, reject) => {
+    req.on("data", (c) => {
+      total += c.length;
+      if (total > JSON_BODY_LIMIT) {
+        reject(Object.assign(new Error("BODY_TOO_LARGE"), { code: "BODY_TOO_LARGE" }));
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", resolve);
+    req.on("error", reject);
+  });
+
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 function inferMimeType(imagePath, blobType) {
-  const t = (blobType || "").toLowerCase();
+  const t = String(blobType || "").toLowerCase();
   if (t.startsWith("image/")) return t;
 
   const p = String(imagePath || "").toLowerCase();
@@ -60,6 +80,10 @@ function inferMimeType(imagePath, blobType) {
   if (p.endsWith(".jpg") || p.endsWith(".jpeg")) return "image/jpeg";
   if (p.endsWith(".webp")) return "image/webp";
   return "image/jpeg";
+}
+
+function isAllowedMime(mime) {
+  return ALLOWED_MIME.has(String(mime || "").toLowerCase());
 }
 
 function extractFirstJsonObject(text) {
@@ -99,17 +123,12 @@ function normalizePayload(obj) {
   };
 }
 
-function isAllowedMime(mime) {
-  const m = String(mime || "").toLowerCase();
-  return ALLOWED_MIME.has(m);
-}
-
 function buildVisionPrompt() {
   return [
     "Tu es FitAI Vision Coach (analyse body scan).",
     "Tu dois répondre UNIQUEMENT avec du JSON STRICT, sans markdown, sans texte avant/après.",
     "",
-    "Analyse cette photo de body scan: symétrie, posture, proportions, masse apparente, niveau de sèche estimé (proxy).",
+    "Analyse cette photo: symétrie, posture, proportions, masse apparente, niveau de sèche estimé (proxy).",
     "Donne des recommandations concrètes et actionnables.",
     "",
     "SCHEMA JSON EXACT à retourner :",
@@ -122,10 +141,10 @@ function buildVisionPrompt() {
     "}",
     "",
     "Contraintes:",
-    "- Les scores sont des nombres entre 0 et 100 (pas de pourcentage, pas de texte).",
-    "- summary: 2 à 4 phrases max, style sérieux, direct.",
-    '- improvement_focus: 1 à 2 priorités max, très concret (ex: "gainage + rétroversion du bassin", "mobilité épaules + scapulas").',
-    "- Si l'image est floue, mal cadrée ou lumière mauvaise: mentionne-le, mais donne quand même des scores prudents.",
+    "- Scores = nombres entre 0 et 100 (pas de %).",
+    "- summary: 2 à 4 phrases max, style sérieux.",
+    "- improvement_focus: 1 à 2 priorités max, très concret.",
+    "- Si la photo est mauvaise: mentionne-le mais donne quand même des scores prudents.",
   ].join("\n");
 }
 
@@ -153,14 +172,12 @@ async function geminiGenerateJSON({ apiKey, base64, mimeType }) {
     generationConfig: { temperature: 0.2, topP: 0.9, maxOutputTokens: 650 },
   });
 
-  const prompt = buildVisionPrompt();
-
   const result = await model.generateContent({
     contents: [
       {
         role: "user",
         parts: [
-          { text: prompt },
+          { text: buildVisionPrompt() },
           { inlineData: { data: base64, mimeType } },
         ],
       },
@@ -168,7 +185,7 @@ async function geminiGenerateJSON({ apiKey, base64, mimeType }) {
   });
 
   const text = result?.response?.text?.() || "";
-  return { text, raw: result };
+  return text;
 }
 
 async function geminiRepairJSON({ apiKey, badText }) {
@@ -178,10 +195,9 @@ async function geminiRepairJSON({ apiKey, badText }) {
     generationConfig: { temperature: 0.0, maxOutputTokens: 350 },
   });
 
-  const prompt = buildRepairPrompt(badText);
-  const result = await model.generateContent(prompt);
+  const result = await model.generateContent(buildRepairPrompt(badText));
   const text = result?.response?.text?.() || "";
-  return { text, raw: result };
+  return text;
 }
 
 module.exports = async function handler(req, res) {
@@ -210,19 +226,22 @@ module.exports = async function handler(req, res) {
   const token = getBearerToken(req);
   if (!token) return sendJson(res, 401, { ok: false, error: "MISSING_BEARER" });
 
-  const body = parseBody(req);
+  let body = null;
+  try {
+    body = await readJsonBody(req);
+  } catch (e) {
+    if (e?.code === "BODY_TOO_LARGE") return sendJson(res, 413, { ok: false, error: "BODY_TOO_LARGE" });
+    return sendJson(res, 400, { ok: false, error: "BAD_BODY" });
+  }
+
   const user_id = body?.user_id ? String(body.user_id) : "";
   const image_path = body?.image_path ? String(body.image_path) : "";
 
   if (!user_id || !image_path) {
-    return sendJson(res, 400, {
-      ok: false,
-      error: "MISSING_FIELDS",
-      required: ["user_id", "image_path"],
-    });
+    return sendJson(res, 400, { ok: false, error: "MISSING_FIELDS", required: ["user_id", "image_path"] });
   }
 
-  // Guard rails anti-cross-user
+  // anti cross-user
   if (!image_path.startsWith(user_id + "/") || !image_path.includes("/bodyscans/")) {
     return sendJson(res, 400, { ok: false, error: "INVALID_IMAGE_PATH" });
   }
@@ -232,7 +251,7 @@ module.exports = async function handler(req, res) {
   });
 
   try {
-    // 1) Verify bearer via Supabase Auth
+    // 1) verify bearer
     const authRes = await withTimeout(supabase.auth.getUser(token), 8000, "AUTH_TIMEOUT");
     if (authRes?.error || !authRes?.data?.user) {
       return sendJson(res, 401, { ok: false, error: "INVALID_BEARER" });
@@ -241,12 +260,8 @@ module.exports = async function handler(req, res) {
       return sendJson(res, 403, { ok: false, error: "USER_MISMATCH" });
     }
 
-    // 2) Download image from Storage
-    const dlRes = await withTimeout(
-      supabase.storage.from(BUCKET).download(image_path),
-      12000,
-      "DOWNLOAD_TIMEOUT"
-    );
+    // 2) download image
+    const dlRes = await withTimeout(supabase.storage.from(BUCKET).download(image_path), 12000, "DOWNLOAD_TIMEOUT");
     if (dlRes?.error || !dlRes?.data) {
       return sendJson(res, 404, { ok: false, error: "IMAGE_NOT_FOUND", detail: dlRes?.error?.message || null });
     }
@@ -269,34 +284,27 @@ module.exports = async function handler(req, res) {
 
     const base64 = Buffer.from(ab).toString("base64");
 
-    // 3) Gemini Vision -> JSON
-    const visionRes = await withTimeout(
+    // 3) Gemini vision
+    const aiText = await withTimeout(
       geminiGenerateJSON({ apiKey: GEMINI_API_KEY, base64, mimeType }),
       25000,
       "AI_TIMEOUT"
     );
 
-    const aiText = visionRes?.text || "";
     let parsed = extractFirstJsonObject(aiText);
     let normalized = normalizePayload(parsed);
 
-    // 1 attempt repair
     if (!normalized) {
-      const repairRes = await withTimeout(
+      const repairedText = await withTimeout(
         geminiRepairJSON({ apiKey: GEMINI_API_KEY, badText: aiText }),
         12000,
         "AI_REPAIR_TIMEOUT"
       );
-      const repairedText = repairRes?.text || "";
       parsed = extractFirstJsonObject(repairedText);
       normalized = normalizePayload(parsed);
 
       if (!normalized) {
-        return sendJson(res, 502, {
-          ok: false,
-          error: "AI_INVALID_JSON",
-          detail: "Gemini output did not match the strict schema",
-        });
+        return sendJson(res, 502, { ok: false, error: "AI_INVALID_JSON" });
       }
     }
 
@@ -312,7 +320,7 @@ module.exports = async function handler(req, res) {
       parsed: normalized,
     };
 
-    // 4) Update DB row (row already inserted by front)
+    // 4) update DB row (inserted by front)
     const updRes = await withTimeout(
       supabase
         .from("body_scans")
@@ -335,7 +343,6 @@ module.exports = async function handler(req, res) {
     if (updRes?.error) {
       return sendJson(res, 500, { ok: false, error: "DB_UPDATE_FAILED", detail: updRes.error.message });
     }
-
     if (!updRes?.data?.id) {
       return sendJson(res, 404, { ok: false, error: "BODY_SCAN_ROW_NOT_FOUND" });
     }
@@ -349,11 +356,7 @@ module.exports = async function handler(req, res) {
   } catch (err) {
     const msg = String(err?.message || "SERVER_ERROR");
     const code = err?.code || "";
-
-    if (code === "TIMEOUT" || msg.includes("TIMEOUT")) {
-      return sendJson(res, 504, { ok: false, error: "TIMEOUT", detail: msg });
-    }
-
+    if (code === "TIMEOUT" || msg.includes("TIMEOUT")) return sendJson(res, 504, { ok: false, error: "TIMEOUT" });
     return sendJson(res, 500, { ok: false, error: "SERVER_ERROR", detail: msg });
   }
-}; 
+};
