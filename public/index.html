@@ -1,1 +1,763 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>FitAI — Dark Premium</title>
 
+  <style>
+    :root{
+      --bg:#0b0c0f;
+      --panel:#0f1117;
+      --panel2:#0c0e13;
+      --stroke:rgba(255,255,255,.08);
+      --stroke2:rgba(255,255,255,.06);
+      --txt:rgba(255,255,255,.92);
+      --muted:rgba(255,255,255,.62);
+
+      --lime:#b7ff2a;
+      --cyan:#36d6ff;
+      --pink:#ff4bd8;
+      --red:#ff3b30;
+      --orange:#ffb020;
+
+      --shadow: 0 18px 55px rgba(0,0,0,.55);
+      --r12:12px;
+      --r16:16px;
+      --r20:20px;
+
+      --gap: 14px;
+      --max: 1180px;
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      background:
+        radial-gradient(900px 500px at 20% -10%, rgba(183,255,42,.12), transparent 55%),
+        radial-gradient(800px 420px at 105% 10%, rgba(54,214,255,.10), transparent 60%),
+        radial-gradient(700px 380px at 30% 120%, rgba(255,75,216,.10), transparent 55%),
+        var(--bg);
+      color:var(--txt);
+      font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      overflow-x:hidden;
+    }
+
+    a{color:inherit;text-decoration:none}
+    .container{max-width:var(--max); margin: 0 auto; padding: 22px 18px 80px;}
+
+    /* Topbar */
+    .topbar{
+      position:sticky; top:0; z-index:20;
+      backdrop-filter: blur(14px);
+      background: linear-gradient(to bottom, rgba(11,12,15,.92), rgba(11,12,15,.65));
+      border-bottom: 1px solid var(--stroke2);
+    }
+    .topbarInner{
+      max-width:var(--max);
+      margin:0 auto;
+      padding: 14px 18px;
+      display:flex;
+      align-items:center;
+      gap: 14px;
+      justify-content:space-between;
+    }
+    .brand{
+      display:flex; align-items:center; gap:10px;
+      font-weight: 950;
+      letter-spacing:.7px;
+      user-select:none;
+    }
+    .brandBadge{
+      width:34px;height:34px;border-radius:12px;
+      display:grid;place-items:center;
+      background: rgba(183,255,42,.12);
+      border: 1px solid rgba(183,255,42,.25);
+      box-shadow: 0 10px 30px rgba(183,255,42,.10);
+    }
+    .brandBadge span{color:var(--lime); font-weight:950}
+    .brandTitle{display:flex; flex-direction:column; line-height:1.05}
+    .brandTitle small{font-weight:800;color:var(--muted);letter-spacing:.2px}
+
+    /* Tabs */
+    .tabs{
+      display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;
+    }
+    .tabBtn{
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.03);
+      color: rgba(255,255,255,.82);
+      border-radius: 999px;
+      padding: 10px 12px;
+      display:flex; align-items:center; gap:8px;
+      cursor:pointer;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease, filter .16s ease;
+      user-select:none;
+      font-weight:900;
+    }
+    .tabBtn:hover{transform: translateY(-1px); border-color: rgba(183,255,42,.22); background: rgba(183,255,42,.06)}
+    .tabBtn.active{
+      background: rgba(183,255,42,.14);
+      border-color: rgba(183,255,42,.38);
+      color: #0b0c0f;
+      filter: drop-shadow(0 12px 25px rgba(183,255,42,.10));
+    }
+    .tabBtn.active .tabIcon{filter:none}
+    .tabIcon{opacity:.9; filter: drop-shadow(0 10px 26px rgba(0,0,0,.35))}
+
+    /* Cards / UI */
+    .grid{
+      display:grid;
+      gap: var(--gap);
+    }
+    .grid.two{grid-template-columns: repeat(2, minmax(0,1fr))}
+    .grid.three{grid-template-columns: repeat(3, minmax(0,1fr))}
+    @media (max-width: 980px){
+      .grid.two,.grid.three{grid-template-columns: 1fr}
+      .tabs{justify-content:flex-start}
+    }
+
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      border: 1px solid var(--stroke2);
+      border-radius: var(--r20);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .cardTitle{
+      font-size: 14px;
+      font-weight: 950;
+      letter-spacing: .35px;
+      margin: 0 0 12px 0;
+      display:flex; align-items:center; gap:10px;
+    }
+    .chip{
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.03);
+      color: rgba(255,255,255,.82);
+      font-weight: 900;
+      display:inline-flex; align-items:center; gap:8px;
+    }
+    .chip.lime{background: rgba(183,255,42,.10); border-color: rgba(183,255,42,.22); color: rgba(183,255,42,.95)}
+    .chip.cyan{background: rgba(54,214,255,.10); border-color: rgba(54,214,255,.22); color: rgba(54,214,255,.95)}
+    .chip.pink{background: rgba(255,75,216,.10); border-color: rgba(255,75,216,.22); color: rgba(255,75,216,.95)}
+    .chip.orange{background: rgba(255,176,32,.10); border-color: rgba(255,176,32,.22); color: rgba(255,176,32,.95)}
+
+    .row{display:flex; gap: 12px; flex-wrap:wrap; align-items:center}
+    .row.between{justify-content:space-between}
+    .muted{color:var(--muted)}
+    .hr{height:1px;background:var(--stroke2); margin: 14px 0}
+
+    .btn{
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.03);
+      color: rgba(255,255,255,.86);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-weight: 950;
+      cursor:pointer;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease, filter .16s ease;
+    }
+    .btn:hover{transform: translateY(-1px); border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.06)}
+    .btn:active{transform: translateY(0px) scale(.99)}
+    .btn.primary{
+      background: rgba(183,255,42,.14);
+      border-color: rgba(183,255,42,.36);
+      color:#081006;
+    }
+    .btn.primary:hover{background: rgba(183,255,42,.18); border-color: rgba(183,255,42,.46)}
+    .btn.cyan{
+      background: rgba(54,214,255,.12);
+      border-color: rgba(54,214,255,.34);
+      color: rgba(255,255,255,.92);
+    }
+    .btn.pink{
+      background: rgba(255,75,216,.12);
+      border-color: rgba(255,75,216,.34);
+      color: rgba(255,255,255,.92);
+    }
+
+    .input, select, textarea{
+      width:100%;
+      border-radius: 14px;
+      border: 1px solid var(--stroke2);
+      background: rgba(255,255,255,.03);
+      color: rgba(255,255,255,.92);
+      padding: 12px 12px;
+      outline:none;
+      transition: border-color .16s ease, background .16s ease;
+    }
+    .input:focus, select:focus, textarea:focus{
+      border-color: rgba(183,255,42,.38);
+      background: rgba(183,255,42,.06);
+    }
+    textarea{min-height: 96px; resize: vertical}
+
+    .kpiGrid{
+      display:grid; gap: 12px;
+      grid-template-columns: repeat(3, minmax(0,1fr));
+    }
+    @media (max-width: 860px){ .kpiGrid{grid-template-columns: 1fr} }
+
+    .kpiCard{
+      padding: 14px;
+      border-radius: var(--r16);
+      border: 1px solid var(--stroke2);
+      background: rgba(255,255,255,.03);
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+    .kpiCard:hover{transform: translateY(-1px); border-color: rgba(255,255,255,.10); background: rgba(255,255,255,.04)}
+    .kpiTop{display:flex; align-items:flex-start; justify-content:space-between; gap:10px}
+    .kpiName{font-weight:950; letter-spacing:.25px}
+    .kpiVal{font-size: 26px; font-weight: 950; color: #fff; margin-top: 6px}
+    .kpiBtns{display:flex; gap:8px}
+    .kpiBtn{
+      width: 34px; height: 34px;
+      border-radius: 12px;
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.03);
+      color: rgba(255,255,255,.86);
+      cursor:pointer;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+      font-weight: 950;
+    }
+    .kpiBtn:hover{transform: translateY(-1px); border-color: rgba(183,255,42,.28); background: rgba(183,255,42,.07)}
+
+    /* Coach */
+    .coachNote{
+      border: 1px solid rgba(183,255,42,.20);
+      background: rgba(183,255,42,.06);
+      border-radius: var(--r16);
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .coachNoteHeader{font-weight:950; color: rgba(183,255,42,.95); margin-bottom: 6px}
+    .coachNoteBody{margin:0; color: rgba(255,255,255,.88); line-height:1.55}
+    .exerciseCard{
+      border-radius: var(--r16);
+      border: 1px solid var(--stroke2);
+      background: rgba(255,255,255,.03);
+      padding: 14px;
+      margin-bottom: 12px;
+      display:flex;
+      gap: 10px;
+      align-items:flex-start;
+      justify-content:space-between;
+      flex-wrap:wrap;
+    }
+    .exerciseInfo{display:flex; flex-direction:column; gap:6px}
+    .exerciseName{font-weight:950; letter-spacing:.25px}
+    .exerciseSpecs{font-size: 12px; color: var(--muted)}
+    .exerciseRPE{
+      font-weight: 950;
+      color: rgba(255,255,255,.86);
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,.03);
+      align-self:flex-start;
+    }
+
+    /* Feed */
+    .feedCard{
+      border-radius: var(--r16);
+      border: 1px solid var(--stroke2);
+      background: rgba(255,255,255,.03);
+      padding: 14px;
+      margin-bottom: 12px;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+    .feedCard:hover{transform: translateY(-1px); border-color: rgba(255,255,255,.10); background: rgba(255,255,255,.04)}
+    .feedHeader{display:flex; align-items:center; justify-content:space-between; gap:10px}
+    .feedUser{display:flex; align-items:center; gap:10px; font-weight:950}
+    .feedBadges{color: var(--muted); font-weight:900}
+    .feedTime{color: var(--muted); font-size: 12px; font-weight:900}
+    .feedTitle{font-weight:950; font-size: 15px; margin: 10px 0 12px}
+    .feedActions{display:flex; align-items:center; justify-content:space-between; gap:10px}
+    .badge{
+      font-size: 11px; font-weight:950;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,.03);
+      color: rgba(255,255,255,.84);
+      letter-spacing:.3px;
+    }
+    .badge.lime{border-color: rgba(183,255,42,.25); background: rgba(183,255,42,.09); color: rgba(183,255,42,.95)}
+    .badge.orange{border-color: rgba(255,176,32,.25); background: rgba(255,176,32,.10); color: rgba(255,176,32,.95)}
+    .badge.red{border-color: rgba(255,59,48,.25); background: rgba(255,59,48,.10); color: rgba(255,59,48,.95)}
+    .badge.cyan{border-color: rgba(54,214,255,.25); background: rgba(54,214,255,.10); color: rgba(54,214,255,.95)}
+
+    .kudosBtn{
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.03);
+      color: rgba(255,255,255,.86);
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor:pointer;
+      font-weight:950;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease, filter .16s ease;
+    }
+    .kudosBtn:hover{transform: translateY(-1px); border-color: rgba(255,75,216,.25); background: rgba(255,75,216,.08)}
+    .kudosBtn.liked{
+      border-color: rgba(255,75,216,.40);
+      background: rgba(255,75,216,.14);
+      filter: drop-shadow(0 10px 25px rgba(255,75,216,.12));
+    }
+
+    /* Trophies */
+    .trophyWall{
+      display:grid; gap:12px;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+    }
+    @media (max-width: 760px){ .trophyWall{grid-template-columns: 1fr} }
+    .trophyCard{
+      border-radius: var(--r16);
+      border: 1px solid var(--stroke2);
+      background: rgba(255,255,255,.03);
+      padding: 14px;
+      display:flex; gap:12px; align-items:flex-start;
+    }
+    .trophyCard.locked{opacity:.65}
+    .trophyCard.unlocked{
+      border-color: rgba(183,255,42,.20);
+      background: rgba(183,255,42,.06);
+    }
+    .trophyIcon{
+      width:40px;height:40px;border-radius: 14px;
+      display:grid;place-items:center;
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.03);
+      font-size: 20px;
+    }
+    .trophyInfo{display:flex; flex-direction:column; gap:4px}
+    .trophyTitle{font-weight:950}
+    .trophyDesc{color: var(--muted); font-size: 12px}
+    .trophyMeta{color: rgba(255,255,255,.78); font-size: 12px; font-weight:900}
+
+    /* Heatmap */
+    .heatmap{
+      display:grid;
+      grid-template-columns: repeat(14, minmax(0,1fr));
+      gap: 6px;
+      user-select:none;
+    }
+    @media (max-width: 920px){ .heatmap{grid-template-columns: repeat(7, minmax(0,1fr))} }
+    .heatmapDay{
+      height: 26px;
+      border-radius: 10px;
+      border:1px solid var(--stroke2);
+      background: rgba(255,255,255,.02);
+      display:grid; place-items:center;
+      font-size: 11px;
+      color: rgba(255,255,255,.50);
+      transition: transform .16s ease, background .16s ease, border-color .16s ease;
+    }
+    .heatmapDay.active{
+      background: rgba(183,255,42,.18);
+      border-color: rgba(183,255,42,.30);
+      color: rgba(11,12,15,.92);
+      font-weight: 950;
+    }
+    .heatmapDay:hover{transform: translateY(-1px)}
+
+    /* Roast banner */
+    .roast{
+      display:none;
+      border-radius: var(--r16);
+      border: 1px solid rgba(255,59,48,.25);
+      background: rgba(255,59,48,.08);
+      padding: 12px 14px;
+      font-weight: 950;
+      color: rgba(255,255,255,.92);
+      margin-bottom: 14px;
+    }
+    .roast.on{display:block}
+
+    /* Empty / Spinner */
+    .empty{
+      color: var(--muted);
+      font-weight: 900;
+      padding: 8px 2px;
+    }
+    .spinner{
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.18);
+      border-top-color: rgba(183,255,42,.90);
+      animation: sp 0.8s linear infinite;
+    }
+    @keyframes sp{to{transform:rotate(360deg)}}
+
+    /* Modal */
+    .modalOverlay{
+      position:fixed; inset:0; z-index:100;
+      background: rgba(0,0,0,.60);
+      backdrop-filter: blur(10px);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding: 18px;
+    }
+    .modal{
+      width: min(520px, 100%);
+      border-radius: var(--r20);
+      border: 1px solid var(--stroke2);
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .modal h3{
+      margin:0 0 10px 0;
+      font-weight: 950;
+      letter-spacing:.3px;
+    }
+    .modal .row{margin-top: 12px}
+    .hint{font-size: 12px; color: var(--muted); font-weight: 900}
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="topbarInner">
+      <div class="brand">
+        <div class="brandBadge"><span>F</span></div>
+        <div class="brandTitle">
+          <div>FitAI</div>
+          <small>Dark Premium</small>
+        </div>
+      </div>
+
+      <nav class="tabs" role="tablist" aria-label="Navigation">
+        <button class="tabBtn active" id="tabBtnDash" aria-selected="true" type="button"><span class="tabIcon">📊</span> Dashboard</button>
+        <button class="tabBtn" id="tabBtnCoach" aria-selected="false" type="button"><span class="tabIcon">🤖</span> Coach</button>
+        <button class="tabBtn" id="tabBtnNutrition" aria-selected="false" type="button"><span class="tabIcon">🥗</span> Nutrition</button>
+        <button class="tabBtn" id="tabBtnCommunity" aria-selected="false" type="button"><span class="tabIcon">🌐</span> Community</button>
+        <button class="tabBtn" id="tabBtnProfile" aria-selected="false" type="button"><span class="tabIcon">👤</span> Profile</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- STATUS + AUTH -->
+    <div class="card">
+      <div class="row between">
+        <div class="row" style="gap:10px">
+          <span class="chip lime">● <span id="authStatus">Non connecté</span></span>
+          <span class="chip">Client: <span style="color:rgba(255,255,255,.85);font-weight:950">fitai-v18</span></span>
+        </div>
+
+        <div class="row" style="gap:10px">
+          <input class="input" id="email" placeholder="email@exemple.com" style="width:240px" />
+          <button class="btn primary" id="btnMagicLink" type="button">🔗 Magic Link</button>
+          <button class="btn" id="btnLogout" type="button">⏏️ Logout</button>
+        </div>
+      </div>
+      <div class="hint" id="profileHint" style="margin-top:10px"></div>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <!-- ===================== DASH TAB ===================== -->
+    <section id="tab-dash">
+      <div id="roastBanner" class="roast"></div>
+
+      <div class="grid two">
+        <!-- KPI -->
+        <div class="card">
+          <div class="cardTitle">📌 KPIs</div>
+
+          <div class="kpiGrid">
+            <div class="kpiCard">
+              <div class="kpiTop">
+                <div>
+                  <div class="kpiName">Recovery</div>
+                  <div class="kpiVal" id="val-recovery">--</div>
+                </div>
+                <div class="kpiBtns">
+                  <button class="kpiBtn kpiBtnMinus" type="button" data-kpi="recovery" data-dir="-1">−</button>
+                  <button class="kpiBtn kpiBtnPlus" type="button" data-kpi="recovery" data-dir="1">+</button>
+                </div>
+              </div>
+              <div class="hint">0 → 100%</div>
+            </div>
+
+            <div class="kpiCard">
+              <div class="kpiTop">
+                <div>
+                  <div class="kpiName">Poids</div>
+                  <div class="kpiVal" id="val-weight">--</div>
+                </div>
+                <div class="kpiBtns">
+                  <button class="kpiBtn" type="button" data-kpi="weight" data-dir="-1">−</button>
+                  <button class="kpiBtn" type="button" data-kpi="weight" data-dir="1">+</button>
+                </div>
+              </div>
+              <div class="hint">kg</div>
+            </div>
+
+            <div class="kpiCard">
+              <div class="kpiTop">
+                <div>
+                  <div class="kpiName">Sommeil</div>
+                  <div class="kpiVal" id="val-sleep">--</div>
+                </div>
+                <div class="kpiBtns">
+                  <button class="kpiBtn" type="button" data-kpi="sleep" data-dir="-1">−</button>
+                  <button class="kpiBtn" type="button" data-kpi="sleep" data-dir="1">+</button>
+                </div>
+              </div>
+              <div class="hint">heures</div>
+            </div>
+          </div>
+
+          <div class="hr"></div>
+          <div class="chip" style="width:100%">
+            ☀️ <span id="morningBrief">Connecte-toi pour activer le suivi.</span>
+          </div>
+        </div>
+
+        <!-- STATS -->
+        <div class="card">
+          <div class="row between">
+            <div class="cardTitle" style="margin:0">📈 Stats (7 jours)</div>
+            <span class="chip cyan">Trend <span id="stat-workouts-trend" class="muted" style="margin-left:6px">→ +0%</span></span>
+          </div>
+
+          <div class="row" style="margin-top:12px; gap:10px">
+            <div class="chip" style="flex:1">
+              🧱 Workouts: <span id="stat-workouts" style="font-weight:950; margin-left:6px">0</span>
+            </div>
+            <div class="chip" style="flex:1">
+              🏋️ Volume: <span id="stat-volume" style="font-weight:950; margin-left:6px">0</span>
+            </div>
+          </div>
+
+          <div style="height:16px"></div>
+          <div style="height:200px">
+            <canvas id="chartVolume"></canvas>
+          </div>
+          <div class="hint" style="margin-top:10px">Volume estimé (placeholder intelligent) — basé sur tes séances enregistrées.</div>
+        </div>
+      </div>
+
+      <div style="height:14px"></div>
+
+      <div class="grid two">
+        <!-- RECENT -->
+        <div class="card">
+          <div class="row between">
+            <div class="cardTitle" style="margin:0">🕘 Dernières séances</div>
+            <span class="chip orange">Auto</span>
+          </div>
+          <div style="height:12px"></div>
+          <div id="recentWorkouts"></div>
+        </div>
+
+        <!-- HEATMAP -->
+        <div class="card">
+          <div class="cardTitle">🗓️ Activité (28 jours)</div>
+          <div id="activityHeatmap" class="heatmap"></div>
+          <div class="hint" style="margin-top:10px">Cases vertes = séances détectées.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== COACH TAB ===================== -->
+    <section id="tab-coach" style="display:none">
+      <div class="grid two">
+        <div class="card">
+          <div class="cardTitle">🤖 Coach IA</div>
+          <div class="hint">Décris ta séance ou demande une recette. L’IA répond en JSON (workout/recipe).</div>
+          <div style="height:10px"></div>
+          <textarea id="coachPrompt" placeholder="Ex: 'Full body 35 min, poids du corps + haltères' ou 'Donne-moi une recette riche en protéines'"></textarea>
+          <div style="height:12px"></div>
+          <button class="btn primary" id="btnCoachAsk" type="button">✨ Générer</button>
+        </div>
+
+        <div id="coachOutput">
+          <div class="card">
+            <div class="empty">Décris ta séance souhaitée puis clique “Générer”.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== NUTRITION TAB ===================== -->
+    <section id="tab-nutrition" style="display:none">
+      <div class="grid two">
+        <div class="card">
+          <div class="row between">
+            <div class="cardTitle" style="margin:0">🥗 Nutrition (aujourd’hui)</div>
+            <button class="btn primary" id="btnAddMeal" type="button">＋ Ajouter un repas</button>
+          </div>
+
+          <div style="height:12px"></div>
+
+          <div class="grid three">
+            <div class="kpiCard">
+              <div class="kpiName">Calories</div>
+              <div class="kpiVal" id="cal-total">0</div>
+              <div class="hint">kcal</div>
+            </div>
+            <div class="kpiCard">
+              <div class="kpiName">Protéines</div>
+              <div class="kpiVal" id="macro-protein">0g</div>
+              <div class="hint">objectif: <span id="protein-target">0</span>g</div>
+            </div>
+            <div class="kpiCard">
+              <div class="kpiName">Objectif kcal</div>
+              <div class="kpiVal" id="cal-target">0</div>
+              <div class="hint">estimé (poids×30)</div>
+            </div>
+          </div>
+
+          <div style="height:10px"></div>
+          <div class="row" style="gap:10px">
+            <span class="chip cyan">🍚 Glucides <span id="macro-carbs" style="font-weight:950;margin-left:6px">0</span></span>
+            <span class="chip pink">🧈 Lipides <span id="macro-fats" style="font-weight:950;margin-left:6px">0</span></span>
+          </div>
+
+          <div class="hr"></div>
+          <div id="mealsContainer"></div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">💡 Tips</div>
+          <div class="hint">
+            - Ajoute un repas avec calories + macros<br>
+            - Les objectifs se basent sur ton poids dans les KPIs<br>
+            - Tu peux demander une recette au Coach (onglet Coach)
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== COMMUNITY TAB ===================== -->
+    <section id="tab-community" style="display:none">
+      <div class="card">
+        <div class="row between">
+          <div class="cardTitle" style="margin:0">🌐 Community Feed</div>
+          <div class="row">
+            <span class="chip" id="feedStatus">—</span>
+            <button class="btn" id="btnRefreshFeed" type="button">🔄 Refresh</button>
+          </div>
+        </div>
+        <div style="height:12px"></div>
+        <div id="feedContainer"></div>
+      </div>
+    </section>
+
+    <!-- ===================== PROFILE TAB ===================== -->
+    <section id="tab-profile" style="display:none">
+      <div class="grid two">
+        <div class="card">
+          <div class="cardTitle">👤 Profil public</div>
+          <div class="hint">Ton nom est affiché dans le feed public.</div>
+          <div style="height:10px"></div>
+          <input id="displayName" class="input" placeholder="Ton prénom / pseudo" />
+          <div style="height:12px"></div>
+          <button class="btn primary" id="btnSaveName" type="button">💾 Sauvegarder</button>
+
+          <div class="hr"></div>
+
+          <div class="cardTitle">🧬 Données (optionnel)</div>
+          <div class="grid three">
+            <input id="profileAge" class="input" type="number" min="10" max="99" placeholder="Âge" />
+            <input id="profileWeight" class="input" type="number" min="30" max="250" placeholder="Poids (kg)" />
+            <input id="profileHeight" class="input" type="number" min="120" max="230" placeholder="Taille (cm)" />
+          </div>
+
+          <div class="hr"></div>
+
+          <div class="cardTitle">🧰 Équipement</div>
+          <div class="row" style="gap:12px">
+            <label class="chip"><input id="eqDumbbells" type="checkbox" /> Haltères</label>
+            <label class="chip"><input id="eqBarbell" type="checkbox" /> Barre</label>
+            <label class="chip"><input id="eqBodyweight" type="checkbox" /> Poids du corps</label>
+            <label class="chip"><input id="eqMachines" type="checkbox" /> Machines</label>
+          </div>
+          <div style="height:12px"></div>
+          <button class="btn primary" id="btnSaveEquipment" type="button">💾 Sauver équipement</button>
+        </div>
+
+        <div class="card">
+          <div class="row between">
+            <div class="cardTitle" style="margin:0">🏆 Trophées</div>
+            <div class="row">
+              <span class="hint" id="trophyHint">0/4 trophées débloqués.</span>
+              <button class="btn" id="btnRefreshTrophies" type="button">🔄</button>
+            </div>
+          </div>
+
+          <div style="height:12px"></div>
+          <div id="trophyWall" class="trophyWall"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODAL: Add Meal -->
+    <div class="modalOverlay" id="mealModal" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Ajouter un repas">
+        <h3>🍽️ Ajouter un repas</h3>
+
+        <div class="grid two">
+          <div>
+            <label class="hint" for="mealType">Type</label>
+            <select id="mealType">
+              <option>Petit-déj</option>
+              <option>Déjeuner</option>
+              <option>Dîner</option>
+              <option>Snack</option>
+            </select>
+          </div>
+          <div>
+            <label class="hint" for="mealCal">Calories</label>
+            <input class="input" id="mealCal" type="number" min="0" placeholder="kcal" />
+          </div>
+        </div>
+
+        <div style="height:10px"></div>
+        <label class="hint" for="mealDesc">Description</label>
+        <textarea id="mealDesc" placeholder="Ex: poulet + riz + légumes"></textarea>
+
+        <div style="height:10px"></div>
+        <div class="grid three">
+          <div>
+            <label class="hint" for="mealProt">Protéines (g)</label>
+            <input class="input" id="mealProt" type="number" min="0" placeholder="g" />
+          </div>
+          <div>
+            <label class="hint" for="mealCarbs">Glucides</label>
+            <input class="input" id="mealCarbs" type="number" min="0" placeholder="g" />
+          </div>
+          <div>
+            <label class="hint" for="mealFats">Lipides</label>
+            <input class="input" id="mealFats" type="number" min="0" placeholder="g" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:14px; justify-content:flex-end">
+          <button class="btn" id="btnCancelMeal" type="button">Annuler</button>
+          <button class="btn primary" id="btnSaveMeal" type="button">💾 Sauvegarder</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Chart.js (global Chart) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- app.js MUST be module because it imports Supabase -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
+
+
+     
