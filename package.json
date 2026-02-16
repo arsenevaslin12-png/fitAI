@@ -6,6 +6,9 @@
     "node": "20.x"
   },
   "scripts": {
-    "build": "echo \"no build\""
+    "build": "echo \"no build step\""
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0"
   }
 }
