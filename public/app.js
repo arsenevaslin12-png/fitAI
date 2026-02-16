@@ -1,2039 +1,1200 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+/* public/app.js
+   FitAI — Supabase v2 — Cyberpunk Lime/Indigo
+   Fix: Magic Link callback (code/hash) + Body Scan tab calling /api/bodyscan
+*/
 
-/* ============================================================
-   ExerciseMediaManager — FitAI (autonomous module)
-   - Double-buffering (2 <img> stacked) + opacity toggle
-   - Singleton IntersectionObserver (1 for the whole app)
-   - XSS-safe (no innerHTML)
-   - Placeholder if both frames fail
-   - Optional SW prefetch via postMessage (if SW is registered elsewhere)
-   ============================================================ */
-const ExerciseMediaManager = {
-  cfg: {
-    cssId: "fitai-ex-media-css",
-    injectCss: true,
+(() => {
+  "use strict";
 
-    baseUrl: "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/",
-    framePaths: ["0.jpg", "1.jpg"],
+  const APP_NAME = "FitAI";
+  const BUCKET = "user_uploads";
+  const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1h
+  const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
+  const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-    intervalMs: 650,
-    ioThreshold: 0.25,
-    ioRootMargin: "200px 0px",
+  // Expect these in public/index.html:
+  // window.SUPABASE_URL, window.SUPABASE_ANON_KEY
+  const SUPABASE_URL = String(window.SUPABASE_URL || "").trim();
+  const SUPABASE_ANON_KEY = String(window.SUPABASE_ANON_KEY || "").trim();
 
-    useCacheStorage: true,
-    swPrefetch: true,
-    swMessageDebounceMs: 400,
+  const root =
+    document.getElementById("app") ||
+    document.getElementById("root") ||
+    document.body;
 
-    placeholderIcon: "🏋️",
-    placeholderText: "Démo indisponible"
-  },
+  const hasSupabaseGlobal = typeof window.supabase !== "undefined";
+  const hasCreateClient =
+    hasSupabaseGlobal && typeof window.supabase.createClient === "function";
 
-  _io: null,
-  _observed: new Set(),
-  _timers: new Map(),
-  _meta: new WeakMap(),
-  _objectUrls: new Set(),
-  _swQueue: new Set(),
-  _swFlushT: null,
-  _inited: false,
+  const state = {
+    supabase: null,
+    session: null,
+    user: null,
+    activeTab: "feed",
+    toastTimer: null,
+    busy: false,
 
-  init(userCfg = {}) {
-    if (this._inited) return;
-    this._inited = true;
+    bodyScans: [],
+    signedCache: new Map(), // path -> { url, expiresAtMs }
+  };
 
-    this.cfg = { ...this.cfg, ...userCfg };
-    if (this.cfg.injectCss) this._injectCssOnce();
-    this._ensureIntersectionObserver();
-
-    document.addEventListener(
-      "visibilitychange",
-      () => {
-        if (document.hidden) this.pauseAll();
-        else this._resumeVisible();
-      },
-      { passive: true }
+  function bootFail(message) {
+    root.replaceChildren(
+      ui.pageShell({
+        headerRight: null,
+        content: ui.card({
+          title: "Configuration requise",
+          body: [
+            ui.p(message),
+            ui.p(
+              "Vérifie que Supabase v2 est chargé et que SUPABASE_URL / SUPABASE_ANON_KEY sont définis dans public/index.html."
+            ),
+          ],
+        }),
+      })
     );
-  },
-
-  reset() {
-    for (const [, t] of this._timers) clearInterval(t);
-    this._timers.clear();
-
-    if (this._io) {
-      for (const el of this._observed) {
-        try { this._io.unobserve(el); } catch {}
-      }
-    }
-    this._observed.clear();
-
-    for (const u of this._objectUrls) {
-      try { URL.revokeObjectURL(u); } catch {}
-    }
-    this._objectUrls.clear();
-
-    this._swQueue.clear();
-    clearTimeout(this._swFlushT);
-    this._swFlushT = null;
-  },
-
-  pauseAll() {
-    for (const el of this._observed) this._stopAnim(el);
-  },
-
-  create(exName) {
-    const urls = this._getFrameUrls(exName);
-    if (!urls.length) return null;
-
-    if (this.cfg.injectCss) this._injectCssOnce();
-    this._ensureIntersectionObserver();
-
-    const wrap = document.createElement("div");
-    wrap.className = "exMedia";
-
-    const stack = document.createElement("div");
-    stack.className = "exMediaStack";
-
-    const img0 = document.createElement("img");
-    img0.className = "exFrame exFrame0";
-    img0.loading = "lazy";
-    img0.decoding = "async";
-    img0.referrerPolicy = "no-referrer";
-    img0.alt = `Démo: ${String(exName || "exercice")}`;
-
-    const img1 = document.createElement("img");
-    img1.className = "exFrame exFrame1";
-    img1.loading = "lazy";
-    img1.decoding = "async";
-    img1.referrerPolicy = "no-referrer";
-    img1.alt = "";
-
-    const skel = document.createElement("div");
-    skel.className = "exMediaSkeleton";
-
-    const ph = document.createElement("div");
-    ph.className = "exPlaceholder";
-
-    const phIcon = document.createElement("div");
-    phIcon.className = "exPlaceholderIcon";
-    phIcon.textContent = String(this.cfg.placeholderIcon || "🏋️");
-
-    const phText = document.createElement("div");
-    phText.className = "exPlaceholderText";
-    phText.textContent = String(this.cfg.placeholderText || "Démo indisponible");
-
-    ph.appendChild(phIcon);
-    ph.appendChild(phText);
-
-    stack.appendChild(img0);
-    stack.appendChild(img1);
-    stack.appendChild(skel);
-    stack.appendChild(ph);
-    wrap.appendChild(stack);
-
-    const meta = {
-      urls,
-      img0,
-      img1,
-      skel,
-      wrap,
-      loaded0: false,
-      loaded1: false,
-      failed0: false,
-      failed1: false
-    };
-    this._meta.set(wrap, meta);
-
-    img0.addEventListener("load", () => { meta.loaded0 = true; this._onFrameSettled(wrap); }, { passive: true });
-    img0.addEventListener("error", () => { meta.failed0 = true; this._onFrameSettled(wrap); }, { passive: true });
-    img1.addEventListener("load", () => { meta.loaded1 = true; this._onFrameSettled(wrap); }, { passive: true });
-    img1.addEventListener("error", () => { meta.failed1 = true; this._onFrameSettled(wrap); }, { passive: true });
-
-    this._io.observe(wrap);
-    this._observed.add(wrap);
-
-    this._hydrateSources(exName, wrap).catch(() => this._forcePlaceholder(wrap));
-
-    if (this.cfg.swPrefetch) this._queueForSW(urls);
-
-    return wrap;
-  },
-
-  _injectCssOnce() {
-    if (document.getElementById(this.cfg.cssId)) return;
-
-    const st = document.createElement("style");
-    st.id = this.cfg.cssId;
-    st.textContent = `
-      .exMedia{margin-top:10px;border-radius:14px;overflow:hidden;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);position:relative}
-      .exMediaStack{position:relative;width:100%;aspect-ratio:16/9}
-      .exFrame{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;will-change:opacity;transition:opacity 280ms ease;opacity:1}
-      .exFrame1{opacity:0;pointer-events:none}
-      .exMedia.isAlt .exFrame1{opacity:1}
-      .exMedia.isAlt .exFrame0{opacity:0}
-      .exMediaSkeleton{position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.08),rgba(255,255,255,.04));background-size:200% 100%;animation:exSk 1.1s ease-in-out infinite}
-      @keyframes exSk{0%{background-position:0% 0}100%{background-position:200% 0}}
-      .exPlaceholder{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:8px;background:rgba(255,255,255,.02)}
-      .exMedia.isPlaceholder .exPlaceholder{display:flex}
-      .exMedia.isPlaceholder .exFrame{display:none}
-      .exMedia.isPlaceholder .exMediaSkeleton{display:none}
-      .exPlaceholderIcon{font-size:28px;line-height:1;filter:drop-shadow(0 10px 30px rgba(0,0,0,.35))}
-      .exPlaceholderText{font-size:12px;color:rgba(255,255,255,.70)}
-      @media (prefers-reduced-motion: reduce){.exFrame{transition:none !important}}
-    `;
-    document.head.appendChild(st);
-  },
-
-  _ensureIntersectionObserver() {
-    if (this._io) return;
-
-    this._io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const wrap = e.target;
-          if (!(wrap instanceof HTMLElement)) continue;
-
-          if (!e.isIntersecting || document.hidden) {
-            this._stopAnim(wrap);
-            continue;
-          }
-          this._maybeStartAnim(wrap);
-        }
-      },
-      { threshold: this.cfg.ioThreshold, rootMargin: this.cfg.ioRootMargin }
-    );
-  },
-
-  _resumeVisible() {
-    for (const wrap of this._observed) {
-      if (!wrap.isConnected) continue;
-      this._maybeStartAnim(wrap);
-    }
-  },
-
-  _normalizeExerciseFileName(exName) {
-    const raw = String(exName || "").trim();
-    if (!raw) return "";
-
-    const candidate = raw.replace(/[\/\\]/g, "").replace(/\s+/g, "_");
-    if (/^[A-Za-z0-9_]+$/.test(candidate) && candidate.length >= 3) return candidate;
-
-    const ascii = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const cleaned = ascii
-      .replace(/['’]/g, "")
-      .replace(/[^A-Za-z0-9]+/g, " ")
-      .trim();
-
-    if (!cleaned) return "";
-
-    const cap = (w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : "");
-    return cleaned.split(/\s+/).filter(Boolean).map(cap).join("_");
-  },
-
-  _getFrameUrls(exName) {
-    const file = this._normalizeExerciseFileName(exName);
-    if (!file) return [];
-    const base = this.cfg.baseUrl + encodeURIComponent(file) + "/";
-    return this.cfg.framePaths.map((p) => base + p);
-  },
-
-  async _hydrateSources(_exName, wrap) {
-    const meta = this._meta.get(wrap);
-    if (!meta) return;
-
-    const [u0, u1] = meta.urls;
-
-    const canCache =
-      this.cfg.useCacheStorage &&
-      typeof caches !== "undefined" &&
-      typeof caches.match === "function";
-
-    if (!canCache) {
-      meta.img0.src = u0;
-      meta.img1.src = u1;
-      return;
-    }
-
-    const r0 = await caches.match(u0).catch(() => null);
-    const r1 = await caches.match(u1).catch(() => null);
-
-    const toObj = async (resp) => {
-      const b = await resp.blob();
-      const obj = URL.createObjectURL(b);
-      this._objectUrls.add(obj);
-      return obj;
-    };
-
-    meta.img0.src = r0 ? await toObj(r0) : u0;
-    meta.img1.src = r1 ? await toObj(r1) : u1;
-  },
-
-  _onFrameSettled(wrap) {
-    const meta = this._meta.get(wrap);
-    if (!meta) return;
-
-    if ((meta.loaded0 || meta.loaded1) && meta.skel?.isConnected) meta.skel.remove();
-
-    if (meta.failed0 && meta.failed1) {
-      this._forcePlaceholder(wrap);
-      return;
-    }
-
-    if (meta.loaded0 && meta.loaded1) {
-      this._maybeStartAnim(wrap);
-      return;
-    }
-
-    if (meta.loaded0 || meta.loaded1) this._stopAnim(wrap);
-  },
-
-  _forcePlaceholder(wrap) {
-    const meta = this._meta.get(wrap);
-    if (meta?.skel?.isConnected) meta.skel.remove();
-    this._stopAnim(wrap);
-    wrap.classList.add("isPlaceholder");
-  },
-
-  _canAnimate(wrap) {
-    const meta = this._meta.get(wrap);
-    if (!meta) return false;
-    if (wrap.classList.contains("isPlaceholder")) return false;
-    if (!meta.loaded0 || !meta.loaded1) return false;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return false;
-    return true;
-  },
-
-  _maybeStartAnim(wrap) {
-    if (!wrap?.isConnected) return;
-    if (document.hidden) return;
-    if (!this._canAnimate(wrap)) return;
-    this._startAnim(wrap);
-  },
-
-  _startAnim(wrap) {
-    if (this._timers.has(wrap)) return;
-
-    let alt = false;
-    const t = window.setInterval(() => {
-      if (!wrap.isConnected) { this._stopAnim(wrap); return; }
-      if (document.hidden) return;
-      alt = !alt;
-      wrap.classList.toggle("isAlt", alt);
-    }, this.cfg.intervalMs);
-
-    this._timers.set(wrap, t);
-  },
-
-  _stopAnim(wrap) {
-    const t = this._timers.get(wrap);
-    if (t) clearInterval(t);
-    this._timers.delete(wrap);
-    if (wrap?.classList) wrap.classList.remove("isAlt");
-  },
-
-  _queueForSW(urls) {
-    if (!("serviceWorker" in navigator)) return;
-    if (!navigator.serviceWorker.controller) return;
-
-    for (const u of urls || []) {
-      if (typeof u === "string" && u.startsWith("https://")) this._swQueue.add(u);
-    }
-
-    clearTimeout(this._swFlushT);
-    this._swFlushT = setTimeout(() => this._flushSW(), this.cfg.swMessageDebounceMs);
-  },
-
-  _flushSW() {
-    const ctrl = navigator.serviceWorker.controller;
-    if (!ctrl) return;
-
-    const urls = Array.from(this._swQueue);
-    if (!urls.length) return;
-
-    ctrl.postMessage({ type: "FITAI_CACHE_URLS", urls });
-    this._swQueue.clear();
   }
-};
 
-/* ============================================================
-   Constantes
-   ============================================================ */
-const CLIENT_TOKEN = "fitai-v18";
-
-const BADGES = {
-  STREAK:     { icon: "flame",    title: "STREAK",     desc: "3 jours consécutifs (au moins 1 séance/jour)." },
-  CLOWN:      { icon: "user-x",   title: "CLOWN",      desc: "Séance Light avec Recovery ≥ 90%." },
-  MACHINE:    { icon: "dumbbell", title: "MACHINE",    desc: "3 séances Hard dans la semaine ISO." },
-  KUDOS_KING: { icon: "crown",    title: "KUDOS KING", desc: "Une séance qui dépasse 10 kudos." }
-};
-
-/* ============================================================
-   App (toutes tes fonctions conservées)
-   - Session stable: persistSession + localStorage
-   - Lucide: initLucide + refreshLucideIcons + trophies en <i data-lucide>
-   - Boot session: bootstrapSessionAndHydrateKpis()
-   - Render workout: ExerciseMediaManager.reset() + create(ex.name)
-   - Anti-XSS: pas de innerHTML avec contenu dynamique
-   ============================================================ */
-const App = {
-  cfg: null,
-  supabase: null,
-  session: null,
-  user: null,
-  profile: null,
-  publicProfile: null,
-  feedItems: [],
-  likedSet: new Set(),
-  kudosBusy: new Set(),
-  kpiSaveTimer: null,
-  kpiSteps: { recovery: 1, weight: 0.5, sleep: 0.25 },
-  meals: [],
-  chartVolume: null,
-
-  workoutTimer: null,
-  currentExerciseIndex: 0,
-  currentPhase: "work",
-  timerInterval: null,
-  audioContext: null,
-
-  $: (id) => document.getElementById(id),
-
-  el(tag, opts = {}, children = []) {
-    const n = document.createElement(tag);
-    if (opts.className) n.className = opts.className;
-    if (opts.type) n.type = opts.type;
-    if (opts.id) n.id = opts.id;
-    if (opts.text != null) n.textContent = String(opts.text);
-    if (opts.attrs) for (const [k, v] of Object.entries(opts.attrs)) n.setAttribute(k, String(v));
-    if (opts.style) for (const [k, v] of Object.entries(opts.style)) n.style[k] = v;
-    for (const c of children) if (c) n.appendChild(c);
-    return n;
-  },
-
-  clamp(min, v, max) { return Math.max(min, Math.min(max, v)); },
-
-  // ===== Lucide (NEW) =====
-  async initLucide() {
-    if (window.lucide && typeof window.lucide.createIcons === "function") {
-      window.lucide.createIcons();
-      return;
-    }
-    await new Promise((resolve) => {
-      const s = document.createElement("script");
-      s.src = "https://unpkg.com/lucide@latest";
-      s.onload = () => resolve();
-      s.onerror = () => resolve();
-      document.head.appendChild(s);
-    });
-    if (window.lucide && typeof window.lucide.createIcons === "function") window.lucide.createIcons();
-  },
-
-  refreshLucideIcons() {
-    if (window.lucide && typeof window.lucide.createIcons === "function") {
-      window.lucide.createIcons();
-    }
-  },
-
-  // ===== Session bootstrap (NEW) =====
-  async bootstrapSessionAndHydrateKpis() {
-    const { data } = await this.supabase.auth.getSession();
-    this.session = data.session || null;
-    this.user = this.session?.user || null;
-
-    this.supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      this.session = newSession || null;
-      this.user = newSession?.user || null;
-      await this.afterAuthChanged();
-    });
-
-    await this.afterAuthChanged();
-  },
-
-  // Compat: ton code appelait initAuth() auparavant, on le garde
-  async initAuth() {
-    return this.bootstrapSessionAndHydrateKpis();
-  },
-
-  getAggressiveRoast() {
-    const roasts = [
-      "48h sans séance. Ton canapé vient de demander ta main en mariage.",
-      "Deux jours off ? Même ta motivation s'est mise en arrêt maladie.",
-      "Ton cardio fait la grève. Et apparemment, toi aussi.",
-      "Aucun entraînement depuis 48h : tu collectes des excuses ou tu veux des résultats ?",
-      "Tu t'es évaporé 48h. Reviens : barre fixe, haltères, ou au moins des squats."
-    ];
-    return roasts[Math.floor(Math.random() * roasts.length)];
-  },
-
-  hint(id, msg, type = "info") {
-    const el = this.$(id);
-    if (!el) return;
-    el.textContent = msg;
-    el.style.color =
-      type === "err" ? "rgba(255,59,48,.95)" :
-      type === "ok"  ? "rgba(183,255,42,.95)" :
-                       "rgba(255,255,255,.65)";
-  },
-
-  async init() {
-    // 1) Media manager (singleton observer)
-    ExerciseMediaManager.init();
-
-    // 2) Lucide
-    await this.initLucide();
-
-    // 3) UI
-    this.bindTabs();
-    this.bindUI();
-
-    // 4) Config + Supabase (session stable localStorage)
-    this.cfg = await this.fetchConfig();
-    this.supabase = createClient(this.cfg.supabaseUrl, this.cfg.supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        storage: window.localStorage,
-        autoRefreshToken: true,
-        detectSessionInUrl: true
-      }
-    });
-
-    // 5) Session bootstrap + hydrate KPIs
-    await this.bootstrapSessionAndHydrateKpis();
-
-    this.setTab("dash");
-    await this.refreshFeed();
-    this.initCharts();
-    this.initAudioContext();
-  },
-
-  bindTabs() {
-    this.$("tabBtnDash")?.addEventListener("click", () => this.setTab("dash"));
-    this.$("tabBtnCoach")?.addEventListener("click", () => this.setTab("coach"));
-    this.$("tabBtnNutrition")?.addEventListener("click", () => this.setTab("nutrition"));
-    this.$("tabBtnCommunity")?.addEventListener("click", () => this.setTab("community"));
-    this.$("tabBtnProfile")?.addEventListener("click", () => this.setTab("profile"));
-  },
-
-  setTab(tab) {
-    const tabs = ["dash", "coach", "nutrition", "community", "profile"];
-    tabs.forEach(t => {
-      const panel = this.$(`tab-${t}`);
-      if (panel) panel.style.display = t === tab ? "block" : "none";
-      const btn = this.$(`tabBtn${t.charAt(0).toUpperCase() + t.slice(1)}`);
-      if (!btn) return;
-      btn.classList.toggle("active", t === tab);
-      btn.setAttribute("aria-selected", String(t === tab));
-    });
-  },
-
-  bindUI() {
-    this.$("btnMagicLink")?.addEventListener("click", () => this.sendMagicLink());
-    this.$("btnLogout")?.addEventListener("click", () => this.logout());
-    this.$("btnSaveName")?.addEventListener("click", () => this.saveDisplayName());
-    this.$("btnSaveEquipment")?.addEventListener("click", () => this.saveEquipment());
-    this.$("btnRefreshTrophies")?.addEventListener("click", () => this.refreshTrophies());
-    this.$("btnCoachAsk")?.addEventListener("click", () => this.generateWorkout());
-    this.$("btnRefreshFeed")?.addEventListener("click", () => this.refreshFeed());
-    this.$("btnAddMeal")?.addEventListener("click", () => this.showMealModal());
-    this.$("btnSaveMeal")?.addEventListener("click", () => this.saveMeal());
-    this.$("btnCancelMeal")?.addEventListener("click", () => this.hideMealModal());
-
-    const ageInput = this.$("profileAge");
-    const weightInput = this.$("profileWeight");
-    const heightInput = this.$("profileHeight");
-    if (ageInput) ageInput.addEventListener("change", () => this.saveProfileData());
-    if (weightInput) weightInput.addEventListener("change", () => this.saveProfileData());
-    if (heightInput) heightInput.addEventListener("change", () => this.saveProfileData());
-
-    document.querySelectorAll("button.kpiBtn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const key = btn.getAttribute("data-kpi");
-        const dir = Number(btn.getAttribute("data-dir") || "0");
-        if (!key || !dir) return;
-        this.adjustKpi(key, dir);
-      });
-    });
-  },
-
-  async fetchConfig() {
-    const r = await fetch("/api/workout?config=1", {
-      method: "GET",
-      headers: { "X-FitAI-Client": CLIENT_TOKEN }
-    });
-    if (!r.ok) throw new Error(`Config failed (${r.status})`);
-    const data = await r.json();
-    if (!data?.supabaseUrl || !data?.supabaseAnonKey) throw new Error("Invalid config.");
-    return data;
-  },
-
-  async afterAuthChanged() {
-    const authStatus = this.$("authStatus");
-    if (authStatus) authStatus.textContent = this.user ? `Connecté : ${this.user.email || this.user.id}` : "Non connecté";
-
-    if (!this.user) {
-      this.profile = null;
-      this.publicProfile = null;
-      this.renderProfileForm(null, null);
-      this.renderKpis(null);
-      this.renderRoastState(null);
-      this.renderRecent([]);
-      this.renderStats(null);
-      this.renderHeatmap(null);
-      this.setCoachEmpty("Connecte-toi pour activer le Coach IA.");
-      const feedStatus = this.$("feedStatus");
-      if (feedStatus) feedStatus.textContent = "Lecture seule";
-      this.hint("trophyHint", "Connecte-toi pour voir tes trophées.", "info");
-      this.renderTrophyWall(new Map());
-      this.renderNutrition();
-      await this.refreshFeed();
-      this.refreshLucideIcons();
-      return;
-    }
-
-    await this.ensureProfiles(this.user.id);
-    this.renderProfileForm(this.profile, this.publicProfile);
-    this.renderKpis(this.profile);
-    this.renderRoastState(this.profile);
-    await this.refreshRecent();
-    await this.refreshStats();
-    await this.refreshHeatmap();
-    await this.refreshFeed();
-    await this.evaluateAchievements();
-    await this.refreshTrophies();
-    this.renderNutrition();
-    this.loadProfileData();
-    this.refreshLucideIcons();
-  },
-
-  async ensureProfiles(userId) {
-    const selP = await this.supabase
-      .from("profiles")
-      .select("kpis,equipment,last_workout_date,age,weight,height")
-      .eq("user_id", userId)
-      .maybeSingle();
-    this.profile = selP.data || null;
-
-    const selPub = await this.supabase
-      .from("public_profiles")
-      .select("display_name")
-      .eq("user_id", userId)
-      .maybeSingle();
-    this.publicProfile = selPub.data || null;
-
-    this.hint("profileHint", "Profil synchronisé ✅", "ok");
-  },
-
-  loadProfileData() {
-    if (!this.profile) return;
-
-    const ageInput = this.$("profileAge");
-    const weightInput = this.$("profileWeight");
-    const heightInput = this.$("profileHeight");
-
-    if (ageInput && this.profile.age) ageInput.value = this.profile.age;
-    if (weightInput && this.profile.weight) weightInput.value = this.profile.weight;
-    if (heightInput && this.profile.height) heightInput.value = this.profile.height;
-  },
-
-  async saveProfileData() {
-    if (!this.user) return;
-
-    const ageInput = this.$("profileAge");
-    const weightInput = this.$("profileWeight");
-    const heightInput = this.$("profileHeight");
-
-    const updates = {};
-    if (ageInput && ageInput.value) updates.age = Number(ageInput.value);
-    if (weightInput && weightInput.value) updates.weight = Number(weightInput.value);
-    if (heightInput && heightInput.value) updates.height = Number(heightInput.value);
-
-    if (Object.keys(updates).length === 0) return;
-
-    const { error } = await this.supabase
-      .from("profiles")
-      .update(updates)
-      .eq("user_id", this.user.id);
-
-    if (error) {
-      console.error("Save profile error:", error);
-      this.hint("profileHint", "Erreur sauvegarde profil", "err");
-    } else {
-      this.hint("profileHint", "✅ Profil sauvegardé", "ok");
-      Object.assign(this.profile, updates);
-    }
-  },
-
-  renderProfileForm(p, pub) {
-    const d = this.$("eqDumbbells"); if (d) d.checked = !!p?.equipment?.dumbbells;
-    const b = this.$("eqBarbell");   if (b) b.checked = !!p?.equipment?.barbell;
-    const bw = this.$("eqBodyweight"); if (bw) bw.checked = p ? (p.equipment?.bodyweight !== false) : true;
-    const m = this.$("eqMachines");  if (m) m.checked = !!p?.equipment?.machines;
-    const name = this.$("displayName"); if (name) name.value = pub?.display_name || "";
-  },
-
-  renderKpis(p) {
-    const vr = this.$("val-recovery");
-    const vw = this.$("val-weight");
-    const vs = this.$("val-sleep");
-    const brief = this.$("morningBrief");
-
-    if (!p?.kpis) {
-      if (vr) vr.textContent = "--";
-      if (vw) vw.textContent = "--";
-      if (vs) vs.textContent = "--";
-      if (brief) brief.textContent = "Connecte-toi pour activer le suivi.";
-      return;
-    }
-    const k = p.kpis;
-    const rec = Number(k.recovery || 0);
-    if (vr) vr.textContent = `${Math.round(rec)}%`;
-    if (vw) vw.textContent = `${Number(k.weight || 0).toFixed(1)}`;
-    if (vs) vs.textContent = `${Number(k.sleep || 0).toFixed(2)}`;
-
-    if (brief) {
-      brief.textContent =
-        rec < 40 ? "🛑 Recovery basse : mobilité / récupération."
-        : rec < 70 ? "⚠️ Recovery modérée : technique / volume léger."
-        : "🔥 Recovery haute : tu sais ce qu'il te reste à faire.";
-    }
-  },
-
-  renderRoastState(profile) {
-    const banner = this.$("roastBanner");
-    if (!banner) return;
-    banner.classList.remove("on");
-    banner.textContent = "";
-
-    if (!this.user || !profile) return;
-
-    const last = profile.last_workout_date ? new Date(profile.last_workout_date) : null;
-    if (!last) {
-      banner.classList.add("on");
-      banner.textContent = `🔴 Aucun historique. ${this.getAggressiveRoast()}`;
-      return;
-    }
-
-    const diffH = (Date.now() - last.getTime()) / 36e5;
-    if (diffH >= 48) {
-      banner.classList.add("on");
-      banner.textContent = `🔴 Honte officielle : 48h sans séance. ${this.getAggressiveRoast()}`;
-    }
-  },
-
-  adjustKpi(key, dir) {
-    if (!this.profile?.kpis) return;
-    const step = this.kpiSteps[key] || 1;
-    const current = Number(this.profile.kpis[key] || 0);
-    let newVal = current + (dir * step);
-
-    if (key === "recovery") newVal = this.clamp(0, newVal, 100);
-    if (key === "weight") newVal = this.clamp(40, newVal, 200);
-    if (key === "sleep") newVal = this.clamp(0, newVal, 12);
-
-    this.profile.kpis[key] = newVal;
-    this.renderKpis(this.profile);
-
-    clearTimeout(this.kpiSaveTimer);
-    this.kpiSaveTimer = setTimeout(() => this.saveKpis(), 1500);
-  },
-
-  async saveKpis() {
-    if (!this.user || !this.profile) return;
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({ kpis: this.profile.kpis })
-      .eq("user_id", this.user.id);
-    if (error) console.error("Save KPI error:", error);
-  },
-
-  async sendMagicLink() {
-    const emailEl = this.$("email");
-    const email = emailEl ? emailEl.value.trim() : "";
-    if (!email) return this.hint("profileHint", "Email requis.", "err");
-    this.hint("profileHint", "Envoi en cours...", "info");
-    const { error } = await this.supabase.auth.signInWithOtp({ email });
-    if (error) return this.hint("profileHint", error.message, "err");
-    this.hint("profileHint", "✅ Magic link envoyé ! Vérifie tes emails.", "ok");
-  },
-
-  async logout() {
-    await this.supabase.auth.signOut();
-    this.hint("profileHint", "Déconnecté.", "info");
-  },
-
-  async saveDisplayName() {
-    if (!this.user) return;
-    const nameEl = this.$("displayName");
-    const name = nameEl ? nameEl.value.trim() : "";
-    const { error } = await this.supabase
-      .from("public_profiles")
-      .upsert({ user_id: this.user.id, display_name: name });
-    if (error) return this.hint("profileHint", error.message, "err");
-    this.hint("profileHint", "✅ Prénom sauvegardé.", "ok");
-    this.publicProfile = { display_name: name };
-  },
-
-  async saveEquipment() {
-    if (!this.user) return;
-    const equipment = {
-      dumbbells: !!this.$("eqDumbbells")?.checked,
-      barbell: !!this.$("eqBarbell")?.checked,
-      bodyweight: this.$("eqBodyweight") ? (this.$("eqBodyweight").checked) : true,
-      machines: !!this.$("eqMachines")?.checked
-    };
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({ equipment })
-      .eq("user_id", this.user.id);
-    if (error) return this.hint("profileHint", error.message, "err");
-    this.hint("profileHint", "✅ Matériel sauvegardé.", "ok");
-    if (this.profile) this.profile.equipment = equipment;
-  },
-
-  async refreshRecent() {
-    if (!this.user) return this.renderRecent([]);
-    const { data, error } = await this.supabase
-      .from("workouts")
-      .select("id,created_at,title,intensity")
-      .eq("user_id", this.user.id)
-      .order("created_at", { ascending: false })
-      .limit(5);
-    if (error) return console.error(error);
-    this.renderRecent(data || []);
-  },
-
-  renderRecent(workouts) {
-    const c = this.$("recentWorkouts");
-    if (!c) return;
-    c.replaceChildren();
-
-    if (!workouts.length) {
-      c.appendChild(this.el("div", { className: "empty", text: "Aucune séance enregistrée." }));
-      return;
-    }
-
-    workouts.forEach(w => {
-      const badge = w.intensity === "hard" ? "🔴 HARD" : w.intensity === "medium" ? "🟠 MEDIUM" : "🟢 LIGHT";
-      const card = this.el("div", { className: "mealCard" }, [
-        this.el("div", { className: "mealHeader" }, [
-          this.el("div", { className: "mealType", text: w.title }),
-          this.el("span", { className: "badge orange", text: badge })
-        ]),
-        this.el("div", { style: { fontSize: "11px", color: "var(--muted)" }, text: new Date(w.created_at).toLocaleString("fr-FR") })
-      ]);
-      c.appendChild(card);
-    });
-  },
-
-  async refreshStats() {
-    if (!this.user) return this.renderStats(null);
-    const sevenDaysAgo = new Date(Date.now() - 7 * 864e5).toISOString();
-    const fourteenDaysAgo = new Date(Date.now() - 14 * 864e5).toISOString();
-
-    const { data: current } = await this.supabase
-      .from("workouts")
-      .select("id")
-      .eq("user_id", this.user.id)
-      .gte("created_at", sevenDaysAgo);
-
-    const { data: previous } = await this.supabase
-      .from("workouts")
-      .select("id")
-      .eq("user_id", this.user.id)
-      .gte("created_at", fourteenDaysAgo)
-      .lt("created_at", sevenDaysAgo);
-
-    const currentCount = current?.length || 0;
-    const previousCount = previous?.length || 0;
-    const change = previousCount ? Math.round(((currentCount - previousCount) / previousCount) * 100) : 0;
-
-    this.renderStats({ workouts: currentCount, volume: currentCount * 1000, change });
-  },
-
-  renderStats(stats) {
-    const w = this.$("stat-workouts");
-    const v = this.$("stat-volume");
-    const trend = this.$("stat-workouts-trend");
-
-    if (!w || !v || !trend) return;
-
-    if (!stats) {
-      w.textContent = "0";
-      v.textContent = "0";
-      trend.className = "statTrend";
-      trend.replaceChildren(
-        this.el("span", { text: "→" }),
-        this.el("span", { text: "+0%" })
-      );
-      return;
-    }
-
-    w.textContent = String(stats.workouts);
-    v.textContent = Math.round(stats.volume / 1000) + "k";
-
-    const arrow = stats.change > 0 ? "↗" : stats.change < 0 ? "↘" : "→";
-    trend.className = "statTrend " + (stats.change > 0 ? "up" : stats.change < 0 ? "down" : "");
-    trend.replaceChildren(
-      this.el("span", { text: arrow }),
-      this.el("span", { text: `${stats.change > 0 ? "+" : ""}${stats.change}%` })
-    );
-  },
-
-  async refreshHeatmap() {
-    if (!this.user) return this.renderHeatmap(null);
-    const twentyEightDaysAgo = new Date(Date.now() - 28 * 864e5).toISOString();
-    const { data } = await this.supabase
-      .from("workouts")
-      .select("created_at")
-      .eq("user_id", this.user.id)
-      .gte("created_at", twentyEightDaysAgo);
-
-    const workoutDates = new Set((data || []).map(w => new Date(w.created_at).toDateString()));
-    const days = [];
-    for (let i = 27; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 864e5);
-      days.push({ date: d.toDateString(), active: workoutDates.has(d.toDateString()), label: d.getDate() });
-    }
-    this.renderHeatmap(days);
-  },
-
-  renderHeatmap(days) {
-    const c = this.$("activityHeatmap");
-    if (!c) return;
-    c.replaceChildren();
-
-    if (!days) {
-      for (let i = 0; i < 28; i++) c.appendChild(this.el("div", { className: "heatmapDay" }));
-      return;
-    }
-
-    days.forEach(d => {
-      const el = this.el("div", { className: "heatmapDay" + (d.active ? " active" : ""), text: d.label });
-      c.appendChild(el);
-    });
-  },
-
-  async generateWorkout() {
-    if (!this.user) return this.setCoachEmpty("Connecte-toi.");
-    const promptEl = this.$("coachPrompt");
-    const prompt = promptEl ? promptEl.value.trim() : "";
-    if (!prompt) return this.setCoachEmpty("Décris ta séance souhaitée.");
-
-    this.setCoachLoading();
-
-    try {
-      const enhancedPrompt = this.buildStructuredPrompt(prompt);
-
-      const r = await fetch("/api/workout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-FitAI-Client": CLIENT_TOKEN },
-        body: JSON.stringify({ prompt: enhancedPrompt, userId: this.user.id })
-      });
-
-      if (!r.ok) throw new Error("Erreur API");
-      const data = await r.json();
-      this.handleAIResponse(data);
-
-    } catch (err) {
-      this.setCoachEmpty("Erreur : " + (err?.message || "inconnue"));
-    }
-  },
-
-  buildStructuredPrompt(userPrompt) {
-    const lowerPrompt = userPrompt.toLowerCase();
-    const isRecipe =
-      lowerPrompt.includes("recette") ||
-      lowerPrompt.includes("ingrédients") ||
-      lowerPrompt.includes("cuisine") ||
-      lowerPrompt.includes("plat");
-
-    if (isRecipe) {
-      return `Tu es un chef cuisinier expert. L'utilisateur demande : "${userPrompt}"
-
-RÉPONDS UNIQUEMENT avec ce JSON STRICT (sans markdown, sans texte avant/après) :
-{
-  "type": "recipe",
-  "title": "Nom de la recette",
-  "ingredients": ["Ingrédient 1", "Ingrédient 2", "..."],
-  "steps": ["Étape 1", "Étape 2", "..."],
-  "prep_time": 15,
-  "cook_time": 30
-}`;
-    }
-
-    return `Tu es un coach sportif expert. L'utilisateur demande : "${userPrompt}"
-
-Recovery actuelle : ${this.profile?.kpis?.recovery || 70}%
-Équipement : ${Object.keys(this.profile?.equipment || {}).filter(k => this.profile?.equipment[k]).join(", ")}
-
-RÉPONDS UNIQUEMENT avec ce JSON STRICT (sans markdown, sans texte avant/après) :
-{
-  "type": "workout",
-  "note": "Conseil du coach en 1-2 phrases",
-  "exercises": [
-    {
-      "name": "Nom de l'exercice",
-      "duration": 30,
-      "rest": 10,
-      "sets": 3,
-      "reps": "10-12"
-    }
-  ]
-}
-
-IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des répétitions, mets duration à 0.`;
-  },
-
-  // ✅ Terminé: gère "recipe" et "workout" + fallback ancien format
-  handleAIResponse(data) {
-    let parsedData = data;
-
-    if (typeof data === "string") {
-      try {
-        const cleaned = data.replace(/```json|```/g, "").trim();
-        parsedData = JSON.parse(cleaned);
-      } catch (e) {
-        console.error("Parse error:", e);
-        this.setCoachEmpty("Erreur : réponse invalide de l'IA");
-        return;
-      }
-    }
-
-    // Fallback si ancien format (sans type)
-    if (!parsedData?.type && parsedData?.exercises) parsedData.type = "workout";
-
-    if (parsedData?.type === "recipe") {
-      this.renderRecipe(parsedData);
-    } else if (parsedData?.type === "workout") {
-      this.renderWorkoutPlan(parsedData);
-    } else {
-      this.renderWorkoutPlan(parsedData);
-    }
-
-    this.refreshLucideIcons();
-  },
-
-  setCoachLoading() {
-    const c = this.$("coachOutput");
-    if (!c) return;
-    const row = this.el("div", { className: "card" }, [
-      this.el("div", { style: { display: "flex", alignItems: "center", gap: "12px" } }, [
-        this.el("div", { className: "spinner" }),
-        this.el("span", { text: "Génération en cours..." })
-      ])
-    ]);
-    c.replaceChildren(row);
-  },
-
-  setCoachEmpty(msg) {
-    const c = this.$("coachOutput");
-    if (!c) return;
-    c.replaceChildren(
-      this.el("div", { className: "card" }, [
-        this.el("div", { className: "empty", text: msg })
-      ])
-    );
-  },
-
-  renderWorkoutPlan(data) {
-    // ✅ Anti-fuite: timers/observers/blob URLs
-    ExerciseMediaManager.reset();
-
-    const c = this.$("coachOutput");
-    if (!c) return;
-    c.replaceChildren();
-
-    const card = this.el("div", { className: "card" });
-
-    if (data.note) {
-      const note = this.el("div", { className: "coachNote" }, [
-        this.el("div", { className: "coachNoteHeader", text: "📋 Note du Coach" }),
-        this.el("p", { className: "coachNoteBody", text: data.note })
-      ]);
-      card.appendChild(note);
-    }
-
-    if (data.exercises?.length) {
-      data.exercises.forEach(ex => {
-        const specs = ex.duration > 0
-          ? `${ex.duration}s work • ${ex.rest}s rest`
-          : `${ex.sets} × ${ex.reps} • Repos ${ex.rest || "2min"}`;
-
-        const exCard = this.el("div", { className: "exerciseCard" }, [
-          this.el("div", { className: "exerciseInfo" }, [
-            this.el("div", { className: "exerciseName", text: ex.name }),
-            this.el("div", { className: "exerciseSpecs", text: specs })
-          ]),
-          this.el("div", { className: "exerciseRPE", text: `RPE ${ex.rpe || "7-8"}` })
-        ]);
-
-        const media = ExerciseMediaManager.create(ex?.name);
-        if (media) exCard.appendChild(media);
-
-        card.appendChild(exCard);
-      });
-    }
-
-    const btnRow = this.el("div", { style: { display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap" } }, [
-      this.el("button", { className: "btn primary", text: "💾 Sauvegarder", style: { flex: "1", minWidth: "140px" } }),
-      this.el("button", { className: "btn cyan", text: "⏱️ Lancer Timer", style: { flex: "1", minWidth: "140px" } }),
-      this.el("button", { className: "btn", text: "🔄 Régénérer", style: { flex: "1", minWidth: "140px" } })
-    ]);
-
-    btnRow.children[0].addEventListener("click", () => this.saveWorkout(data));
-    btnRow.children[1].addEventListener("click", () => this.startWorkout(data));
-    btnRow.children[2].addEventListener("click", () => this.generateWorkout());
-
-    card.appendChild(btnRow);
-    c.appendChild(card);
-  },
-
-  renderRecipe(data) {
-    const c = this.$("coachOutput");
-    if (!c) return;
-    c.replaceChildren();
-
-    const card = this.el("div", { className: "card" });
-
-    const title = this.el("div", {
-      style: {
-        fontSize: "24px",
-        fontWeight: "950",
-        color: "var(--lime)",
-        marginBottom: "16px",
-        letterSpacing: ".5px"
-      },
-      text: `🍳 ${data.title}`
-    });
-    card.appendChild(title);
-
-    if (data.prep_time || data.cook_time) {
-      const timingRow = this.el("div", {
-        style: {
-          display: "flex",
-          gap: "16px",
-          marginBottom: "20px",
-          fontSize: "13px",
-          color: "var(--muted)"
-        }
-      }, [
-        data.prep_time ? this.el("div", { text: `⏱️ Préparation : ${data.prep_time}min` }) : null,
-        data.cook_time ? this.el("div", { text: `🔥 Cuisson : ${data.cook_time}min` }) : null
-      ].filter(Boolean));
-      card.appendChild(timingRow);
-    }
-
-    const ingredientsSection = this.el("div", { style: { marginBottom: "24px" } });
-    ingredientsSection.appendChild(this.el("div", {
-      className: "coachNoteHeader",
-      text: "🛒 Ingrédients",
-      style: { marginBottom: "12px" }
-    }));
-
-    const ingredientsList = this.el("ul", {
-      style: {
-        listStyle: "none",
-        padding: "0",
-        display: "grid",
-        gap: "8px"
-      }
-    });
-
-    (data.ingredients || []).forEach(ing => {
-      ingredientsList.appendChild(this.el("li", {
-        style: {
-          padding: "10px 14px",
-          background: "rgba(255,255,255,.03)",
-          border: "1px solid var(--stroke)",
-          borderRadius: "10px",
-          fontSize: "14px"
-        },
-        text: `• ${ing}`
-      }));
-    });
-
-    ingredientsSection.appendChild(ingredientsList);
-    card.appendChild(ingredientsSection);
-
-    const stepsSection = this.el("div");
-    stepsSection.appendChild(this.el("div", {
-      className: "coachNoteHeader",
-      text: "👨‍🍳 Préparation",
-      style: { marginBottom: "12px" }
-    }));
-
-    (data.steps || []).forEach((step, idx) => {
-      stepsSection.appendChild(
-        this.el("div", { className: "exerciseCard", style: { marginBottom: "12px" } }, [
-          this.el("div", {
-            style: {
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              background: "var(--lime)",
-              color: "#000",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: "950",
-              fontSize: "14px",
-              flexShrink: "0"
-            },
-            text: idx + 1
-          }),
-          this.el("div", { style: { flex: "1", fontSize: "14px", lineHeight: "1.6" }, text: step })
-        ])
-      );
-    });
-
-    card.appendChild(stepsSection);
-
-    const btnRow = this.el("div", { style: { display: "flex", gap: "12px", marginTop: "20px" } }, [
-      this.el("button", { className: "btn primary", text: "📋 Copier Recette", style: { flex: "1" } }),
-      this.el("button", { className: "btn", text: "🔄 Nouvelle Recette", style: { flex: "1" } })
-    ]);
-
-    btnRow.children[0].addEventListener("click", () => this.copyRecipe(data));
-    btnRow.children[1].addEventListener("click", () => this.generateWorkout());
-
-    card.appendChild(btnRow);
-    c.appendChild(card);
-  },
-
-  copyRecipe(data) {
-    const text =
-      `${data.title}\n\n` +
-      `Ingrédients:\n${(data.ingredients || []).map(i => `- ${i}`).join("\n")}\n\n` +
-      `Préparation:\n${(data.steps || []).map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
-
-    navigator.clipboard.writeText(text).then(() => {
-      alert("✅ Recette copiée dans le presse-papier !");
-    }).catch(() => {
-      alert("❌ Erreur de copie");
-    });
-  },
-
-  initAudioContext() {
-    try {
-      this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (e) {
-      console.warn("Audio not supported:", e);
-    }
-  },
-
-  playBeep(frequency = 800, duration = 200) {
-    if (!this.audioContext) return;
-
-    const oscillator = this.audioContext.createOscillator();
-    const gainNode = this.audioContext.createGain();
-
-    oscillator.connect(gainNode);
-    gainNode.connect(this.audioContext.destination);
-
-    oscillator.frequency.value = frequency;
-    oscillator.type = "sine";
-
-    gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration / 1000);
-
-    oscillator.start(this.audioContext.currentTime);
-    oscillator.stop(this.audioContext.currentTime + duration / 1000);
-  },
-
-  startWorkout(data) {
-    const timerExercises = (data.exercises || []).filter(ex => ex.duration > 0);
-    if (timerExercises.length === 0) {
-      alert("ℹ️ Ce workout n'a pas de timer (exercices basés sur répétitions)");
-      return;
-    }
-
-    this.workoutTimer = {
-      exercises: timerExercises,
-      currentIndex: 0,
-      phase: "work",
-      timeLeft: timerExercises[0].duration,
-      isPaused: false
-    };
-
-    this.renderTimerUI();
-    this.startTimerLoop();
-  },
-
-  renderTimerUI() {
-    const c = this.$("coachOutput");
-    if (!c) return;
-    c.replaceChildren();
-
-    const card = this.el("div", { className: "card", style: { textAlign: "center" } });
-
-    const wt = this.workoutTimer;
-    const currentEx = wt.exercises[wt.currentIndex];
-
-    card.appendChild(this.el("div", {
-      style: { fontSize: "14px", color: "var(--muted)", marginBottom: "20px", fontWeight: "900" },
-      text: `Exercice ${wt.currentIndex + 1} / ${wt.exercises.length}`
-    }));
-
-    card.appendChild(this.el("div", {
-      style: { fontSize: "28px", fontWeight: "950", color: "var(--lime)", marginBottom: "10px", letterSpacing: ".5px" },
-      text: currentEx.name
-    }));
-
-    card.appendChild(this.el("div", {
-      style: {
-        fontSize: "16px",
-        color: wt.phase === "work" ? "var(--lime)" : "var(--cyan)",
-        marginBottom: "24px",
-        fontWeight: "950",
-        textTransform: "uppercase"
-      },
-      text: wt.phase === "work" ? "🏋️ TRAVAIL" : "😌 REPOS"
-    }));
-
-    card.appendChild(this.el("div", {
-      id: "timerDisplay",
-      style: { fontSize: "80px", fontWeight: "950", color: "#fff", marginBottom: "30px", letterSpacing: "-2px", fontVariantNumeric: "tabular-nums" },
-      text: wt.timeLeft
-    }));
-
-    const controls = this.el("div", { style: { display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" } }, [
-      this.el("button", { className: "btn cyan", id: "btnPauseResume", text: wt.isPaused ? "▶️ Reprendre" : "⏸️ Pause", style: { minWidth: "140px" } }),
-      this.el("button", { className: "btn", text: "⏭️ Skip", style: { minWidth: "120px" } }),
-      this.el("button", { className: "btn pink", text: "🛑 Arrêter", style: { minWidth: "120px" } })
-    ]);
-
-    controls.children[0].addEventListener("click", () => this.togglePause());
-    controls.children[1].addEventListener("click", () => this.skipExercise());
-    controls.children[2].addEventListener("click", () => this.stopWorkout());
-
-    card.appendChild(controls);
-    c.appendChild(card);
-  },
-
-  startTimerLoop() {
-    if (this.timerInterval) clearInterval(this.timerInterval);
-
-    this.timerInterval = setInterval(() => {
-      if (this.workoutTimer.isPaused) return;
-
-      this.workoutTimer.timeLeft--;
-
-      const display = this.$("timerDisplay");
-      if (display) {
-        display.textContent = String(this.workoutTimer.timeLeft);
-
-        if (this.workoutTimer.timeLeft <= 3 && this.workoutTimer.timeLeft > 0) {
-          display.style.color = "var(--red)";
-          this.playBeep(600, 100);
+  if (!hasCreateClient) {
+    bootFail("Supabase JS v2 n’est pas chargé (window.supabase.createClient introuvable).");
+    return;
+  }
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    bootFail("SUPABASE_URL ou SUPABASE_ANON_KEY manquant.");
+    return;
+  }
+
+  state.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  /* =========================
+     UI helpers
+     ========================= */
+  const ui = {
+    el(tag, props = {}, children = []) {
+      const node = document.createElement(tag);
+
+      for (const [k, v] of Object.entries(props || {})) {
+        if (v === undefined || v === null) continue;
+
+        if (k === "class") node.className = String(v);
+        else if (k === "text") node.textContent = String(v);
+        else if (k === "on" && typeof v === "object") {
+          for (const [evt, fn] of Object.entries(v)) {
+            if (typeof fn === "function") node.addEventListener(evt, fn);
+          }
+        } else if (k === "style" && typeof v === "object") {
+          Object.assign(node.style, v);
+        } else if (k in node) {
+          try {
+            node[k] = v;
+          } catch (_) {
+            node.setAttribute(k, String(v));
+          }
         } else {
-          display.style.color = "#fff";
+          node.setAttribute(k, String(v));
         }
       }
 
-      if (this.workoutTimer.timeLeft <= 0) {
-        this.playBeep(1000, 300);
-        this.nextPhase();
+      const arr = Array.isArray(children) ? children : [children];
+      for (const ch of arr) {
+        if (ch === undefined || ch === null) continue;
+        if (typeof ch === "string" || typeof ch === "number") {
+          node.appendChild(document.createTextNode(String(ch)));
+        } else {
+          node.appendChild(ch);
+        }
       }
-    }, 1000);
-  },
+      return node;
+    },
 
-  nextPhase() {
-    const wt = this.workoutTimer;
+    h1(text) {
+      return ui.el("div", { class: "fitai-h1", text });
+    },
+    h2(text) {
+      return ui.el("div", { class: "fitai-h2", text });
+    },
+    p(text) {
+      return ui.el("div", { class: "fitai-p", text });
+    },
 
-    if (wt.phase === "work") {
-      wt.phase = "rest";
-      wt.timeLeft = wt.exercises[wt.currentIndex].rest || 10;
-    } else {
-      wt.currentIndex++;
-      if (wt.currentIndex >= wt.exercises.length) {
-        this.completeWorkout();
-        return;
-      }
-      wt.phase = "work";
-      wt.timeLeft = wt.exercises[wt.currentIndex].duration;
+    badge(text) {
+      return ui.el("span", { class: "fitai-badge", text });
+    },
+
+    btn(label, opts = {}) {
+      const {
+        variant = "primary",
+        onClick,
+        disabled = false,
+        type = "button",
+        title,
+      } = opts;
+
+      const cls =
+        variant === "ghost"
+          ? "fitai-btn fitai-btn-ghost"
+          : variant === "danger"
+          ? "fitai-btn fitai-btn-danger"
+          : "fitai-btn fitai-btn-primary";
+
+      return ui.el(
+        "button",
+        {
+          class: cls,
+          type,
+          disabled: !!disabled,
+          title: title ? String(title) : "",
+          on: onClick ? { click: onClick } : undefined,
+        },
+        [label]
+      );
+    },
+
+    input(opts = {}) {
+      const {
+        type = "text",
+        placeholder = "",
+        value = "",
+        onInput,
+        onChange,
+        autocomplete,
+      } = opts;
+      return ui.el("input", {
+        class: "fitai-input",
+        type,
+        placeholder,
+        value,
+        autocomplete: autocomplete || "off",
+        on: {
+          input: onInput || undefined,
+          change: onChange || undefined,
+        },
+      });
+    },
+
+    fileInput(opts = {}) {
+      const { accept = "image/*", onChange } = opts;
+      return ui.el("input", {
+        class: "fitai-input",
+        type: "file",
+        accept,
+        on: { change: onChange || undefined },
+      });
+    },
+
+    textarea(opts = {}) {
+      const { placeholder = "", value = "", onInput, rows = 4 } = opts;
+      return ui.el("textarea", {
+        class: "fitai-textarea",
+        placeholder,
+        value,
+        rows,
+        on: { input: onInput || undefined },
+      });
+    },
+
+    sep() {
+      return ui.el("div", { class: "fitai-sep" });
+    },
+
+    row(children = []) {
+      return ui.el("div", { class: "fitai-row" }, children);
+    },
+
+    col(children = []) {
+      return ui.el("div", { class: "fitai-col" }, children);
+    },
+
+    card(opts = {}) {
+      const { title, subtitle, body = [], footer = [] } = opts;
+      const headerBits = [];
+      if (title) headerBits.push(ui.el("div", { class: "fitai-card-title", text: title }));
+      if (subtitle) headerBits.push(ui.el("div", { class: "fitai-card-subtitle", text: subtitle }));
+
+      return ui.el("div", { class: "fitai-card" }, [
+        headerBits.length ? ui.el("div", { class: "fitai-card-header" }, headerBits) : null,
+        ui.el("div", { class: "fitai-card-body" }, body),
+        footer.length ? ui.el("div", { class: "fitai-card-footer" }, footer) : null,
+      ]);
+    },
+
+    navTab(label, key) {
+      const active = state.activeTab === key;
+      return ui.el(
+        "button",
+        {
+          class: active ? "fitai-tab fitai-tab-active" : "fitai-tab",
+          type: "button",
+          on: {
+            click: () => {
+              state.activeTab = key;
+              render();
+            },
+          },
+        },
+        [label]
+      );
+    },
+
+    toast(message, kind = "info") {
+      const existing = document.getElementById("fitai-toast");
+      if (existing) existing.remove();
+      if (state.toastTimer) window.clearTimeout(state.toastTimer);
+
+      const toast = ui.el("div", {
+        id: "fitai-toast",
+        class:
+          kind === "error"
+            ? "fitai-toast fitai-toast-error"
+            : kind === "success"
+            ? "fitai-toast fitai-toast-success"
+            : "fitai-toast",
+        text: message,
+      });
+
+      document.body.appendChild(toast);
+      state.toastTimer = window.setTimeout(() => {
+        toast.remove();
+      }, 2600);
+    },
+
+    pageShell(opts = {}) {
+      const { headerRight, content } = opts;
+
+      const header = ui.el("div", { class: "fitai-header" }, [
+        ui.el("div", { class: "fitai-brand" }, [
+          ui.el("div", { class: "fitai-brand-mark", text: "F" }),
+          ui.el("div", { class: "fitai-brand-text" }, [
+            ui.el("div", { class: "fitai-brand-title", text: APP_NAME }),
+            ui.el("div", { class: "fitai-brand-sub", text: "Cyberpunk Coach" }),
+          ]),
+        ]),
+        headerRight ? ui.el("div", { class: "fitai-header-right" }, headerRight) : null,
+      ]);
+
+      return ui.el("div", { class: "fitai-shell" }, [
+        ui.injectStylesOnce(),
+        header,
+        ui.el("div", { class: "fitai-content" }, [content]),
+      ]);
+    },
+
+    modal(opts = {}) {
+      const { title, body = [], footer = [], onClose } = opts;
+
+      const overlay = ui.el("div", {
+        class: "fitai-modal-overlay",
+        on: {
+          click: (e) => {
+            if (e.target === overlay && typeof onClose === "function") onClose();
+          },
+        },
+      });
+
+      const box = ui.el("div", { class: "fitai-modal" }, [
+        ui.el("div", { class: "fitai-modal-header" }, [
+          ui.el("div", { class: "fitai-modal-title", text: title || "" }),
+          ui.btn("✕", {
+            variant: "ghost",
+            onClick: () => (typeof onClose === "function" ? onClose() : null),
+            title: "Fermer",
+          }),
+        ]),
+        ui.el("div", { class: "fitai-modal-body" }, body),
+        footer.length ? ui.el("div", { class: "fitai-modal-footer" }, footer) : null,
+      ]);
+
+      overlay.appendChild(box);
+      return overlay;
+    },
+
+    injectStylesOnce() {
+      if (document.getElementById("fitai-appjs-styles")) return ui.el("div");
+      const style = ui.el("style", {
+        id: "fitai-appjs-styles",
+        text: `
+:root{
+  --fitai-bg:#070812;
+  --fitai-panel:#0b0f22;
+  --fitai-panel2:#0a142b;
+  --fitai-ink:#e9ecff;
+  --fitai-sub:#b7bde6;
+  --fitai-indigo:#6c5ce7;
+  --fitai-lime:#b6ff3b;
+  --fitai-danger:#ff3b7a;
+  --fitai-stroke:rgba(182,255,59,.22);
+  --fitai-stroke2:rgba(108,92,231,.22);
+  --fitai-shadow: 0 10px 40px rgba(0,0,0,.55);
+  --fitai-radius: 18px;
+  --fitai-radius2: 14px;
+  --fitai-font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji","Segoe UI Emoji";
+}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(1200px 800px at 20% 10%, rgba(108,92,231,.18), transparent 60%),
+radial-gradient(1000px 700px at 80% 0%, rgba(182,255,59,.10), transparent 55%), var(--fitai-bg);
+color:var(--fitai-ink); font-family:var(--fitai-font)}
+.fitai-shell{min-height:100vh}
+.fitai-header{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;
+padding:14px 18px;background:rgba(7,8,18,.72);backdrop-filter: blur(10px); border-bottom:1px solid rgba(182,255,59,.14)}
+.fitai-brand{display:flex;gap:12px;align-items:center}
+.fitai-brand-mark{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+background:linear-gradient(135deg, rgba(182,255,59,.16), rgba(108,92,231,.18));
+border:1px solid rgba(182,255,59,.25); box-shadow: var(--fitai-shadow); color: var(--fitai-lime); font-weight:800}
+.fitai-brand-title{font-weight:800;letter-spacing:.3px}
+.fitai-brand-sub{font-size:12px;color:var(--fitai-sub);margin-top:2px}
+.fitai-header-right{display:flex;gap:10px;align-items:center}
+.fitai-content{max-width:1080px;margin:0 auto;padding:18px}
+.fitai-row{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.fitai-col{display:flex;flex-direction:column;gap:14px;min-width:280px;flex:1}
+.fitai-card{background:linear-gradient(180deg, rgba(11,15,34,.92), rgba(10,20,43,.88));
+border:1px solid rgba(182,255,59,.16); border-radius: var(--fitai-radius); box-shadow: var(--fitai-shadow); overflow:hidden}
+.fitai-card-header{padding:14px 14px 0}
+.fitai-card-title{font-size:16px;font-weight:800}
+.fitai-card-subtitle{font-size:12px;color:var(--fitai-sub);margin-top:4px}
+.fitai-card-body{padding:14px}
+.fitai-card-footer{padding:12px 14px;border-top:1px solid rgba(108,92,231,.14);display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+.fitai-h1{font-size:22px;font-weight:900;letter-spacing:.2px;margin:0 0 6px 0}
+.fitai-h2{font-size:14px;font-weight:800;color:var(--fitai-sub);margin:0}
+.fitai-p{color:var(--fitai-sub);font-size:13px;line-height:1.45}
+.fitai-sep{height:1px;background:linear-gradient(90deg, rgba(182,255,59,.18), rgba(108,92,231,.18), transparent);margin:10px 0}
+.fitai-input,.fitai-textarea{width:100%;background:rgba(0,0,0,.20);border:1px solid rgba(182,255,59,.18);
+color:var(--fitai-ink); border-radius: 12px; padding:10px 12px; outline:none}
+.fitai-input:focus,.fitai-textarea:focus{border-color: rgba(182,255,59,.45); box-shadow: 0 0 0 3px rgba(182,255,59,.10)}
+.fitai-btn{border:1px solid transparent;border-radius: 14px; padding:10px 12px; cursor:pointer; font-weight:800}
+.fitai-btn-primary{background:linear-gradient(135deg, rgba(182,255,59,.16), rgba(108,92,231,.22));
+border-color: rgba(182,255,59,.28); color: var(--fitai-ink)}
+.fitai-btn-ghost{background:rgba(255,255,255,.04);border-color: rgba(108,92,231,.20); color: var(--fitai-ink)}
+.fitai-btn-danger{background:rgba(255,59,122,.10);border-color: rgba(255,59,122,.28); color: var(--fitai-ink)}
+.fitai-btn:disabled{opacity:.55; cursor:not-allowed}
+.fitai-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.fitai-tab{background:rgba(255,255,255,.03);border:1px solid rgba(108,92,231,.20);color:var(--fitai-ink);
+padding:10px 12px;border-radius: 999px; cursor:pointer; font-weight:800}
+.fitai-tab-active{border-color: rgba(182,255,59,.40); box-shadow: 0 0 0 3px rgba(182,255,59,.10)}
+.fitai-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;
+background:rgba(182,255,59,.10);border:1px solid rgba(182,255,59,.20);color:var(--fitai-lime);font-weight:800;font-size:12px}
+.fitai-muted{color:var(--fitai-sub);font-size:12px}
+.fitai-toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:80;
+background:rgba(0,0,0,.75);border:1px solid rgba(182,255,59,.20);padding:10px 12px;border-radius: 14px; box-shadow: var(--fitai-shadow)}
+.fitai-toast-success{border-color: rgba(182,255,59,.40)}
+.fitai-toast-error{border-color: rgba(255,59,122,.40)}
+.fitai-list{display:flex;flex-direction:column;gap:12px}
+.fitai-item{padding:12px;border-radius: 14px;border:1px solid rgba(108,92,231,.18);background:rgba(0,0,0,.16)}
+.fitai-item-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.fitai-item-title{font-weight:900}
+.fitai-item-sub{color:var(--fitai-sub);font-size:12px;margin-top:4px}
+.fitai-img{width:100%;max-height:420px;object-fit:cover;border-radius: 14px;border:1px solid rgba(182,255,59,.16)}
+.fitai-compare{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width: 860px){.fitai-compare{grid-template-columns:1fr}}
+.fitai-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.70);backdrop-filter: blur(8px);z-index:90;display:flex;align-items:center;justify-content:center;padding:18px}
+.fitai-modal{width:min(980px, 100%); max-height: 86vh; overflow:auto;background:linear-gradient(180deg, rgba(11,15,34,.98), rgba(10,20,43,.96));
+border:1px solid rgba(182,255,59,.16); border-radius: var(--fitai-radius); box-shadow: var(--fitai-shadow)}
+.fitai-modal-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border-bottom:1px solid rgba(108,92,231,.14)}
+.fitai-modal-title{font-weight:900}
+.fitai-modal-body{padding:14px}
+.fitai-modal-footer{padding:12px 14px;border-top:1px solid rgba(108,92,231,.14);display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+`,
+      });
+      document.head.appendChild(style);
+      return ui.el("div");
+    },
+  };
+
+  /* =========================
+     Utils
+     ========================= */
+  function clampText(s, max = 180) {
+    const str = String(s || "");
+    if (str.length <= max) return str;
+    return str.slice(0, max - 1) + "…";
+  }
+
+  function fmtDate(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch (_) {
+      return String(iso || "");
     }
+  }
 
-    this.renderTimerUI();
-  },
+  function ensureNotBusy() {
+    if (state.busy) return false;
+    return true;
+  }
 
-  skipExercise() {
-    const wt = this.workoutTimer;
-    wt.currentIndex++;
+  function setBusy(v) {
+    state.busy = !!v;
+    const spinner = document.getElementById("fitai-busy");
+    if (spinner) spinner.style.display = state.busy ? "inline-flex" : "none";
+  }
 
-    if (wt.currentIndex >= wt.exercises.length) {
-      this.completeWorkout();
+  function safeUUID() {
+    try {
+      if (crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    } catch (_) {}
+    return "uuid_" + Math.random().toString(16).slice(2) + "_" + Date.now();
+  }
+
+  function parseHashParams() {
+    const h = String(window.location.hash || "");
+    if (!h || h.length < 2) return {};
+    const s = h.startsWith("#") ? h.slice(1) : h;
+    const p = new URLSearchParams(s);
+    const out = {};
+    for (const [k, v] of p.entries()) out[k] = v;
+    return out;
+  }
+
+  function clearUrlArtifacts() {
+    // Clear hash + code param to avoid re-processing on refresh
+    try {
+      const url = new URL(window.location.href);
+      url.hash = "";
+      url.searchParams.delete("code");
+      url.searchParams.delete("error");
+      url.searchParams.delete("error_code");
+      url.searchParams.delete("error_description");
+      window.history.replaceState({}, document.title, url.toString());
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  async function getSignedUrl(path) {
+    const now = Date.now();
+    const cached = state.signedCache.get(path);
+    if (cached && cached.url && cached.expiresAtMs && cached.expiresAtMs - now > 60_000) {
+      return cached.url;
+    }
+    const { data, error } = await state.supabase
+      .storage
+      .from(BUCKET)
+      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+
+    if (error || !data?.signedUrl) throw error || new Error("Signed URL failed");
+    const expiresAtMs = now + SIGNED_URL_TTL_SECONDS * 1000;
+    state.signedCache.set(path, { url: data.signedUrl, expiresAtMs });
+    return data.signedUrl;
+  }
+
+  /* =========================
+     Magic link callback handling
+     ========================= */
+  async function handleAuthCallbackIfAny() {
+    // 1) hash errors (your friend got otp_expired in hash)
+    const hash = parseHashParams();
+    if (hash.error_code || hash.error) {
+      const code = String(hash.error_code || hash.error || "auth_error");
+      const desc = decodeURIComponent(String(hash.error_description || ""));
+      if (code === "otp_expired") {
+        ui.toast("Lien expiré. Renvoie un nouveau magic link et clique uniquement le dernier.", "error");
+      } else {
+        ui.toast(`Auth error: ${code}${desc ? " — " + desc : ""}`, "error");
+      }
+      clearUrlArtifacts();
       return;
     }
 
-    wt.phase = "work";
-    wt.timeLeft = wt.exercises[wt.currentIndex].duration;
-    this.renderTimerUI();
-  },
+    // 2) PKCE code in query (?code=...)
+    try {
+      const url = new URL(window.location.href);
+      const code = url.searchParams.get("code");
+      if (code) {
+        const { error } = await state.supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          ui.toast("Magic link invalide/expiré. Renvoie un nouveau lien.", "error");
+        } else {
+          ui.toast("Connecté (magic link).", "success");
+        }
+        clearUrlArtifacts();
+      }
+    } catch (_) {}
 
-  togglePause() {
-    this.workoutTimer.isPaused = !this.workoutTimer.isPaused;
-    const btn = this.$("btnPauseResume");
-    if (btn) btn.textContent = this.workoutTimer.isPaused ? "▶️ Reprendre" : "⏸️ Pause";
-  },
-
-  stopWorkout() {
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-      this.timerInterval = null;
+    // 3) implicit tokens in hash (#access_token=...)
+    if (hash.access_token && hash.refresh_token) {
+      const access_token = String(hash.access_token);
+      const refresh_token = String(hash.refresh_token);
+      const { error } = await state.supabase.auth.setSession({ access_token, refresh_token });
+      if (error) ui.toast("Impossible de finaliser la connexion.", "error");
+      else ui.toast("Connecté (magic link).", "success");
+      clearUrlArtifacts();
     }
-    this.workoutTimer = null;
-    this.setCoachEmpty("Timer arrêté. Lance une nouvelle génération si besoin.");
-  },
+  }
 
-  completeWorkout() {
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-      this.timerInterval = null;
+  /* =========================
+     Session handling
+     ========================= */
+  async function refreshSession() {
+    const { data, error } = await state.supabase.auth.getSession();
+    if (error) {
+      state.session = null;
+      state.user = null;
+      return;
     }
+    state.session = data.session;
+    state.user = data.session?.user || null;
+  }
 
-    this.playBeep(1200, 500);
+  state.supabase.auth.onAuthStateChange((_event, session) => {
+    state.session = session;
+    state.user = session?.user || null;
+    render();
+  });
 
-    const c = this.$("coachOutput");
-    if (!c) return;
-    c.replaceChildren();
-
-    const card = this.el("div", { className: "card", style: { textAlign: "center" } });
-    card.appendChild(this.el("div", { style: { fontSize: "60px", marginBottom: "20px" }, text: "🎉" }));
-    card.appendChild(this.el("div", { style: { fontSize: "32px", fontWeight: "950", color: "var(--lime)", marginBottom: "16px" }, text: "Workout Terminé !" }));
-    card.appendChild(this.el("div", { style: { fontSize: "16px", color: "var(--muted)", marginBottom: "30px" }, text: "Bravo ! N'oublie pas de t'étirer." }));
-
-    const btnRow = this.el("div", { style: { display: "flex", gap: "12px", justifyContent: "center" } }, [
-      this.el("button", { className: "btn primary", text: "🔄 Nouveau Workout" })
-    ]);
-    btnRow.children[0].addEventListener("click", () => this.generateWorkout());
-
-    card.appendChild(btnRow);
-    c.appendChild(card);
-
-    this.workoutTimer = null;
-  },
-
-  async saveWorkout(data) {
-    if (!this.user) return;
-    const title = data.exercises?.[0]?.name || "Séance générée";
-    const { error } = await this.supabase.from("workouts").insert({
-      user_id: this.user.id,
-      title,
-      intensity: "medium",
-      is_public: true,
-      exercises: data.exercises
-    });
-    if (error) return alert("Erreur : " + error.message);
-    alert("✅ Séance sauvegardée !");
-    await this.refreshRecent();
-    await this.refreshStats();
-    await this.refreshHeatmap();
-    this.updateVolumeChart();
-  },
-
-  async refreshFeed() {
-    const fs = this.$("feedStatus");
-    if (fs) fs.textContent = "Chargement...";
-
-    const { data, error } = await this.supabase
+  /* =========================
+     Data loaders
+     ========================= */
+  async function loadFeedWorkouts() {
+    const { data, error } = await state.supabase
       .from("workouts_feed")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(40);
 
-    if (error) {
-      if (fs) fs.textContent = "Erreur";
-      console.error(error);
-      return;
-    }
+    if (error) throw error;
+    return Array.isArray(data) ? data : [];
+  }
 
-    this.feedItems = data || [];
-    if (fs) fs.textContent = `${this.feedItems.length} séances`;
-    await this.loadLikedWorkouts();
-    this.renderFeed();
-  },
+  async function loadBodyScans() {
+    if (!state.user) return [];
+    const { data, error } = await state.supabase
+      .from("body_scans")
+      .select("id,user_id,image_path,ai_feedback,ai_version,symmetry_score,posture_score,bodyfat_proxy,created_at")
+      .eq("user_id", state.user.id)
+      .order("created_at", { ascending: false })
+      .limit(80);
 
-  async loadLikedWorkouts() {
-    if (!this.user) return;
-    const { data } = await this.supabase
-      .from("kudos")
-      .select("workout_id")
-      .eq("user_id", this.user.id);
-    this.likedSet = new Set((data || []).map(k => k.workout_id));
-  },
+    if (error) throw error;
+    return Array.isArray(data) ? data : [];
+  }
 
-  renderFeed() {
-    const c = this.$("feedContainer");
-    if (!c) return;
-    c.replaceChildren();
-
-    if (!this.feedItems.length) {
-      c.appendChild(this.el("div", { className: "empty", text: "Aucune séance publique." }));
-      return;
-    }
-
-    this.feedItems.forEach(item => {
-      const liked = this.likedSet.has(item.id);
-
-      const card = this.el("div", { className: "feedCard" }, [
-        this.el("div", { className: "feedHeader" }, [
-          this.el("div", { className: "feedUser" }, [
-            this.el("span", { text: item.user_display }),
-            this.el("span", { className: "feedBadges", text: item.badges || "" })
-          ]),
-          this.el("div", { className: "feedTime", text: new Date(item.created_at).toLocaleString("fr-FR", { day: "numeric", month: "short" }) })
-        ]),
-        this.el("div", { className: "feedTitle", text: item.title }),
-        this.el("div", { className: "feedActions" }, [
-          this.el("div", {}, [
-            this.el("span", { className: `badge ${item.intensity === "hard" ? "red" : item.intensity === "medium" ? "orange" : "lime"}`, text: String(item.intensity || "").toUpperCase() })
-          ]),
-          this.el("div", { style: { display: "flex", gap: "10px", alignItems: "center" } }, [
-            this.el("button", { className: "kudosBtn" + (liked ? " liked" : ""), text: (liked ? "💖" : "🤍") + " " + (item.kudos_count || 0) })
-          ])
-        ])
-      ]);
-
-      const kudosBtn = card.querySelector(".kudosBtn");
-      if (kudosBtn) kudosBtn.addEventListener("click", () => this.toggleKudos(item.id));
-
-      c.appendChild(card);
-    });
-  },
-
-  async toggleKudos(workoutId) {
-    if (!this.user) return alert("Connecte-toi pour liker.");
-    if (this.kudosBusy.has(workoutId)) return;
-    this.kudosBusy.add(workoutId);
-
-    const liked = this.likedSet.has(workoutId);
-    if (liked) {
-      const { error } = await this.supabase
-        .from("kudos")
-        .delete()
-        .eq("workout_id", workoutId)
-        .eq("user_id", this.user.id);
-      if (!error) this.likedSet.delete(workoutId);
-    } else {
-      const { error } = await this.supabase
-        .from("kudos")
-        .insert({ workout_id: workoutId, user_id: this.user.id });
-      if (!error) this.likedSet.add(workoutId);
-    }
-
-    this.kudosBusy.delete(workoutId);
-    await this.refreshFeed();
-  },
-
-  async evaluateAchievements() {
-    if (!this.user) return;
-
-    const threeDaysAgo = new Date(Date.now() - 3 * 864e5).toISOString();
-    const { data: recentWorkouts } = await this.supabase
-      .from("workouts")
-      .select("created_at")
-      .eq("user_id", this.user.id)
-      .gte("created_at", threeDaysAgo)
-      .order("created_at", { ascending: true });
-
-    if (recentWorkouts && recentWorkouts.length >= 3) {
-      const uniqueDays = new Set(recentWorkouts.map(w => new Date(w.created_at).toDateString()));
-      if (uniqueDays.size >= 3) {
-        await this.supabase
-          .from("achievements")
-          .insert({ user_id: this.user.id, badge_type: "STREAK" })
-          .onConflict("user_id,badge_type")
-          .ignore();
-      }
-    }
-
-    const startOfWeek = new Date();
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1);
-    startOfWeek.setHours(0, 0, 0, 0);
-
-    const { data: hardWorkouts } = await this.supabase
-      .from("workouts")
-      .select("id")
-      .eq("user_id", this.user.id)
-      .eq("intensity", "hard")
-      .gte("created_at", startOfWeek.toISOString());
-
-    if (hardWorkouts && hardWorkouts.length >= 3) {
-      await this.supabase
-        .from("achievements")
-        .insert({ user_id: this.user.id, badge_type: "MACHINE" })
-        .onConflict("user_id,badge_type")
-        .ignore();
-    }
-
-    if (this.profile?.kpis?.recovery >= 90) {
-      const { data: lightWorkouts } = await this.supabase
-        .from("workouts")
-        .select("id")
-        .eq("user_id", this.user.id)
-        .eq("intensity", "light")
-        .limit(1);
-
-      if (lightWorkouts && lightWorkouts.length > 0) {
-        await this.supabase
-          .from("achievements")
-          .insert({ user_id: this.user.id, badge_type: "CLOWN" })
-          .onConflict("user_id,badge_type")
-          .ignore();
-      }
-    }
-  },
-
-  async refreshTrophies() {
-    if (!this.user) return this.renderTrophyWall(new Map());
-    const { data } = await this.supabase
-      .from("achievements")
-      .select("badge_type,unlocked_at")
-      .eq("user_id", this.user.id);
-
-    const unlocked = new Map((data || []).map(a => [a.badge_type, a.unlocked_at]));
-    this.renderTrophyWall(unlocked);
-    this.hint("trophyHint", `${unlocked.size}/4 trophées débloqués.`, "ok");
-  },
-
-  // ✅ REWRITE: Lucide icons (no emoji), no innerHTML, call refreshLucideIcons()
-  renderTrophyWall(unlocked) {
-    const c = this.$("trophyWall");
-    if (!c) return;
-    c.replaceChildren();
-
-    for (const [key, badge] of Object.entries(BADGES)) {
-      const unlockedAt = unlocked?.get?.(key);
-      const isUnlocked = !!unlockedAt;
-
-      const card = this.el("div", { className: "trophyCard" + (isUnlocked ? " unlocked" : " locked") });
-
-      const iconWrap = this.el("div", { className: "trophyIcon" });
-      const icon = document.createElement("i");
-      icon.setAttribute("data-lucide", String(badge.icon || "award"));
-      icon.setAttribute("aria-hidden", "true");
-      iconWrap.appendChild(icon);
-
-      const info = this.el("div", { className: "trophyInfo" }, [
-        this.el("div", { className: "trophyTitle", text: badge.title }),
-        this.el("div", { className: "trophyDesc", text: badge.desc }),
-        isUnlocked
-          ? this.el("div", { className: "trophyMeta", text: `Débloqué le ${new Date(unlockedAt).toLocaleDateString("fr-FR")}` })
-          : this.el("div", { className: "trophyMeta", text: "🔒 Non débloqué" })
-      ]);
-
-      card.appendChild(iconWrap);
-      card.appendChild(info);
-      c.appendChild(card);
-    }
-
-    this.refreshLucideIcons();
-  },
-
-  showMealModal() {
-    const mm = this.$("mealModal");
-    if (mm) mm.style.display = "block";
-    const t = this.$("mealType"); if (t) t.value = "Petit-déj";
-    const d = this.$("mealDesc"); if (d) d.value = "";
-    const c = this.$("mealCal");  if (c) c.value = "";
-    const p = this.$("mealProt"); if (p) p.value = "";
-    const carbs = this.$("mealCarbs"); if (carbs) carbs.value = "";
-    const f = this.$("mealFats"); if (f) f.value = "";
-  },
-
-  hideMealModal() {
-    const mm = this.$("mealModal");
-    if (mm) mm.style.display = "none";
-  },
-
-  async saveMeal() {
-    const meal = {
-      type: this.$("mealType")?.value || "",
-      desc: (this.$("mealDesc")?.value || "").trim(),
-      cal: Number(this.$("mealCal")?.value) || 0,
-      prot: Number(this.$("mealProt")?.value) || 0,
-      carbs: Number(this.$("mealCarbs")?.value) || 0,
-      fats: Number(this.$("mealFats")?.value) || 0,
-      date: new Date().toISOString()
-    };
-    if (!meal.desc || meal.cal === 0) {
-      alert("Description et calories obligatoires.");
-      return;
-    }
-    this.meals.push(meal);
-    this.hideMealModal();
-    this.renderNutrition();
-  },
-
-  renderNutrition() {
-    const today = this.meals.filter(m => new Date(m.date).toDateString() === new Date().toDateString());
-    const totalCal = today.reduce((s, m) => s + m.cal, 0);
-    const totalProt = today.reduce((s, m) => s + m.prot, 0);
-    const totalCarbs = today.reduce((s, m) => s + m.carbs, 0);
-    const totalFats = today.reduce((s, m) => s + m.fats, 0);
-
-    const cal = this.$("cal-total"); if (cal) cal.textContent = String(totalCal);
-    const mp = this.$("macro-protein"); if (mp) mp.textContent = totalProt + "g";
-    const mc = this.$("macro-carbs"); if (mc) mc.textContent = String(totalCarbs);
-    const mf = this.$("macro-fats"); if (mf) mf.textContent = String(totalFats);
-
-    const c = this.$("mealsContainer");
-    if (!c) return;
-    c.replaceChildren();
-
-    if (!today.length) {
-      c.appendChild(this.el("div", { className: "empty", text: "Aucun repas enregistré aujourd'hui." }));
-      return;
-    }
-
-    today.forEach(m => {
-      const card = this.el("div", { className: "mealCard" }, [
-        this.el("div", { className: "mealHeader" }, [
-          this.el("div", { className: "mealType", text: m.type }),
-          this.el("span", { className: "badge cyan", text: `${m.cal} kcal` })
-        ]),
-        this.el("div", { text: m.desc, style: { fontSize: "13px", color: "var(--muted)", marginBottom: "8px" } }),
-        this.el("div", { className: "mealMacros" }, [
-          this.el("span", { text: `P: ${m.prot}g` }),
-          this.el("span", { text: `G: ${m.carbs}g` }),
-          this.el("span", { text: `L: ${m.fats}g` })
-        ])
-      ]);
-      c.appendChild(card);
+  /* =========================
+     Views
+     ========================= */
+  function viewAuth() {
+    const emailInput = ui.input({
+      type: "email",
+      placeholder: "Email",
+      autocomplete: "email",
     });
 
-    if (this.profile?.kpis?.weight) {
-      const weight = Number(this.profile.kpis.weight);
-      const proteinTarget = Math.round(weight * 2);
-      const calTarget = Math.round(weight * 30);
-      const pt = this.$("protein-target"); if (pt) pt.textContent = String(proteinTarget);
-      const ct = this.$("cal-target"); if (ct) ct.textContent = String(calTarget);
+    const passInput = ui.input({
+      type: "password",
+      placeholder: "Mot de passe (optionnel si magic link)",
+      autocomplete: "current-password",
+    });
+
+    const mode = { v: "magic" }; // magic | login | signup
+
+    function modeButtons() {
+      return ui.row([
+        ui.btn("Magic link", {
+          variant: mode.v === "magic" ? "primary" : "ghost",
+          onClick: () => {
+            mode.v = "magic";
+            passInput.style.display = "none";
+            render();
+          },
+        }),
+        ui.btn("Mot de passe", {
+          variant: mode.v === "login" ? "primary" : "ghost",
+          onClick: () => {
+            mode.v = "login";
+            passInput.style.display = "block";
+            passInput.autocomplete = "current-password";
+            render();
+          },
+        }),
+        ui.btn("Créer compte", {
+          variant: mode.v === "signup" ? "primary" : "ghost",
+          onClick: () => {
+            mode.v = "signup";
+            passInput.style.display = "block";
+            passInput.autocomplete = "new-password";
+            render();
+          },
+        }),
+      ]);
     }
-  },
 
-  initCharts() {
-    const ctx = this.$("chartVolume")?.getContext?.("2d");
-    if (!ctx) return;
+    passInput.style.display = mode.v === "magic" ? "none" : "block";
 
-    this.chartVolume = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: ["S-4", "S-3", "S-2", "S-1", "Maintenant"],
-        datasets: [{
-          label: "Volume (kg)",
-          data: [0, 0, 0, 0, 0],
-          borderColor: "#b7ff2a",
-          backgroundColor: "rgba(183,255,42,.10)",
-          tension: 0.4,
-          fill: true,
-          borderWidth: 3,
-          pointRadius: 5,
-          pointBackgroundColor: "#b7ff2a"
-        }]
+    const submit = ui.btn("Continuer", {
+      variant: "primary",
+      onClick: async () => {
+        if (!ensureNotBusy()) return;
+
+        const email = String(emailInput.value || "").trim();
+        const pass = String(passInput.value || "").trim();
+
+        if (!email) {
+          ui.toast("Email requis.", "error");
+          return;
+        }
+
+        try {
+          setBusy(true);
+
+          if (mode.v === "magic") {
+            // IMPORTANT: do not spam: each new link can invalidate previous -> otp_expired
+            const { error } = await state.supabase.auth.signInWithOtp({
+              email,
+              options: {
+                emailRedirectTo: `${window.location.origin}/`,
+              },
+            });
+            if (error) throw error;
+            ui.toast("Magic link envoyé. Clique uniquement le DERNIER mail.", "success");
+            return;
+          }
+
+          if (!pass) {
+            ui.toast("Mot de passe requis.", "error");
+            return;
+          }
+
+          if (mode.v === "signup") {
+            const { error } = await state.supabase.auth.signUp({ email, password: pass });
+            if (error) throw error;
+            ui.toast("Compte créé. Vérifie ton email si confirmation activée.", "success");
+          } else {
+            const { error } = await state.supabase.auth.signInWithPassword({ email, password: pass });
+            if (error) throw error;
+            ui.toast("Connecté.", "success");
+          }
+        } catch (e) {
+          ui.toast(String(e?.message || e || "Erreur auth"), "error");
+        } finally {
+          setBusy(false);
+        }
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: "rgba(0,0,0,.85)",
-            titleColor: "#b7ff2a",
-            bodyColor: "#fff",
-            borderColor: "#b7ff2a",
-            borderWidth: 1
+    });
+
+    const info = ui.card({
+      title: "Connexion FitAI",
+      subtitle: "Magic link ou mot de passe (Supabase Auth)",
+      body: [
+        ui.row([ui.badge("AUTH"), ui.badge("RLS"), ui.badge("PRIVATE STORAGE")]),
+        ui.sep(),
+        modeButtons(),
+        ui.sep(),
+        ui.el("div", { class: "fitai-muted", text: "Email" }),
+        emailInput,
+        ui.el("div", { class: "fitai-muted", text: "Mot de passe", style: { marginTop: "10px" } }),
+        passInput,
+        ui.sep(),
+        ui.el("div", { class: "fitai-muted", text: "Si tu vois otp_expired : renvoie un lien et clique uniquement le dernier." }),
+      ],
+      footer: [submit],
+    });
+
+    return ui.pageShell({
+      headerRight: [ui.badge("SYNC")],
+      content: ui.row([ui.col([info])]),
+    });
+  }
+
+  function headerRightForAuthed() {
+    const email = state.user?.email ? String(state.user.email) : "User";
+    const busyBadge = ui.badge("SYNC");
+    busyBadge.id = "fitai-busy";
+    busyBadge.style.display = state.busy ? "inline-flex" : "none";
+
+    return [
+      ui.badge(clampText(email, 28)),
+      busyBadge,
+      ui.btn("Déconnexion", {
+        variant: "ghost",
+        onClick: async () => {
+          if (!ensureNotBusy()) return;
+          try {
+            setBusy(true);
+            const { error } = await state.supabase.auth.signOut();
+            if (error) throw error;
+            ui.toast("Déconnecté.", "success");
+          } catch (e) {
+            ui.toast(String(e?.message || e || "Erreur"), "error");
+          } finally {
+            setBusy(false);
           }
         },
-        scales: {
-          y: { beginAtZero: true, ticks: { color: "#a7adbd", font: { size: 11 } }, grid: { color: "rgba(255,255,255,.05)" } },
-          x: { ticks: { color: "#a7adbd", font: { size: 11 } }, grid: { display: false } }
-        }
-      }
+      }),
+    ];
+  }
+
+  function viewAppShell(contentNode) {
+    const tabs = ui.el("div", { class: "fitai-tabs" }, [
+      ui.navTab("Feed", "feed"),
+      ui.navTab("Workout", "workout"),
+      ui.navTab("Body Scan", "bodyscan"),
+      ui.navTab("Profil", "profile"),
+    ]);
+
+    return ui.pageShell({
+      headerRight: headerRightForAuthed(),
+      content: ui.el("div", {}, [tabs, contentNode]),
     });
-    this.updateVolumeChart();
-  },
-
-  async updateVolumeChart() {
-    if (!this.chartVolume || !this.user) return;
-
-    const weeks = [];
-    const volumes = [];
-
-    for (let i = 4; i >= 0; i--) {
-      const weekStart = new Date();
-      weekStart.setDate(weekStart.getDate() - (i * 7));
-      weekStart.setHours(0, 0, 0, 0);
-
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekEnd.getDate() + 7);
-
-      const { data } = await this.supabase
-        .from("workouts")
-        .select("exercises")
-        .eq("user_id", this.user.id)
-        .gte("created_at", weekStart.toISOString())
-        .lt("created_at", weekEnd.toISOString());
-
-      let weekVolume = 0;
-      if (data) {
-        data.forEach(w => {
-          if (w.exercises && Array.isArray(w.exercises)) {
-            w.exercises.forEach(ex => {
-              const sets = ex.sets || 3;
-              const repsRange = String(ex.reps || "8-10").split("-");
-              const avgReps = repsRange.length === 2
-                ? (Number(repsRange[0]) + Number(repsRange[1])) / 2
-                : Number(repsRange[0]) || 8;
-              weekVolume += sets * avgReps * 50;
-            });
-          }
-        });
-      }
-
-      weeks.push(i === 0 ? "Maintenant" : `S-${i}`);
-      volumes.push(Math.round(weekVolume));
-    }
-
-    this.chartVolume.data.labels = weeks;
-    this.chartVolume.data.datasets[0].data = volumes;
-    this.chartVolume.update();
-  }
-};
-
-/* ============================================================
-   Boot
-   ============================================================ */
-document.addEventListener("DOMContentLoaded", () => App.init());
-
-          
-/* ============================================================
-   FITAI V18 — PATCH PACK (paste at END of public/app.js)
-   Fixes:
-   - client -> /api/workout payload matches your api/workout.js (action/context)
-   - ensureProfiles creates rows if missing (upsert defaults)
-   - kudos updates workouts.kudos_count via API + keeps kudos table for "likedSet"
-   - safe fallbacks (no hard crash)
-   ============================================================ */
-
-(() => {
-  // --- tiny helpers ---
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  function getAccessToken() {
-    try { return App?.session?.access_token || null; } catch { return null; }
   }
 
-  function apiHeaders(extra = {}) {
-    const h = {
-      "Content-Type": "application/json",
-      "X-FitAI-Client": typeof CLIENT_TOKEN === "string" ? CLIENT_TOKEN : "fitai-v18",
-      ...extra
-    };
-    const tok = getAccessToken();
-    if (tok) h.Authorization = `Bearer ${tok}`;
-    return h;
+  function viewFeed() {
+    const list = ui.el("div", { class: "fitai-list" }, [
+      ui.el("div", { class: "fitai-muted", text: "Chargement du feed…" }),
+    ]);
+
+    const refreshBtn = ui.btn("Rafraîchir", {
+      variant: "ghost",
+      onClick: async () => {
+        if (!ensureNotBusy()) return;
+        await hydrateFeed(list);
+      },
+    });
+
+    const card = ui.card({
+      title: "Workouts Feed",
+      subtitle: "View workouts_feed",
+      body: [list],
+      footer: [refreshBtn],
+    });
+
+    hydrateFeed(list).catch(() => void 0);
+
+    return viewAppShell(ui.row([ui.col([card])]));
   }
 
-  function defaultKpis() {
-    return { recovery: 70, weight: 70, sleep: 7 };
-  }
-
-  function defaultEquipment() {
-    return { bodyweight: true, dumbbells: false, barbell: false, machines: false };
-  }
-
-  // ------------------------------------------------------------
-  // 1) ensureProfiles: create missing rows (your old version only SELECTed)
-  // ------------------------------------------------------------
-  App.ensureProfiles = async function ensureProfiles(userId) {
-    if (!this.supabase || !userId) return;
-
-    const trySelect = async () => {
-      const selP = await this.supabase
-        .from("profiles")
-        .select("kpis,equipment,last_workout_date,age,weight,height")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      const selPub = await this.supabase
-        .from("public_profiles")
-        .select("display_name")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      return {
-        profile: selP?.data || null,
-        pub: selPub?.data || null,
-        errP: selP?.error || null,
-        errPub: selPub?.error || null
-      };
-    };
-
-    let r = await trySelect();
-
-    // If missing rows, try to upsert defaults (requires correct RLS policies + schema)
-    if (!r.profile && !r.errP) {
-      await this.supabase
-        .from("profiles")
-        .upsert(
-          { user_id: userId, kpis: defaultKpis(), equipment: defaultEquipment() },
-          { onConflict: "user_id" }
-        );
-      await sleep(120);
-    }
-
-    if (!r.pub && !r.errPub) {
-      await this.supabase
-        .from("public_profiles")
-        .upsert(
-          { user_id: userId, display_name: "" },
-          { onConflict: "user_id" }
-        );
-      await sleep(120);
-    }
-
-    r = await trySelect();
-
-    this.profile = r.profile;
-    this.publicProfile = r.pub;
-
-    // Friendly hint (no crash if schema is not ready)
-    if (r.errP || r.errPub) {
-      console.warn("ensureProfiles schema/RLS issue:", r.errP || r.errPub);
-      this.hint("profileHint", "⚠️ Profil non prêt côté DB (schema/RLS).", "err");
-      return;
-    }
-
-    this.hint("profileHint", "Profil synchronisé ✅", "ok");
-  };
-
-  // ------------------------------------------------------------
-  // 2) generateWorkout: FIX payload to match /api/workout.js (action/context)
-  //    Your server returns { title, summary, intensity, exercises[] }
-  //    We adapt it to your renderer expecting { type:'workout', note, exercises[] }
-  // ------------------------------------------------------------
-  App.generateWorkout = async function generateWorkout() {
-    if (!this.user) return this.setCoachEmpty("Connecte-toi.");
-    const promptEl = this.$("coachPrompt");
-    const prompt = promptEl ? String(promptEl.value || "").trim() : "";
-    if (!prompt) return this.setCoachEmpty("Décris ta séance souhaitée.");
-
-    this.setCoachLoading();
-
+  async function hydrateFeed(listNode) {
     try {
-      const kpis = this.profile?.kpis ? { ...defaultKpis(), ...this.profile.kpis } : defaultKpis();
-      const equipment = this.profile?.equipment ? { ...defaultEquipment(), ...this.profile.equipment } : defaultEquipment();
+      setBusy(true);
+      listNode.replaceChildren(ui.el("div", { class: "fitai-muted", text: "Synchronisation…" }));
+      const items = await loadFeedWorkouts();
 
-      const payload = {
-        action: "generate",
-        prompt,
-        context: {
-          goal: "hypertrophy",
-          minutes: 45,
-          equipment,
-          kpis,
-          exHistory: this.profile?.exHistory || {} // optional if you store it later
-        }
-      };
-
-      const r = await fetch("/api/workout", {
-        method: "POST",
-        headers: apiHeaders(),
-        body: JSON.stringify(payload)
-      });
-
-      if (!r.ok) {
-        const t = await r.text().catch(() => "");
-        throw new Error(`API ${r.status} ${t || ""}`.trim());
-      }
-
-      const data = await r.json();
-
-      // Adapt "server workout" -> your current renderer format
-      if (data && Array.isArray(data.exercises)) {
-        const adapted = {
-          type: "workout",
-          note: data.summary || data.title || "Séance générée.",
-          exercises: data.exercises.map((ex) => ({
-            name: ex.name,
-            duration: 0,
-            rest: 90,
-            sets: ex.sets ?? 3,
-            reps: ex.reps ?? "8-12",
-            rpe: ex.target_rpe ?? 8,
-            // extra fields (ignored by renderer unless you use them later)
-            load: ex.suggested_load,
-            coach_note: ex.note
-          }))
-        };
-        this.renderWorkoutPlan(adapted);
-        this.refreshLucideIcons();
+      if (!items.length) {
+        listNode.replaceChildren(ui.el("div", { class: "fitai-muted", text: "Aucun item pour le moment." }));
         return;
       }
 
-      // Fallback: if your API ever returns old format
-      this.handleAIResponse(data);
+      const nodes = items.map((it) => {
+        const title = it.title || it.name || it.workout_name || "Workout";
+        const created = it.created_at || it.inserted_at || it.date || null;
+        const userDisplay = it.user_display || it.display_name || it.user_name || null;
 
-    } catch (err) {
-      console.error(err);
-      this.setCoachEmpty("Erreur : " + (err?.message || "inconnue"));
-    }
-  };
+        const metaBits = [];
+        if (created) metaBits.push(ui.el("div", { class: "fitai-item-sub", text: fmtDate(created) }));
+        if (userDisplay) metaBits.push(ui.el("div", { class: "fitai-item-sub", text: `par: ${String(userDisplay)}` }));
 
-  // ------------------------------------------------------------
-  // 3) toggleKudos: keep your "kudos" table for likedSet + update kudos_count via API
-  // ------------------------------------------------------------
-  App.toggleKudos = async function toggleKudos(workoutId) {
-    if (!this.user) return alert("Connecte-toi pour liker.");
-    if (!workoutId) return;
-    if (this.kudosBusy?.has(workoutId)) return;
-
-    this.kudosBusy.add(workoutId);
-
-    try {
-      const liked = this.likedSet.has(workoutId);
-
-      // 1) maintain per-user liked state in table "kudos"
-      if (liked) {
-        const { error } = await this.supabase
-          .from("kudos")
-          .delete()
-          .eq("workout_id", workoutId)
-          .eq("user_id", this.user.id);
-        if (!error) this.likedSet.delete(workoutId);
-      } else {
-        const { error } = await this.supabase
-          .from("kudos")
-          .insert({ workout_id: workoutId, user_id: this.user.id });
-        if (!error) this.likedSet.add(workoutId);
-      }
-
-      // 2) update workouts.kudos_count via your server API (needs service_role on server + Bearer token here)
-      const rr = await fetch("/api/workout", {
-        method: "POST",
-        headers: apiHeaders(),
-        body: JSON.stringify({ action: "kudos", workout_id: workoutId, delta: liked ? -1 : 1 })
+        const preview = it.summary || it.description || it.notes || it.plan || "";
+        return ui.el("div", { class: "fitai-item" }, [
+          ui.el("div", { class: "fitai-item-head" }, [
+            ui.el("div", { class: "fitai-item-title", text: String(title) }),
+            ui.badge(it.is_public ? "PUBLIC" : "LIVE"),
+          ]),
+          ...metaBits,
+          ui.sep(),
+          ui.el("div", { class: "fitai-item-sub", text: preview ? clampText(preview, 220) : "—" }),
+        ]);
       });
 
-      if (!rr.ok) {
-        const t = await rr.text().catch(() => "");
-        console.warn("kudos_count not updated via API:", rr.status, t);
-      }
-
-      await this.refreshFeed();
+      listNode.replaceChildren(...nodes);
+    } catch (e) {
+      listNode.replaceChildren(
+        ui.el("div", { class: "fitai-muted", text: "Erreur de lecture workouts_feed." }),
+        ui.el("div", { class: "fitai-muted", text: String(e?.message || e || "") })
+      );
+      ui.toast("Erreur feed.", "error");
     } finally {
-      this.kudosBusy.delete(workoutId);
+      setBusy(false);
     }
-  };
-
-  // ------------------------------------------------------------
-  // 4) Boot (if you forgot to call App.init somewhere)
-  // ------------------------------------------------------------
-  if (!window.__fitaiBooted) {
-    window.__fitaiBooted = true;
-    window.addEventListener("DOMContentLoaded", () => {
-      if (App && typeof App.init === "function") {
-        App.init().catch((e) => console.error("App.init failed:", e));
-      }
-    });
   }
+
+  function viewWorkout() {
+    const goalInput = ui.input({ placeholder: "Objectif (cut / bulk / recomposition)", value: "recomposition" });
+    const levelInput = ui.input({ placeholder: "Niveau (beginner/intermediate/advanced)", value: "intermediate" });
+    const equipInput = ui.input({ placeholder: "Matériel (gym/home/dumbbells)", value: "gym" });
+    const output = ui.textarea({ placeholder: "Résultat généré…", value: "", rows: 10 });
+
+    const generateBtn = ui.btn("Générer workout", {
+      variant: "primary",
+      onClick: async () => {
+        if (!ensureNotBusy()) return;
+        try {
+          setBusy(true);
+          output.value = "Génération en cours…";
+
+          const res = await fetch("/api/workout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              goal: String(goalInput.value || "").trim(),
+              level: String(levelInput.value || "").trim(),
+              equipment: String(equipInput.value || "").trim(),
+            }),
+          });
+
+          if (!res.ok) {
+            const txt = await res.text().catch(() => "");
+            throw new Error(`API /api/workout: ${res.status} ${txt ? "- " + txt : ""}`);
+          }
+
+          const data = await res.json().catch(() => null);
+          const text =
+            (data && (data.workout || data.text || data.result)) ||
+            JSON.stringify(data, null, 2) ||
+            "OK";
+          output.value = String(text);
+          ui.toast("Workout généré.", "success");
+        } catch (e) {
+          output.value = "";
+          ui.toast(String(e?.message || e || "Erreur workout"), "error");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+
+    const card = ui.card({
+      title: "Workout Generator",
+      subtitle: "api/workout.js",
+      body: [
+        ui.el("div", { class: "fitai-muted", text: "Objectif" }),
+        goalInput,
+        ui.el("div", { class: "fitai-muted", text: "Niveau", style: { marginTop: "10px" } }),
+        levelInput,
+        ui.el("div", { class: "fitai-muted", text: "Matériel", style: { marginTop: "10px" } }),
+        equipInput,
+        ui.sep(),
+        ui.el("div", { class: "fitai-muted", text: "Output" }),
+        output,
+      ],
+      footer: [generateBtn],
+    });
+
+    return viewAppShell(ui.row([ui.col([card])]));
+  }
+
+  function viewProfile() {
+    const box = ui.el("div", { class: "fitai-list" }, [
+      ui.el("div", { class: "fitai-muted", text: "Profil…" }),
+    ]);
+
+    const card = ui.card({
+      title: "Profil",
+      subtitle: "Session Supabase",
+      body: [box],
+      footer: [
+        ui.btn("Rafraîchir", {
+          variant: "ghost",
+          onClick: async () => {
+            if (!ensureNotBusy()) return;
+            await hydrateProfile(box);
+          },
+        }),
+      ],
+    });
+
+    hydrateProfile(box).catch(() => void 0);
+
+    return viewAppShell(ui.row([ui.col([card])]));
+  }
+
+  async function hydrateProfile(container) {
+    try {
+      setBusy(true);
+      container.replaceChildren(ui.el("div", { class: "fitai-muted", text: "Synchronisation…" }));
+
+      if (!state.user) {
+        container.replaceChildren(ui.el("div", { class: "fitai-muted", text: "Non connecté." }));
+        return;
+      }
+
+      container.replaceChildren(
+        ui.el("div", { class: "fitai-item" }, [
+          ui.el("div", { class: "fitai-item-head" }, [
+            ui.el("div", { class: "fitai-item-title", text: "Compte" }),
+            ui.badge("RLS"),
+          ]),
+          ui.el("div", { class: "fitai-item-sub", text: `user_id: ${state.user.id}` }),
+          ui.el("div", { class: "fitai-item-sub", text: `email: ${state.user.email || ""}` }),
+        ]),
+        ui.el("div", { class: "fitai-muted", text: "Si ton upsert profil fait ON CONFLICT, il faut une contrainte UNIQUE sur profiles.user_id." })
+      );
+    } catch (e) {
+      container.replaceChildren(
+        ui.el("div", { class: "fitai-muted", text: "Erreur profil." }),
+        ui.el("div", { class: "fitai-muted", text: String(e?.message || e || "") })
+      );
+      ui.toast("Erreur profil.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /* =========================
+     Body Scan view (REAL Gemini via /api/bodyscan)
+     ========================= */
+  function viewBodyScan() {
+    const fileState = { file: null, previewUrl: null };
+
+    const timeline = ui.el("div", { class: "fitai-list" }, [
+      ui.el("div", { class: "fitai-muted", text: "Chargement des scans…" }),
+    ]);
+
+    const previewImg = ui.el("img", { class: "fitai-img", alt: "Preview Body Scan" });
+    previewImg.style.display = "none";
+
+    const previewInfo = ui.el("div", { class: "fitai-muted", text: "Sélectionne une image (JPG/PNG/WEBP, max 10MB)." });
+
+    const fileInput = ui.fileInput({
+      accept: "image/jpeg,image/png,image/webp",
+      onChange: (e) => {
+        const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+        if (!f) return;
+
+        const mime = String(f.type || "").toLowerCase();
+        if (!ALLOWED_MIME.has(mime)) {
+          ui.toast("Formats autorisés: JPG / PNG / WEBP.", "error");
+          e.target.value = "";
+          return;
+        }
+        if (typeof f.size === "number" && f.size > MAX_IMAGE_BYTES) {
+          ui.toast("Image trop lourde (max 10MB).", "error");
+          e.target.value = "";
+          return;
+        }
+
+        fileState.file = f;
+        if (fileState.previewUrl) {
+          try { URL.revokeObjectURL(fileState.previewUrl); } catch (_) {}
+        }
+        fileState.previewUrl = URL.createObjectURL(f);
+        previewImg.src = fileState.previewUrl;
+        previewImg.style.display = "block";
+        previewInfo.textContent = `${f.name} • ${(f.size / (1024 * 1024)).toFixed(2)} MB • ${mime}`;
+        uploadBtn.disabled = false;
+      },
+    });
+
+    const uploadBtn = ui.btn("Uploader + analyser (Gemini)", {
+      variant: "primary",
+      disabled: true,
+      onClick: async () => {
+        if (!ensureNotBusy()) return;
+        if (!state.user) {
+          ui.toast("Non connecté.", "error");
+          return;
+        }
+        if (!fileState.file) {
+          ui.toast("Choisis une image.", "error");
+          return;
+        }
+
+        const f = fileState.file;
+        const ts = Date.now();
+        const uid = safeUUID().slice(0, 12);
+        const ext = (String(f.name || "").toLowerCase().endsWith(".png") ? "png"
+                  : String(f.name || "").toLowerCase().endsWith(".webp") ? "webp"
+                  : "jpg");
+        const path = `${state.user.id}/bodyscans/${uid}_${ts}.${ext}`;
+
+        try {
+          setBusy(true);
+
+          // 0) get session token for /api/bodyscan
+          const { data: sessData } = await state.supabase.auth.getSession();
+          const token = sessData?.session?.access_token || null;
+          if (!token) throw new Error("SESSION_TOKEN_MISSING");
+
+          // 1) Upload to private bucket
+          const { error: upErr } = await state.supabase
+            .storage
+            .from(BUCKET)
+            .upload(path, f, {
+              cacheControl: "3600",
+              upsert: false,
+              contentType: f.type || "application/octet-stream",
+            });
+          if (upErr) throw upErr;
+
+          // 2) Insert DB row (front inserts, backend updates with AI)
+          const { error: insErr } = await state.supabase
+            .from("body_scans")
+            .insert({
+              user_id: state.user.id,
+              image_path: path,
+              ai_feedback: "",
+            });
+          if (insErr) throw insErr;
+
+          // 3) Call serverless AI (Gemini)
+          const res = await fetch("/api/bodyscan", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`,
+            },
+            body: JSON.stringify({ user_id: state.user.id, image_path: path }),
+          });
+
+          if (!res.ok) {
+            const txt = await res.text().catch(() => "");
+            throw new Error(`API /api/bodyscan: ${res.status} ${txt || ""}`);
+          }
+
+          ui.toast("Scan analysé (Gemini).", "success");
+
+          // Reset selection
+          fileState.file = null;
+          if (fileState.previewUrl) {
+            try { URL.revokeObjectURL(fileState.previewUrl); } catch (_) {}
+          }
+          fileState.previewUrl = null;
+          fileInput.value = "";
+          previewImg.src = "";
+          previewImg.style.display = "none";
+          previewInfo.textContent = "Sélectionne une image (JPG/PNG/WEBP, max 10MB).";
+          uploadBtn.disabled = true;
+
+          // Reload timeline
+          await hydrateBodyScans(timeline);
+        } catch (e) {
+          ui.toast(String(e?.message || e || "Erreur upload/scan"), "error");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+
+    const refreshBtn = ui.btn("Rafraîchir", {
+      variant: "ghost",
+      onClick: async () => {
+        if (!ensureNotBusy()) return;
+        await hydrateBodyScans(timeline);
+      },
+    });
+
+    const infoCard = ui.card({
+      title: "Body Scan (IA réelle)",
+      subtitle: "Bucket privé • Signed URLs • Analyse Gemini via /api/bodyscan",
+      body: [
+        ui.row([ui.badge("PRIVATE"), ui.badge("SIGNED URL"), ui.badge("GEMINI")]),
+        ui.sep(),
+        ui.el("div", { class: "fitai-muted", text: "Upload" }),
+        fileInput,
+        ui.el("div", { class: "fitai-muted", style: { marginTop: "10px" }, text: "" }),
+        previewInfo,
+        ui.el("div", { style: { marginTop: "10px" } }, [previewImg]),
+        ui.sep(),
+        ui.el("div", { class: "fitai-muted", text: "Note: si tu vois otp_expired sur un ami, renvoyer un magic link et cliquer uniquement le dernier." }),
+      ],
+      footer: [refreshBtn, uploadBtn],
+    });
+
+    const timelineCard = ui.card({
+      title: "Timeline des scans",
+      subtitle: "Affichage via signed URLs (privé)",
+      body: [timeline],
+    });
+
+    hydrateBodyScans(timeline).catch(() => void 0);
+
+    return viewAppShell(ui.row([ui.col([infoCard]), ui.col([timelineCard])]));
+  }
+
+  async function hydrateBodyScans(timelineNode) {
+    timelineNode.replaceChildren(ui.el("div", { class: "fitai-muted", text: "Synchronisation…" }));
+
+    if (!state.user) {
+      timelineNode.replaceChildren(ui.el("div", { class: "fitai-muted", text: "Non connecté." }));
+      return;
+    }
+
+    try {
+      setBusy(true);
+      state.bodyScans = await loadBodyScans();
+
+      if (!state.bodyScans.length) {
+        timelineNode.replaceChildren(
+          ui.el("div", { class: "fitai-muted", text: "Aucun scan pour le moment." }),
+          ui.el("div", { class: "fitai-muted", text: "Ajoute ton premier Body Scan (max 10MB)." })
+        );
+        return;
+      }
+
+      const nodes = [];
+      for (const scan of state.bodyScans) {
+        let signedUrl = "";
+        try {
+          signedUrl = await getSignedUrl(scan.image_path);
+        } catch (_) {
+          signedUrl = "";
+        }
+
+        const img = ui.el("img", { class: "fitai-img", alt: "Body Scan" });
+        if (signedUrl) img.src = signedUrl;
+
+        const scores =
+          scan.symmetry_score != null || scan.posture_score != null || scan.bodyfat_proxy != null
+            ? `Sym:${scan.symmetry_score ?? "—"} • Post:${scan.posture_score ?? "—"} • Sec:${scan.bodyfat_proxy ?? "—"}`
+            : "Scores: —";
+
+        const item = ui.el("div", { class: "fitai-item" }, [
+          ui.el("div", { class: "fitai-item-head" }, [
+            ui.el("div", { class: "fitai-item-title", text: fmtDate(scan.created_at) }),
+            ui.badge(scan.ai_version ? String(scan.ai_version).toUpperCase() : "SCAN"),
+          ]),
+          ui.el("div", { class: "fitai-item-sub", text: scores }),
+          ui.el("div", { class: "fitai-item-sub", text: scan.image_path }),
+          ui.sep(),
+          signedUrl ? img : ui.el("div", { class: "fitai-muted", text: "Signed URL indisponible (storage policy / bucket)." }),
+          ui.sep(),
+          ui.el("div", { class: "fitai-item-sub", text: scan.ai_feedback ? clampText(scan.ai_feedback, 260) : "Analyse en cours / pas encore dispo." }),
+        ]);
+
+        nodes.push(item);
+      }
+
+      timelineNode.replaceChildren(...nodes);
+    } catch (e) {
+      timelineNode.replaceChildren(
+        ui.el("div", { class: "fitai-muted", text: "Erreur de lecture body_scans." }),
+        ui.el("div", { class: "fitai-muted", text: String(e?.message || e || "") }),
+        ui.el("div", { class: "fitai-muted", text: "Assure-toi que la table body_scans existe + RLS OK + bucket user_uploads privé." })
+      );
+      ui.toast("Erreur Body Scan.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /* =========================
+     Router
+     ========================= */
+  function render() {
+    if (!state.user) {
+      root.replaceChildren(viewAuth());
+      return;
+    }
+
+    let content = null;
+    if (state.activeTab === "feed") content = viewFeed();
+    else if (state.activeTab === "workout") content = viewWorkout();
+    else if (state.activeTab === "bodyscan") content = viewBodyScan();
+    else if (state.activeTab === "profile") content = viewProfile();
+    else content = viewFeed();
+
+    root.replaceChildren(content);
+  }
+
+  /* =========================
+     Start
+     ========================= */
+  (async () => {
+    await handleAuthCallbackIfAny(); // <-- FIX magic link
+    await refreshSession();
+    render();
+  })();
 })();
