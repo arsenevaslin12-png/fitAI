@@ -1805,3 +1805,235 @@ IMPORTANT : duration et rest sont en SECONDES. Si l'exercice est basé sur des r
 document.addEventListener("DOMContentLoaded", () => App.init());
 
           
+/* ============================================================
+   FITAI V18 — PATCH PACK (paste at END of public/app.js)
+   Fixes:
+   - client -> /api/workout payload matches your api/workout.js (action/context)
+   - ensureProfiles creates rows if missing (upsert defaults)
+   - kudos updates workouts.kudos_count via API + keeps kudos table for "likedSet"
+   - safe fallbacks (no hard crash)
+   ============================================================ */
+
+(() => {
+  // --- tiny helpers ---
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function getAccessToken() {
+    try { return App?.session?.access_token || null; } catch { return null; }
+  }
+
+  function apiHeaders(extra = {}) {
+    const h = {
+      "Content-Type": "application/json",
+      "X-FitAI-Client": typeof CLIENT_TOKEN === "string" ? CLIENT_TOKEN : "fitai-v18",
+      ...extra
+    };
+    const tok = getAccessToken();
+    if (tok) h.Authorization = `Bearer ${tok}`;
+    return h;
+  }
+
+  function defaultKpis() {
+    return { recovery: 70, weight: 70, sleep: 7 };
+  }
+
+  function defaultEquipment() {
+    return { bodyweight: true, dumbbells: false, barbell: false, machines: false };
+  }
+
+  // ------------------------------------------------------------
+  // 1) ensureProfiles: create missing rows (your old version only SELECTed)
+  // ------------------------------------------------------------
+  App.ensureProfiles = async function ensureProfiles(userId) {
+    if (!this.supabase || !userId) return;
+
+    const trySelect = async () => {
+      const selP = await this.supabase
+        .from("profiles")
+        .select("kpis,equipment,last_workout_date,age,weight,height")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      const selPub = await this.supabase
+        .from("public_profiles")
+        .select("display_name")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      return {
+        profile: selP?.data || null,
+        pub: selPub?.data || null,
+        errP: selP?.error || null,
+        errPub: selPub?.error || null
+      };
+    };
+
+    let r = await trySelect();
+
+    // If missing rows, try to upsert defaults (requires correct RLS policies + schema)
+    if (!r.profile && !r.errP) {
+      await this.supabase
+        .from("profiles")
+        .upsert(
+          { user_id: userId, kpis: defaultKpis(), equipment: defaultEquipment() },
+          { onConflict: "user_id" }
+        );
+      await sleep(120);
+    }
+
+    if (!r.pub && !r.errPub) {
+      await this.supabase
+        .from("public_profiles")
+        .upsert(
+          { user_id: userId, display_name: "" },
+          { onConflict: "user_id" }
+        );
+      await sleep(120);
+    }
+
+    r = await trySelect();
+
+    this.profile = r.profile;
+    this.publicProfile = r.pub;
+
+    // Friendly hint (no crash if schema is not ready)
+    if (r.errP || r.errPub) {
+      console.warn("ensureProfiles schema/RLS issue:", r.errP || r.errPub);
+      this.hint("profileHint", "⚠️ Profil non prêt côté DB (schema/RLS).", "err");
+      return;
+    }
+
+    this.hint("profileHint", "Profil synchronisé ✅", "ok");
+  };
+
+  // ------------------------------------------------------------
+  // 2) generateWorkout: FIX payload to match /api/workout.js (action/context)
+  //    Your server returns { title, summary, intensity, exercises[] }
+  //    We adapt it to your renderer expecting { type:'workout', note, exercises[] }
+  // ------------------------------------------------------------
+  App.generateWorkout = async function generateWorkout() {
+    if (!this.user) return this.setCoachEmpty("Connecte-toi.");
+    const promptEl = this.$("coachPrompt");
+    const prompt = promptEl ? String(promptEl.value || "").trim() : "";
+    if (!prompt) return this.setCoachEmpty("Décris ta séance souhaitée.");
+
+    this.setCoachLoading();
+
+    try {
+      const kpis = this.profile?.kpis ? { ...defaultKpis(), ...this.profile.kpis } : defaultKpis();
+      const equipment = this.profile?.equipment ? { ...defaultEquipment(), ...this.profile.equipment } : defaultEquipment();
+
+      const payload = {
+        action: "generate",
+        prompt,
+        context: {
+          goal: "hypertrophy",
+          minutes: 45,
+          equipment,
+          kpis,
+          exHistory: this.profile?.exHistory || {} // optional if you store it later
+        }
+      };
+
+      const r = await fetch("/api/workout", {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify(payload)
+      });
+
+      if (!r.ok) {
+        const t = await r.text().catch(() => "");
+        throw new Error(`API ${r.status} ${t || ""}`.trim());
+      }
+
+      const data = await r.json();
+
+      // Adapt "server workout" -> your current renderer format
+      if (data && Array.isArray(data.exercises)) {
+        const adapted = {
+          type: "workout",
+          note: data.summary || data.title || "Séance générée.",
+          exercises: data.exercises.map((ex) => ({
+            name: ex.name,
+            duration: 0,
+            rest: 90,
+            sets: ex.sets ?? 3,
+            reps: ex.reps ?? "8-12",
+            rpe: ex.target_rpe ?? 8,
+            // extra fields (ignored by renderer unless you use them later)
+            load: ex.suggested_load,
+            coach_note: ex.note
+          }))
+        };
+        this.renderWorkoutPlan(adapted);
+        this.refreshLucideIcons();
+        return;
+      }
+
+      // Fallback: if your API ever returns old format
+      this.handleAIResponse(data);
+
+    } catch (err) {
+      console.error(err);
+      this.setCoachEmpty("Erreur : " + (err?.message || "inconnue"));
+    }
+  };
+
+  // ------------------------------------------------------------
+  // 3) toggleKudos: keep your "kudos" table for likedSet + update kudos_count via API
+  // ------------------------------------------------------------
+  App.toggleKudos = async function toggleKudos(workoutId) {
+    if (!this.user) return alert("Connecte-toi pour liker.");
+    if (!workoutId) return;
+    if (this.kudosBusy?.has(workoutId)) return;
+
+    this.kudosBusy.add(workoutId);
+
+    try {
+      const liked = this.likedSet.has(workoutId);
+
+      // 1) maintain per-user liked state in table "kudos"
+      if (liked) {
+        const { error } = await this.supabase
+          .from("kudos")
+          .delete()
+          .eq("workout_id", workoutId)
+          .eq("user_id", this.user.id);
+        if (!error) this.likedSet.delete(workoutId);
+      } else {
+        const { error } = await this.supabase
+          .from("kudos")
+          .insert({ workout_id: workoutId, user_id: this.user.id });
+        if (!error) this.likedSet.add(workoutId);
+      }
+
+      // 2) update workouts.kudos_count via your server API (needs service_role on server + Bearer token here)
+      const rr = await fetch("/api/workout", {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({ action: "kudos", workout_id: workoutId, delta: liked ? -1 : 1 })
+      });
+
+      if (!rr.ok) {
+        const t = await rr.text().catch(() => "");
+        console.warn("kudos_count not updated via API:", rr.status, t);
+      }
+
+      await this.refreshFeed();
+    } finally {
+      this.kudosBusy.delete(workoutId);
+    }
+  };
+
+  // ------------------------------------------------------------
+  // 4) Boot (if you forgot to call App.init somewhere)
+  // ------------------------------------------------------------
+  if (!window.__fitaiBooted) {
+    window.__fitaiBooted = true;
+    window.addEventListener("DOMContentLoaded", () => {
+      if (App && typeof App.init === "function") {
+        App.init().catch((e) => console.error("App.init failed:", e));
+      }
+    });
+  }
+})();
