@@ -14,12 +14,7 @@ const esc = (s = "") =>
 const fmtDate = (iso) => {
   try {
     const d = new Date(iso);
-    return d.toLocaleString("fr-FR", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return d.toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
   } catch {
     return "";
   }
@@ -38,9 +33,8 @@ const App = {
     this.initStarted = true;
 
     console.log("[FitAI] app.js loaded");
-
     this.ensureToast();
-    this.bindButtonsDefensive();
+    this.bindButtons();
     this.bindLikeDelegation();
 
     await this.initSupabase();
@@ -87,40 +81,29 @@ const App = {
     this._t = setTimeout(() => (el.style.display = "none"), 2400);
   },
 
-  bindButtonsDefensive() {
-    const map = {
-      btnLogin: () => this.login(),
-      btnRegister: () => this.register(),
-      btnLogout: () => this.logout(),
-      btnSaveDisplayName: () => this.saveDisplayName(),
-      btnGenerateWorkout: () => this.generateWorkout(),
-      btnRefreshFeed: () => this.refreshFeed(),
-      btnPublishWorkout: () => this.publishQuick(),
-    };
-
-    // bind direct si les IDs existent
-    Object.keys(map).forEach((id) => {
+  bindButtons() {
+    const safe = (id, fn) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener("click", (e) => {
         e.preventDefault();
-        Promise.resolve(map[id]()).catch((err) => {
+        Promise.resolve(fn()).catch((err) => {
           console.error(err);
           this.toast("Erreur action.", "danger");
         });
       });
-    });
+    };
 
-    // fallback: delegation (si tes boutons sont <a> ou wrappers)
-    document.addEventListener("click", (e) => {
-      const btn = e.target?.closest?.("button, a, [role='button']");
-      if (!btn) return;
-      const id = btn.id || "";
-      if (map[id]) {
-        e.preventDefault();
-        map[id]();
-      }
-    });
+    safe("btnLogin", () => this.login());
+    safe("btnRegister", () => this.register());
+    safe("btnLogout", () => this.logout());
+
+    safe("btnSaveDisplayName", () => this.saveDisplayName());
+
+    safe("btnGenerateWorkout", () => this.generateWorkout());
+
+    safe("btnRefreshFeed", () => this.refreshFeed());
+    safe("btnPublishWorkout", () => this.openPublishModal());
   },
 
   bindLikeDelegation() {
@@ -134,27 +117,22 @@ const App = {
   },
 
   async initSupabase() {
-    try {
-      const r = await fetch("/api/workout?config=1", { cache: "no-store" });
-      const j = await r.json().catch(() => ({}));
-      const url = j.supabaseUrl || j.SUPABASE_URL;
-      const key = j.supabaseAnonKey || j.SUPABASE_ANON_KEY;
+    const r = await fetch("/api/workout?config=1", { cache: "no-store" });
+    const j = await r.json().catch(() => ({}));
+    const url = j.supabaseUrl || j.SUPABASE_URL;
+    const key = j.supabaseAnonKey || j.SUPABASE_ANON_KEY;
 
-      if (!url || !key) {
-        console.warn("[FitAI] config:", j);
-        this.toast("Config Supabase manquante.", "danger");
-        return;
-      }
-
-      this.sb = createClient(url, key, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-      });
-
-      this.toast("Supabase OK ✅", "ok");
-    } catch (e) {
-      console.error(e);
-      this.toast("Init Supabase échouée.", "danger");
+    if (!url || !key) {
+      console.warn("[FitAI] config:", j);
+      this.toast("Config Supabase manquante.", "danger");
+      return;
     }
+
+    this.sb = createClient(url, key, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    });
+
+    this.toast("Supabase OK ✅", "ok");
   },
 
   async initAuth() {
@@ -225,10 +203,7 @@ const App = {
 
     if (!data) {
       const name = (this.user.email || "User").split("@")[0].slice(0, 24);
-      const { error } = await this.sb.from("public_profiles").insert({
-        user_id: this.user.id,
-        display_name: name,
-      });
+      const { error } = await this.sb.from("public_profiles").insert({ user_id: this.user.id, display_name: name });
       if (error) console.warn("public_profiles insert:", error.message);
     }
   },
@@ -254,4 +229,150 @@ const App = {
 
     const { error } = await this.sb
       .from("public_profiles")
-      .update({ display_name: name, updated_at:
+      .update({ display_name: name, updated_at: new Date().toISOString() })
+      .eq("user_id", this.user.id);
+
+    if (error) return this.toast(error.message, "danger");
+    this.toast("Nom public enregistré ✅", "ok");
+    await this.loadProfile();
+    await this.refreshFeed();
+  },
+
+  async generateWorkout() {
+    if (!this.user) return this.toast("Connecte-toi.", "warn");
+    const prompt = ($("#coachPrompt")?.value || "").trim();
+    if (!prompt) return this.toast("Écris un prompt.", "warn");
+
+    const out = $("#coachOutput");
+    if (out) out.textContent = "Génération…";
+
+    const r = await fetch("/api/workout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = j?.error || `Erreur ${r.status}`;
+      if (out) out.textContent = msg;
+      return this.toast(msg, "danger");
+    }
+
+    this.lastGeneratedPlan = j?.plan || null;
+    if (out) out.textContent = this.lastGeneratedPlan ? JSON.stringify(this.lastGeneratedPlan, null, 2) : "OK";
+    this.toast("Plan généré ✅", "ok");
+  },
+
+  async loadLikedSet() {
+    this.likedSet = new Set();
+    const { data, error } = await this.sb.from("kudos").select("workout_id").eq("user_id", this.user.id);
+    if (error) return;
+    (data || []).forEach((r) => r?.workout_id && this.likedSet.add(r.workout_id));
+  },
+
+  async refreshFeed() {
+    const host = $("#feedList");
+    if (host) host.textContent = "Chargement…";
+
+    const { data, error } = await this.sb
+      .from("workouts_feed")
+      .select("id,user_id,user_display,title,intensity,notes,plan_json,kudos_count,created_at")
+      .order("created_at", { ascending: false })
+      .limit(60);
+
+    if (error) {
+      console.warn(error);
+      if (host) host.textContent = error.message;
+      return;
+    }
+
+    this.renderFeed(data || []);
+  },
+
+  renderFeed(items) {
+    const host = $("#feedList");
+    if (!host) return;
+
+    if (!items.length) {
+      host.innerHTML = '<div style="opacity:.8">Aucune publication.</div>';
+      return;
+    }
+
+    host.innerHTML = items
+      .map((it) => {
+        const liked = this.likedSet.has(it.id);
+        const kudos = Number(it.kudos_count || 0);
+        const notes = (it.notes || "").trim();
+        const notesShort = notes.length > 180 ? notes.slice(0, 180).trim() + "…" : notes;
+
+        return (
+          `<div style="padding:14px;border:1px solid rgba(255,255,255,.10);border-radius:16px;margin:10px 0;background:rgba(0,0,0,.18)">` +
+          `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">` +
+          `<div style="min-width:0">` +
+          `<div style="font-weight:700">${esc(it.title || "Séance")}</div>` +
+          `<div style="opacity:.8;font-size:13px;margin-top:2px">` +
+          `<span>${esc(it.user_display || "User")}</span>` +
+          `<span style="opacity:.45"> • </span>` +
+          `<span>${esc(fmtDate(it.created_at))}</span>` +
+          `<span style="opacity:.45"> • </span>` +
+          `<span style="text-transform:uppercase;font-size:12px">${esc(it.intensity || "medium")}</span>` +
+          `</div></div>` +
+          `<button data-like="${esc(it.id)}" style="white-space:nowrap;padding:8px 10px;border-radius:14px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.22);color:white;cursor:pointer">` +
+          `${liked ? "❤️" : "🤍"} ${kudos}` +
+          `</button>` +
+          `</div>` +
+          (notesShort ? `<div style="margin-top:10px;opacity:.9">${esc(notesShort)}</div>` : ``) +
+          `</div>`
+        );
+      })
+      .join("");
+  },
+
+  async toggleKudos(workoutId) {
+    if (!this.user) return this.toast("Connecte-toi.", "warn");
+    const liked = this.likedSet.has(workoutId);
+
+    if (liked) {
+      const { error } = await this.sb.from("kudos").delete().eq("workout_id", workoutId).eq("user_id", this.user.id);
+      if (error) return this.toast(error.message, "danger");
+      this.likedSet.delete(workoutId);
+    } else {
+      const { error } = await this.sb.from("kudos").insert({ workout_id: workoutId, user_id: this.user.id });
+      if (error) {
+        const msg = String(error.message || "").toLowerCase();
+        if (!msg.includes("duplicate")) return this.toast(error.message, "danger");
+      }
+      this.likedSet.add(workoutId);
+    }
+
+    await this.refreshFeed();
+  },
+
+  openPublishModal() {
+    if (!this.user) return this.toast("Connecte-toi.", "warn");
+    const title = prompt("Titre de la séance ?", "Séance") || "Séance";
+    const intensity = prompt("Intensité ? easy/medium/hard", "medium") || "medium";
+    const notes = prompt("Notes (optionnel)", "") || "";
+    this.publishWorkout({ title: title.trim() || "Séance", intensity: intensity.trim() || "medium", notes: notes.trim() });
+  },
+
+  async publishWorkout(p) {
+    const { error } = await this.sb.from("workouts").insert({
+      user_id: this.user.id,
+      is_public: true,
+      title: p.title,
+      intensity: p.intensity,
+      notes: p.notes || "",
+      plan_json: this.lastGeneratedPlan || null,
+    });
+
+    if (error) return this.toast(error.message, "danger");
+    this.toast("Publié ✅", "ok");
+    await this.refreshFeed();
+  },
+};
+
+const boot = () => App.init();
+if (document.readyState === "loading") window.addEventListener("DOMContentLoaded", boot);
+else boot();
