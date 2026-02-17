@@ -1,6 +1,83 @@
 (() => {
 "use strict";
 
+/** 1) Injecte les onglets + sections manquants (Planning / Nutrition / BodyScan) */
+function ensureExtraTabs() {
+  const nav = document.querySelector(".tabs");
+  const main = document.querySelector("main.container");
+  if (!nav || !main) return;
+
+  const ensureTabButton = (id, label) => {
+    if (document.getElementById(id)) return;
+    const btn = document.createElement("button");
+    btn.className = "tabBtn";
+    btn.id = id;
+    btn.type = "button";
+    btn.textContent = label;
+    btn.setAttribute("aria-selected", "false");
+    nav.appendChild(btn);
+  };
+
+  const ensureSection = (id, html) => {
+    if (document.getElementById(id)) return;
+    const section = document.createElement("section");
+    section.id = id;
+    section.style.display = "none";
+    section.innerHTML = html;
+    main.appendChild(section);
+  };
+
+  // Buttons (ajoute-les si pas dans index.html)
+  ensureTabButton("tabBtnPlanning", "Planning");
+  ensureTabButton("tabBtnNutrition", "Nutrition");
+  ensureTabButton("tabBtnBodyScan", "Body Scan");
+
+  // Sections
+  ensureSection("tab-planning", `
+    <div class="card">
+      <div class="cardTitle">Planning hebdomadaire</div>
+      <div style="height:10px"></div>
+      <div class="row" style="gap:10px; flex-wrap:wrap">
+        <button class="btn primary" id="btnGeneratePlanning" type="button">Générer Planning IA</button>
+        <button class="btn" id="btnRefreshPlanning" type="button">Refresh</button>
+      </div>
+      <div class="hr"></div>
+      <div id="planningList"><div class="empty">Connecte-toi puis génère ton planning.</div></div>
+    </div>
+  `);
+
+  ensureSection("tab-nutrition", `
+    <div class="card">
+      <div class="cardTitle">Nutrition</div>
+      <div style="height:10px"></div>
+      <div class="row" style="gap:10px; flex-wrap:wrap">
+        <button class="btn primary" id="btnGenerateNutrition" type="button">Générer Macros IA</button>
+        <button class="btn" id="btnRefreshNutrition" type="button">Refresh</button>
+      </div>
+      <div class="hr"></div>
+      <div id="nutritionBox"><div class="empty">Connecte-toi pour générer tes macros.</div></div>
+    </div>
+  `);
+
+  ensureSection("tab-bodyscan", `
+    <div class="card">
+      <div class="row between">
+        <div class="cardTitle" style="margin:0">Body Scan (privé)</div>
+        <span class="chip">Bucket: <span style="font-weight:950;margin-left:6px">user_uploads</span></span>
+      </div>
+      <div style="height:10px"></div>
+      <div class="row" style="gap:10px; align-items:center">
+        <input class="input" id="bodyScanFile" type="file" accept="image/*" style="flex:1" />
+        <button class="btn primary" id="btnUploadBodyScan" type="button">Upload</button>
+        <button class="btn" id="btnRefreshBodyScans" type="button">Refresh</button>
+      </div>
+      <div class="hr"></div>
+      <div id="bodyScansList"></div>
+    </div>
+  `);
+}
+
+/** 2) UN SEUL TAB_MAP */
 const TAB_MAP = [
   { btn: "tabBtnDash", section: "tab-dash" },
   { btn: "tabBtnCoach", section: "tab-coach" },
@@ -16,15 +93,11 @@ function setActiveTab(btnId) {
     const b = document.getElementById(t.btn);
     const s = document.getElementById(t.section);
     const active = t.btn === btnId;
-
     if (b) {
       b.classList.toggle("active", active);
       b.setAttribute("aria-selected", active ? "true" : "false");
     }
-
-    if (s) {
-      s.style.display = active ? "" : "none";
-    }
+    if (s) s.style.display = active ? "" : "none";
   }
 }
 
@@ -32,14 +105,31 @@ function bindTabs() {
   for (const t of TAB_MAP) {
     const b = document.getElementById(t.btn);
     if (!b || b._fitaiBound) continue;
-
-    b.addEventListener("click", () => {
-      setActiveTab(t.btn);
-    });
-
+    b.addEventListener("click", () => setActiveTab(t.btn));
     b._fitaiBound = true;
   }
 }
+
+// IMPORTANT: boot doit appeler ensureExtraTabs() AVANT bindTabs()
+async function boot() {
+  ensureExtraTabs();
+  bindTabs();
+  setActiveTab("tabBtnDash");
+
+  // 👉 Ici seulement ensuite tu appelles ton init supabase + bindEvents existants
+  // await loadConfigAndInitSupabase();
+  // await bootstrapSession();
+  // bindEvents();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot, { once: true });
+} else {
+  boot();
+}
+
+})();
+
 
 const APP = {
   sb: null,
