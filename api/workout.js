@@ -1,10 +1,11 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const MODEL = "gemini-1.5-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(payload));
 }
 
@@ -84,6 +85,39 @@ function toPrettyText(plan) {
   return lines.join("\n").trim();
 }
 
+function buildPromptFromGoal({ goal, level, equipment }) {
+  const g = String(goal || "").trim();
+  const l = String(level || "").trim() || "intermediate";
+  const e = String(equipment || "").trim() || "gym";
+  return [
+    "Tu es FitAI Coach. Réponds UNIQUEMENT avec ce JSON STRICT:",
+    "{",
+    '  "type": "workout",',
+    '  "note": "Conseil du coach en 1-2 phrases",',
+    '  "exercises": [',
+    "    {",
+    '      "name": "Nom",',
+    '      "duration": 30,',
+    '      "rest": 10,',
+    '      "sets": 3,',
+    '      "reps": "10-12",',
+    '      "rpe": 8',
+    "    }",
+    "  ]",
+    "}",
+    "",
+    `Objectif: ${g || "général"}`,
+    `Niveau: ${l}`,
+    `Matériel: ${e}`,
+    "",
+    "Règles:",
+    "- duration/rest en SECONDES. Si reps -> duration=0.",
+    "- 6 à 9 exos max.",
+    "- Au moins 1 exo au timer.",
+    "- Pas de markdown, pas de blabla.",
+  ].join("\n");
+}
+
 async function geminiText({ apiKey, prompt }) {
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
@@ -99,6 +133,10 @@ async function geminiText({ apiKey, prompt }) {
 module.exports = async function handler(req, res) {
   setCors(res);
 
+  const requestId =
+    String(req.headers["x-vercel-id"] || req.headers["x-request-id"] || "") ||
+    `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
   if (req.method === "OPTIONS") {
     res.statusCode = 204;
     return res.end();
@@ -107,30 +145,52 @@ module.exports = async function handler(req, res) {
   // ✅ CONFIG GET for front
   if (req.method === "GET") {
     const isConfig = String(req.query?.config || "") === "1";
-    if (!isConfig) return sendJson(res, 404, { ok: false, error: "NOT_FOUND" });
+    if (!isConfig) return sendJson(res, 404, { ok: false, error: "NOT_FOUND", requestId });
 
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY; // publishable key
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseAnonKey) {
-      return sendJson(res, 500, { ok: false, error: "SERVER_MISCONFIG_SUPABASE_PUBLIC" });
+      console.error("[workout] misconfig supabase public", { requestId, hasUrl: !!supabaseUrl, hasAnon: !!supabaseAnonKey });
+      return sendJson(res, 500, {
+        ok: false,
+        error: "SERVER_MISCONFIG_SUPABASE_PUBLIC",
+        detail: "Missing SUPABASE_URL and/or SUPABASE_ANON_KEY in Vercel env vars (Production/Preview/Development) + redeploy.",
+        requestId,
+      });
     }
+
     return sendJson(res, 200, { supabaseUrl, supabaseAnonKey });
   }
 
   if (req.method !== "POST") {
-    return sendJson(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED" });
+    return sendJson(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", requestId });
   }
 
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_API_KEY) return sendJson(res, 500, { ok: false, error: "SERVER_MISCONFIG_GEMINI" });
+  if (!GEMINI_API_KEY) {
+    console.error("[workout] misconfig gemini", { requestId, hasGeminiKey: false });
+    return sendJson(res, 500, {
+      ok: false,
+      error: "SERVER_MISCONFIG_GEMINI",
+      detail: "Missing GEMINI_API_KEY in Vercel env vars (Production/Preview/Development) + redeploy.",
+      requestId,
+    });
+  }
 
   const body = parseBody(req) || {};
-  const prompt = String(body.prompt || "").trim();
 
+  let prompt = String(body.prompt || "").trim();
   if (!prompt) {
-    return sendJson(res, 400, { ok: false, error: "MISSING_PROMPT" });
+    // fallback support for old front: {goal, level, equipment}
+    const goal = body.goal;
+    const level = body.level;
+    const equipment = body.equipment;
+    if (goal || level || equipment) prompt = buildPromptFromGoal({ goal, level, equipment });
   }
+
+  if (!prompt) return sendJson(res, 400, { ok: false, error: "MISSING_PROMPT", requestId });
+  if (prompt.length > 12000) return sendJson(res, 400, { ok: false, error: "PROMPT_TOO_LONG", requestId });
 
   try {
     const text = await withTimeout(geminiText({ apiKey: GEMINI_API_KEY, prompt }), 25000, "AI_TIMEOUT");
@@ -139,8 +199,13 @@ module.exports = async function handler(req, res) {
     const plan = normalizeWorkout(parsed);
 
     if (!plan) {
-      // fallback: still useful
-      return sendJson(res, 200, { ok: true, workout: String(text || "").trim() || "OK", data: null, model: MODEL });
+      return sendJson(res, 200, {
+        ok: true,
+        workout: String(text || "").trim() || "OK",
+        data: null,
+        model: MODEL,
+        requestId,
+      });
     }
 
     return sendJson(res, 200, {
@@ -148,11 +213,22 @@ module.exports = async function handler(req, res) {
       workout: toPrettyText(plan),
       data: plan,
       model: MODEL,
+      requestId,
     });
   } catch (err) {
     const msg = String(err?.message || "SERVER_ERROR");
     const code = err?.code || "";
-    if (code === "TIMEOUT" || msg.includes("TIMEOUT")) return sendJson(res, 504, { ok: false, error: "TIMEOUT" });
-    return sendJson(res, 500, { ok: false, error: "SERVER_ERROR" });
+
+    console.error("[workout] error", { requestId, code, msg });
+
+    if (code === "TIMEOUT" || msg.includes("TIMEOUT")) return sendJson(res, 504, { ok: false, error: "TIMEOUT", requestId });
+
+    // Gemini key invalid / blocked (best-effort detection)
+    const m = msg.toLowerCase();
+    if (m.includes("api key") || m.includes("permission") || m.includes("unauthorized") || m.includes("forbidden")) {
+      return sendJson(res, 502, { ok: false, error: "GEMINI_AUTH_FAILED", detail: "GEMINI_API_KEY invalid/blocked.", requestId });
+    }
+
+    return sendJson(res, 500, { ok: false, error: "SERVER_ERROR", requestId });
   }
 };
