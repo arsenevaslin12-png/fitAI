@@ -1,5 +1,6 @@
 (() => {
 "use strict";
+
 const TAB_MAP = [
   { btn: "tabBtnDash", section: "tab-dash" },
   { btn: "tabBtnCoach", section: "tab-coach" },
@@ -15,11 +16,15 @@ function setActiveTab(btnId) {
     const b = document.getElementById(t.btn);
     const s = document.getElementById(t.section);
     const active = t.btn === btnId;
+
     if (b) {
       b.classList.toggle("active", active);
       b.setAttribute("aria-selected", active ? "true" : "false");
     }
-    if (s) s.style.display = active ? "" : "none";
+
+    if (s) {
+      s.style.display = active ? "" : "none";
+    }
   }
 }
 
@@ -27,37 +32,28 @@ function bindTabs() {
   for (const t of TAB_MAP) {
     const b = document.getElementById(t.btn);
     if (!b || b._fitaiBound) continue;
-    b.addEventListener("click", () => setActiveTab(t.btn));
+
+    b.addEventListener("click", () => {
+      setActiveTab(t.btn);
+    });
+
     b._fitaiBound = true;
   }
 }
 
 const APP = {
-sb: null,
-cfg: null,
-session: null,
-user: null,
-busy: new Set(),
-lastCoachPlan: null,
-feed: [],
-chart: null,
-_createClient: null,
-_supabaseImportPromise: null,
+  sb: null,
+  cfg: null,
+  session: null,
+  user: null,
+  busy: new Set(),
+  lastCoachPlan: null,
+  feed: [],
+  chart: null,
+  _createClient: null,
+  _supabaseImportPromise: null,
 };
 
-// -----------------------------
-// DOM utils (defensive)
-// -----------------------------
-const $id = (id) => document.getElementById(id);
-const $q = (sel, root = document) => root.querySelector(sel);
-
-const esc = (s) =>
-String(s ?? "")
-.replaceAll("&", "&amp;")
-.replaceAll("<", "&lt;")
-.replaceAll(">", "&gt;")
-.replaceAll('"', "&quot;")
-.replaceAll("'", "&#39;");
 
 const safeText = (el, t) => {
 if (!el) return;
