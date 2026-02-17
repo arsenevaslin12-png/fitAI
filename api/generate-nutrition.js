@@ -247,4 +247,4 @@ module.exports = async function handler(req, res) {
     console.error("[generate-nutrition] error", { requestId, err: e.message });
     return sendJson(res, 500, { ok: false, error: "SERVER_ERROR", requestId });
   }
-};
+}; 
