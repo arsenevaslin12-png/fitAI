@@ -266,6 +266,7 @@
 
       renderAuth();
       refreshProfileHint().catch(() => {});
+      refreshTrophies().catch(() => {});
       refreshFeed().catch(() => {});
       refreshBodyScans().catch(() => {});
     });
@@ -357,6 +358,162 @@
       hint.textContent = dn ? `Profil: ${dn}` : "Profil: ajoute un nom public (onglet Profile).";
     } catch {
       hint.textContent = "Profil: ajoute un nom public (onglet Profile).";
+    }
+  }
+
+  // ============================================================
+  // PROFILE SAVE + TROPHIES
+  // ============================================================
+  async function actionSaveName() {
+    if (!APP.user) return toast("Connecte-toi pour sauvegarder ton profil.", "error");
+
+    const input = $id("displayName");
+    const btn = $id("btnSaveName");
+    const raw = (input?.value ?? "").trim();
+
+    if (!raw) {
+      toast("Display name vide.", "error");
+      input?.focus?.();
+      return;
+    }
+
+    const display_name = raw.slice(0, 40);
+
+    if (isBusy("saveName")) return;
+    setBusy("saveName", true);
+    disable(btn, true);
+
+    try {
+      const { error } = await APP.sb
+        .from("public_profiles")
+        .upsert({ user_id: APP.user.id, display_name }, { onConflict: "user_id" });
+
+      if (error) throw error;
+
+      toast("Profil sauvegardé ✅", "info");
+      await refreshProfileHint();
+      await refreshTrophies();
+    } catch (e) {
+      toast(`Profile Save: ${e.message || e}`, "error");
+    } finally {
+      disable(btn, false);
+      setBusy("saveName", false);
+    }
+  }
+
+  async function sbCount(table, builderFn) {
+    try {
+      let q = APP.sb.from(table).select("*", { count: "exact", head: true });
+      if (typeof builderFn === "function") q = builderFn(q) || q;
+      const { count, error } = await q;
+      if (error) return null;
+      return typeof count === "number" ? count : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function renderTrophies(list) {
+    const host = $id("trophiesList") || $id("trophies") || $id("profileTrophies");
+    if (!host) return;
+
+    safeHTML(
+      host,
+      list
+        .map((t) => {
+          const badge = t.ok ? "✅" : "⬜";
+          const meta = t.meta ? `<div class="hint" style="margin-top:4px">${esc(t.meta)}</div>` : "";
+          return `
+            <div class="feedCard" style="padding:12px">
+              <div style="font-weight:900">${badge} ${esc(t.title)}</div>
+              <div class="hint" style="margin-top:4px">${esc(t.desc)}</div>
+              ${meta}
+            </div>
+          `;
+        })
+        .join("")
+    );
+  }
+
+  // V3 perf: parallélisé, + kudos via workouts_feed (sum kudos_count)
+  let _trophiesBusy = false;
+  async function refreshTrophies() {
+    if (_trophiesBusy) return;
+    _trophiesBusy = true;
+
+    try {
+      if (!APP.user) {
+        renderTrophies([
+          { title: "Connecte-toi", desc: "Les trophées sont disponibles une fois connecté.", ok: false, meta: "" },
+        ]);
+        return;
+      }
+
+      const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      const TOP7_MIN = 4;
+
+      const pProfile = APP.sb
+        .from("public_profiles")
+        .select("display_name")
+        .eq("user_id", APP.user.id)
+        .maybeSingle();
+
+      const pBody = sbCount("body_scans", (q) => q.eq("user_id", APP.user.id));
+      const pWork7d = sbCount("workouts", (q) => q.eq("user_id", APP.user.id).gte("created_at", since));
+
+      // Sum kudos_count for my workouts (fast). If RLS blocks, fallback to 0.
+      const pMyKudos = APP.sb
+        .from("workouts_feed")
+        .select("kudos_count")
+        .eq("user_id", APP.user.id)
+        .limit(200);
+
+      const [
+        { data: profData, error: profErr },
+        bodyScanCountRaw,
+        workouts7dRaw,
+        { data: myRows, error: myKErr },
+      ] = await Promise.all([pProfile, pBody, pWork7d, pMyKudos]);
+
+      let hasPublicProfile = false;
+      if (!profErr && (profData?.display_name ?? "").trim()) hasPublicProfile = true;
+
+      const bodyScanCount = typeof bodyScanCountRaw === "number" ? bodyScanCountRaw : 0;
+      const workouts7d = typeof workouts7dRaw === "number" ? workouts7dRaw : 0;
+
+      let kudosReceived = 0;
+      if (!myKErr && Array.isArray(myRows)) {
+        kudosReceived = myRows.reduce((acc, r) => acc + (Number(r?.kudos_count ?? 0) || 0), 0);
+      }
+
+      renderTrophies([
+        {
+          title: "Profil public",
+          desc: "Définis un display name pour être visible.",
+          ok: hasPublicProfile,
+          meta: hasPublicProfile ? "OK" : "À faire (onglet Profile)",
+        },
+        {
+          title: "Body Scan upload",
+          desc: "Uploader au moins 1 body scan.",
+          ok: bodyScanCount >= 1,
+          meta: `${bodyScanCount}/1`,
+        },
+        {
+          title: "Top 7 jours",
+          desc: `Faire au moins ${TOP7_MIN} séances sur 7 jours.`,
+          ok: workouts7d >= TOP7_MIN,
+          meta: `${workouts7d}/${TOP7_MIN}`,
+        },
+        {
+          title: "Premier kudos reçu",
+          desc: "Recevoir 1 kudos sur tes workouts.",
+          ok: kudosReceived >= 1,
+          meta: `${kudosReceived}/1`,
+        },
+      ]);
+    } finally {
+      _trophiesBusy = false;
     }
   }
 
@@ -536,8 +693,10 @@
       }
 
       await refreshFeed();
+      await refreshTrophies();
     } catch (e) {
       await refreshFeed();
+      await refreshTrophies();
       toast(`Kudos: ${e.message || e}`, "error");
     } finally {
       setBusy(lockKey, false);
@@ -575,6 +734,7 @@
 
       toast("Séance exemple publiée.", "info");
       await refreshFeed();
+      await refreshTrophies();
       setActiveTab("tabBtnCommunity");
     } catch (e) {
       toast(`Seed: ${e.message || e}`, "error");
@@ -628,6 +788,7 @@
       toast("Upload OK.", "info");
       if (fileEl) fileEl.value = "";
       await refreshBodyScans();
+      await refreshTrophies();
     } catch (e) {
       toast(`Upload: ${e.message || e}`, "error");
     } finally {
@@ -657,7 +818,10 @@
 
       if (error) {
         if (String(error.code) === "42P01") {
-          safeHTML(box, `<div class="empty">Historique désactivé (table body_scans absente). Upload fonctionne quand même.</div>`);
+          safeHTML(
+            box,
+            `<div class="empty">Historique désactivé (table body_scans absente). Upload fonctionne quand même.</div>`
+          );
           return;
         }
         throw error;
@@ -684,7 +848,11 @@
               <div class="feedTime">${when}</div>
             </div>
             <div class="row" style="margin-top:10px; gap:10px">
-              ${url ? `<a class="btn" href="${url}" target="_blank" rel="noreferrer">Ouvrir (signed)</a>` : `<span class="badge red">Signed URL failed</span>`}
+              ${
+                url
+                  ? `<a class="btn" href="${url}" target="_blank" rel="noreferrer">Ouvrir (signed)</a>`
+                  : `<span class="badge red">Signed URL failed</span>`
+              }
             </div>
           </div>
         `);
@@ -716,6 +884,19 @@
     bindClick("btnUploadBodyScan", actionUploadBodyScan);
     bindClick("btnRefreshBodyScans", refreshBodyScans);
 
+    // Profile save
+    bindClick("btnSaveName", actionSaveName);
+    const dn = $id("displayName");
+    if (dn && !dn._fitaiBoundEnter) {
+      dn.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          actionSaveName();
+        }
+      });
+      dn._fitaiBoundEnter = true;
+    }
+
     // Delegation actions
     document.addEventListener("click", (e) => {
       const el = e.target?.closest?.("[data-action]");
@@ -735,9 +916,9 @@
   // ============================================================
   async function boot() {
     try {
-      ensureExtraTabs();     // 1) injecte les nouveaux onglets/sections
-      bindTabs();            // 2) bind tabs (maintenant les boutons existent)
-      bindEvents();          // 3) bind events
+      ensureExtraTabs(); // 1) injecte les nouveaux onglets/sections
+      bindTabs(); // 2) bind tabs (maintenant les boutons existent)
+      bindEvents(); // 3) bind events
       setActiveTab("tabBtnDash");
 
       await loadConfigAndInitSupabase();
@@ -745,6 +926,7 @@
 
       renderAuth();
       await refreshProfileHint();
+      await refreshTrophies();
       await refreshFeed();
       await refreshBodyScans();
 
