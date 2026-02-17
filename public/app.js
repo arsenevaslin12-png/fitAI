@@ -1,579 +1,641 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const $ = (sel, root = document) => root.querySelector(sel);
-const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+(() => {
+  "use strict";
 
-const norm = (s = "") =>
-  String(s).toLowerCase().replace(/\s+/g, " ").trim();
+  const APP = {
+    supabase: null,
+    session: null,
+    user: null,
+    feed: [],
+    likedSet: new Set(),
+    config: null,
+    isReady: false,
+  };
 
-const esc = (s = "") =>
-  String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  // -------------------------
+  // DOM utils (défensif)
+  // -------------------------
+  const $id = (id) => document.getElementById(id);
+  const $q = (sel, root = document) => root.querySelector(sel);
+  const $qa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-const fmtDate = (iso) => {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString("fr-FR", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
-};
-
-function allClickable(root = document) {
-  return [
-    ...root.querySelectorAll(
-      "button, a, [role='button'], input[type='button'], input[type='submit']"
-    ),
-  ];
-}
-
-function buttonText(el) {
-  return norm(el?.innerText || el?.value || el?.textContent || "");
-}
-
-function findByTextIncludes(textIncludes = [], root = document) {
-  const els = allClickable(root);
-  for (const el of els) {
-    const t = buttonText(el);
-    if (!t) continue;
-    if (textIncludes.some((k) => t.includes(k))) return el;
-  }
-  return null;
-}
-
-function findNear(refEl, textIncludes = []) {
-  if (!refEl) return null;
-  // remonte jusqu’à un conteneur raisonnable
-  let p = refEl;
-  for (let i = 0; i < 5 && p; i++) {
-    const found = findByTextIncludes(textIncludes, p);
-    if (found) return found;
-    p = p.parentElement;
-  }
-  // fallback global
-  return findByTextIncludes(textIncludes, document);
-}
-
-const App = {
-  sb: null,
-  user: null,
-  publicProfile: null,
-  likedSet: new Set(),
-  lastGeneratedPlan: null,
-  initStarted: false,
-
-  async init() {
-    if (this.initStarted) return;
-    this.initStarted = true;
-
-    this.ensureToast();
-    this.autofixButtonIds(); // <-- le fix principal
-    this.bindButtons();      // bind par id + delegation
-    this.bindLikes();
-
-    await this.initSupabase();
-    if (!this.sb) return;
-
-    await this.initAuth();
-    await this.refreshFeed();
-  },
-
-  ensureToast() {
-    if ($("#toast")) return;
-    const el = document.createElement("div");
-    el.id = "toast";
-    el.style.position = "fixed";
-    el.style.left = "50%";
-    el.style.bottom = "22px";
-    el.style.transform = "translateX(-50%)";
-    el.style.zIndex = "99999";
-    el.style.padding = "10px 14px";
-    el.style.borderRadius = "12px";
-    el.style.maxWidth = "92vw";
-    el.style.display = "none";
-    el.style.fontFamily = "system-ui, Segoe UI, Arial";
-    el.style.fontSize = "14px";
-    el.style.backdropFilter = "blur(8px)";
-    el.style.border = "1px solid rgba(255,255,255,0.12)";
-    el.style.boxShadow = "0 10px 40px rgba(0,0,0,0.35)";
-    document.body.appendChild(el);
-  },
-
-  toast(msg, type = "info") {
-    const el = $("#toast");
+  function setText(el, text) {
     if (!el) return;
-    const palette = {
-      info: "rgba(0,0,0,0.55)",
-      ok: "rgba(0,80,40,0.55)",
-      warn: "rgba(120,80,0,0.55)",
-      danger: "rgba(120,0,0,0.55)",
-    };
-    el.textContent = String(msg || "");
-    el.style.background = palette[type] || palette.info;
-    el.style.display = "block";
-    clearTimeout(this._t);
-    this._t = setTimeout(() => (el.style.display = "none"), 2400);
-  },
+    el.textContent = String(text ?? "");
+  }
 
-  setAuthStatus() {
-    const s = $("#authStatus");
-    if (s) s.textContent = this.user?.email ? `Connecté: ${this.user.email}` : "Non connecté";
-  },
+  function setHTML(el, html) {
+    if (!el) return;
+    el.innerHTML = html ?? "";
+  }
 
-  // === AUTOFIX IDS ===
-  // Tu avais: btnLogout=true, btnRefreshFeed=true, le reste false.
-  // Ici on retrouve tes boutons par texte et on leur met les IDs attendus.
-  autofixButtonIds() {
-    const want = [
-      {
-        id: "btnLogin",
-        keys: ["login", "connexion", "connecter", "sign in", "se connecter"],
-      },
-      {
-        id: "btnRegister",
-        keys: ["register", "inscription", "sign up", "créer", "creer", "create"],
-      },
-      {
-        id: "btnLogout",
-        keys: ["logout", "déconnexion", "deconnexion", "sign out"],
-      },
-      {
-        id: "btnSaveDisplayName",
-        keys: ["save", "enregistrer", "valider", "ok", "mettre à jour", "mettre a jour"],
-        near: "#displayNameInput",
-      },
-      {
-        id: "btnGenerateWorkout",
-        keys: ["generate", "générer", "generer", "coach", "plan", "séance", "seance"],
-        near: "#coachPrompt",
-      },
-      {
-        id: "btnRefreshFeed",
-        keys: ["refresh", "actualiser", "recharger", "feed", "fil", "timeline"],
-      },
-      {
-        id: "btnPublishWorkout",
-        keys: ["publish", "publier", "poster", "post", "publication"],
-      },
-    ];
+  function show(el, yes) {
+    if (!el) return;
+    el.style.display = yes ? "" : "none";
+  }
 
-    for (const w of want) {
-      if (document.getElementById(w.id)) continue;
+  function disable(el, yes) {
+    if (!el) return;
+    el.disabled = !!yes;
+    el.setAttribute("aria-disabled", yes ? "true" : "false");
+  }
 
-      let found = null;
+  function nowISO() {
+    return new Date().toISOString();
+  }
 
-      if (w.near) {
-        const ref = $(w.near);
-        found = findNear(ref, w.keys);
-      } else {
-        found = findByTextIncludes(w.keys);
-      }
-
-      if (found && !found.id) {
-        found.id = w.id;
-      }
+  function toast(msg, kind = "info") {
+    const box = $id("toast");
+    if (box) {
+      box.setAttribute("data-kind", kind);
+      box.textContent = msg;
+      box.style.opacity = "1";
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => {
+        box.style.opacity = "0";
+      }, 3500);
     }
+    // console fallback
+    if (kind === "error") console.error(msg);
+    else console.log(msg);
+  }
 
-    // log rapide (utile)
-    const ids = [
-      "btnLogin",
-      "btnRegister",
-      "btnLogout",
-      "btnSaveDisplayName",
-      "btnGenerateWorkout",
-      "btnRefreshFeed",
-      "btnPublishWorkout",
-    ];
-    const status = ids.map((id) => [id, !!document.getElementById(id)]);
-    console.log("[FitAI] button ids:", status);
-  },
-
-  // === BIND ===
-  bindButtons() {
-    const map = {
-      btnLogin: () => this.login(),
-      btnRegister: () => this.register(),
-      btnLogout: () => this.logout(),
-      btnSaveDisplayName: () => this.saveDisplayName(),
-      btnGenerateWorkout: () => this.generateWorkout(),
-      btnRefreshFeed: () => this.refreshFeed(),
-      btnPublishWorkout: () => this.openPublish(),
-    };
-
-    // bind direct
-    for (const id of Object.keys(map)) {
-      const el = document.getElementById(id);
-      if (!el) continue;
-      el.addEventListener("click", (e) => {
-        e.preventDefault();
-        Promise.resolve(map[id]()).catch((err) => {
-          console.error(err);
-          this.toast("Erreur action.", "danger");
-        });
-      });
+  function readValueAny(ids, fallback = "") {
+    for (const id of ids) {
+      const el = $id(id);
+      if (el && typeof el.value === "string") return el.value.trim();
     }
+    return fallback;
+  }
 
-    // delegation fallback (si ton HTML change / wrappers)
-    document.addEventListener("click", (e) => {
-      const el = e.target?.closest?.("button, a, [role='button'], input[type='button'], input[type='submit']");
-      if (!el) return;
+  function readFileAny(ids) {
+    for (const id of ids) {
+      const el = $id(id);
+      if (el && el.files && el.files[0]) return el.files[0];
+    }
+    return null;
+  }
 
-      // data-action="login" etc (si jamais)
-      const action = el.dataset?.action;
-      if (action && typeof this[action] === "function") {
-        e.preventDefault();
-        this[action]();
-        return;
-      }
+  // -------------------------
+  // Config + Supabase init
+  // -------------------------
+  async function loadConfig() {
+    const res = await fetch("/api/workout?config=1", { cache: "no-store" });
+    if (!res.ok) throw new Error(`Config endpoint failed: HTTP ${res.status}`);
+    const cfg = await res.json();
 
-      // id mapping
-      if (el.id && map[el.id]) {
-        e.preventDefault();
-        map[el.id]();
-        return;
-      }
+    if (!cfg?.supabaseUrl || !cfg?.supabaseAnonKey) {
+      throw new Error("Config endpoint did not return supabaseUrl + supabaseAnonKey");
+    }
+    APP.config = cfg;
 
-      // ultime fallback par texte (si rien n’a d’id)
-      const t = buttonText(el);
-      const looks = (keys) => keys.some((k) => t.includes(k));
-
-      if (looks(["login", "connexion", "sign in"])) return (e.preventDefault(), this.login());
-      if (looks(["register", "inscription", "sign up", "créer", "creer"])) return (e.preventDefault(), this.register());
-      if (looks(["logout", "deconnexion", "déconnexion", "sign out"])) return (e.preventDefault(), this.logout());
-      if (looks(["enregistrer", "save", "mettre à jour", "mettre a jour"])) return (e.preventDefault(), this.saveDisplayName());
-      if (looks(["generate", "générer", "generer"])) return (e.preventDefault(), this.generateWorkout());
-      if (looks(["refresh", "actualiser", "recharger"])) return (e.preventDefault(), this.refreshFeed());
-      if (looks(["publish", "publier", "poster"])) return (e.preventDefault(), this.openPublish());
+    APP.supabase = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+      global: { headers: { "x-client-info": "fitai-pro-v10" } },
     });
-  },
 
-  bindLikes() {
-    document.addEventListener("click", (e) => {
-      const btn = e.target?.closest?.("[data-like]");
-      if (!btn) return;
-      e.preventDefault();
-      const id = btn.getAttribute("data-like");
-      if (id) this.toggleKudos(id);
+    // Auth listener
+    APP.supabase.auth.onAuthStateChange((_event, session) => {
+      APP.session = session;
+      APP.user = session?.user ?? null;
+      renderAuth();
+      // refresh feed state (liked_by_me + likedSet)
+      refreshFeed().catch(() => {});
+      refreshBodyScans().catch(() => {});
     });
-  },
+  }
 
-  // === SUPABASE INIT ===
-  async initSupabase() {
+  async function bootstrapSession() {
+    const { data, error } = await APP.supabase.auth.getSession();
+    if (error) throw error;
+    APP.session = data?.session ?? null;
+    APP.user = data?.session?.user ?? null;
+  }
+
+  // -------------------------
+  // Render
+  // -------------------------
+  function renderAuth() {
+    const st = $id("statusAuth");
+    const who = $id("statusWho");
+    const btnLogout = $id("btnLogout");
+
+    if (!APP.user) {
+      setText(st, "Not signed in");
+      setText(who, "");
+      if (btnLogout) show(btnLogout, false);
+      show($id("authBox"), true);
+      show($id("appBox"), false);
+      return;
+    }
+
+    setText(st, "Signed in");
+    setText(who, APP.user.email || APP.user.id);
+    if (btnLogout) show(btnLogout, true);
+
+    show($id("authBox"), false);
+    show($id("appBox"), true);
+  }
+
+  function renderFeed() {
+    const list = $id("feedList");
+    if (!list) return;
+
+    if (!APP.feed.length) {
+      setHTML(list, `<div class="empty">No workouts yet.</div>`);
+      return;
+    }
+
+    const items = APP.feed
+      .map((w) => {
+        const id = w.id;
+        const title = escapeHtml(w.title || "Untitled");
+        const display = escapeHtml(w.display_name || "Anonymous");
+        const intensity = escapeHtml(w.intensity || "");
+        const notes = escapeHtml(w.notes || "");
+        const created = escapeHtml(w.created_at || "");
+        const kudos = Number(w.kudos_count || 0);
+        const liked =
+          typeof w.liked_by_me === "boolean"
+            ? w.liked_by_me
+            : APP.likedSet.has(id);
+
+        const likeLabel = liked ? "Unlike" : "Like";
+
+        return `
+          <div class="feedItem" data-workout-id="${id}">
+            <div class="feedTop">
+              <div class="feedTitle">${title}</div>
+              <div class="feedMeta">by ${display} • ${created}</div>
+            </div>
+            <div class="feedBody">
+              ${intensity ? `<div class="chip">Intensity: ${intensity}</div>` : ""}
+              ${notes ? `<div class="notes">${notes}</div>` : ""}
+            </div>
+            <div class="feedActions">
+              <button type="button"
+                data-action="toggle-like"
+                data-workout-id="${id}"
+                ${APP.user ? "" : "disabled"}
+              >${likeLabel} (${kudos})</button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    setHTML(list, items);
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  // -------------------------
+  // Auth actions
+  // -------------------------
+  async function actionLogin() {
+    const email = readValueAny(["authEmail", "email", "loginEmail"], "");
+    const password = readValueAny(["authPassword", "password", "loginPassword"], "");
+    if (!email || !password) return toast("Missing email/password", "error");
+
+    disable($id("btnLogin"), true);
     try {
-      const r = await fetch("/api/workout?config=1", { cache: "no-store" });
-      const j = await r.json().catch(() => ({}));
-      const url = j.supabaseUrl || j.SUPABASE_URL;
-      const key = j.supabaseAnonKey || j.SUPABASE_ANON_KEY;
-
-      if (!url || !key) {
-        console.warn("[FitAI] config:", j);
-        this.toast("Config Supabase manquante.", "danger");
-        return;
-      }
-
-      this.sb = createClient(url, key, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-      });
-
-      this.toast("Supabase OK ✅", "ok");
+      const { error } = await APP.supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      toast("Logged in");
     } catch (e) {
-      console.error(e);
-      this.toast("Init Supabase échouée.", "danger");
+      toast(`Login failed: ${e.message || e}`, "error");
+    } finally {
+      disable($id("btnLogin"), false);
     }
-  },
+  }
 
-  async initAuth() {
+  async function actionRegister() {
+    const email = readValueAny(["authEmail", "email", "loginEmail"], "");
+    const password = readValueAny(["authPassword", "password", "loginPassword"], "");
+    if (!email || !password) return toast("Missing email/password", "error");
+
+    disable($id("btnRegister"), true);
     try {
-      const { data } = await this.sb.auth.getSession();
-      this.user = data?.session?.user || null;
-      this.setAuthStatus();
-
-      this.sb.auth.onAuthStateChange(async (_evt, session) => {
-        this.user = session?.user || null;
-        this.setAuthStatus();
-
-        if (this.user) {
-          await this.ensureProfileRow().catch(() => {});
-          await this.loadProfile().catch(() => {});
-          await this.loadLikedSet().catch(() => {});
-        } else {
-          this.publicProfile = null;
-          this.likedSet = new Set();
-        }
-
-        await this.refreshFeed().catch(() => {});
-      });
-
-      if (this.user) {
-        await this.ensureProfileRow().catch(() => {});
-        await this.loadProfile().catch(() => {});
-        await this.loadLikedSet().catch(() => {});
-      }
+      const { error } = await APP.supabase.auth.signUp({ email, password });
+      if (error) throw error;
+      toast("Registered. Check your email if confirmation is enabled.");
     } catch (e) {
-      console.error(e);
-      this.toast("Auth init erreur.", "danger");
+      toast(`Register failed: ${e.message || e}`, "error");
+    } finally {
+      disable($id("btnRegister"), false);
     }
-  },
+  }
 
-  // === AUTH ACTIONS ===
-  async login() {
-    if (!this.sb) return;
-    const email = ($("#authEmail")?.value || "").trim();
-    const password = ($("#authPassword")?.value || "").trim();
-    if (!email || !password) return this.toast("Email + mot de passe requis.", "warn");
-
-    const { error } = await this.sb.auth.signInWithPassword({ email, password });
-    if (error) return this.toast(`Login: ${error.message}`, "danger");
-    this.toast("Connecté ✅", "ok");
-  },
-
-  async register() {
-    if (!this.sb) return;
-    const email = ($("#authEmail")?.value || "").trim();
-    const password = ($("#authPassword")?.value || "").trim();
-    if (!email || !password) return this.toast("Email + mot de passe requis.", "warn");
-
-    const { error } = await this.sb.auth.signUp({ email, password });
-    if (error) return this.toast(`Register: ${error.message}`, "danger");
-    this.toast("Compte créé ✅", "ok");
-  },
-
-  async logout() {
-    if (!this.sb) return;
-    const { error } = await this.sb.auth.signOut();
-    if (error) return this.toast(`Logout: ${error.message}`, "danger");
-    this.toast("Déconnecté.", "ok");
-  },
-
-  // === PROFILE ===
-  async ensureProfileRow() {
-    if (!this.user) return;
-    const { data } = await this.sb
-      .from("public_profiles")
-      .select("user_id")
-      .eq("user_id", this.user.id)
-      .maybeSingle();
-
-    if (!data) {
-      const name = (this.user.email || "User").split("@")[0].slice(0, 24);
-      const { error } = await this.sb.from("public_profiles").insert({
-        user_id: this.user.id,
-        display_name: name,
-      });
-      if (error) console.warn("public_profiles insert:", error.message);
+  async function actionLogout() {
+    disable($id("btnLogout"), true);
+    try {
+      const { error } = await APP.supabase.auth.signOut();
+      if (error) throw error;
+      toast("Logged out");
+    } catch (e) {
+      toast(`Logout failed: ${e.message || e}`, "error");
+    } finally {
+      disable($id("btnLogout"), false);
     }
-  },
+  }
 
-  async loadProfile() {
-    if (!this.user) return;
-    const { data, error } = await this.sb
-      .from("public_profiles")
-      .select("user_id, display_name")
-      .eq("user_id", this.user.id)
-      .maybeSingle();
+  // -------------------------
+  // Profile
+  // -------------------------
+  async function actionSaveDisplayName() {
+    if (!APP.user) return toast("Sign in first", "error");
+    const displayName = readValueAny(["displayName", "profileDisplayName"], "");
+    if (!displayName) return toast("Missing display name", "error");
 
-    if (error) return console.warn(error);
+    disable($id("btnSaveDisplayName"), true);
+    try {
+      const payload = {
+        user_id: APP.user.id,
+        display_name: displayName,
+        updated_at: nowISO(),
+      };
+      const { error } = await APP.supabase
+        .from("public_profiles")
+        .upsert(payload, { onConflict: "user_id" });
+      if (error) throw error;
+      toast("Profile saved");
+      refreshFeed().catch(() => {});
+    } catch (e) {
+      toast(`Save profile failed: ${e.message || e}`, "error");
+    } finally {
+      disable($id("btnSaveDisplayName"), false);
+    }
+  }
 
-    this.publicProfile = data || null;
-    const inp = $("#displayNameInput");
-    if (inp && this.publicProfile) inp.value = this.publicProfile.display_name || "";
-  },
+  // -------------------------
+  // Workouts: generate (API) + publish (DB)
+  // -------------------------
+  function fallbackPlan(prompt) {
+    return {
+      prompt: prompt || "",
+      blocks: [
+        { title: "Warm-up", duration_min: 8, items: ["Mobility", "Light cardio"] },
+        { title: "Main", duration_min: 25, items: ["3x compound movement", "2x accessory"] },
+        { title: "Cooldown", duration_min: 5, items: ["Breathing", "Stretching"] },
+      ],
+      created_at: nowISO(),
+      source: "fallback",
+    };
+  }
 
-  async saveDisplayName() {
-    if (!this.user) return this.toast("Connecte-toi.", "warn");
-    const name = ($("#displayNameInput")?.value || "").trim();
-    if (!name) return this.toast("Nom vide.", "warn");
+  async function actionGenerateWorkout() {
+    if (!APP.user) return toast("Sign in first", "error");
 
-    const { error } = await this.sb
-      .from("public_profiles")
-      .update({ display_name: name, updated_at: new Date().toISOString() })
-      .eq("user_id", this.user.id);
-
-    if (error) return this.toast(`Profil: ${error.message}`, "danger");
-    this.toast("Nom public enregistré ✅", "ok");
-    await this.refreshFeed().catch(() => {});
-  },
-
-  // === COACH ===
-  async generateWorkout() {
-    if (!this.user) return this.toast("Connecte-toi.", "warn");
-    const prompt = ($("#coachPrompt")?.value || "").trim();
-    if (!prompt) return this.toast("Écris un prompt.", "warn");
-
-    const out = $("#coachOutput");
-    if (out) out.textContent = "Génération…";
+    const prompt = readValueAny(["workoutPrompt", "promptWorkout"], "");
+    disable($id("btnGenerateWorkout"), true);
 
     try {
-      const r = await fetch("/api/workout", {
+      let plan = null;
+
+      // Try API
+      const res = await fetch("/api/workout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
 
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const msg = j?.error || j?.message || `Erreur ${r.status}`;
-        if (out) out.textContent = msg;
-        return this.toast(msg, "danger");
+      if (res.ok) {
+        const out = await res.json();
+        plan = out?.plan_json ?? out?.plan ?? null;
       }
 
-      this.lastGeneratedPlan = j?.plan || null;
-      if (out) out.textContent = this.lastGeneratedPlan ? JSON.stringify(this.lastGeneratedPlan, null, 2) : (j?.text || "OK");
-      this.toast("Plan généré ✅", "ok");
+      if (!plan) plan = fallbackPlan(prompt);
+
+      // Write into textarea if present
+      const planEl = $id("workoutPlanJson") || $id("planJson") || $id("workoutPlan");
+      if (planEl && typeof planEl.value === "string") {
+        planEl.value = JSON.stringify(plan, null, 2);
+      }
+
+      // Optional title/intensity fill
+      const titleEl = $id("workoutTitle") || $id("titleWorkout");
+      const intensityEl = $id("workoutIntensity") || $id("intensityWorkout");
+      if (titleEl && !titleEl.value) titleEl.value = "Generated workout";
+      if (intensityEl && !intensityEl.value) intensityEl.value = "medium";
+
+      toast("Workout generated (or fallback)");
     } catch (e) {
-      console.error(e);
-      if (out) out.textContent = "Erreur réseau.";
-      this.toast("Coach: erreur réseau.", "danger");
+      toast(`Generate failed: ${e.message || e}`, "error");
+    } finally {
+      disable($id("btnGenerateWorkout"), false);
     }
-  },
+  }
 
-  // === FEED ===
-  async loadLikedSet() {
-    this.likedSet = new Set();
-    if (!this.user) return;
+  async function actionPublishWorkout() {
+    if (!APP.user) return toast("Sign in first", "error");
 
-    const { data, error } = await this.sb
-      .from("kudos")
-      .select("workout_id")
-      .eq("user_id", this.user.id);
+    const title = readValueAny(["workoutTitle", "titleWorkout", "title"], "Untitled");
+    const intensity = readValueAny(["workoutIntensity", "intensityWorkout"], "");
+    const notes = readValueAny(["workoutNotes", "notesWorkout", "notes"], "");
+    const planRaw = readValueAny(["workoutPlanJson", "planJson", "workoutPlan"], "");
 
-    if (error) return;
-    (data || []).forEach((r) => r?.workout_id && this.likedSet.add(r.workout_id));
-  },
-
-  async refreshFeed() {
-    if (!this.sb) return;
-
-    const host = $("#feedList");
-    if (host) host.textContent = "Chargement…";
-
-    const { data, error } = await this.sb
-      .from("workouts_feed")
-      .select("id,user_id,user_display,title,intensity,notes,plan_json,kudos_count,created_at")
-      .order("created_at", { ascending: false })
-      .limit(60);
-
-    if (error) {
-      console.warn(error);
-      if (host) host.textContent = error.message;
-      return;
+    let plan_json = null;
+    if (planRaw) {
+      try {
+        plan_json = JSON.parse(planRaw);
+      } catch {
+        plan_json = { raw: planRaw };
+      }
+    } else {
+      plan_json = fallbackPlan("");
     }
 
-    this.renderFeed(data || []);
-  },
+    const isPublicEl = $id("workoutIsPublic");
+    const is_public = isPublicEl ? !!isPublicEl.checked : true; // default: publish public
 
-  renderFeed(items) {
-    const host = $("#feedList");
-    if (!host) return;
+    disable($id("btnPublishWorkout"), true);
+    try {
+      const payload = {
+        user_id: APP.user.id,
+        is_public,
+        title,
+        intensity,
+        notes,
+        plan_json,
+      };
 
-    if (!items.length) {
-      host.innerHTML = `<div style="opacity:.8">Aucune publication.</div>`;
-      return;
+      const { error } = await APP.supabase.from("workouts").insert(payload);
+      if (error) throw error;
+
+      toast("Workout published");
+      await refreshFeed();
+    } catch (e) {
+      toast(`Publish failed: ${e.message || e}`, "error");
+    } finally {
+      disable($id("btnPublishWorkout"), false);
     }
+  }
 
-    host.innerHTML = items
-      .map((it) => {
-        const liked = this.likedSet.has(it.id);
-        const kudos = Number(it.kudos_count || 0);
-        const notes = (it.notes || "").trim();
-        const notesShort = notes.length > 180 ? notes.slice(0, 180).trim() + "…" : notes;
+  // -------------------------
+  // Feed + Likes
+  // -------------------------
+  async function refreshFeed() {
+    const btn = $id("btnRefreshFeed");
+    if (btn) disable(btn, true);
 
-        return (
-          `<div style="padding:14px;border:1px solid rgba(255,255,255,.10);border-radius:16px;margin:10px 0;background:rgba(0,0,0,.18)">` +
-          `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">` +
-          `<div style="min-width:0">` +
-          `<div style="font-weight:700">${esc(it.title || "Séance")}</div>` +
-          `<div style="opacity:.8;font-size:13px;margin-top:2px">` +
-          `<span>${esc(it.user_display || "User")}</span>` +
-          `<span style="opacity:.45"> • </span>` +
-          `<span>${esc(fmtDate(it.created_at))}</span>` +
-          `<span style="opacity:.45"> • </span>` +
-          `<span style="text-transform:uppercase;font-size:12px">${esc(it.intensity || "medium")}</span>` +
-          `</div>` +
-          `</div>` +
-          `<button data-like="${esc(it.id)}" style="white-space:nowrap;padding:8px 10px;border-radius:14px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.22);color:white;cursor:pointer">` +
-          `${liked ? "❤️" : "🤍"} ${kudos}` +
-          `</button>` +
-          `</div>` +
-          (notesShort ? `<div style="margin-top:10px;opacity:.9">${esc(notesShort)}</div>` : ``) +
-          `</div>`
-        );
-      })
-      .join("");
-  },
+    try {
+      // Prefer view
+      const { data, error } = await APP.supabase
+        .from("workouts_feed")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
 
-  async toggleKudos(workoutId) {
-    if (!this.user) return this.toast("Connecte-toi.", "warn");
+      if (error) throw error;
 
-    const liked = this.likedSet.has(workoutId);
+      APP.feed = Array.isArray(data) ? data : [];
+      APP.likedSet.clear();
+
+      // If the view doesn't compute liked_by_me (or if you want extra safety), re-check quickly
+      if (APP.user && APP.feed.length) {
+        const ids = APP.feed.map((w) => w.id).filter(Boolean);
+        if (ids.length) {
+          const { data: lk, error: lkErr } = await APP.supabase
+            .from("kudos")
+            .select("workout_id")
+            .in("workout_id", ids);
+
+          if (!lkErr && Array.isArray(lk)) {
+            for (const row of lk) APP.likedSet.add(row.workout_id);
+          }
+        }
+      }
+
+      renderFeed();
+      const st = $id("statusFeed");
+      if (st) setText(st, `Feed loaded: ${APP.feed.length}`);
+    } catch (e) {
+      toast(`Feed failed: ${e.message || e}`, "error");
+    } finally {
+      if (btn) disable(btn, false);
+    }
+  }
+
+  async function toggleLike(workoutId) {
+    if (!APP.user) return toast("Sign in first", "error");
+    if (!workoutId) return;
+
+    const liked = APP.likedSet.has(workoutId);
 
     try {
       if (liked) {
-        const { error } = await this.sb
+        const { error } = await APP.supabase
           .from("kudos")
           .delete()
           .eq("workout_id", workoutId)
-          .eq("user_id", this.user.id);
-
-        if (error) return this.toast(`Unlike: ${error.message}`, "danger");
-        this.likedSet.delete(workoutId);
+          .eq("user_id", APP.user.id);
+        if (error) throw error;
+        APP.likedSet.delete(workoutId);
       } else {
-        const { error } = await this.sb
-          .from("kudos")
-          .insert({ workout_id: workoutId, user_id: this.user.id });
-
+        const { error } = await APP.supabase.from("kudos").insert({
+          workout_id: workoutId,
+          user_id: APP.user.id,
+        });
         if (error) {
-          const msg = String(error.message || "").toLowerCase();
-          if (!msg.includes("duplicate")) return this.toast(`Like: ${error.message}`, "danger");
+          // ignore duplicate unique violation
+          if (String(error.code) !== "23505") throw error;
         }
-        this.likedSet.add(workoutId);
+        APP.likedSet.add(workoutId);
       }
 
-      await this.refreshFeed();
+      // Refresh to sync kudos_count + liked_by_me
+      await refreshFeed();
     } catch (e) {
-      console.error(e);
-      this.toast("Like: erreur.", "danger");
+      toast(`Like toggle failed: ${e.message || e}`, "error");
     }
-  },
+  }
 
-  openPublish() {
-    if (!this.user) return this.toast("Connecte-toi.", "warn");
+  // -------------------------
+  // Storage: Body Scans (upload + list + signed urls)
+  // -------------------------
+  async function actionUploadBodyScan() {
+    if (!APP.user) return toast("Sign in first", "error");
 
-    // fallback simple (marche même si ton UI publish est différente)
-    const title = (prompt("Titre ?", "Séance") || "Séance").trim() || "Séance";
-    const intensity = (prompt("Intensité (easy/medium/hard) ?", "medium") || "medium").trim() || "medium";
-    const notes = (prompt("Notes (optionnel)", "") || "").trim();
+    const file = readFileAny(["bodyScanFile", "uploadBodyScan", "fileBodyScan"]);
+    if (!file) return toast("Pick a file first", "error");
 
-    this.publishWorkout({ title, intensity, notes, plan_json: this.lastGeneratedPlan || null });
-  },
+    const btn = $id("btnUploadBodyScan");
+    if (btn) disable(btn, true);
 
-  async publishWorkout(p) {
-    if (!this.user) return;
+    try {
+      // IMPORTANT: policy expects top-level folder = userId
+      const safeName = String(file.name || "upload").replace(/[^\w.\-]+/g, "_");
+      const path = `${APP.user.id}/bodyscans/${Date.now()}_${safeName}`;
 
-    const { error } = await this.sb.from("workouts").insert({
-      user_id: this.user.id,
-      is_public: true,
-      title: p.title,
-      intensity: p.intensity,
-      notes: p.notes || "",
-      plan_json: p.plan_json || null,
+      const { error: upErr } = await APP.supabase.storage
+        .from("user_uploads")
+        .upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
+
+      if (upErr) throw upErr;
+
+      const { error: dbErr } = await APP.supabase.from("body_scans").insert({
+        user_id: APP.user.id,
+        file_path: path,
+        meta: { original_name: file.name, content_type: file.type || null },
+      });
+
+      if (dbErr) throw dbErr;
+
+      toast("Upload OK");
+      await refreshBodyScans();
+    } catch (e) {
+      toast(`Upload failed: ${e.message || e}`, "error");
+    } finally {
+      if (btn) disable(btn, false);
+    }
+  }
+
+  async function refreshBodyScans() {
+    const box = $id("bodyScansList");
+    if (!box) return;
+
+    if (!APP.user) {
+      setHTML(box, `<div class="empty">Sign in to see your uploads.</div>`);
+      return;
+    }
+
+    try {
+      const { data, error } = await APP.supabase
+        .from("body_scans")
+        .select("id,file_path,created_at,meta")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      const rows = Array.isArray(data) ? data : [];
+      if (!rows.length) {
+        setHTML(box, `<div class="empty">No uploads yet.</div>`);
+        return;
+      }
+
+      // signed urls
+      const parts = [];
+      for (const r of rows) {
+        const { data: signed, error: sErr } = await APP.supabase.storage
+          .from("user_uploads")
+          .createSignedUrl(r.file_path, 60 * 30);
+
+        const url = !sErr && signed?.signedUrl ? signed.signedUrl : null;
+        const name = escapeHtml(r.meta?.original_name || r.file_path);
+        const when = escapeHtml(r.created_at || "");
+        parts.push(`
+          <div class="scanRow">
+            <div class="scanMeta">${when} • ${name}</div>
+            ${url ? `<a href="${url}" target="_blank" rel="noreferrer">Open (signed)</a>` : `<span class="muted">signed url failed</span>`}
+          </div>
+        `);
+      }
+      setHTML(box, parts.join(""));
+    } catch (e) {
+      toast(`Body scans list failed: ${e.message || e}`, "error");
+    }
+  }
+
+  // -------------------------
+  // Event binding (IDs + delegation data-action)
+  // -------------------------
+  function bindEvents() {
+    // Direct IDs (si présents)
+    const map = [
+      ["btnLogin", actionLogin],
+      ["btnRegister", actionRegister],
+      ["btnLogout", actionLogout],
+      ["btnSaveDisplayName", actionSaveDisplayName],
+      ["btnGenerateWorkout", actionGenerateWorkout],
+      ["btnPublishWorkout", actionPublishWorkout],
+      ["btnRefreshFeed", refreshFeed],
+      ["btnUploadBodyScan", actionUploadBodyScan],
+      ["btnRefreshBodyScans", refreshBodyScans],
+    ];
+
+    for (const [id, fn] of map) {
+      const el = $id(id);
+      if (el && !el._fitaiBound) {
+        el.addEventListener("click", (e) => {
+          e.preventDefault();
+          fn();
+        });
+        el._fitaiBound = true;
+      }
+    }
+
+    // Delegation via data-action (robuste si IDs manquent)
+    document.addEventListener("click", (e) => {
+      const btn = e.target?.closest?.("[data-action]");
+      if (!btn) return;
+
+      const act = btn.getAttribute("data-action");
+      if (!act) return;
+
+      e.preventDefault();
+
+      if (act === "login") return actionLogin();
+      if (act === "register") return actionRegister();
+      if (act === "logout") return actionLogout();
+      if (act === "save-display-name") return actionSaveDisplayName();
+      if (act === "generate-workout") return actionGenerateWorkout();
+      if (act === "publish-workout") return actionPublishWorkout();
+      if (act === "refresh-feed") return refreshFeed();
+      if (act === "upload-bodyscan") return actionUploadBodyScan();
+      if (act === "refresh-bodyscans") return refreshBodyScans();
+
+      if (act === "toggle-like") {
+        const wid = btn.getAttribute("data-workout-id") || btn.closest("[data-workout-id]")?.getAttribute("data-workout-id");
+        return toggleLike(wid);
+      }
     });
+  }
 
-    if (error) return this.toast(`Publish: ${error.message}`, "danger");
-    this.toast("Publié ✅", "ok");
-    await this.refreshFeed();
-  },
-};
+  // -------------------------
+  // Init
+  // -------------------------
+  async function init() {
+    const st = $id("statusBoot");
+    try {
+      setText(st, "Loading config…");
+      await loadConfig();
 
-const boot = () => App.init();
-if (document.readyState === "loading") window.addEventListener("DOMContentLoaded", boot);
-else boot();
+      setText(st, "Bootstrapping session…");
+      await bootstrapSession();
+
+      bindEvents();
+      renderAuth();
+
+      setText(st, "Loading feed…");
+      await refreshFeed();
+
+      await refreshBodyScans();
+
+      APP.isReady = true;
+      setText(st, "Ready");
+      toast("FitAI Pro v10 ready");
+    } catch (e) {
+      setText(st, `BOOT FAILED: ${e.message || e}`);
+      toast(`BOOT FAILED: ${e.message || e}`, "error");
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+})();
