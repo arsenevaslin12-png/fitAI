@@ -201,6 +201,87 @@ b._fitaiBound = true;
 }
 
 function ensureBodyScanTab() {
+  function ensurePlanningAndNutritionTabs() {
+  const nav = $q(".tabs");
+  const main = $q("main.container");
+  if (!nav || !main) return;
+
+  // ===== PLANNING BUTTON =====
+  if (!$id("tabBtnPlanning")) {
+    const btn = document.createElement("button");
+    btn.className = "tabBtn";
+    btn.id = "tabBtnPlanning";
+    btn.type = "button";
+    btn.textContent = "Planning";
+    btn.setAttribute("aria-selected", "false");
+    nav.appendChild(btn);
+  }
+
+  // ===== PLANNING SECTION =====
+  if (!$id("tab-planning")) {
+    const section = document.createElement("section");
+    section.id = "tab-planning";
+    section.style.display = "none";
+    section.innerHTML = `
+      <div class="card">
+        <div class="cardTitle">Planning hebdomadaire</div>
+
+        <div style="height:10px"></div>
+
+        <div class="row" style="gap:10px; flex-wrap:wrap">
+          <button class="btn primary" id="btnGeneratePlanning" type="button">
+            Générer Planning IA
+          </button>
+          <button class="btn" id="btnRefreshPlanning" type="button">
+            Refresh
+          </button>
+        </div>
+
+        <div class="hr"></div>
+
+        <div id="planningList">
+          <div class="empty">
+            Connecte-toi puis génère ton planning.
+          </div>
+        </div>
+      </div>
+    `;
+    main.appendChild(section);
+  }
+
+  // ===== NUTRITION SECTION =====
+  if (!$id("tab-nutrition")) {
+    const section = document.createElement("section");
+    section.id = "tab-nutrition";
+    section.style.display = "none";
+    section.innerHTML = `
+      <div class="card">
+        <div class="cardTitle">Nutrition</div>
+
+        <div style="height:10px"></div>
+
+        <div class="row" style="gap:10px; flex-wrap:wrap">
+          <button class="btn primary" id="btnGenerateNutrition" type="button">
+            Générer Macros IA
+          </button>
+          <button class="btn" id="btnRefreshNutrition" type="button">
+            Refresh
+          </button>
+        </div>
+
+        <div class="hr"></div>
+
+        <div id="nutritionBox">
+          <div class="empty">
+            Connecte-toi pour générer tes macros.
+          </div>
+        </div>
+      </div>
+    `;
+    main.appendChild(section);
+  }
+}
+
 const nav = $q(".tabs");
 if (!nav) return;
 
