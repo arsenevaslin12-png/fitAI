@@ -2,11 +2,13 @@
    FitAI Pro v10 — Cyberpunk Lime/Indigo — Supabase v2
 
    - Auth email/password
-   - Profil public (display_name)
+   - Profil public (display_name) via public_profiles
    - Coach (appel /api/workout)
    - Community feed:
        * SELECT sur view public.workouts_feed
+         (id,user_id,user_display,title,summary,intensity,kudos_count,created_at)
        * INSERT sur table public.workouts
+         (user_id,is_public,title,summary,intensity)
        * likes sur table public.kudos (kudos_count maintenu par trigger)
    - Code défensif: si un élément DOM n’existe pas, ça ne crash pas
 */
@@ -92,10 +94,8 @@ const App = {
     }
 
     // Ensure a "Publish" button exists in Community tab header (optional)
-    // If your HTML already has it, we do nothing.
     const community = $("#tab-community") || $("#panel-community") || $("#community");
     if (community && !$("#btnPublishWorkout")) {
-      // Try to locate a header row near feed
       const header =
         community.querySelector(".panelHeader") ||
         community.querySelector(".tabHeader") ||
@@ -115,7 +115,6 @@ const App = {
       btn.style.cursor = "pointer";
       btn.dataset.cy = "publish-workout";
 
-      // Insert near refresh feed button if present
       const refreshBtn = $("#btnRefreshFeed");
       if (refreshBtn && refreshBtn.parentElement) {
         refreshBtn.parentElement.appendChild(btn);
@@ -273,12 +272,9 @@ const App = {
   },
 
   async onAuthChanged() {
-    // Status text
-    const status =
-      this.user?.email ? `Connecté: ${this.user.email}` : "Non connecté";
+    const status = this.user?.email ? `Connecté: ${this.user.email}` : "Non connecté";
     this.setText("authStatus", status);
 
-    // Toggle UI blocks if exist
     const authed = !!this.user;
     const gateOn = $("#authedOnly");
     const gateOff = $("#unauthedOnly");
@@ -314,7 +310,6 @@ const App = {
       }
 
       if (!data) {
-        // create a minimal row
         const emailName = (this.user.email || "User").split("@")[0].slice(0, 24);
         const { error: e2 } = await this.sb.from("public_profiles").insert({
           user_id: this.user.id,
@@ -355,7 +350,6 @@ const App = {
     if (!name) return this.toast("Nom vide.", "warn");
 
     try {
-      // UPDATE, sinon INSERT (sans upsert)
       const { data: upd, error: e1 } = await this.sb
         .from("public_profiles")
         .update({ display_name: name, updated_at: new Date().toISOString() })
@@ -410,7 +404,6 @@ const App = {
         return this.toast(msg, "danger");
       }
 
-      // j.plan expected, but we accept fallback text
       this.lastGeneratedPlan = j?.plan || null;
       this.lastGeneratedText = j?.text || j?.raw || "";
 
@@ -464,9 +457,10 @@ const App = {
     if (list) list.innerHTML = "Chargement…";
 
     try {
+      // IMPORTANT: on colle au schéma de la VIEW workouts_feed
       const { data, error } = await this.sb
         .from("workouts_feed")
-        .select("id,user_id,user_display,title,intensity,notes,plan_json,kudos_count,created_at")
+        .select("id,user_id,user_display,title,summary,intensity,kudos_count,created_at")
         .order("created_at", { ascending: false })
         .limit(60);
 
@@ -496,9 +490,10 @@ const App = {
       .map((it) => {
         const liked = this.likedSet.has(it.id);
         const kudos = Number(it.kudos_count || 0);
-        const notes = (it.notes || "").trim();
-        const notesShort =
-          notes.length > 180 ? notes.slice(0, 180).trim() + "…" : notes;
+
+        const summary = (it.summary || "").trim();
+        const summaryShort =
+          summary.length > 220 ? summary.slice(0, 220).trim() + "…" : summary;
 
         return `
           <div class="card" style="padding:14px;border:1px solid rgba(255,255,255,.10);border-radius:16px;margin:10px 0;background:rgba(0,0,0,.18)">
@@ -523,9 +518,9 @@ const App = {
             </div>
 
             ${
-              notesShort
+              summaryShort
                 ? `<div style="margin-top:10px;opacity:.9;line-height:1.35">${esc(
-                    notesShort
+                    summaryShort
                   )}</div>`
                 : ""
             }
@@ -534,7 +529,6 @@ const App = {
       })
       .join("");
 
-    // bind like buttons
     $$("[data-like]", list).forEach((btn) => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-like");
@@ -564,14 +558,14 @@ const App = {
           user_id: this.user.id,
         });
 
-        // si double clic -> unique constraint: on ignore
-        if (error && !String(error.message || "").toLowerCase().includes("duplicate")) {
+        // unique(workout_id,user_id) -> si double clic on ignore
+        const msg = String(error?.message || "").toLowerCase();
+        if (error && !msg.includes("duplicate") && !msg.includes("unique")) {
           return this.toast(`Like: ${error.message}`, "danger");
         }
         this.likedSet.add(workoutId);
       }
 
-      // refresh feed to get updated kudos_count from trigger
       await this.refreshFeed();
     } catch (e) {
       console.error(e);
@@ -580,12 +574,11 @@ const App = {
   },
 
   // ---------------------------
-  // Publish modal -> INSERT workouts
+  // Publish modal -> INSERT workouts (title + summary + intensity)
   // ---------------------------
   openPublishModal() {
     if (!this.user) return this.toast("Connecte-toi d’abord.", "warn");
 
-    // overlay
     const overlay = document.createElement("div");
     overlay.style.position = "fixed";
     overlay.style.inset = "0";
@@ -605,9 +598,8 @@ const App = {
     card.style.boxShadow = "0 24px 80px rgba(0,0,0,0.55)";
     card.style.padding = "16px";
 
-    const display = (this.publicProfile?.display_name || this.user.email || "User")
-      .split("@")[0]
-      .slice(0, 64);
+    const display =
+      (this.publicProfile?.display_name || this.user.email || "User").split("@")[0].slice(0, 64);
 
     const hasPlan = !!this.lastGeneratedPlan;
 
@@ -637,15 +629,15 @@ const App = {
         </label>
 
         <label style="display:grid;gap:6px">
-          <div style="opacity:.85;font-size:13px">Notes (optionnel)</div>
-          <textarea id="pubNotes" rows="5"
+          <div style="opacity:.85;font-size:13px">Résumé / notes (summary)</div>
+          <textarea id="pubSummary" rows="6"
             style="padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.25);color:white;outline:none;resize:vertical"
           >${esc(hasPlan ? "Plan généré par le coach. ✅" : "")}</textarea>
         </label>
 
         <label style="display:flex;align-items:center;gap:10px;opacity:.9">
           <input id="pubIncludePlan" type="checkbox" ${hasPlan ? "checked" : ""} />
-          <span>Inclure le plan JSON du coach (si dispo)</span>
+          <span>Inclure le plan JSON du coach dans le résumé</span>
         </label>
 
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:2px">
@@ -668,17 +660,19 @@ const App = {
     $("#pubSend", card)?.addEventListener("click", async () => {
       const title = ($("#pubTitle", card)?.value || "").trim() || "Séance";
       const intensity = ($("#pubIntensity", card)?.value || "medium").trim() || "medium";
-      const notes = ($("#pubNotes", card)?.value || "").trim();
+      let summary = ($("#pubSummary", card)?.value || "").trim();
+
       const includePlan = !!$("#pubIncludePlan", card)?.checked;
 
-      await this.publishWorkout({
-        title,
-        intensity,
-        notes,
-        user_display: display,
-        plan_json: includePlan ? this.lastGeneratedPlan : null,
-      });
+      if (includePlan && this.lastGeneratedPlan) {
+        // On met le plan en texte dans summary (compatible partout)
+        const planText = JSON.stringify(this.lastGeneratedPlan, null, 2);
+        const chunk = planText.length > 4000 ? planText.slice(0, 4000) + "\n…(tronqué)" : planText;
 
+        summary = summary ? `${summary}\n\n---\nPlan JSON:\n${chunk}` : `Plan JSON:\n${chunk}`;
+      }
+
+      await this.publishWorkout({ title, intensity, summary });
       overlay.remove();
     });
   },
@@ -692,9 +686,7 @@ const App = {
         is_public: true,
         title: payload.title,
         intensity: payload.intensity,
-        notes: payload.notes || "",
-        user_display: payload.user_display || null,
-        plan_json: payload.plan_json || null,
+        summary: payload.summary || "",
       });
 
       if (error) return this.toast(`Publish: ${error.message}`, "danger");
