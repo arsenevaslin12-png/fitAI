@@ -48,7 +48,6 @@
     a{color:inherit;text-decoration:none}
     .container{max-width:var(--max); margin: 0 auto; padding: 22px 18px 80px;}
 
-    /* Topbar */
     .topbar{
       position:sticky; top:0; z-index:20;
       backdrop-filter: blur(14px);
@@ -81,7 +80,6 @@
     .brandTitle{display:flex; flex-direction:column; line-height:1.05}
     .brandTitle small{font-weight:800;color:var(--muted);letter-spacing:.2px}
 
-    /* Tabs */
     .tabs{
       display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;
     }
@@ -104,14 +102,8 @@
       color: #0b0c0f;
       filter: drop-shadow(0 12px 25px rgba(183,255,42,.10));
     }
-    .tabBtn.active .tabIcon{filter:none}
-    .tabIcon{opacity:.9; filter: drop-shadow(0 10px 26px rgba(0,0,0,.35))}
 
-    /* Cards / UI */
-    .grid{
-      display:grid;
-      gap: var(--gap);
-    }
+    .grid{display:grid; gap: var(--gap);}
     .grid.two{grid-template-columns: repeat(2, minmax(0,1fr))}
     .grid.three{grid-template-columns: repeat(3, minmax(0,1fr))}
     @media (max-width: 980px){
@@ -165,22 +157,9 @@
     }
     .btn:hover{transform: translateY(-1px); border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.06)}
     .btn:active{transform: translateY(0px) scale(.99)}
-    .btn.primary{
-      background: rgba(183,255,42,.14);
-      border-color: rgba(183,255,42,.36);
-      color:#081006;
-    }
-    .btn.primary:hover{background: rgba(183,255,42,.18); border-color: rgba(183,255,42,.46)}
-    .btn.cyan{
-      background: rgba(54,214,255,.12);
-      border-color: rgba(54,214,255,.34);
-      color: rgba(255,255,255,.92);
-    }
-    .btn.pink{
-      background: rgba(255,75,216,.12);
-      border-color: rgba(255,75,216,.34);
-      color: rgba(255,255,255,.92);
-    }
+    .btn.primary{background: rgba(183,255,42,.14); border-color: rgba(183,255,42,.36); color:#081006;}
+    .btn.cyan{background: rgba(54,214,255,.12); border-color: rgba(54,214,255,.34); color: rgba(255,255,255,.92);}
+    .btn.pink{background: rgba(255,75,216,.12); border-color: rgba(255,75,216,.34); color: rgba(255,255,255,.92);}
 
     .input, select, textarea{
       width:100%;
@@ -198,15 +177,10 @@
     }
     textarea{min-height: 96px; resize: vertical}
 
-    .kpiGrid{
-      display:grid; gap: 12px;
-      grid-template-columns: repeat(3, minmax(0,1fr));
-    }
+    .kpiGrid{display:grid; gap: 12px; grid-template-columns: repeat(3, minmax(0,1fr));}
     @media (max-width: 860px){ .kpiGrid{grid-template-columns: 1fr} }
-
     .kpiCard{
-      padding: 14px;
-      border-radius: var(--r16);
+      padding: 14px; border-radius: var(--r16);
       border: 1px solid var(--stroke2);
       background: rgba(255,255,255,.03);
       transition: transform .16s ease, border-color .16s ease, background .16s ease;
@@ -217,8 +191,7 @@
     .kpiVal{font-size: 26px; font-weight: 950; color: #fff; margin-top: 6px}
     .kpiBtns{display:flex; gap:8px}
     .kpiBtn{
-      width: 34px; height: 34px;
-      border-radius: 12px;
+      width: 34px; height: 34px; border-radius: 12px;
       border:1px solid var(--stroke);
       background: rgba(255,255,255,.03);
       color: rgba(255,255,255,.86);
@@ -228,7 +201,6 @@
     }
     .kpiBtn:hover{transform: translateY(-1px); border-color: rgba(183,255,42,.28); background: rgba(183,255,42,.07)}
 
-    /* Coach */
     .coachNote{
       border: 1px solid rgba(183,255,42,.20);
       background: rgba(183,255,42,.06);
@@ -244,26 +216,20 @@
       background: rgba(255,255,255,.03);
       padding: 14px;
       margin-bottom: 12px;
-      display:flex;
-      gap: 10px;
-      align-items:flex-start;
-      justify-content:space-between;
-      flex-wrap:wrap;
+      display:flex; gap: 10px;
+      align-items:flex-start; justify-content:space-between; flex-wrap:wrap;
     }
     .exerciseInfo{display:flex; flex-direction:column; gap:6px}
     .exerciseName{font-weight:950; letter-spacing:.25px}
     .exerciseSpecs{font-size: 12px; color: var(--muted)}
     .exerciseRPE{
-      font-weight: 950;
-      color: rgba(255,255,255,.86);
-      padding: 8px 10px;
-      border-radius: 999px;
+      font-weight: 950; color: rgba(255,255,255,.86);
+      padding: 8px 10px; border-radius: 999px;
       border: 1px solid var(--stroke);
       background: rgba(255,255,255,.03);
       align-self:flex-start;
     }
 
-    /* Feed */
     .feedCard{
       border-radius: var(--r16);
       border: 1px solid var(--stroke2);
@@ -310,11 +276,7 @@
       filter: drop-shadow(0 10px 25px rgba(255,75,216,.12));
     }
 
-    /* Trophies */
-    .trophyWall{
-      display:grid; gap:12px;
-      grid-template-columns: repeat(2, minmax(0,1fr));
-    }
+    .trophyWall{display:grid; gap:12px; grid-template-columns: repeat(2, minmax(0,1fr));}
     @media (max-width: 760px){ .trophyWall{grid-template-columns: 1fr} }
     .trophyCard{
       border-radius: var(--r16);
@@ -324,29 +286,20 @@
       display:flex; gap:12px; align-items:flex-start;
     }
     .trophyCard.locked{opacity:.65}
-    .trophyCard.unlocked{
-      border-color: rgba(183,255,42,.20);
-      background: rgba(183,255,42,.06);
-    }
+    .trophyCard.unlocked{border-color: rgba(183,255,42,.20); background: rgba(183,255,42,.06);}
     .trophyIcon{
       width:40px;height:40px;border-radius: 14px;
       display:grid;place-items:center;
       border:1px solid var(--stroke);
       background: rgba(255,255,255,.03);
-      font-size: 20px;
     }
+    .trophyIcon svg{width:20px;height:20px}
     .trophyInfo{display:flex; flex-direction:column; gap:4px}
     .trophyTitle{font-weight:950}
     .trophyDesc{color: var(--muted); font-size: 12px}
     .trophyMeta{color: rgba(255,255,255,.78); font-size: 12px; font-weight:900}
 
-    /* Heatmap */
-    .heatmap{
-      display:grid;
-      grid-template-columns: repeat(14, minmax(0,1fr));
-      gap: 6px;
-      user-select:none;
-    }
+    .heatmap{display:grid; grid-template-columns: repeat(14, minmax(0,1fr)); gap: 6px; user-select:none;}
     @media (max-width: 920px){ .heatmap{grid-template-columns: repeat(7, minmax(0,1fr))} }
     .heatmapDay{
       height: 26px;
@@ -366,36 +319,15 @@
     }
     .heatmapDay:hover{transform: translateY(-1px)}
 
-    /* Roast banner */
-    .roast{
-      display:none;
-      border-radius: var(--r16);
-      border: 1px solid rgba(255,59,48,.25);
-      background: rgba(255,59,48,.08);
-      padding: 12px 14px;
-      font-weight: 950;
-      color: rgba(255,255,255,.92);
-      margin-bottom: 14px;
-    }
-    .roast.on{display:block}
-
-    /* Empty / Spinner */
-    .empty{
-      color: var(--muted);
-      font-weight: 900;
-      padding: 8px 2px;
-    }
+    .empty{color: var(--muted); font-weight: 900; padding: 8px 2px;}
     .spinner{
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
+      width: 18px; height: 18px; border-radius: 50%;
       border: 2px solid rgba(255,255,255,.18);
       border-top-color: rgba(183,255,42,.90);
       animation: sp 0.8s linear infinite;
     }
     @keyframes sp{to{transform:rotate(360deg)}}
 
-    /* Modal */
     .modalOverlay{
       position:fixed; inset:0; z-index:100;
       background: rgba(0,0,0,.60);
@@ -413,11 +345,7 @@
       box-shadow: var(--shadow);
       padding: 16px;
     }
-    .modal h3{
-      margin:0 0 10px 0;
-      font-weight: 950;
-      letter-spacing:.3px;
-    }
+    .modal h3{margin:0 0 10px 0; font-weight: 950; letter-spacing:.3px;}
     .modal .row{margin-top: 12px}
     .hint{font-size: 12px; color: var(--muted); font-weight: 900}
   </style>
@@ -435,11 +363,12 @@
       </div>
 
       <nav class="tabs" role="tablist" aria-label="Navigation">
-        <button class="tabBtn active" id="tabBtnDash" aria-selected="true" type="button"><span class="tabIcon">📊</span> Dashboard</button>
-        <button class="tabBtn" id="tabBtnCoach" aria-selected="false" type="button"><span class="tabIcon">🤖</span> Coach</button>
-        <button class="tabBtn" id="tabBtnNutrition" aria-selected="false" type="button"><span class="tabIcon">🥗</span> Nutrition</button>
-        <button class="tabBtn" id="tabBtnCommunity" aria-selected="false" type="button"><span class="tabIcon">🌐</span> Community</button>
-        <button class="tabBtn" id="tabBtnProfile" aria-selected="false" type="button"><span class="tabIcon">👤</span> Profile</button>
+        <button class="tabBtn active" id="tabBtnDash" aria-selected="true" type="button">Dashboard</button>
+        <button class="tabBtn" id="tabBtnCoach" aria-selected="false" type="button">Coach</button>
+        <button class="tabBtn" id="tabBtnNutrition" aria-selected="false" type="button">Nutrition</button>
+        <button class="tabBtn" id="tabBtnCommunity" aria-selected="false" type="button">Community</button>
+        <button class="tabBtn" id="tabBtnProfile" aria-selected="false" type="button">Profile</button>
+        <!-- Body Scan button is injected by app.js if missing -->
       </nav>
     </div>
   </header>
@@ -455,8 +384,8 @@
 
         <div class="row" style="gap:10px">
           <input class="input" id="email" placeholder="email@exemple.com" style="width:240px" />
-          <button class="btn primary" id="btnMagicLink" type="button">🔗 Magic Link</button>
-          <button class="btn" id="btnLogout" type="button">⏏️ Logout</button>
+          <button class="btn primary" id="btnMagicLink" type="button">Magic Link</button>
+          <button class="btn" id="btnLogout" type="button">Logout</button>
         </div>
       </div>
       <div class="hint" id="profileHint" style="margin-top:10px"></div>
@@ -464,14 +393,11 @@
 
     <div style="height:14px"></div>
 
-    <!-- ===================== DASH TAB ===================== -->
+    <!-- DASH -->
     <section id="tab-dash">
-      <div id="roastBanner" class="roast"></div>
-
       <div class="grid two">
-        <!-- KPI -->
         <div class="card">
-          <div class="cardTitle">📌 KPIs</div>
+          <div class="cardTitle">KPIs</div>
 
           <div class="kpiGrid">
             <div class="kpiCard">
@@ -481,8 +407,8 @@
                   <div class="kpiVal" id="val-recovery">--</div>
                 </div>
                 <div class="kpiBtns">
-                  <button class="kpiBtn kpiBtnMinus" type="button" data-kpi="recovery" data-dir="-1">−</button>
-                  <button class="kpiBtn kpiBtnPlus" type="button" data-kpi="recovery" data-dir="1">+</button>
+                  <button class="kpiBtn" type="button" data-kpi="recovery" data-dir="-1">−</button>
+                  <button class="kpiBtn" type="button" data-kpi="recovery" data-dir="1">+</button>
                 </div>
               </div>
               <div class="hint">0 → 100%</div>
@@ -523,19 +449,18 @@
           </div>
         </div>
 
-        <!-- STATS -->
         <div class="card">
           <div class="row between">
-            <div class="cardTitle" style="margin:0">📈 Stats (7 jours)</div>
+            <div class="cardTitle" style="margin:0">Stats (7 jours)</div>
             <span class="chip cyan">Trend <span id="stat-workouts-trend" class="muted" style="margin-left:6px">→ +0%</span></span>
           </div>
 
           <div class="row" style="margin-top:12px; gap:10px">
             <div class="chip" style="flex:1">
-              🧱 Workouts: <span id="stat-workouts" style="font-weight:950; margin-left:6px">0</span>
+              Workouts: <span id="stat-workouts" style="font-weight:950; margin-left:6px">0</span>
             </div>
             <div class="chip" style="flex:1">
-              🏋️ Volume: <span id="stat-volume" style="font-weight:950; margin-left:6px">0</span>
+              Volume: <span id="stat-volume" style="font-weight:950; margin-left:6px">0</span>
             </div>
           </div>
 
@@ -543,58 +468,56 @@
           <div style="height:200px">
             <canvas id="chartVolume"></canvas>
           </div>
-          <div class="hint" style="margin-top:10px">Volume estimé (placeholder intelligent) — basé sur tes séances enregistrées.</div>
+          <div class="hint" style="margin-top:10px">Volume estimé — basé sur tes séances enregistrées.</div>
         </div>
       </div>
 
       <div style="height:14px"></div>
 
       <div class="grid two">
-        <!-- RECENT -->
         <div class="card">
           <div class="row between">
-            <div class="cardTitle" style="margin:0">🕘 Dernières séances</div>
+            <div class="cardTitle" style="margin:0">Dernières séances</div>
             <span class="chip orange">Auto</span>
           </div>
           <div style="height:12px"></div>
           <div id="recentWorkouts"></div>
         </div>
 
-        <!-- HEATMAP -->
         <div class="card">
-          <div class="cardTitle">🗓️ Activité (28 jours)</div>
+          <div class="cardTitle">Activité (28 jours)</div>
           <div id="activityHeatmap" class="heatmap"></div>
           <div class="hint" style="margin-top:10px">Cases vertes = séances détectées.</div>
         </div>
       </div>
     </section>
 
-    <!-- ===================== COACH TAB ===================== -->
+    <!-- COACH -->
     <section id="tab-coach" style="display:none">
       <div class="grid two">
         <div class="card">
-          <div class="cardTitle">🤖 Coach IA</div>
-          <div class="hint">Décris ta séance ou demande une recette. L’IA répond en JSON (workout/recipe).</div>
+          <div class="cardTitle">Coach IA</div>
+          <div class="hint">Décris ta séance. Le serveur Gemini répond en JSON stable → UI propre.</div>
           <div style="height:10px"></div>
-          <textarea id="coachPrompt" placeholder="Ex: 'Full body 35 min, poids du corps + haltères' ou 'Donne-moi une recette riche en protéines'"></textarea>
+          <textarea id="coachPrompt" placeholder="Ex: 'Full body 35 min, poids du corps + haltères'"></textarea>
           <div style="height:12px"></div>
-          <button class="btn primary" id="btnCoachAsk" type="button">✨ Générer</button>
+          <button class="btn primary" id="btnCoachAsk" type="button">Générer</button>
         </div>
 
         <div id="coachOutput">
           <div class="card">
-            <div class="empty">Décris ta séance souhaitée puis clique “Générer”.</div>
+            <div class="empty">Décris ta séance puis clique “Générer”.</div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ===================== NUTRITION TAB ===================== -->
+    <!-- NUTRITION -->
     <section id="tab-nutrition" style="display:none">
       <div class="grid two">
         <div class="card">
           <div class="row between">
-            <div class="cardTitle" style="margin:0">🥗 Nutrition (aujourd’hui)</div>
+            <div class="cardTitle" style="margin:0">Nutrition (aujourd’hui)</div>
             <button class="btn primary" id="btnAddMeal" type="button">＋ Ajouter un repas</button>
           </div>
 
@@ -620,8 +543,8 @@
 
           <div style="height:10px"></div>
           <div class="row" style="gap:10px">
-            <span class="chip cyan">🍚 Glucides <span id="macro-carbs" style="font-weight:950;margin-left:6px">0</span></span>
-            <span class="chip pink">🧈 Lipides <span id="macro-fats" style="font-weight:950;margin-left:6px">0</span></span>
+            <span class="chip cyan">Glucides <span id="macro-carbs" style="font-weight:950;margin-left:6px">0</span></span>
+            <span class="chip pink">Lipides <span id="macro-fats" style="font-weight:950;margin-left:6px">0</span></span>
           </div>
 
           <div class="hr"></div>
@@ -629,24 +552,24 @@
         </div>
 
         <div class="card">
-          <div class="cardTitle">💡 Tips</div>
+          <div class="cardTitle">Tips</div>
           <div class="hint">
             - Ajoute un repas avec calories + macros<br>
             - Les objectifs se basent sur ton poids dans les KPIs<br>
-            - Tu peux demander une recette au Coach (onglet Coach)
+            - Tu peux demander un plan au Coach
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ===================== COMMUNITY TAB ===================== -->
+    <!-- COMMUNITY -->
     <section id="tab-community" style="display:none">
       <div class="card">
         <div class="row between">
-          <div class="cardTitle" style="margin:0">🌐 Community Feed</div>
+          <div class="cardTitle" style="margin:0">Community Feed</div>
           <div class="row">
             <span class="chip" id="feedStatus">—</span>
-            <button class="btn" id="btnRefreshFeed" type="button">🔄 Refresh</button>
+            <button class="btn" id="btnRefreshFeed" type="button">Refresh</button>
           </div>
         </div>
         <div style="height:12px"></div>
@@ -654,20 +577,20 @@
       </div>
     </section>
 
-    <!-- ===================== PROFILE TAB ===================== -->
+    <!-- PROFILE -->
     <section id="tab-profile" style="display:none">
       <div class="grid two">
         <div class="card">
-          <div class="cardTitle">👤 Profil public</div>
+          <div class="cardTitle">Profil public</div>
           <div class="hint">Ton nom est affiché dans le feed public.</div>
           <div style="height:10px"></div>
           <input id="displayName" class="input" placeholder="Ton prénom / pseudo" />
           <div style="height:12px"></div>
-          <button class="btn primary" id="btnSaveName" type="button">💾 Sauvegarder</button>
+          <button class="btn primary" id="btnSaveName" type="button">Sauvegarder</button>
 
           <div class="hr"></div>
 
-          <div class="cardTitle">🧬 Données (optionnel)</div>
+          <div class="cardTitle">Données (optionnel)</div>
           <div class="grid three">
             <input id="profileAge" class="input" type="number" min="10" max="99" placeholder="Âge" />
             <input id="profileWeight" class="input" type="number" min="30" max="250" placeholder="Poids (kg)" />
@@ -676,7 +599,7 @@
 
           <div class="hr"></div>
 
-          <div class="cardTitle">🧰 Équipement</div>
+          <div class="cardTitle">Équipement</div>
           <div class="row" style="gap:12px">
             <label class="chip"><input id="eqDumbbells" type="checkbox" /> Haltères</label>
             <label class="chip"><input id="eqBarbell" type="checkbox" /> Barre</label>
@@ -684,15 +607,15 @@
             <label class="chip"><input id="eqMachines" type="checkbox" /> Machines</label>
           </div>
           <div style="height:12px"></div>
-          <button class="btn primary" id="btnSaveEquipment" type="button">💾 Sauver équipement</button>
+          <button class="btn primary" id="btnSaveEquipment" type="button">Sauver équipement</button>
         </div>
 
         <div class="card">
           <div class="row between">
-            <div class="cardTitle" style="margin:0">🏆 Trophées</div>
+            <div class="cardTitle" style="margin:0">Trophées</div>
             <div class="row">
               <span class="hint" id="trophyHint">0/4 trophées débloqués.</span>
-              <button class="btn" id="btnRefreshTrophies" type="button">🔄</button>
+              <button class="btn" id="btnRefreshTrophies" type="button">Refresh</button>
             </div>
           </div>
 
@@ -705,7 +628,7 @@
     <!-- MODAL: Add Meal -->
     <div class="modalOverlay" id="mealModal" aria-hidden="true">
       <div class="modal" role="dialog" aria-modal="true" aria-label="Ajouter un repas">
-        <h3>🍽️ Ajouter un repas</h3>
+        <h3>Ajouter un repas</h3>
 
         <div class="grid two">
           <div>
@@ -745,19 +668,16 @@
 
         <div class="row" style="margin-top:14px; justify-content:flex-end">
           <button class="btn" id="btnCancelMeal" type="button">Annuler</button>
-          <button class="btn primary" id="btnSaveMeal" type="button">💾 Sauvegarder</button>
+          <button class="btn primary" id="btnSaveMeal" type="button">Sauvegarder</button>
         </div>
       </div>
     </div>
   </main>
 
-  <!-- Chart.js (global Chart) -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <!-- app.js MUST be module because it imports Supabase -->
+  <!-- app.js -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
-
-
-     
