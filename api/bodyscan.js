@@ -1810,4 +1810,4 @@ border:1px solid rgba(182,255,59,.16); border-radius: var(--fitai-radius); box-s
     }
     render();
   })();
-})();
+})(); 
