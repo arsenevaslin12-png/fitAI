@@ -1073,10 +1073,20 @@
 
       let rawPlan = null;
 
-      const fetchPromise = fetch("/api/workout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: fullPrompt }),
+      const goalContext = getGoalContext();
+
+const fetchPromise = fetch("/api/workout", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    prompt: userPrompt || "",
+    goalContext: goalContext || null,
+  }),
+}).then(async (r) => {
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const out = await safeJson(r);
+  return out?.data ?? out?.plan ?? out?.plan_json ?? null;
+});
       }).then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const out = await safeJson(r);
