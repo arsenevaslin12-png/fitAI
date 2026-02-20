@@ -1099,15 +1099,7 @@
     );
 
     APP.lastCoachPlan = plan;
-    renderCoach(plan);
-
-    toast(`Coach (fallback): ${e.message || e}`, "error");
-  } finally {
-    showLoader(false);
-    disable(btn, false);
-    setBusy("coach", false);
-  }
-}
+    
 
       let rawPlan = null;
 
