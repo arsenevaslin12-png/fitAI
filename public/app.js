@@ -379,10 +379,11 @@
           const base = safeName(file.name).replace(/\.[^.]+$/, "");
           const path = `${APP.user.id}/goals/${Date.now()}_${base}.jpg`;
 
-          await APP.sb.storage.from("user_uploads").upload(path, blob, {
+          const { error: upErr } = await APP.sb.storage.from("user_uploads").upload(path, blob, {
             upsert: false,
             contentType: "image/jpeg",
           });
+          if (upErr) throw upErr;
 
           photoPath = path;
         }
@@ -476,9 +477,7 @@
     displayEl.textContent = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 
     const pauseBtn = $q(`[data-timer-pause="${blockId}"]`);
-    if (pauseBtn) {
-      pauseBtn.textContent = APP.timer.isPaused ? "Resume" : "Pause";
-    }
+    if (pauseBtn) pauseBtn.textContent = APP.timer.isPaused ? "Reprendre" : "Pause";
   }
 
   // ============================================================
@@ -509,7 +508,6 @@
       main.appendChild(section);
     };
 
-    // Goal tab
     ensureSection(
       "tab-goal",
       `
@@ -563,7 +561,6 @@
     `
     );
 
-    // Body Scan tab
     ensureTabButton("tabBtnBodyScan", "Body Scan");
     ensureSection(
       "tab-bodyscan",
@@ -592,7 +589,6 @@
     `
     );
 
-    // Global loader
     if (!$id("globalLoader")) {
       const loader = document.createElement("div");
       loader.id = "globalLoader";
@@ -982,9 +978,9 @@
   }
 
   // ============================================================
-  // COACH (ADAPTATIF avec normalizePlan)
+  // COACH
   // ============================================================
-  function normalizePlan(rawPlan, userPrompt, goalContext) {
+  function normalizePlan(rawPlan) {
     const plan = typeof rawPlan === "object" && rawPlan !== null ? rawPlan : {};
 
     const normalized = {
@@ -1003,22 +999,16 @@
 
       let durationSec = 0;
 
-      if (typeof b.duration_sec === "number" && b.duration_sec > 0) {
-        durationSec = b.duration_sec;
-      } else if (typeof b.duration_min === "number" && b.duration_min > 0) {
-        durationSec = b.duration_min * 60;
-      } else {
-        durationSec = 180;
-      }
+      if (typeof b.duration_sec === "number" && b.duration_sec > 0) durationSec = b.duration_sec;
+      else if (typeof b.duration_min === "number" && b.duration_min > 0) durationSec = b.duration_min * 60;
+      else durationSec = 180;
 
-      const block = {
+      normalized.blocks.push({
         title: String(b.title || "Block"),
         duration_sec: Math.max(10, durationSec),
         items: Array.isArray(b.items) ? b.items.map(String) : [],
         rpe: b.rpe || "",
-      };
-
-      normalized.blocks.push(block);
+      });
     }
 
     if (!normalized.blocks.length) {
@@ -1032,7 +1022,7 @@
     return normalized;
   }
 
-  function fallbackPlan(prompt, goalContext) {
+  function fallbackPlan(prompt) {
     return {
       title: "Séance générée (fallback)",
       intensity: "medium",
@@ -1048,96 +1038,56 @@
   }
 
   async function actionCoachAsk() {
-  const btn = $id("btnCoachAsk");
-  const userPrompt = ($id("coachPrompt")?.value ?? "").trim();
+    const btn = $id("btnCoachAsk");
+    const userPrompt = ($id("coachPrompt")?.value ?? "").trim();
 
-  if (isBusy("coach")) return toast("Génération en cours...", "error");
-  setBusy("coach", true);
-  disable(btn, true);
-  showLoader(true);
+    if (isBusy("coach")) return toast("Génération en cours...", "error");
+    setBusy("coach", true);
+    disable(btn, true);
+    showLoader(true);
 
-  stopAllTimers();
+    stopAllTimers();
 
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error("TIMEOUT")), COACH_TIMEOUT_MS);
-  });
+    let timeoutId = null;
 
-  try {
-    const goalContext = getGoalContext();
-
-    const fetchPromise = fetch("/api/workout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: userPrompt || "",
-        goalContext: goalContext || null,
-      }),
-    }).then(async (r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const out = await safeJson(r);
-      return out?.data ?? out?.plan ?? out?.plan_json ?? null;
-    });
-
-    const rawPlan = await Promise.race([fetchPromise, timeoutPromise]);
-    clearTimeout(timeoutId);
-
-    const plan = normalizePlan(rawPlan, userPrompt, goalContext);
-
-    APP.lastCoachPlan = plan;
-    renderCoach(plan);
-
-    toast("Plan généré ✅", "info");
-  } catch (e) {
-    clearTimeout(timeoutId);
-
-    const goalContext = getGoalContext();
-    const plan = normalizePlan(
-      fallbackPlan(userPrompt, goalContext),
-      userPrompt,
-      goalContext
-    );
-
-    APP.lastCoachPlan = plan;
-    
-
-      let rawPlan = null;
-
+    try {
       const goalContext = getGoalContext();
 
-const fetchPromise = fetch("/api/workout", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    prompt: userPrompt || "",
-    goalContext: goalContext || null,
-  }),
-}).then(async (r) => {
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const out = await safeJson(r);
-  return out?.data ?? out?.plan ?? out?.plan_json ?? null;
-});
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error("TIMEOUT")), COACH_TIMEOUT_MS);
+      });
+
+      const fetchPromise = fetch("/api/workout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: userPrompt || "", goalContext: goalContext || null }),
       }).then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        if (!r.ok) {
+          const txt = await r.text().catch(() => "");
+          throw new Error(`HTTP ${r.status}${txt ? `: ${txt}` : ""}`);
+        }
         const out = await safeJson(r);
         return out?.data ?? out?.plan ?? out?.plan_json ?? null;
       });
 
-      rawPlan = await Promise.race([fetchPromise, timeoutPromise]);
+      const rawPlan = await Promise.race([fetchPromise, timeoutPromise]);
+      if (timeoutId) clearTimeout(timeoutId);
 
-      clearTimeout(timeoutId);
-
-      const plan = normalizePlan(rawPlan, userPrompt, goalContext);
+      const plan = normalizePlan(rawPlan);
 
       APP.lastCoachPlan = plan;
       renderCoach(plan);
+
       toast("Plan généré ✅", "info");
     } catch (e) {
-      clearTimeout(timeoutId);
-      const plan = normalizePlan(fallbackPlan(userPrompt, getGoalContext()), userPrompt, getGoalContext());
+      if (timeoutId) clearTimeout(timeoutId);
+
+      const plan = normalizePlan(fallbackPlan(userPrompt));
       APP.lastCoachPlan = plan;
       renderCoach(plan);
-      toast(`Coach (fallback): ${e.message || e}`, "error");
+
+      const msg = e?.message === "TIMEOUT" ? "Coach: timeout (fallback)" : `Coach (fallback): ${e.message || e}`;
+      toast(msg, "error");
     } finally {
       showLoader(false);
       disable(btn, false);
@@ -1215,7 +1165,6 @@ const fetchPromise = fetch("/api/workout", {
     for (let idx = 0; idx < blocks.length; idx++) {
       const blockId = `block-${idx}`;
       const durationSec = blocks[idx].duration_sec || 180;
-
       resetTimer(blockId, durationSec);
     }
   }
@@ -1264,7 +1213,7 @@ const fetchPromise = fetch("/api/workout", {
   }
 
   // ============================================================
-  // FEED
+  // FEED (unchanged functional)
   // ============================================================
   function normalizeFeedRow(w) {
     return {
@@ -1606,7 +1555,7 @@ const fetchPromise = fetch("/api/workout", {
   }
 
   // ============================================================
-  // BODY SCAN (avec enrichissement meta)
+  // BODY SCAN
   // ============================================================
   let _bodyScanOffset = 0;
   const BODYSCAN_LIMIT = 10;
@@ -1665,7 +1614,7 @@ const fetchPromise = fetch("/api/workout", {
     showLoader(true);
 
     try {
-      const { blob, mime } = await compressToJpeg(file).catch(() => ({ blob: file, mime: file.type || "image/jpeg" }));
+      const { blob } = await compressToJpeg(file).catch(() => ({ blob: file }));
 
       if (blob.size > MAX_COMPRESSED_SIZE) {
         toast("Compression insuffisante. Choisis une photo plus petite.", "error");
@@ -1675,10 +1624,11 @@ const fetchPromise = fetch("/api/workout", {
       const base = safeName(file.name).replace(/\.[^.]+$/, "");
       const path = `${APP.user.id}/bodyscans/${Date.now()}_${base}.jpg`;
 
-      await APP.sb.storage.from("user_uploads").upload(path, blob, {
+      const { error: upErr } = await APP.sb.storage.from("user_uploads").upload(path, blob, {
         upsert: false,
         contentType: "image/jpeg",
       });
+      if (upErr) throw upErr;
 
       const goalContext = getGoalContext();
       const meta = {
@@ -1760,18 +1710,14 @@ const fetchPromise = fetch("/api/workout", {
         return;
       }
 
-      const urlPromises = rows.map((r) => getSignedUrl(r.file_path));
-      const urls = await Promise.all(urlPromises);
+      const urls = await Promise.all(rows.map((r) => getSignedUrl(r.file_path)));
 
       const parts = rows.map((r, idx) => {
         const url = urls[idx];
         const name = esc(r.meta?.original_name || r.file_path);
         const when = esc(fmtDate(r.created_at));
 
-        let goalBadge = "";
-        if (r.meta?.goal_type) {
-          goalBadge = `<span class="badge lime">🎯 ${esc(r.meta.goal_type)}</span>`;
-        }
+        const goalBadge = r.meta?.goal_type ? `<span class="badge lime">🎯 ${esc(r.meta.goal_type)}</span>` : "";
 
         return `
           <div class="feedCard">
@@ -1790,11 +1736,8 @@ const fetchPromise = fetch("/api/workout", {
       _bodyScanOffset += rows.length;
       const hasMore = _bodyScanOffset < total;
 
-      if (!loadMore) {
-        safeHTML(box, parts.join(""));
-      } else {
-        box.insertAdjacentHTML("beforeend", parts.join(""));
-      }
+      if (!loadMore) safeHTML(box, parts.join(""));
+      else box.insertAdjacentHTML("beforeend", parts.join(""));
 
       const existingBtn = $id("btnLoadMoreBodyScans");
       if (existingBtn) existingBtn.remove();
@@ -1815,7 +1758,7 @@ const fetchPromise = fetch("/api/workout", {
   }
 
   // ============================================================
-  // KPIs + NUTRITION (localStorage)
+  // KPIs + NUTRITION (same)
   // ============================================================
   function loadKPIs() {
     try {
