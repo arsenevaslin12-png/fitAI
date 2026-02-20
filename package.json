@@ -5,7 +5,7 @@
   "description": "FitAI Pro - SPA + Vercel Serverless API",
   "main": "api/workout.js",
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "vercel dev",
