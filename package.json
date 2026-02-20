@@ -1,18 +1,10 @@
-{
-  "name": "fitai-pro",
-  "version": "1.0.0",
-  "private": true,
-  "description": "FitAI Pro - SPA + Vercel Serverless API",
-  "main": "api/workout.js",
-  "engines": {
-    "node": "24.x"
-  },
-  "scripts": {
-    "dev": "vercel dev",
-    "build": "echo \"No build step required\"",
-    "start": "vercel dev"
-  },
-  "dependencies": {
-    "@google/generative-ai": "^0.15.0"
-  }
-}
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -13,6 +13,7 @@
+   "dependencies": {
+-    "@google/generative-ai": "^0.15.0"
++    "@google/generative-ai": "^0.15.0",
++    "@supabase/supabase-js": "^2.49.1"
+   }
+ }
