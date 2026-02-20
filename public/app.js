@@ -1048,28 +1048,66 @@
   }
 
   async function actionCoachAsk() {
-    const btn = $id("btnCoachAsk");
-    const userPrompt = ($id("coachPrompt")?.value ?? "").trim();
+  const btn = $id("btnCoachAsk");
+  const userPrompt = ($id("coachPrompt")?.value ?? "").trim();
 
-    if (isBusy("coach")) return toast("Génération en cours...", "error");
-    setBusy("coach", true);
-    disable(btn, true);
-    showLoader(true);
+  if (isBusy("coach")) return toast("Génération en cours...", "error");
+  setBusy("coach", true);
+  disable(btn, true);
+  showLoader(true);
 
-    stopAllTimers();
+  stopAllTimers();
 
-    let timeoutId;
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error("TIMEOUT")), COACH_TIMEOUT_MS);
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("TIMEOUT")), COACH_TIMEOUT_MS);
+  });
+
+  try {
+    const goalContext = getGoalContext();
+
+    const fetchPromise = fetch("/api/workout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: userPrompt || "",
+        goalContext: goalContext || null,
+      }),
+    }).then(async (r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const out = await safeJson(r);
+      return out?.data ?? out?.plan ?? out?.plan_json ?? null;
     });
 
-    try {
-      const goalContext = getGoalContext();
-      let fullPrompt = userPrompt || "";
+    const rawPlan = await Promise.race([fetchPromise, timeoutPromise]);
+    clearTimeout(timeoutId);
 
-      if (goalContext) {
-        fullPrompt += `\n\n[CONTEXTE OBJECTIF]\nType: ${goalContext.type}\nNiveau: ${goalContext.level}\nObjectif: ${goalContext.text}\nContraintes: ${goalContext.constraints}\nPhoto: ${goalContext.hasPhoto ? "oui" : "non"}`;
-      }
+    const plan = normalizePlan(rawPlan, userPrompt, goalContext);
+
+    APP.lastCoachPlan = plan;
+    renderCoach(plan);
+
+    toast("Plan généré ✅", "info");
+  } catch (e) {
+    clearTimeout(timeoutId);
+
+    const goalContext = getGoalContext();
+    const plan = normalizePlan(
+      fallbackPlan(userPrompt, goalContext),
+      userPrompt,
+      goalContext
+    );
+
+    APP.lastCoachPlan = plan;
+    renderCoach(plan);
+
+    toast(`Coach (fallback): ${e.message || e}`, "error");
+  } finally {
+    showLoader(false);
+    disable(btn, false);
+    setBusy("coach", false);
+  }
+}
 
       let rawPlan = null;
 
