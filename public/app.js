@@ -486,7 +486,7 @@
   // ============================================================
   function ensureExtraTabs() {
     const nav = $q(".tabs");
-    const main = $q("main.container");
+    const main = $q("main") || document.body;
     if (!nav || !main) return;
 
     const ensureTabButton = (id, label) => {
