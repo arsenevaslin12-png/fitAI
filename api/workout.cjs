@@ -1,103 +1,64 @@
-diff --git a/api/workout.js b/api/workout.js
 --- a/api/workout.js
 +++ b/api/workout.js
-@@ -1,6 +1,45 @@
--const { GoogleGenerativeAI } = require("@google/generative-ai");
-+// IMPORTANT: do not require "@google/generative-ai" at top-level.
-+// If dependency/build/runtime fails, Vercel will crash BEFORE responding, even for ?config=1.
-+let GoogleGenerativeAI = null;
-+function getGoogleGenerativeAI() {
-+  if (GoogleGenerativeAI) return GoogleGenerativeAI;
-+  try {
-+    const mod = require("@google/generative-ai");
-+    GoogleGenerativeAI = mod.GoogleGenerativeAI;
-+    return GoogleGenerativeAI;
-+  } catch (e) {
-+    return null;
-+  }
-+}
- 
--const MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
-+const MODEL = String(process.env.GEMINI_MODEL || "gemini-2.5-flash").trim();
- 
- function sendJson(res, status, payload) {
-   res.statusCode = status;
-   res.setHeader("Content-Type", "application/json; charset=utf-8");
-   res.setHeader("Cache-Control", "no-store");
-   res.end(JSON.stringify(payload));
- }
- 
- function setCors(res) {
-   res.setHeader("Access-Control-Allow-Origin", "*");
-   res.setHeader("Access-Control-Allow-Headers", "content-type, authorization, x-fitai-client");
-   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
- }
- 
-+function getQueryParam(req, key) {
-+  // Works even when req.query is undefined (common in raw Node serverless)
-+  try {
-+    const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost";
-+    const proto = req.headers["x-forwarded-proto"] || "https";
-+    const url = new URL(req.url || "/", `${proto}://${host}`);
-+    return url.searchParams.get(key);
-+  } catch {
-+    return null;
-+  }
-+}
-+
- function parseBody(req) {
-   const b = req.body;
-   if (!b) return null;
-@@ -74,8 +113,18 @@ async function geminiText({ apiKey, prompt }) {
--  const genAI = new GoogleGenerativeAI(apiKey);
-+  const G = getGoogleGenerativeAI();
-+  if (!G) {
-+    const err = new Error('Missing dependency "@google/generative-ai" (check package.json dependencies + redeploy).');
-+    err.code = "MISSING_DEP";
-+    throw err;
-+  }
-+  const genAI = new G(apiKey);
-   const model = genAI.getGenerativeModel({
-     model: MODEL,
-     generationConfig: { temperature: 0.65, topP: 0.9, maxOutputTokens: 900 },
+@@ -201,21 +201,26 @@ async function geminiText({ apiKey, prompt }) {
    });
-@@ -109,21 +158,31 @@ module.exports = async function handler(req, res) {
-   if (req.method === "OPTIONS") {
-     res.statusCode = 204;
-     return res.end();
+ 
+   // Promise.race timeout (AbortController non supporté par SDK)
+   const startTime = Date.now();
++  let timeoutId;
++  
+   const timeoutPromise = new Promise((_, reject) => {
+-    setTimeout(() => {
++    timeoutId = setTimeout(() => {
+       const elapsed = Date.now() - startTime;
+-      console.warn("[workout] Gemini timeout triggered", { elapsedMs: elapsed });
++      console.warn("[workout] Gemini timeout triggered", { elapsedMs: elapsed, requestId: "N/A" });
+       const err = new Error("Gemini timeout");
+       err.code = "TIMEOUT";
+       reject(err);
+     }, TIMEOUT_MS);
+   });
+ 
+   const generatePromise = model.generateContent(prompt).then(result => {
+-    const elapsed = Date.now() - startTime;
+-    console.log("[workout] Gemini completed", { elapsedMs: elapsed });
+-    
+     const resp = result?.response;
+     if (resp?.text && typeof resp.text === "function") return resp.text();
+     if (typeof resp?.text === "string") return resp.text;
+     return "";
+-  });
++  }).finally(() => {
++    clearTimeout(timeoutId);
++    const elapsed = Date.now() - startTime;
++    console.log("[workout] Gemini completed", { elapsedMs: elapsed });
++  });
+ 
+   return Promise.race([generatePromise, timeoutPromise]);
+@@ -313,7 +318,7 @@ async function handler(req, res) {
+ 
+   const validation = validateInput(prompt, goalContext);
+   if (!validation.valid) {
+-    console.warn("[workout] invalid input", { requestId, error: validation.error, detail: validation.detail });
++    console.warn("[workout] invalid input", { requestId, error: validation.error, promptLength: prompt.length });
+     return safeSendJson(res, 400, { ok: false, error: validation.error, detail: validation.detail, requestId });
    }
  
-   // ✅ CONFIG GET for front
-   if (req.method === "GET") {
--    const isConfig = String(req.query?.config || "") === "1";
-+    const isConfig = String(getQueryParam(req, "config") || "") === "1";
-     if (!isConfig) return sendJson(res, 404, { ok: false, error: "NOT_FOUND", requestId });
+@@ -326,7 +331,7 @@ async function handler(req, res) {
  
-     const supabaseUrl = process.env.SUPABASE_URL;
-     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
- 
-     if (!supabaseUrl || !supabaseAnonKey) {
-       console.error("[workout] misconfig supabase public", { requestId, hasUrl: !!supabaseUrl, hasAnon: !!supabaseAnonKey });
-       return sendJson(res, 500, {
-         ok: false,
-         error: "SERVER_MISCONFIG_SUPABASE_PUBLIC",
-         detail: "Missing SUPABASE_URL and/or SUPABASE_ANON_KEY in Vercel env vars (Production/Preview/Development) + redeploy.",
-         requestId,
-       });
+     const outputValidation = validateAIOutput(normalized);
+     if (!outputValidation.valid) {
+-      console.error("[workout] invalid AI output", { requestId, error: outputValidation.error, detail: outputValidation.detail });
++      console.error("[workout] invalid AI output", { requestId, error: outputValidation.error });
+       return safeSendJson(res, 502, { ok: false, error: outputValidation.error, detail: outputValidation.detail, requestId });
      }
  
--    return sendJson(res, 200, { supabaseUrl, supabaseAnonKey });
-+    return sendJson(res, 200, { ok: true, supabaseUrl, supabaseAnonKey, requestId });
-   }
-@@ -205,6 +264,10 @@ module.exports = async function handler(req, res) {
-   } catch (err) {
+@@ -336,7 +341,7 @@ async function handler(req, res) {
      const msg = String(err?.message || "SERVER_ERROR");
      const code = err?.code || "";
  
-     console.error("[workout] error", { requestId, code, msg });
+-    console.error("[workout] error", { requestId, code, msg });
++    console.error("[workout] error", { requestId, code, errorType: err?.constructor?.name || "Error" });
  
-+    if (code === "MISSING_DEP") {
-+      return sendJson(res, 500, { ok: false, error: "SERVER_MISCONFIG_DEPENDENCY", detail: msg, requestId });
-+    }
-+
-     if (code === "TIMEOUT" || msg.includes("TIMEOUT")) return sendJson(res, 504, { ok: false, error: "TIMEOUT", requestId });
+     if (code === "MISSING_DEP") {
+       return safeSendJson(res, 500, { ok: false, error: "SERVER_MISCONFIG_DEPENDENCY", detail: msg, requestId });
