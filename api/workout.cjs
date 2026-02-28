@@ -1,343 +1,130 @@
-const TIMEOUT_MS = 23000;
-const MAX_PROMPT_LENGTH = 2000;
-const RATE_LIMIT_MS = 3000;
+// api/workout.js — FitAI Pro v3.4.0
+"use strict";
 
-let GoogleGenerativeAI = null;
-function getGoogleGenerativeAI() {
-  if (GoogleGenerativeAI) return GoogleGenerativeAI;
-  try {
-    const mod = require("@google/generative-ai");
-    GoogleGenerativeAI = mod.GoogleGenerativeAI;
-    return GoogleGenerativeAI;
-  } catch (e) {
-    return null;
-  }
+const TIMEOUT_MS = 25000;
+const MAX_PROMPT = 2000;
+
+let _GeminiClass = null;
+function getGemini() {
+  if (_GeminiClass) return _GeminiClass;
+  try { _GeminiClass = require("@google/generative-ai").GoogleGenerativeAI; return _GeminiClass; }
+  catch { return null; }
 }
 
-const MODEL = String(process.env.GEMINI_MODEL || "gemini-2.0-flash-exp").trim();
-const rateLimitMap = new Map();
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash-exp";
 
-function sendJson(res, status, payload) {
+function json(res, status, body) {
+  if (res.writableEnded) return;
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(payload));
+  res.end(JSON.stringify(body));
 }
 
-function safeSendJson(res, status, payload) {
-  if (res.writableEnded) {
-    console.warn("[workout] Attempt to write after response ended");
-    return;
-  }
-  sendJson(res, status, payload);
-}
-
-function setCors(res) {
+function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "content-type, authorization, x-fitai-client");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-}
-
-function getQueryParam(req, key) {
-  try {
-    const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost";
-    const proto = req.headers["x-forwarded-proto"] || "https";
-    const url = new URL(req.url || "/", `${proto}://${host}`);
-    return url.searchParams.get(key);
-  } catch {
-    return null;
-  }
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
 }
 
 function parseBody(req) {
   const b = req.body;
-  if (!b) return null;
-  if (typeof b === "string") {
-    try { return JSON.parse(b); } catch { return null; }
-  }
-  return b;
-}
-
-function getClientIP(req) {
-  return (
-    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-    req.headers["x-real-ip"] ||
-    "unknown"
-  );
-}
-
-function cleanupRateLimit() {
-  const now = Date.now();
-  const cutoff = now - 60000;
-  for (const [ip, timestamp] of rateLimitMap.entries()) {
-    if (timestamp < cutoff) rateLimitMap.delete(ip);
-  }
-}
-
-function buildPrompt(userPrompt, goalContext) {
-  let prompt = "Tu es un coach sportif expert.\n\n";
-  
-  if (goalContext) {
-    prompt += "CONTEXTE UTILISATEUR:\n";
-    if (goalContext.type) prompt += `Type objectif: ${goalContext.type}\n`;
-    if (goalContext.level) prompt += `Niveau: ${goalContext.level}\n`;
-    if (goalContext.text) prompt += `Objectif: ${goalContext.text}\n`;
-    if (goalContext.constraints) prompt += `Contraintes: ${goalContext.constraints}\n`;
-    prompt += "\n";
-  }
-  
-  if (userPrompt) {
-    prompt += `DEMANDE: ${userPrompt}\n\n`;
-  }
-  
-  prompt += `Génère un plan d'entraînement au format JSON strict:\n`;
-  prompt += `{\n`;
-  prompt += `  "title": "Titre de la séance",\n`;
-  prompt += `  "intensity": "low|medium|high",\n`;
-  prompt += `  "notes": "Notes générales",\n`;
-  prompt += `  "blocks": [\n`;
-  prompt += `    {\n`;
-  prompt += `      "title": "Nom du bloc",\n`;
-  prompt += `      "duration_sec": 600,\n`;
-  prompt += `      "items": ["Exercice 1", "Exercice 2"],\n`;
-  prompt += `      "rpe": "6-7"\n`;
-  prompt += `    }\n`;
-  prompt += `  ]\n`;
-  prompt += `}\n`;
-  prompt += `IMPORTANT: duration_sec obligatoire (nombre entier positif). Pas de duration_min.`;
-  
-  return prompt;
-}
-
-function validateInput(prompt, goalContext) {
-  if (typeof prompt !== "string") {
-    return { valid: false, error: "INVALID_INPUT", detail: "Le prompt doit être une chaîne." };
-  }
-  if (prompt.length > MAX_PROMPT_LENGTH) {
-    return { valid: false, error: "INVALID_INPUT", detail: `Max ${MAX_PROMPT_LENGTH} caractères.` };
-  }
-  if (goalContext !== null && goalContext !== undefined) {
-    if (typeof goalContext !== "object" || Array.isArray(goalContext)) {
-      return { valid: false, error: "INVALID_INPUT", detail: "goalContext doit être un objet ou null." };
-    }
-  }
-  return { valid: true };
-}
-
-function validateAIOutput(data) {
-  if (!data || typeof data !== "object") {
-    return { valid: false, error: "INVALID_AI_RESPONSE", detail: "Réponse IA invalide." };
-  }
-  if (!Array.isArray(data.blocks) || data.blocks.length === 0) {
-    return { valid: false, error: "INVALID_AI_RESPONSE", detail: "Blocks absent ou vide." };
-  }
-  for (let i = 0; i < data.blocks.length; i++) {
-    const b = data.blocks[i];
-    if (typeof b.duration_sec !== "number" || isNaN(b.duration_sec) || b.duration_sec <= 0) {
-      return { valid: false, error: "INVALID_AI_RESPONSE", detail: `Block ${i}: duration_sec invalide.` };
-    }
-  }
-  return { valid: true };
+  if (!b) return {};
+  if (typeof b === "string") { try { return JSON.parse(b); } catch { return {}; } }
+  return b || {};
 }
 
 function safeJsonExtract(text) {
   const s = String(text || "").trim();
-  const a = s.indexOf("{");
-  const b = s.lastIndexOf("}");
-  if (a === -1 || b === -1 || b <= a) return null;
-  const slice = s.slice(a, b + 1);
-  try { return JSON.parse(slice); } catch { return null; }
+  const a = s.indexOf("{"), b = s.lastIndexOf("}");
+  if (a === -1 || b <= a) return null;
+  try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
 }
 
-function normalizePlan(rawPlan) {
-  const plan = typeof rawPlan === "object" && rawPlan !== null ? rawPlan : {};
-  const normalized = {
-    title: String(plan.title || "Séance générée"),
-    intensity: String(plan.intensity || "medium"),
-    notes: String(plan.notes || ""),
+function normalizePlan(raw) {
+  const p = (raw && typeof raw === "object") ? raw : {};
+  const blocks = (Array.isArray(p.blocks) ? p.blocks : []).map(b => {
+    if (!b || typeof b !== "object") return null;
+    let dur = typeof b.duration_sec === "number" && b.duration_sec > 0 ? b.duration_sec
+            : typeof b.duration_min === "number" && b.duration_min > 0 ? b.duration_min * 60
+            : 300;
+    return { title: String(b.title || "Block"), duration_sec: Math.max(10, dur), items: (Array.isArray(b.items) ? b.items : []).map(String), rpe: b.rpe || "" };
+  }).filter(Boolean);
+
+  if (!blocks.length) blocks.push(
+    { title: "Échauffement", duration_sec: 480, items: ["Mobilité articulaire", "Cardio léger"], rpe: "4-5" },
+    { title: "Travail principal", duration_sec: 1500, items: ["3×10 exercice principal", "3×12 accessoire"], rpe: "7-8" },
+    { title: "Récupération", duration_sec: 300, items: ["Étirements", "Respiration"], rpe: "2-3" }
+  );
+
+  return {
+    title: String(p.title || "Séance générée"),
+    intensity: String(p.intensity || "medium"),
+    notes: String(p.notes || ""),
     created_at: new Date().toISOString(),
-    source: plan.source || "coach",
-    blocks: [],
+    blocks
   };
-  const rawBlocks = Array.isArray(plan.blocks) ? plan.blocks : [];
-  for (const b of rawBlocks) {
-    if (!b || typeof b !== "object") continue;
-    let durationSec = 0;
-    if (typeof b.duration_sec === "number" && b.duration_sec > 0) durationSec = b.duration_sec;
-    else if (typeof b.duration_min === "number" && b.duration_min > 0) durationSec = b.duration_min * 60;
-    else durationSec = 180;
-    normalized.blocks.push({
-      title: String(b.title || "Block"),
-      duration_sec: Math.max(10, durationSec),
-      items: Array.isArray(b.items) ? b.items.map(String) : [],
-      rpe: b.rpe || "",
-    });
-  }
-  if (!normalized.blocks.length) {
-    normalized.blocks = [
-      { title: "Warm-up", duration_sec: 480, items: ["Mobilité", "Cardio léger"], rpe: "" },
-      { title: "Main", duration_sec: 1500, items: ["3x mouvement principal", "2x accessoire"], rpe: "" },
-      { title: "Cooldown", duration_sec: 300, items: ["Respiration", "Stretching"], rpe: "" },
-    ];
-  }
-  return normalized;
 }
 
-async function geminiText({ apiKey, prompt }) {
-  if (!apiKey) throw new Error("GEMINI_API_KEY manquant");
-  const G = getGoogleGenerativeAI();
-  if (!G) {
-    const err = new Error('Missing dependency "@google/generative-ai".');
-    err.code = "MISSING_DEP";
-    throw err;
-  }
-  const genAI = new G(apiKey);
-  const model = genAI.getGenerativeModel({
+async function callGemini(apiKey, prompt) {
+  const G = getGemini();
+  if (!G) throw Object.assign(new Error("@google/generative-ai manquant"), { code: "MISSING_DEP" });
+
+  const model = new G(apiKey).getGenerativeModel({
     model: MODEL,
-    generationConfig: { temperature: 0.65, topP: 0.9, maxOutputTokens: 900 },
+    generationConfig: { temperature: 0.6, maxOutputTokens: 1000 }
   });
 
-  const startTime = Date.now();
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => {
-      const err = new Error("Gemini timeout");
-      err.code = "TIMEOUT";
-      reject(err);
-    }, TIMEOUT_MS);
+  let tid;
+  const timeout = new Promise((_, rej) => { tid = setTimeout(() => rej(Object.assign(new Error("Timeout"), { code: "TIMEOUT" })), TIMEOUT_MS); });
+  const call = model.generateContent(prompt).then(r => {
+    clearTimeout(tid);
+    const t = r?.response?.text;
+    return typeof t === "function" ? t() : String(t || "");
   });
-
-  const generatePromise = model.generateContent(prompt).then(result => {
-    const resp = result?.response;
-    if (resp?.text && typeof resp.text === "function") return resp.text();
-    if (typeof resp?.text === "string") return resp.text;
-    return "";
-  }).finally(() => {
-    clearTimeout(timeoutId);
-    const elapsed = Date.now() - startTime;
-    console.log("[workout] Gemini completed", { elapsedMs: elapsed });
-  });
-
-  return Promise.race([generatePromise, timeoutPromise]);
+  return Promise.race([call, timeout]);
 }
 
-function wrapHandler(handler) {
-  return async function(req, res) {
-    try {
-      await handler(req, res);
-    } catch (err) {
-      if (res.writableEnded) {
-        console.error("[workout] FATAL after response ended", { msg: err?.message });
-        return;
-      }
-      const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      console.error("[workout] FATAL", { requestId, errorType: err?.constructor?.name || "Error" });
-      setCors(res);
-      safeSendJson(res, 500, { ok: false, error: "INTERNAL_SERVER_ERROR", detail: String(err?.message || err), requestId });
-    }
-  };
+function buildPrompt(userPrompt, goal) {
+  let p = "Tu es un coach fitness expert. Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans texte avant ou après.\n\n";
+  if (goal) {
+    p += `Contexte utilisateur:\n- Objectif: ${goal.type || ""}\n- Niveau: ${goal.level || ""}\n- Description: ${goal.text || ""}\n- Contraintes: ${goal.constraints || "aucune"}\n\n`;
+  }
+  p += `Demande: ${userPrompt}\n\n`;
+  p += `Format JSON attendu (respecte exactement cette structure):\n`;
+  p += `{"title":"Titre de la séance","intensity":"low|medium|high","notes":"conseils généraux","blocks":[{"title":"Nom du bloc","duration_sec":600,"items":["Exercice 1 — 3x10","Exercice 2 — 2 min"],"rpe":"6-7"}]}\n`;
+  p += `Inclure 3 à 5 blocs. duration_sec = entier positif obligatoire.`;
+  return p;
 }
 
-async function handler(req, res) {
-  setCors(res);
-  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+module.exports = async function(req, res) {
+  cors(res);
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-  if (req.method === "OPTIONS") {
-    res.statusCode = 204;
-    return res.end();
-  }
+  if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
+  if (req.method !== "POST") return json(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", id });
 
-  if (req.method === "GET") {
-    let isConfig = false;
-    try {
-      isConfig = String(getQueryParam(req, "config") || "") === "1";
-    } catch (e) {
-      console.error("[workout] getQueryParam error", { requestId });
-      return safeSendJson(res, 400, { ok: false, error: "INVALID_REQUEST_URL", requestId });
-    }
-    
-    if (!isConfig) return safeSendJson(res, 404, { ok: false, error: "NOT_FOUND", requestId });
+  const KEY = process.env.GEMINI_API_KEY;
+  if (!KEY) return json(res, 500, { ok: false, error: "GEMINI_API_KEY manquant dans Vercel", id });
 
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+  const body = parseBody(req);
+  const prompt = String(body.prompt || "").trim();
+  const goal = body.goalContext || null;
 
-    if (!supabaseUrl || !supabaseAnonKey) {
-      const missing = [];
-      if (!supabaseUrl) missing.push("SUPABASE_URL");
-      if (!supabaseAnonKey) missing.push("SUPABASE_ANON_KEY");
-      return safeSendJson(res, 500, {
-        ok: false,
-        error: "SERVER_MISCONFIG_SUPABASE_PUBLIC",
-        detail: `Missing env vars: ${missing.join(", ")}. Configure in Vercel Dashboard.`,
-        requestId,
-      });
-    }
-
-    return safeSendJson(res, 200, { ok: true, supabaseUrl, supabaseAnonKey, requestId });
-  }
-
-  if (req.method !== "POST") {
-    return safeSendJson(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", requestId });
-  }
-
-  const clientIP = getClientIP(req);
-  const now = Date.now();
-  const lastReq = rateLimitMap.get(clientIP) || 0;
-  
-  if (now - lastReq < RATE_LIMIT_MS) {
-    return safeSendJson(res, 429, { ok: false, error: "RATE_LIMIT", detail: `Max 1 req/${RATE_LIMIT_MS / 1000}s.`, requestId });
-  }
-  
-  rateLimitMap.set(clientIP, now);
-  if (rateLimitMap.size > 500) cleanupRateLimit();
-
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_API_KEY) {
-    console.error("[workout] misconfig gemini", { requestId });
-    return safeSendJson(res, 500, { ok: false, error: "SERVER_MISCONFIG_GEMINI", requestId });
-  }
-
-  const body = parseBody(req) || {};
-  const prompt = String(body?.prompt || "");
-  const goalContext = body?.goalContext || null;
-
-  const validation = validateInput(prompt, goalContext);
-  if (!validation.valid) {
-    return safeSendJson(res, 400, { ok: false, error: validation.error, detail: validation.detail, requestId });
-  }
+  if (!prompt) return json(res, 400, { ok: false, error: "prompt requis", id });
+  if (prompt.length > MAX_PROMPT) return json(res, 400, { ok: false, error: `prompt trop long (max ${MAX_PROMPT})`, id });
 
   try {
-    const fullPrompt = buildPrompt(prompt.trim(), goalContext);
-    const text = await geminiText({ apiKey: GEMINI_API_KEY, prompt: fullPrompt });
-    const parsed = safeJsonExtract(text);
-    const normalized = normalizePlan(parsed);
-
-    const outputValidation = validateAIOutput(normalized);
-    if (!outputValidation.valid) {
-      return safeSendJson(res, 502, { ok: false, error: outputValidation.error, detail: outputValidation.detail, requestId });
-    }
-
-    return safeSendJson(res, 200, { ok: true, data: normalized, requestId });
-  } catch (err) {
-    const msg = String(err?.message || "SERVER_ERROR");
-    const code = err?.code || "";
-    console.error("[workout] error", { requestId, code, errorType: err?.constructor?.name || "Error" });
-
-    if (code === "MISSING_DEP") {
-      return safeSendJson(res, 500, { ok: false, error: "SERVER_MISCONFIG_DEPENDENCY", detail: msg, requestId });
-    }
-    if (code === "TIMEOUT") return safeSendJson(res, 504, { ok: false, error: "TIMEOUT", requestId });
-
-    const m = msg.toLowerCase();
-    if (m.includes("429") || m.includes("quota")) {
-      return safeSendJson(res, 502, { ok: false, error: "UPSTREAM_RATE_LIMIT", requestId });
-    }
-    if (m.includes("403") || m.includes("api key")) {
-      return safeSendJson(res, 502, { ok: false, error: "UPSTREAM_AUTH_FAILED", requestId });
-    }
-
-    return safeSendJson(res, 502, { ok: false, error: "UPSTREAM_ERROR", detail: msg, requestId });
+    const text = await callGemini(KEY, buildPrompt(prompt, goal));
+    const plan = normalizePlan(safeJsonExtract(text));
+    return json(res, 200, { ok: true, data: plan, id });
+  } catch (e) {
+    const code = e?.code || "";
+    const msg = String(e?.message || "");
+    console.error("[workout]", { id, code, msg: msg.slice(0, 100) });
+    if (code === "TIMEOUT") return json(res, 504, { ok: false, error: "Timeout Gemini — réessayez", id });
+    if (code === "MISSING_DEP") return json(res, 500, { ok: false, error: msg, id });
+    if (msg.includes("429") || msg.includes("quota")) return json(res, 429, { ok: false, error: "Quota Gemini dépassé", id });
+    return json(res, 502, { ok: false, error: msg || "Erreur Gemini", id });
   }
-}
-
-module.exports = wrapHandler(handler);
+};
