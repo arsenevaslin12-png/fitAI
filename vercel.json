@@ -1,28 +1,40 @@
 {
   "version": 2,
-  "rewrites": [
+  "builds": [
     {
-      "source": "/((?!api).*)",
-      "destination": "/public/$1"
+      "src": "api/*.js",
+      "use": "@vercel/node",
+      "config": { "includeFiles": ["api/**"] }
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
     }
   ],
-  "headers": [
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET, POST, OPTIONS"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type, Authorization"
-        }
-      ]
+      "src": "/api/config",
+      "dest": "/api/config.js"
+    },
+    {
+      "src": "/api/workout",
+      "dest": "/api/workout.js"
+    },
+    {
+      "src": "/api/bodyscan",
+      "dest": "/api/bodyscan.js"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1.js"
+    },
+    {
+      "src": "/(.*\\.(js|css|png|jpg|jpeg|svg|ico|webp|woff2?))",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/index.html"
     }
   ]
 }
