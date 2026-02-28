@@ -1,38 +1,29 @@
-const TIMEOUT_GEMINI_MS = 14000;
+// api/bodyscan.js — FitAI Pro v3.4.0
+"use strict";
+
+const TIMEOUT_GEMINI_MS = 20000;
 const TIMEOUT_STORAGE_MS = 12000;
 
-let GoogleGenerativeAI = null;
-function getGoogleGenerativeAI() {
-  if (GoogleGenerativeAI) return GoogleGenerativeAI;
-  try {
-    const mod = require("@google/generative-ai");
-    GoogleGenerativeAI = mod.GoogleGenerativeAI;
-    return GoogleGenerativeAI;
-  } catch {
-    return null;
-  }
+let _GeminiClass = null;
+function getGemini() {
+  if (_GeminiClass) return _GeminiClass;
+  try { _GeminiClass = require("@google/generative-ai").GoogleGenerativeAI; return _GeminiClass; }
+  catch { return null; }
 }
 
 const { createClient } = require("@supabase/supabase-js");
 const BUCKET = process.env.BUCKET || "user_uploads";
-const MODEL_PRIMARY = process.env.GEMINI_MODEL || "gemini-2.0-flash-exp";
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash-exp";
 
-function sendJson(res, status, payload) {
+function json(res, status, body) {
+  if (res.writableEnded) return;
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(payload));
+  res.end(JSON.stringify(body));
 }
 
-function safeSendJson(res, status, payload) {
-  if (res.writableEnded) {
-    console.warn("[bodyscan] Attempt to write after response ended");
-    return;
-  }
-  sendJson(res, status, payload);
-}
-
-function setCors(res) {
+function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "content-type, authorization, x-fitai-client");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -40,29 +31,18 @@ function setCors(res) {
 
 function parseBody(req) {
   const b = req.body;
-  if (!b) return null;
-  if (typeof b === "string") {
-    try { return JSON.parse(b); } catch { return null; }
-  }
-  return b;
+  if (!b) return {};
+  if (typeof b === "string") { try { return JSON.parse(b); } catch { return {}; } }
+  return b || {};
 }
 
 function getBearerToken(req) {
-  const h = req.headers.authorization || req.headers.Authorization || "";
-  if (h.startsWith("Bearer ")) return h.slice(7);
-  return null;
+  const h = String(req.headers.authorization || "");
+  return h.startsWith("Bearer ") ? h.slice(7) : null;
 }
 
-function withTimeout(promise, ms, label) {
-  let t;
-  const timeout = new Promise((_, reject) => {
-    t = setTimeout(() => reject(Object.assign(new Error(label || "TIMEOUT"), { code: "TIMEOUT" })), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
-}
-
-function guessMimeFromPath(path) {
-  const p = String(path || "").toLowerCase();
+function guessMime(path) {
+  const p = String(path).toLowerCase();
   if (p.endsWith(".png")) return "image/png";
   if (p.endsWith(".webp")) return "image/webp";
   if (p.endsWith(".gif")) return "image/gif";
@@ -71,244 +51,91 @@ function guessMimeFromPath(path) {
 
 function safeJsonExtract(text) {
   const s = String(text || "").trim();
-  const a = s.indexOf("{");
-  const b = s.lastIndexOf("}");
-  if (a === -1 || b === -1 || b <= a) return null;
-  const slice = s.slice(a, b + 1);
-  try { return JSON.parse(slice); } catch { return null; }
+  const a = s.indexOf("{"), b = s.lastIndexOf("}");
+  if (a === -1 || b <= a) return null;
+  try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
 }
 
-function normalizeAnalysis(obj) {
-  if (!obj || typeof obj !== "object") return null;
-  return {
-    feedback: String(obj.feedback || obj.analysis || "Analyse indisponible"),
-    symmetry_score: typeof obj.symmetry_score === "number" ? Math.min(100, Math.max(0, obj.symmetry_score)) : null,
-    posture_score: typeof obj.posture_score === "number" ? Math.min(100, Math.max(0, obj.posture_score)) : null,
-    bodyfat_proxy: typeof obj.bodyfat_proxy === "number" ? Math.min(100, Math.max(0, obj.bodyfat_proxy)) : null,
-  };
+function withTimeout(p, ms, label) {
+  let t;
+  const timeout = new Promise((_, rej) => { t = setTimeout(() => rej(Object.assign(new Error(label), { code: "TIMEOUT" })), ms); });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(t));
 }
 
-function validateAIResponse(analysis) {
-  if (!analysis || typeof analysis !== "object") {
-    return { valid: false, error: "INVALID_AI_RESPONSE", detail: "Réponse IA absente." };
-  }
-  if (!analysis.feedback || typeof analysis.feedback !== "string" || analysis.feedback.length === 0) {
-    return { valid: false, error: "INVALID_AI_RESPONSE", detail: "Analyse textuelle absente." };
-  }
-  const scores = [analysis.symmetry_score, analysis.posture_score, analysis.bodyfat_proxy];
-  for (const s of scores) {
-    if (s !== null && s !== undefined) {
-      if (typeof s !== "number" || isNaN(s) || s < 0 || s > 100) {
-        return { valid: false, error: "INVALID_AI_RESPONSE", detail: `Score invalide: ${s}.` };
-      }
-    }
-  }
-  return { valid: true };
-}
+async function analyzeImage({ apiKey, b64, mime }) {
+  const G = getGemini();
+  if (!G) throw Object.assign(new Error("@google/generative-ai manquant"), { code: "MISSING_DEP" });
 
-function buildVisionPrompt() {
-  return [
-    "Analyse cette photo de body scan fitness.",
-    "Retourne UNIQUEMENT un JSON strict (pas de markdown):",
-    "{",
-    '  "feedback": "Analyse complète en français (150 mots max)",',
-    '  "symmetry_score": 85,',
-    '  "posture_score": 78,',
-    '  "bodyfat_proxy": 15',
-    "}",
-    "Scores: 0-100. Si impossible à évaluer, mettre null.",
-  ].join("\n");
-}
+  const model = new G(apiKey).getGenerativeModel({ model: MODEL, generationConfig: { temperature: 0.3, maxOutputTokens: 800 } });
+  const prompt = `Analyse cette photo fitness (body scan). Réponds UNIQUEMENT avec du JSON valide, aucun markdown:\n{"feedback":"analyse détaillée en français (max 120 mots)","symmetry_score":85,"posture_score":78,"bodyfat_proxy":18}\nScores entre 0 et 100. Utilise null si impossible à évaluer.`;
 
-async function geminiVisionOnce({ apiKey, modelName, prompt, b64, mime }) {
-  const G = getGoogleGenerativeAI();
-  if (!G) {
-    const err = new Error('Missing dependency "@google/generative-ai".');
-    err.code = "MISSING_DEP";
-    throw err;
-  }
-  const genAI = new G(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: { temperature: 0.35, topP: 0.9, maxOutputTokens: 900 },
+  let tid;
+  const timeout = new Promise((_, rej) => { tid = setTimeout(() => rej(Object.assign(new Error("Timeout Gemini Vision"), { code: "TIMEOUT" })), TIMEOUT_GEMINI_MS); });
+  const call = model.generateContent([{ text: prompt }, { inlineData: { data: b64, mimeType: mime } }]).then(r => {
+    clearTimeout(tid);
+    const t = r?.response?.text;
+    return typeof t === "function" ? t() : String(t || "");
   });
-
-  const startTime = Date.now();
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => {
-      const err = new Error("Gemini Vision timeout");
-      err.code = "TIMEOUT";
-      reject(err);
-    }, TIMEOUT_GEMINI_MS);
-  });
-
-  const generatePromise = model.generateContent([
-      { text: prompt },
-      { inlineData: { data: b64, mimeType: mime } },
-    ]).then(result => {
-    const resp = result?.response;
-    if (resp?.text && typeof resp.text === "function") return resp.text();
-    if (typeof resp?.text === "string") return resp.text;
-    return "";
-  }).finally(() => {
-    clearTimeout(timeoutId);
-    const elapsed = Date.now() - startTime;
-    console.log("[bodyscan] Gemini Vision completed", { elapsedMs: elapsed, model: modelName });
-  });
-
-  return Promise.race([generatePromise, timeoutPromise]);
+  return Promise.race([call, timeout]);
 }
 
-async function geminiVisionWithRetry({ apiKey, prompt, b64, mime }) {
-  try {
-    return { text: await geminiVisionOnce({ apiKey, modelName: MODEL_PRIMARY, prompt, b64, mime }), model: MODEL_PRIMARY };
-  } catch (e) {
-    if (e?.code === "MISSING_DEP") throw e;
-    throw e;
-  }
-}
+module.exports = async function(req, res) {
+  cors(res);
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-function wrapHandler(handler) {
-  return async function(req, res) {
-    try {
-      await handler(req, res);
-    } catch (err) {
-      if (res.writableEnded) {
-        console.error("[bodyscan] FATAL after response ended");
-        return;
-      }
-      const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      console.error("[bodyscan] FATAL", { requestId, errorType: err?.constructor?.name || "Error" });
-      setCors(res);
-      safeSendJson(res, 500, { ok: false, error: "INTERNAL_SERVER_ERROR", detail: String(err?.message || err), requestId });
-    }
-  };
-}
+  if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
+  if (req.method !== "POST") return json(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", id });
 
-async function handler(req, res) {
-  setCors(res);
-  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const fail = (status, error, detail) => safeSendJson(res, status, { ok: false, error, detail, requestId });
+  const SB_URL = process.env.SUPABASE_URL;
+  const SB_SRV = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-  if (req.method === "OPTIONS") {
-    res.statusCode = 204;
-    return res.end();
-  }
-  if (req.method !== "POST") {
-    return fail(405, "METHOD_NOT_ALLOWED");
-  }
-
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return fail(500, "SERVER_MISCONFIG_SUPABASE", "Missing SUPABASE_URL/SERVICE_ROLE_KEY.");
-  }
-  if (!GEMINI_API_KEY) {
-    return fail(500, "SERVER_MISCONFIG_GEMINI", "Missing GEMINI_API_KEY.");
-  }
+  if (!SB_URL || !SB_SRV) return json(res, 500, { ok: false, error: "SUPABASE_URL/SERVICE_ROLE_KEY manquants", id });
+  if (!GEMINI_KEY) return json(res, 500, { ok: false, error: "GEMINI_API_KEY manquant", id });
 
   const token = getBearerToken(req);
-  if (!token) return fail(401, "MISSING_BEARER");
+  if (!token) return json(res, 401, { ok: false, error: "Bearer token requis", id });
 
-  const body = parseBody(req) || {};
+  const body = parseBody(req);
   const user_id = String(body.user_id || "").trim();
   const image_path = String(body.image_path || "").trim();
+  if (!user_id || !image_path) return json(res, 400, { ok: false, error: "user_id et image_path requis", id });
 
-  if (!user_id || !image_path) {
-    return fail(400, "MISSING_FIELDS", "Expected { user_id, image_path }.");
-  }
+  const sb = createClient(SB_URL, SB_SRV, { auth: { persistSession: false } });
 
-  const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  const u = await sbAdmin.auth.getUser(token);
-  if (u?.error) {
-    return fail(401, "BAD_TOKEN", u.error.message);
-  }
-  const authedUserId = u?.data?.user?.id || "";
-  if (!authedUserId) return fail(401, "BAD_TOKEN");
-  if (authedUserId !== user_id) return fail(403, "FORBIDDEN");
-
-  const expectedPrefix = `${user_id}/`;
-  if (!image_path.startsWith(expectedPrefix)) {
-    return fail(403, "FORBIDDEN_IMAGE_PATH", `Image must be in ${expectedPrefix}*`);
-  }
+  const { data: ud, error: ue } = await sb.auth.getUser(token);
+  if (ue || !ud?.user?.id) return json(res, 401, { ok: false, error: "Token invalide", id });
+  if (ud.user.id !== user_id) return json(res, 403, { ok: false, error: "Accès refusé", id });
+  if (!image_path.startsWith(`${user_id}/`)) return json(res, 403, { ok: false, error: "Chemin image invalide", id });
 
   try {
-    const dl = await withTimeout(sbAdmin.storage.from(BUCKET).download(image_path), TIMEOUT_STORAGE_MS, "FETCH_TIMEOUT");
-    if (dl.error || !dl.data) {
-      return fail(404, "IMAGE_NOT_FOUND", dl.error?.message || "");
-    }
+    const dl = await withTimeout(sb.storage.from(BUCKET).download(image_path), TIMEOUT_STORAGE_MS, "Timeout storage");
+    if (dl.error || !dl.data) return json(res, 404, { ok: false, error: "Image introuvable", detail: dl.error?.message, id });
 
     const ab = await dl.data.arrayBuffer();
-    if (ab.byteLength > 6 * 1024 * 1024) {
-      return fail(413, "IMAGE_TOO_LARGE", "Max 6MB.");
-    }
+    if (ab.byteLength > 6 * 1024 * 1024) return json(res, 413, { ok: false, error: "Image trop grande (max 6MB)", id });
 
-    const mime = guessMimeFromPath(image_path);
-    const b64 = Buffer.from(ab).toString("base64");
+    const text = await analyzeImage({ apiKey: GEMINI_KEY, b64: Buffer.from(ab).toString("base64"), mime: guessMime(image_path) });
+    const parsed = safeJsonExtract(text) || {};
 
-    const prompt = buildVisionPrompt();
-    const { text, model } = await geminiVisionWithRetry({ apiKey: GEMINI_API_KEY, prompt, b64, mime });
+    const feedback = String(parsed.feedback || "Analyse indisponible");
+    const sym = typeof parsed.symmetry_score === "number" ? Math.min(100, Math.max(0, parsed.symmetry_score)) : null;
+    const pos = typeof parsed.posture_score === "number" ? Math.min(100, Math.max(0, parsed.posture_score)) : null;
+    const bf = typeof parsed.bodyfat_proxy === "number" ? Math.min(100, Math.max(0, parsed.bodyfat_proxy)) : null;
 
-    const parsed = safeJsonExtract(text);
-    const analysis = normalizeAnalysis(parsed);
+    const { error: dbErr } = await sb.from("body_scans").update({
+      ai_feedback: feedback, ai_version: MODEL, symmetry_score: sym, posture_score: pos, bodyfat_proxy: bf
+    }).eq("user_id", user_id).eq("image_path", image_path);
 
-    const validation = validateAIResponse(analysis);
-    if (!validation.valid) {
-      const fallback = `❌ Analyse IA invalide: ${validation.detail}\n\nExtrait brut:\n${String(text || "").slice(0, 500)}`;
-      
-      const upd = await sbAdmin
-        .from("body_scans")
-        .update({
-          ai_feedback: fallback,
-          ai_version: model,
-          symmetry_score: null,
-          posture_score: null,
-          bodyfat_proxy: null,
-        })
-        .eq("user_id", user_id)
-        .eq("image_path", image_path);
-
-      if (upd.error) return fail(500, "DB_UPDATE_FAILED", upd.error.message);
-      return safeSendJson(res, 200, { ok: true, model, requestId, warning: validation.error });
-    }
-
-    const upd = await sbAdmin
-      .from("body_scans")
-      .update({
-        ai_feedback: analysis.feedback,
-        ai_version: model,
-        symmetry_score: analysis.symmetry_score,
-        posture_score: analysis.posture_score,
-        bodyfat_proxy: analysis.bodyfat_proxy,
-      })
-      .eq("user_id", user_id)
-      .eq("image_path", image_path);
-
-    if (upd.error) return fail(500, "DB_UPDATE_FAILED", upd.error.message);
-
-    return safeSendJson(res, 200, { ok: true, model, requestId });
-  } catch (err) {
-    const msg = String(err?.message || "UPSTREAM_ERROR");
-    if (err?.code === "TIMEOUT") return fail(504, "TIMEOUT");
-    if (err?.code === "MISSING_DEP") return fail(500, "SERVER_MISCONFIG_DEPENDENCY", msg);
-
-    const m = msg.toLowerCase();
-    if (m.includes("429") || m.includes("quota")) {
-      return fail(502, "UPSTREAM_RATE_LIMIT", msg);
-    }
-    if (m.includes("403") || m.includes("api key")) {
-      return fail(502, "UPSTREAM_AUTH_FAILED", msg);
-    }
-
-    console.error("[bodyscan] error", { requestId, code: err?.code || "", errorType: err?.constructor?.name || "Error" });
-    return fail(502, "UPSTREAM_ERROR", msg);
+    if (dbErr) return json(res, 500, { ok: false, error: "Erreur DB", detail: dbErr.message, id });
+    return json(res, 200, { ok: true, id });
+  } catch (e) {
+    const code = e?.code || "";
+    const msg = String(e?.message || "");
+    console.error("[bodyscan]", { id, code, msg: msg.slice(0, 100) });
+    if (code === "TIMEOUT") return json(res, 504, { ok: false, error: "Timeout — réessayez", id });
+    if (code === "MISSING_DEP") return json(res, 500, { ok: false, error: msg, id });
+    if (msg.includes("429")) return json(res, 429, { ok: false, error: "Quota Gemini dépassé", id });
+    return json(res, 502, { ok: false, error: msg || "Erreur serveur", id });
   }
-}
-
-module.exports = wrapHandler(handler);
+};
