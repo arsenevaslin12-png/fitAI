@@ -2,12 +2,14 @@
   "version": 2,
   "builds": [
     { "src": "api/*.js", "use": "@vercel/node" },
-    { "src": "index.html", "use": "@vercel/static" }
+    { "src": "public/index.html", "use": "@vercel/static" },
+    { "src": "public/app.js",     "use": "@vercel/static" }
   ],
   "routes": [
-    { "src": "/api/config", "dest": "/api/config.js" },
-    { "src": "/api/workout", "dest": "/api/workout.js" },
+    { "src": "/api/config",   "dest": "/api/config.js" },
+    { "src": "/api/workout",  "dest": "/api/workout.js" },
     { "src": "/api/bodyscan", "dest": "/api/bodyscan.js" },
-    { "src": "/(.*)", "dest": "/index.html" }
+    { "src": "/app.js",       "dest": "/public/app.js" },
+    { "src": "/(.*)",         "dest": "/public/index.html" }
   ]
 }
