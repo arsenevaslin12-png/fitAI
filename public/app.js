@@ -83,25 +83,25 @@ function showAuth() {
 function showApp() {
   document.getElementById("auth").style.display = "none";
   document.getElementById("app").classList.add("on");
-  document.getElementById("top-em").textContent = U.email || "";
+  document.getElementById("tu").textContent = U.email || "";
   loadGoal(); loadHist(); loadMeals(); loadFeed(); loadScans(); loadProfile(); loadStats();
 }
 function authMode(m) {
   MODE = m;
-  document.getElementById("abt-l").classList.toggle("on", m === "login");
-  document.getElementById("abt-s").classList.toggle("on", m === "signup");
-  document.getElementById("a-btn").textContent = m === "login" ? "Se connecter" : "S'inscrire";
+  document.getElementById("atab-login").classList.toggle("on", m === "login");
+  document.getElementById("atab-signup").classList.toggle("on", m === "signup");
+  document.getElementById("auth-btn").textContent = m === "login" ? "Se connecter" : "S'inscrire";
   setAMsg("", "");
 }
 function setAMsg(txt, cls) {
-  const el = document.getElementById("a-msg");
+  const el = document.getElementById("auth-msg");
   el.textContent = txt; el.className = "amsg " + cls;
 }
 async function doAuth() {
-  const em = document.getElementById("a-em").value.trim();
-  const pw = document.getElementById("a-pw").value;
+  const em = document.getElementById("a-email").value.trim();
+  const pw = document.getElementById("a-pwd").value;
   if (!em || !pw) return setAMsg("Email et mot de passe requis.", "er");
-  const btn = document.getElementById("a-btn");
+  const btn = document.getElementById("auth-btn");
   btn.disabled = true; btn.innerHTML = '<span class="sp" style="width:15px;height:15px;border-width:2px"></span>';
   setAMsg("", "");
   try {
@@ -117,7 +117,7 @@ async function doLogout() { await SB.auth.signOut(); U = null; }
 /* ══ NAVIGATION ══ */
 function go(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.remove("on"));
-  document.querySelectorAll(".nb").forEach(b => b.classList.remove("on"));
+  document.querySelectorAll(".bnav-btn").forEach(b => b.classList.remove("on"));
   document.getElementById("t-" + name)?.classList.add("on");
   document.getElementById("n-" + name)?.classList.add("on");
   document.getElementById("scroll").scrollTop = 0;
@@ -135,33 +135,33 @@ async function loadGoal() {
   try {
     const { data } = await SB.from("goals").select("*").eq("user_id", U.id).maybeSingle();
     if (!data) return;
-    document.getElementById("gf").style.display = "none";
-    document.getElementById("gv").style.display = "block";
+    document.getElementById("goal-form").style.display = "none";
+    document.getElementById("goal-view").style.display = "block";
     document.getElementById("g-type").value = data.type || "";
-    document.getElementById("g-lvl").value = data.level || "";
-    document.getElementById("g-txt").value = data.text || "";
-    document.getElementById("g-con").value = data.constraints || "";
+    document.getElementById("g-level").value = data.level || "";
+    document.getElementById("g-text").value = data.text || "";
+    document.getElementById("g-constraints").value = data.constraints || "";
     const rows = [
       ["Type", GLBL[data.type] || data.type || "—"],
       ["Niveau", data.level || "—"],
       ["Objectif", data.text || "—"],
       data.constraints ? ["Contraintes", data.constraints] : null
     ].filter(Boolean);
-    document.getElementById("gv-body").innerHTML = rows.map(([k,v]) =>
+    document.getElementById("goal-view-body").innerHTML = rows.map(([k,v]) =>
       `<div class="gline"><strong>${k}</strong><span>${esc(v)}</span></div>`).join("");
   } catch {}
 }
 function goalEdit() {
-  document.getElementById("gv").style.display = "none";
-  document.getElementById("gf").style.display = "block";
+  document.getElementById("goal-view").style.display = "none";
+  document.getElementById("goal-form").style.display = "block";
 }
 async function saveGoal() {
   const type = document.getElementById("g-type").value;
-  const level = document.getElementById("g-lvl").value;
-  const text = document.getElementById("g-txt").value.trim();
-  const constraints = document.getElementById("g-con").value.trim();
+  const level = document.getElementById("g-level").value;
+  const text = document.getElementById("g-text").value.trim();
+  const constraints = document.getElementById("g-constraints").value.trim();
   if (!type && !text) return toast("Remplissez au moins le type ou la description.", "er");
-  const btn = document.getElementById("btn-sg");
+  const btn = document.getElementById("btn-save-goal");
   busy(btn, "Enregistrement…");
   try {
     const { error } = await SB.from("goals").upsert({ user_id: U.id, type, level, text, constraints }, { onConflict: "user_id" });
@@ -173,8 +173,8 @@ async function saveGoal() {
 
 /* ══ COACH ══ */
 async function genWorkout() {
-  const prompt = document.getElementById("c-prompt").value.trim();
-  const errEl = document.getElementById("c-err");
+  const prompt = document.getElementById("coach-input").value.trim();
+  const errEl = document.getElementById("coach-err");
   errEl.style.display = "none";
   if (!prompt) { errEl.textContent = "Décrivez la séance souhaitée."; errEl.style.display = "block"; return; }
 
@@ -207,7 +207,7 @@ function renderPlan(p) {
   const ib = { low:"bgreen", medium:"bpurple", high:"borange" }[p.intensity] || "bpurple";
   const typeLabels = { strength:"🏋️ Force", cardio:"🏃 Cardio", hiit:"⚡ HIIT", flexibility:"🧘 Flex", recovery:"💆 Récup", muay_thai:"🥊 Muay Thai" };
   const tl = typeLabels[p.type] || "";
-  document.getElementById("plan-hd").innerHTML = `
+  document.getElementById("plan-head").innerHTML = `
     <div style="display:flex;flex-direction:column;gap:6px;flex:1">
       <span class="plan-t">${esc(p.title)}</span>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -220,7 +220,7 @@ function renderPlan(p) {
     </div>`;
   document.getElementById("plan-notes").textContent = p.notes || "";
   document.getElementById("plan-notes").style.display = p.notes ? "block" : "none";
-  document.getElementById("plan-blocs").innerHTML = p.blocks.map(b => `
+  document.getElementById("plan-blocks").innerHTML = p.blocks.map(b => `
     <div class="bloc">
       <div class="bloc-hd">
         <span class="bloc-name">${esc(b.title)}</span>
@@ -245,7 +245,7 @@ async function saveSess() {
 }
 
 async function loadHist() {
-  const el = document.getElementById("hist");
+  const el = document.getElementById("history-list");
   try {
     const { data, error } = await SB.from("workout_sessions")
       .select("id, created_at, plan").eq("user_id", U.id)
@@ -269,17 +269,17 @@ async function loadHist() {
 async function addMeal() {
   const name = document.getElementById("n-name").value.trim();
   if (!name) return toast("Donnez un nom au repas.", "er");
-  const kcal = parseInt(document.getElementById("n-kc").value) || 0;
-  const prot = parseInt(document.getElementById("n-pr").value) || 0;
-  const carb = parseInt(document.getElementById("n-ca").value) || 0;
-  const fat  = parseInt(document.getElementById("n-fa").value) || 0;
+  const kcal = parseInt(document.getElementById("n-kcal").value) || 0;
+  const prot = parseInt(document.getElementById("n-prot").value) || 0;
+  const carb = parseInt(document.getElementById("n-carb").value) || 0;
+  const fat  = parseInt(document.getElementById("n-fat").value) || 0;
   const btn = document.getElementById("btn-meal");
   busy(btn, "Ajout…");
   try {
     const today = new Date().toISOString().slice(0, 10);
     const { error } = await SB.from("meals").insert({ user_id: U.id, name, calories: kcal, protein: prot, carbs: carb, fat, date: today });
     if (error) throw error;
-    ["n-name","n-kc","n-pr","n-ca","n-fa"].forEach(id => document.getElementById(id).value = "");
+    ["n-name","n-kcal","n-prot","n-carb","n-fat"].forEach(id => document.getElementById(id).value = "");
     toast("Repas ajouté ✓", "ok"); loadMeals();
   } catch (e) { toast("Erreur: " + e.message, "er"); }
   finally { free(btn, "➕ Ajouter ce repas"); }
@@ -301,10 +301,10 @@ async function loadMeals() {
     if (error) throw error;
     // Totaux
     const tot = (data||[]).reduce((a, m) => ({ kc: a.kc+(m.calories||0), pr: a.pr+(m.protein||0), ca: a.ca+(m.carbs||0), fa: a.fa+(m.fat||0) }), { kc:0, pr:0, ca:0, fa:0 });
-    document.getElementById("m-kc").textContent = tot.kc;
-    document.getElementById("m-pr").textContent = tot.pr + "g";
-    document.getElementById("m-ca").textContent = tot.ca + "g";
-    document.getElementById("m-fa").textContent = tot.fa + "g";
+    document.getElementById("m-kcal").textContent = tot.kc;
+    document.getElementById("m-prot").textContent = tot.pr + "g";
+    document.getElementById("m-carb").textContent = tot.ca + "g";
+    document.getElementById("m-fat").textContent = tot.fa + "g";
     if (!data?.length) { el.innerHTML = '<div class="empty"><span class="eic">🍽️</span>Aucun repas aujourd\'hui</div>'; return; }
     el.innerHTML = `<div>${data.map(m => `
       <div class="meal-row">
@@ -318,14 +318,14 @@ async function loadMeals() {
 
 /* ══ COMMUNITY ══ */
 async function createPost() {
-  const txt = document.getElementById("p-txt").value.trim();
+  const txt = document.getElementById("p-pseudo").value.trim();
   if (!txt) return toast("Écrivez quelque chose.", "er");
   const btn = document.getElementById("btn-post");
   busy(btn, "Publication…");
   try {
     const { error } = await SB.from("community_posts").insert({ user_id: U.id, content: txt, kudos: 0 });
     if (error) throw error;
-    document.getElementById("p-txt").value = "";
+    document.getElementById("p-pseudo").value = "";
     toast("Publié ✓", "ok"); loadFeed();
   } catch (e) { toast("Erreur: " + e.message, "er"); }
   finally { free(btn, "📢 Publier"); }
@@ -384,12 +384,12 @@ function handleFile(f) {
   r.onload = e => { document.getElementById("scan-img").src = e.target.result; };
   r.readAsDataURL(f);
   document.getElementById("scan-preview").style.display = "flex";
-  document.getElementById("sc-err").style.display = "none";
+  document.getElementById("scan-err").style.display = "none";
 }
 async function doScan() {
   if (!FILE) return;
-  const btn = document.getElementById("btn-sc");
-  const errEl = document.getElementById("sc-err");
+  const btn = document.getElementById("btn-scan");
+  const errEl = document.getElementById("scan-err");
   errEl.style.display = "none";
   busy(btn, "Upload…");
   try {
@@ -410,7 +410,7 @@ async function doScan() {
     if (!r.ok || !j.ok) throw new Error(j.error || ("HTTP " + r.status));
     FILE = null;
     document.getElementById("scan-preview").style.display = "none";
-    document.getElementById("fi").value = "";
+    document.getElementById("file-input").value = "";
     toast("Analyse terminée ✓", "ok"); loadScans();
   } catch (e) {
     errEl.textContent = "Erreur: " + e.message; errEl.style.display = "block";
@@ -449,16 +449,16 @@ async function loadProfile() {
   try {
     const { data } = await SB.from("profiles").select("display_name").eq("id", U.id).maybeSingle();
     const name = data?.display_name || U.email?.split("@")[0] || "?";
-    document.getElementById("p-nm").textContent = name;
-    document.getElementById("p-em2").textContent = U.email || "";
-    document.getElementById("p-av").textContent = name.charAt(0).toUpperCase();
+    document.getElementById("p-name").textContent = name;
+    document.getElementById("p-email").textContent = U.email || "";
+    document.getElementById("p-avatar").textContent = name.charAt(0).toUpperCase();
     document.getElementById("p-pseudo").value = data?.display_name || "";
   } catch {}
 }
 async function saveProfile() {
   const name = document.getElementById("p-pseudo").value.trim();
   if (!name) return toast("Entrez un pseudo.", "er");
-  const btn = document.getElementById("btn-sp");
+  const btn = document.getElementById("btn-save-profile");
   busy(btn, "Enregistrement…");
   try {
     const { error } = await SB.from("profiles").upsert({ id: U.id, display_name: name, updated_at: new Date().toISOString() }, { onConflict: "id" });
@@ -474,9 +474,9 @@ async function loadStats() {
       SB.from("body_scans").select("id",{count:"exact",head:true}).eq("user_id",U.id),
       SB.from("community_posts").select("id",{count:"exact",head:true}).eq("user_id",U.id),
     ]);
-    document.getElementById("st-s").textContent  = a.count ?? "0";
-    document.getElementById("st-sc").textContent = b.count ?? "0";
-    document.getElementById("st-p").textContent  = c.count ?? "0";
+    document.getElementById("st-sess").textContent  = a.count ?? "0";
+    document.getElementById("st-scans").textContent = b.count ?? "0";
+    document.getElementById("st-posts").textContent  = c.count ?? "0";
   } catch {}
 }
 
@@ -504,3 +504,9 @@ function busy(btn, lbl) { btn.disabled=true; btn.innerHTML=`<span class="sp" sty
 function free(btn, lbl) { btn.disabled=false; btn.textContent=lbl; }
 
 boot();
+
+/* ══ ALIASES onclick HTML ══ */
+window.authTab        = authMode;
+window.gotoTab        = go;
+window.generateWorkout = genWorkout;
+window.saveSession    = saveSess;
