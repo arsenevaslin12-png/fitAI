@@ -1,6 +1,13 @@
 {
   "version": 2,
-  "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/public/index.html" }
+  "builds": [
+    { "src": "api/*.js", "use": "@vercel/node" },
+    { "src": "index.html", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/config", "dest": "/api/config.js" },
+    { "src": "/api/workout", "dest": "/api/workout.js" },
+    { "src": "/api/bodyscan", "dest": "/api/bodyscan.js" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
