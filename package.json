@@ -1,13 +1,10 @@
 {
   "name": "fitai-pro",
-  "version": "3.2.1",
+  "version": "3.4.0",
   "private": true,
-  "description": "FitAI Pro — Vercel Serverless + Supabase + Gemini",
+  "engines": { "node": "20.x" },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@supabase/supabase-js": "^2.45.4"
-  },
-  "engines": {
-    "node": "24.x"
   }
 }
