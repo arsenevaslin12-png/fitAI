@@ -7,61 +7,134 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0d0d12;--surf:#16161e;--surf2:#1e1e28;--surf3:#26263a;
-  --border:#2a2a3a;--accent:#7c6fff;--accent2:#a78bfa;--accent3:#c4b5fd;
-  --green:#22c55e;--red:#f87171;--orange:#fb923c;--yellow:#fbbf24;
-  --text:#e8e8f5;--muted:#7a7a9a;--radius:14px;
+  --bg:#f0f2f7;
+  --surf:#ffffff;
+  --surf2:#f5f6fa;
+  --surf3:#eceef5;
+  --border:#e2e5eb;
+  --accent:#7c6fff;
+  --accent2:#5b8af5;
+  --grad:linear-gradient(135deg,#7c6fff,#5b8af5);
+  --green:#16a34a;
+  --red:#ef4444;
+  --orange:#f97316;
+  --yellow:#ca8a04;
+  --blue:#2563eb;
+  --text:#1a1a2e;
+  --muted:#8891a5;
+  --radius:16px;
 }
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
 
 /* ── BOOT ── */
-#boot{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:9999;transition:opacity .4s}
+#boot{position:fixed;inset:0;background:var(--surf);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:9999;transition:opacity .4s}
 #boot.hidden{opacity:0;pointer-events:none}
-.boot-logo{font-size:2.8rem;font-weight:900;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.boot-logo{font-size:2.8rem;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .boot-msg{font-size:.85rem;color:var(--muted)}
-.boot-err{color:var(--red);font-size:.82rem;max-width:340px;text-align:center;line-height:1.5;padding:12px 16px;background:#f8717115;border:1px solid #f8717140;border-radius:10px;display:none}
-.spinner{width:28px;height:28px;border:3px solid #ffffff18;border-top-color:var(--accent2);border-radius:50%;animation:spin .7s linear infinite}
+.boot-err{color:var(--red);font-size:.82rem;max-width:340px;text-align:center;line-height:1.5;padding:12px 16px;background:#ef444415;border:1px solid #ef444440;border-radius:10px;display:none}
+.spinner{width:28px;height:28px;border:3px solid #7c6fff20;border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── AUTH ── */
-#auth{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:28px;padding:20px}
-.auth-logo{font-size:2.2rem;font-weight:900;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.auth-card{background:var(--surf);border:1px solid var(--border);border-radius:20px;padding:32px;width:100%;max-width:390px;display:flex;flex-direction:column;gap:18px}
+#auth{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:28px;padding:20px;background:var(--bg)}
+.auth-logo{font-size:2.2rem;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.auth-card{background:var(--surf);border:1px solid var(--border);border-radius:20px;padding:32px;width:100%;max-width:390px;display:flex;flex-direction:column;gap:18px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
 .auth-tabs{display:flex;background:var(--bg);border-radius:10px;padding:4px;gap:4px}
 .atab{flex:1;padding:9px;background:none;border:none;color:var(--muted);cursor:pointer;border-radius:8px;font-weight:700;font-size:.88rem;transition:all .2s;font-family:inherit}
-.atab.on{background:var(--surf2);color:var(--text)}
+.atab.on{background:var(--surf);color:var(--text);box-shadow:0 1px 6px rgba(0,0,0,.08)}
 .auth-msg{font-size:.82rem;text-align:center;min-height:18px}
 .auth-ok{color:var(--green)}.auth-err{color:var(--red)}
 
-/* ── APP ── */
-#app{display:none;flex-direction:column;height:100vh}
+/* ── APP LAYOUT ── */
+#app{display:none;flex-direction:row;height:100vh;overflow:hidden}
 #app.on{display:flex}
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;background:var(--surf);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50}
-.topbar-brand{font-size:1.2rem;font-weight:900;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.topbar-right{display:flex;align-items:center;gap:12px}
-.topbar-user{font-size:.75rem;color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#btn-out{background:none;border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:8px;cursor:pointer;font-size:.78rem;transition:all .2s;font-family:inherit}
-#btn-out:hover{border-color:var(--red);color:var(--red)}
 
-.scroll{flex:1;overflow-y:auto;padding:18px 16px 10px;max-width:680px;width:100%;margin:0 auto}
+/* ── SIDEBAR ── */
+.sidebar{
+  width:260px;flex-shrink:0;
+  background:var(--surf);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  padding:28px 16px 24px;gap:6px;
+  overflow-y:auto;
+}
+.sidebar-brand{
+  font-size:1.4rem;font-weight:900;
+  background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  padding:0 8px 18px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:6px;
+}
+.sidebar-user{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 8px;border-radius:12px;
+  background:var(--surf2);margin-bottom:6px;
+}
+.sidebar-avatar{
+  width:36px;height:36px;border-radius:50%;
+  background:var(--grad);
+  display:flex;align-items:center;justify-content:center;
+  font-size:1rem;font-weight:900;color:#fff;flex-shrink:0;
+}
+.sidebar-user-info{flex:1;min-width:0}
+.sidebar-user-name{font-size:.8rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-user-role{font-size:.7rem;color:var(--muted)}
+#btn-out{
+  background:none;border:none;color:var(--muted);
+  padding:5px;cursor:pointer;font-size:1rem;
+  border-radius:8px;transition:color .2s;flex-shrink:0;
+}
+#btn-out:hover{color:var(--red)}
 
-/* ── BOTTOM NAV ── */
-.bnav{display:flex;background:var(--surf);border-top:1px solid var(--border);padding:6px 0 max(env(safe-area-inset-bottom),6px)}
-.bnav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:var(--muted);cursor:pointer;padding:7px 2px;font-size:.62rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;transition:color .2s;font-family:inherit}
-.bnav-btn .ic{font-size:1.25rem;line-height:1}
-.bnav-btn.on{color:var(--accent2)}
+/* ── SIDEBAR NAV ── */
+.bnav{display:flex;flex-direction:column;gap:3px;flex:1}
+.bnav-btn{
+  display:flex;align-items:center;gap:12px;
+  background:none;border:none;color:var(--muted);
+  cursor:pointer;padding:11px 14px;
+  font-size:.88rem;font-weight:600;
+  border-radius:12px;transition:all .2s;
+  font-family:inherit;text-align:left;
+  width:100%;
+}
+.bnav-btn .ic{font-size:1.2rem;line-height:1;flex-shrink:0}
+.bnav-btn .nav-label{flex:1}
+.nav-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:#fff;opacity:0;transition:opacity .2s;flex-shrink:0;
+}
+.bnav-btn:hover:not(.on){background:var(--surf2);color:var(--text)}
+.bnav-btn.on{
+  background:var(--grad);color:#fff;
+  box-shadow:0 4px 14px rgba(124,111,255,.3);
+}
+.bnav-btn.on .nav-dot{opacity:1}
+
+/* ── MAIN CONTENT ── */
+.app-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+.scroll{flex:1;overflow-y:auto;padding:28px 32px;max-width:780px;width:100%;margin:0 auto}
+
+/* ── PAGE HEADER ── */
+.page-header{margin-bottom:24px}
+.page-title{font-size:1.55rem;font-weight:900;color:var(--text);line-height:1.2}
+.page-sub{font-size:.85rem;color:var(--muted);margin-top:5px}
 
 /* ── TABS ── */
 .tab{display:none;flex-direction:column;gap:18px}
 .tab.on{display:flex}
 
 /* ── COMMON UI ── */
-.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
-.card-title{font-size:.95rem;font-weight:800;margin-bottom:14px;color:var(--text)}
-.section-head{font-size:1.05rem;font-weight:800}
+.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:0 1px 8px rgba(0,0,0,.05)}
+.card-title{font-size:.95rem;font-weight:800;margin-bottom:16px;color:var(--text)}
+.section-head{display:none}
 .sep{height:1px;background:var(--border);margin:12px 0}
 
-input,select,textarea{width:100%;background:var(--surf2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 14px;font-size:.88rem;outline:none;font-family:inherit;transition:border-color .2s;appearance:none}
+input,select,textarea{
+  width:100%;background:var(--surf2);
+  border:1.5px solid var(--border);border-radius:10px;
+  color:var(--text);padding:10px 14px;
+  font-size:.88rem;outline:none;font-family:inherit;
+  transition:border-color .2s;appearance:none;
+}
 input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 textarea{resize:vertical;min-height:78px}
 .lbl{font-size:.78rem;font-weight:700;color:var(--muted);margin-bottom:5px}
@@ -70,11 +143,11 @@ textarea{resize:vertical;min-height:78px}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 20px;border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:.88rem;transition:all .2s;font-family:inherit;white-space:nowrap}
 .btn:disabled{opacity:.45;cursor:not-allowed}
-.btn-p{background:linear-gradient(135deg,var(--accent),#5b52f0);color:#fff;box-shadow:0 4px 16px #7c6fff30}
-.btn-p:hover:not(:disabled){background:linear-gradient(135deg,#6b5fe0,#4a42d0)}
-.btn-g{background:var(--surf2);color:var(--text);border:1px solid var(--border)}
-.btn-g:hover:not(:disabled){border-color:var(--accent);color:var(--accent2)}
-.btn-d{background:#f8717120;color:var(--red);border:1px solid #f8717140}
+.btn-p{background:var(--grad);color:#fff;box-shadow:0 4px 16px rgba(124,111,255,.28)}
+.btn-p:hover:not(:disabled){opacity:.9;transform:translateY(-1px);box-shadow:0 6px 20px rgba(124,111,255,.38)}
+.btn-g{background:var(--surf2);color:var(--text);border:1.5px solid var(--border)}
+.btn-g:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.btn-d{background:#ef444412;color:var(--red);border:1px solid #ef444435}
 .btn-sm{padding:7px 13px;font-size:.78rem;border-radius:8px}
 .btn-full{width:100%}
 
@@ -82,33 +155,33 @@ textarea{resize:vertical;min-height:78px}
 .empty-ic{font-size:2.2rem;display:block;margin-bottom:10px}
 
 .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:800}
-.bg-green{background:#22c55e18;color:var(--green)}
-.bg-purple{background:#7c6fff18;color:var(--accent2)}
-.bg-orange{background:#fb923c18;color:var(--orange)}
-.bg-red{background:#f8717118;color:var(--red)}
+.bg-green{background:#16a34a15;color:var(--green)}
+.bg-purple{background:#7c6fff15;color:var(--accent)}
+.bg-orange{background:#f9731615;color:var(--orange)}
+.bg-red{background:#ef444415;color:var(--red)}
 
 /* ── TOAST ── */
-#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--surf2);border:1px solid var(--border);color:var(--text);padding:9px 20px;border-radius:24px;font-size:.84rem;font-weight:700;opacity:0;transition:all .3s;z-index:9999;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
+#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--surf);border:1px solid var(--border);color:var(--text);padding:10px 22px;border-radius:24px;font-size:.84rem;font-weight:700;opacity:0;transition:all .3s;z-index:9999;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 20px rgba(0,0,0,.1)}
 #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.ok{border-color:var(--green);color:var(--green)}
 #toast.err{border-color:var(--red);color:var(--red)}
 
 /* ── GOAL ── */
 .goal-saved-row{display:flex;gap:8px;align-items:baseline;font-size:.86rem}
-.goal-saved-row strong{color:var(--accent2);min-width:90px;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+.goal-saved-row strong{color:var(--accent);min-width:90px;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
 
 /* ── COACH / PLAN ── */
 .plan-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .plan-title-text{font-size:1.05rem;font-weight:800}
-.block{background:var(--surf2);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.block{background:var(--surf2);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--border)}
 .block-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .block-name{font-weight:800;font-size:.9rem}
 .block-meta{display:flex;gap:6px;align-items:center}
-.rpe{font-size:.7rem;padding:2px 8px;background:#7c6fff18;color:var(--accent2);border-radius:10px;font-weight:700}
+.rpe{font-size:.7rem;padding:2px 8px;background:#7c6fff15;color:var(--accent);border-radius:10px;font-weight:700}
 .bdur{font-size:.74rem;color:var(--muted)}
 .block-items{list-style:none;display:flex;flex-direction:column;gap:4px}
 .block-items li{font-size:.84rem}
-.block-items li::before{content:"→ ";color:var(--accent2)}
+.block-items li::before{content:"→ ";color:var(--accent)}
 .plan-notes-text{font-size:.82rem;color:var(--muted);font-style:italic}
 .sessions-list{display:flex;flex-direction:column;gap:0}
 .sess-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
@@ -116,9 +189,14 @@ textarea{resize:vertical;min-height:78px}
 
 /* ── NUTRITION ── */
 .macro-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-.macro-card{background:var(--surf2);border-radius:10px;padding:12px;text-align:center}
-.macro-val{font-size:1.35rem;font-weight:900;color:var(--accent2)}
-.macro-lbl{font-size:.68rem;color:var(--muted);font-weight:700;margin-top:2px;text-transform:uppercase}
+.macro-card{background:var(--surf2);border-radius:12px;padding:16px 10px;text-align:center;border:1px solid var(--border)}
+.macro-icon{font-size:1.5rem;display:block;margin-bottom:6px}
+.macro-val{font-size:1.3rem;font-weight:900}
+.macro-lbl{font-size:.67rem;color:var(--muted);font-weight:700;margin-top:3px;text-transform:uppercase}
+.macro-card:nth-child(1) .macro-val{color:var(--orange)}
+.macro-card:nth-child(2) .macro-val{color:var(--blue)}
+.macro-card:nth-child(3) .macro-val{color:var(--green)}
+.macro-card:nth-child(4) .macro-val{color:var(--yellow)}
 .meal-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .meal-row:last-child{border-bottom:none}
 .meal-name{font-weight:700;font-size:.88rem;flex:1;min-width:100px}
@@ -126,41 +204,70 @@ textarea{resize:vertical;min-height:78px}
 .meal-kcal{font-weight:800;color:var(--orange);font-size:.9rem;white-space:nowrap}
 
 /* ── COMMUNITY ── */
-.post{background:var(--surf2);border-radius:12px;padding:15px;display:flex;flex-direction:column;gap:10px}
+.post{background:var(--surf2);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)}
 .post-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.post-author{font-weight:800;font-size:.85rem;color:var(--accent2)}
+.post-author{font-weight:800;font-size:.85rem;color:var(--accent)}
 .post-date{font-size:.72rem;color:var(--muted)}
 .post-body{font-size:.86rem;line-height:1.55}
 .post-footer{display:flex;align-items:center;gap:10px}
-.kudos-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--border);color:var(--muted);padding:5px 13px;border-radius:20px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .2s;font-family:inherit}
+.kudos-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--border);color:var(--muted);padding:5px 13px;border-radius:20px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .2s;font-family:inherit}
 .kudos-btn:hover{border-color:var(--orange);color:var(--orange)}
-.kudos-btn.on{border-color:var(--orange);color:var(--orange);background:#fb923c12}
+.kudos-btn.on{border-color:var(--orange);color:var(--orange);background:#f9731612}
 
 /* ── BODYSCAN ── */
-.drop-zone{border:2px dashed var(--border);border-radius:14px;padding:36px 20px;text-align:center;cursor:pointer;transition:border-color .2s;user-select:none}
-.drop-zone:hover,.drop-zone.over{border-color:var(--accent)}
+.drop-zone{border:2px dashed var(--border);border-radius:14px;padding:36px 20px;text-align:center;cursor:pointer;transition:all .2s;user-select:none;background:var(--surf2)}
+.drop-zone:hover,.drop-zone.over{border-color:var(--accent);background:#7c6fff08}
 .drop-ic{font-size:2.5rem;margin-bottom:10px}
 .drop-text{color:var(--muted);font-size:.84rem}
-.scan-img-preview{width:100%;max-height:240px;object-fit:cover;border-radius:10px;display:block}
-.scan-card{background:var(--surf2);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
-.scores-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.score-chip{background:var(--bg);border-radius:8px;padding:10px;text-align:center}
-.score-v{font-size:1.25rem;font-weight:900;color:var(--accent2)}
+.scan-img-preview{width:100%;max-height:240px;object-fit:cover;border-radius:12px;display:block}
+.scan-card{background:var(--surf2);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)}
+.scores-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.score-chip{background:var(--surf);border-radius:10px;padding:12px;text-align:center;border:1px solid var(--border)}
+.score-v{font-size:1.25rem;font-weight:900;color:var(--accent)}
 .score-l{font-size:.65rem;color:var(--muted);margin-top:2px;font-weight:700;text-transform:uppercase}
 .scan-feedback{font-size:.82rem;line-height:1.6}
 
 /* ── PROFILE ── */
-.avatar{width:68px;height:68px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900;color:#fff;flex-shrink:0}
+.avatar{width:68px;height:68px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900;color:#fff;flex-shrink:0}
 .profile-head{display:flex;align-items:center;gap:18px}
 .profile-name{font-size:1.1rem;font-weight:800}
 .profile-email{font-size:.78rem;color:var(--muted);margin-top:2px}
 .stats-row{display:flex;justify-content:space-around}
 .stat{text-align:center}
-.stat-v{font-size:1.6rem;font-weight:900;color:var(--accent2)}
+.stat-v{font-size:1.6rem;font-weight:900;color:var(--accent)}
 .stat-l{font-size:.7rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
 
 /* ── ERR MSG ── */
-.err-box{color:var(--red);font-size:.8rem;padding:8px 12px;background:#f8717112;border:1px solid #f8717130;border-radius:8px;display:none}
+.err-box{color:var(--red);font-size:.8rem;padding:8px 12px;background:#ef444412;border:1px solid #ef444430;border-radius:8px;display:none}
+
+/* ── RESPONSIVE: mobile bottom nav ── */
+@media(max-width:767px){
+  #app{flex-direction:column}
+  .sidebar{
+    width:100%;flex-direction:row;align-items:stretch;
+    padding:0;border-right:none;
+    border-top:1px solid var(--border);
+    position:fixed;bottom:0;left:0;right:0;
+    background:var(--surf);z-index:100;
+    overflow-x:auto;overflow-y:visible;
+    gap:0;height:64px;flex-shrink:0;
+  }
+  .sidebar-brand,.sidebar-user{display:none}
+  .bnav{flex-direction:row;gap:0;width:100%;height:100%;align-items:stretch}
+  .bnav-btn{
+    flex:1;flex-direction:column;gap:2px;
+    padding:6px 4px;
+    font-size:.58rem;letter-spacing:.03em;text-transform:uppercase;
+    border-radius:0;justify-content:center;align-items:center;
+  }
+  .bnav-btn .nav-label{flex:none}
+  .bnav-btn .ic{font-size:1.2rem}
+  .nav-dot{display:none}
+  .bnav-btn.on{background:none;color:var(--accent);box-shadow:none}
+  .app-main{padding-bottom:64px}
+  .scroll{padding:20px 16px 24px}
+  #btn-out{display:none}
+}
 </style>
 </head>
 <body>
@@ -196,230 +303,284 @@ textarea{resize:vertical;min-height:78px}
 
 <!-- APP -->
 <div id="app">
-  <div class="topbar">
-    <div class="topbar-brand">FitAI Pro</div>
-    <div class="topbar-right">
-      <span class="topbar-user" id="tu"></span>
-      <button id="btn-out" onclick="doLogout()">Déco</button>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">FitAI Pro</div>
+    <div class="sidebar-user">
+      <div class="sidebar-avatar">💪</div>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-name" id="tu">—</div>
+        <div class="sidebar-user-role">Membre</div>
+      </div>
+      <button id="btn-out" onclick="doLogout()" title="Déconnexion">🚪</button>
     </div>
-  </div>
+    <nav class="bnav">
+      <button class="bnav-btn on" id="n-goal" onclick="gotoTab('goal')">
+        <span class="ic">🎯</span><span class="nav-label">Objectif</span><span class="nav-dot"></span>
+      </button>
+      <button class="bnav-btn" id="n-coach" onclick="gotoTab('coach')">
+        <span class="ic">🤖</span><span class="nav-label">Coach IA</span><span class="nav-dot"></span>
+      </button>
+      <button class="bnav-btn" id="n-nutrition" onclick="gotoTab('nutrition')">
+        <span class="ic">🥗</span><span class="nav-label">Nutrition</span><span class="nav-dot"></span>
+      </button>
+      <button class="bnav-btn" id="n-community" onclick="gotoTab('community')">
+        <span class="ic">🌍</span><span class="nav-label">Communauté</span><span class="nav-dot"></span>
+      </button>
+      <button class="bnav-btn" id="n-bodyscan" onclick="gotoTab('bodyscan')">
+        <span class="ic">📸</span><span class="nav-label">Body Scan</span><span class="nav-dot"></span>
+      </button>
+      <button class="bnav-btn" id="n-profile" onclick="gotoTab('profile')">
+        <span class="ic">👤</span><span class="nav-label">Profil</span><span class="nav-dot"></span>
+      </button>
+    </nav>
+  </aside>
 
-  <div class="scroll" id="scroll">
+  <!-- MAIN CONTENT -->
+  <div class="app-main">
+    <div class="scroll" id="scroll">
 
-    <!-- GOAL -->
-    <div class="tab on" id="t-goal">
-      <div class="section-head">🎯 Mon Objectif</div>
-
-      <div class="card" id="goal-view" style="display:none">
-        <div class="card-title">Objectif enregistré ✓</div>
-        <div id="goal-view-body" style="display:flex;flex-direction:column;gap:7px"></div>
-        <div style="margin-top:14px">
-          <button class="btn btn-g btn-sm" onclick="goalEdit()">✏️ Modifier</button>
+      <!-- GOAL -->
+      <div class="tab on" id="t-goal">
+        <div class="page-header">
+          <div class="page-title">🎯 Mon Objectif</div>
+          <div class="page-sub">Définissez votre objectif fitness personnalisé</div>
         </div>
-      </div>
 
-      <div class="card" id="goal-form">
-        <div class="card-title">Définir mon objectif</div>
-        <div style="display:flex;flex-direction:column;gap:13px">
-          <div class="field"><div class="lbl">Type d'objectif</div>
-            <select id="g-type">
-              <option value="">Sélectionner…</option>
-              <option value="prise_de_masse">💪 Prise de masse</option>
-              <option value="perte_de_poids">🔥 Perte de poids</option>
-              <option value="endurance">🏃 Endurance</option>
-              <option value="force">🏋️ Force</option>
-              <option value="remise_en_forme">🌟 Remise en forme</option>
-              <option value="maintien">⚖️ Maintien</option>
-            </select>
+        <div class="card" id="goal-view" style="display:none">
+          <div class="card-title">Objectif enregistré ✓</div>
+          <div id="goal-view-body" style="display:flex;flex-direction:column;gap:7px"></div>
+          <div style="margin-top:14px">
+            <button class="btn btn-g btn-sm" onclick="goalEdit()">✏️ Modifier</button>
           </div>
-          <div class="field"><div class="lbl">Niveau</div>
-            <select id="g-level">
-              <option value="">Sélectionner…</option>
-              <option value="debutant">Débutant</option>
-              <option value="intermediaire">Intermédiaire</option>
-              <option value="avance">Avancé</option>
-              <option value="elite">Élite</option>
-            </select>
-          </div>
-          <div class="field"><div class="lbl">Description de votre objectif</div>
-            <textarea id="g-text" placeholder="Ex: Perdre 5kg en 3 mois, 3 séances/semaine…"></textarea>
-          </div>
-          <div class="field"><div class="lbl">Contraintes / blessures (optionnel)</div>
-            <textarea id="g-constraints" placeholder="Ex: Genou fragile, pas de course…" style="min-height:56px"></textarea>
-          </div>
-          <button class="btn btn-p btn-full" id="btn-save-goal" onclick="saveGoal()">💾 Enregistrer l'objectif</button>
         </div>
-      </div>
-    </div>
 
-    <!-- COACH -->
-    <div class="tab" id="t-coach">
-      <div class="section-head">🤖 Coach IA</div>
-
-      <div class="card">
-        <div class="card-title">Générer une séance</div>
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <div class="field"><div class="lbl">Décrivez la séance souhaitée</div>
-            <textarea id="coach-input" placeholder="Ex: HIIT 30 min sans matériel, focus cardio et abdos…"></textarea>
-          </div>
-          <div class="err-box" id="coach-err"></div>
-          <button class="btn btn-p btn-full" id="btn-gen" onclick="generateWorkout()">✨ Générer ma séance</button>
-        </div>
-      </div>
-
-      <div class="card" id="plan-card" style="display:none">
-        <div class="plan-header" id="plan-head"></div>
-        <div class="sep"></div>
-        <div class="plan-notes-text" id="plan-notes"></div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px" id="plan-blocks"></div>
-        <div style="margin-top:16px;display:flex;gap:10px">
-          <button class="btn btn-g btn-sm" onclick="saveSession()">💾 Sauvegarder</button>
-          <button class="btn btn-g btn-sm" onclick="document.getElementById('plan-card').style.display='none'">✕</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Historique des séances</div>
-        <div id="history-list" class="empty"><span class="empty-ic">📋</span>Aucune séance sauvegardée</div>
-      </div>
-    </div>
-
-    <!-- NUTRITION -->
-    <div class="tab" id="t-nutrition">
-      <div class="section-head">🥗 Nutrition</div>
-
-      <div class="card">
-        <div class="card-title">Totaux du jour</div>
-        <div class="macro-grid">
-          <div class="macro-card"><div class="macro-val" id="m-kcal">0</div><div class="macro-lbl">Kcal</div></div>
-          <div class="macro-card"><div class="macro-val" id="m-prot">0g</div><div class="macro-lbl">Protéines</div></div>
-          <div class="macro-card"><div class="macro-val" id="m-carb">0g</div><div class="macro-lbl">Glucides</div></div>
-          <div class="macro-card"><div class="macro-val" id="m-fat">0g</div><div class="macro-lbl">Lipides</div></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Ajouter un repas</div>
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <div class="field"><div class="lbl">Nom du repas</div>
-            <input type="text" id="n-name" placeholder="Ex: Poulet riz légumes"/>
-          </div>
-          <div class="grid2">
-            <div class="field"><div class="lbl">Calories (kcal)</div><input type="number" id="n-kcal" placeholder="450" min="0"/></div>
-            <div class="field"><div class="lbl">Protéines (g)</div><input type="number" id="n-prot" placeholder="35" min="0"/></div>
-            <div class="field"><div class="lbl">Glucides (g)</div><input type="number" id="n-carb" placeholder="55" min="0"/></div>
-            <div class="field"><div class="lbl">Lipides (g)</div><input type="number" id="n-fat" placeholder="12" min="0"/></div>
-          </div>
-          <button class="btn btn-p btn-full" id="btn-meal" onclick="addMeal()">➕ Ajouter ce repas</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Repas du jour</div>
-        <div id="meals-list" class="empty"><span class="empty-ic">🍽️</span>Aucun repas aujourd'hui</div>
-      </div>
-    </div>
-
-    <!-- COMMUNITY -->
-    <div class="tab" id="t-community">
-      <div class="section-head">🌍 Communauté</div>
-
-      <div class="card">
-        <div class="card-title">Partager une performance</div>
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <div class="field"><div class="lbl">Votre message</div>
-            <textarea id="post-input" placeholder="Ex: Nouvelle PR au squat 120kg × 5 💪 Trop content !"></textarea>
-          </div>
-          <button class="btn btn-p btn-full" id="btn-post" onclick="createPost()">📢 Publier</button>
-        </div>
-      </div>
-
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div class="section-head" style="font-size:.95rem">Fil d'actualité</div>
-        <button class="btn btn-g btn-sm" onclick="loadFeed()">🔄</button>
-      </div>
-      <div id="feed" style="display:flex;flex-direction:column;gap:12px">
-        <div class="empty"><span class="empty-ic">👥</span>Chargement…</div>
-      </div>
-    </div>
-
-    <!-- BODYSCAN -->
-    <div class="tab" id="t-bodyscan">
-      <div class="section-head">📸 Body Scan IA</div>
-
-      <div class="card">
-        <div class="card-title">Analyser une photo</div>
-        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()"
-          ondragover="event.preventDefault();this.classList.add('over')"
-          ondragleave="this.classList.remove('over')"
-          ondrop="event.preventDefault();this.classList.remove('over');handleDrop(event)">
-          <div class="drop-ic">📷</div>
-          <div class="drop-text">Cliquez ou déposez une photo ici</div>
-          <div class="drop-text" style="margin-top:5px;font-size:.74rem">JPG, PNG, WEBP — max 6MB</div>
-        </div>
-        <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFile(this.files[0])"/>
-        <div id="scan-preview" style="display:none;flex-direction:column;gap:12px;margin-top:14px">
-          <img id="scan-img" class="scan-img-preview"/>
-          <button class="btn btn-p btn-full" id="btn-scan" onclick="doScan()">🔬 Analyser avec l'IA</button>
-          <div class="err-box" id="scan-err"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Mes analyses</div>
-        <div id="scans-list" class="empty"><span class="empty-ic">🔬</span>Aucune analyse</div>
-      </div>
-    </div>
-
-    <!-- PROFILE -->
-    <div class="tab" id="t-profile">
-      <div class="section-head">👤 Profil</div>
-
-      <div class="card">
-        <div class="profile-head">
-          <div class="avatar" id="p-avatar">?</div>
-          <div>
-            <div class="profile-name" id="p-name">—</div>
-            <div class="profile-email" id="p-email"></div>
+        <div class="card" id="goal-form">
+          <div class="card-title">Définir mon objectif</div>
+          <div style="display:flex;flex-direction:column;gap:13px">
+            <div class="field"><div class="lbl">Type d'objectif</div>
+              <select id="g-type">
+                <option value="">Sélectionner…</option>
+                <option value="prise_de_masse">💪 Prise de masse</option>
+                <option value="perte_de_poids">🔥 Perte de poids</option>
+                <option value="endurance">🏃 Endurance</option>
+                <option value="force">🏋️ Force</option>
+                <option value="remise_en_forme">🌟 Remise en forme</option>
+                <option value="maintien">⚖️ Maintien</option>
+              </select>
+            </div>
+            <div class="field"><div class="lbl">Niveau</div>
+              <select id="g-level">
+                <option value="">Sélectionner…</option>
+                <option value="debutant">Débutant</option>
+                <option value="intermediaire">Intermédiaire</option>
+                <option value="avance">Avancé</option>
+                <option value="elite">Élite</option>
+              </select>
+            </div>
+            <div class="field"><div class="lbl">Description de votre objectif</div>
+              <textarea id="g-text" placeholder="Ex: Perdre 5kg en 3 mois, 3 séances/semaine…"></textarea>
+            </div>
+            <div class="field"><div class="lbl">Contraintes / blessures (optionnel)</div>
+              <textarea id="g-constraints" placeholder="Ex: Genou fragile, pas de course…" style="min-height:56px"></textarea>
+            </div>
+            <button class="btn btn-p btn-full" id="btn-save-goal" onclick="saveGoal()">💾 Enregistrer l'objectif</button>
           </div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="stats-row">
-          <div class="stat"><div class="stat-v" id="st-sess">—</div><div class="stat-l">Séances</div></div>
-          <div class="stat"><div class="stat-v" id="st-scans">—</div><div class="stat-l">Scans</div></div>
-          <div class="stat"><div class="stat-v" id="st-posts">—</div><div class="stat-l">Posts</div></div>
+      <!-- COACH -->
+      <div class="tab" id="t-coach">
+        <div class="page-header">
+          <div class="page-title">🤖 Coach IA</div>
+          <div class="page-sub">Générez des séances personnalisées avec l'IA</div>
         </div>
-      </div>
 
-      <div class="card">
-        <div class="card-title">Modifier mon profil</div>
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <div class="field"><div class="lbl">Pseudo affiché</div>
-            <input type="text" id="p-pseudo" placeholder="Votre pseudo…"/>
+        <div class="card">
+          <div class="card-title">Générer une séance</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="field"><div class="lbl">Décrivez la séance souhaitée</div>
+              <textarea id="coach-input" placeholder="Ex: HIIT 30 min sans matériel, focus cardio et abdos…"></textarea>
+            </div>
+            <div class="err-box" id="coach-err"></div>
+            <button class="btn btn-p btn-full" id="btn-gen" onclick="generateWorkout()">✨ Générer ma séance</button>
           </div>
-          <button class="btn btn-p btn-full" id="btn-save-profile" onclick="saveProfile()">💾 Enregistrer</button>
+        </div>
+
+        <div class="card" id="plan-card" style="display:none">
+          <div class="plan-header" id="plan-head"></div>
+          <div class="sep"></div>
+          <div class="plan-notes-text" id="plan-notes"></div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px" id="plan-blocks"></div>
+          <div style="margin-top:16px;display:flex;gap:10px">
+            <button class="btn btn-g btn-sm" onclick="saveSession()">💾 Sauvegarder</button>
+            <button class="btn btn-g btn-sm" onclick="document.getElementById('plan-card').style.display='none'">✕</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Historique des séances</div>
+          <div id="history-list" class="empty"><span class="empty-ic">📋</span>Aucune séance sauvegardée</div>
         </div>
       </div>
 
-      <div class="card" style="border-color:#f8717140">
-        <div class="card-title" style="color:var(--red)">Zone danger</div>
-        <button class="btn btn-d btn-sm" onclick="doLogout()">🚪 Déconnexion complète</button>
+      <!-- NUTRITION -->
+      <div class="tab" id="t-nutrition">
+        <div class="page-header">
+          <div class="page-title">🥗 Nutrition</div>
+          <div class="page-sub">Suivez vos apports nutritionnels quotidiens</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Totaux du jour</div>
+          <div class="macro-grid">
+            <div class="macro-card">
+              <span class="macro-icon">🔥</span>
+              <div class="macro-val" id="m-kcal">0</div>
+              <div class="macro-lbl">Kcal</div>
+            </div>
+            <div class="macro-card">
+              <span class="macro-icon">💪</span>
+              <div class="macro-val" id="m-prot">0g</div>
+              <div class="macro-lbl">Protéines</div>
+            </div>
+            <div class="macro-card">
+              <span class="macro-icon">🌾</span>
+              <div class="macro-val" id="m-carb">0g</div>
+              <div class="macro-lbl">Glucides</div>
+            </div>
+            <div class="macro-card">
+              <span class="macro-icon">🥑</span>
+              <div class="macro-val" id="m-fat">0g</div>
+              <div class="macro-lbl">Lipides</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Ajouter un repas</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="field"><div class="lbl">Nom du repas</div>
+              <input type="text" id="n-name" placeholder="Ex: Poulet riz légumes"/>
+            </div>
+            <div class="grid2">
+              <div class="field"><div class="lbl">Calories (kcal)</div><input type="number" id="n-kcal" placeholder="450" min="0"/></div>
+              <div class="field"><div class="lbl">Protéines (g)</div><input type="number" id="n-prot" placeholder="35" min="0"/></div>
+              <div class="field"><div class="lbl">Glucides (g)</div><input type="number" id="n-carb" placeholder="55" min="0"/></div>
+              <div class="field"><div class="lbl">Lipides (g)</div><input type="number" id="n-fat" placeholder="12" min="0"/></div>
+            </div>
+            <button class="btn btn-p btn-full" id="btn-meal" onclick="addMeal()">➕ Ajouter ce repas</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Repas du jour</div>
+          <div id="meals-list" class="empty"><span class="empty-ic">🍽️</span>Aucun repas aujourd'hui</div>
+        </div>
       </div>
-    </div>
 
-  </div><!-- /scroll -->
+      <!-- COMMUNITY -->
+      <div class="tab" id="t-community">
+        <div class="page-header">
+          <div class="page-title">🌍 Communauté</div>
+          <div class="page-sub">Partagez vos performances et inspirez les autres</div>
+        </div>
 
-  <nav class="bnav">
-    <button class="bnav-btn on" id="n-goal" onclick="gotoTab('goal')"><span class="ic">🎯</span>Objectif</button>
-    <button class="bnav-btn" id="n-coach" onclick="gotoTab('coach')"><span class="ic">🤖</span>Coach</button>
-    <button class="bnav-btn" id="n-nutrition" onclick="gotoTab('nutrition')"><span class="ic">🥗</span>Nutrition</button>
-    <button class="bnav-btn" id="n-community" onclick="gotoTab('community')"><span class="ic">🌍</span>Communauté</button>
-    <button class="bnav-btn" id="n-bodyscan" onclick="gotoTab('bodyscan')"><span class="ic">📸</span>Scan</button>
-    <button class="bnav-btn" id="n-profile" onclick="gotoTab('profile')"><span class="ic">👤</span>Profil</button>
-  </nav>
-</div>
+        <div class="card">
+          <div class="card-title">Partager une performance</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="field"><div class="lbl">Votre message</div>
+              <textarea id="post-input" placeholder="Ex: Nouvelle PR au squat 120kg × 5 💪 Trop content !"></textarea>
+            </div>
+            <button class="btn btn-p btn-full" id="btn-post" onclick="createPost()">📢 Publier</button>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:1rem;font-weight:800;color:var(--text)">Fil d'actualité</div>
+          <button class="btn btn-g btn-sm" onclick="loadFeed()">🔄</button>
+        </div>
+        <div id="feed" style="display:flex;flex-direction:column;gap:12px">
+          <div class="empty"><span class="empty-ic">👥</span>Chargement…</div>
+        </div>
+      </div>
+
+      <!-- BODYSCAN -->
+      <div class="tab" id="t-bodyscan">
+        <div class="page-header">
+          <div class="page-title">📸 Body Scan IA</div>
+          <div class="page-sub">Analysez votre physique avec l'intelligence artificielle</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Analyser une photo</div>
+          <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()"
+            ondragover="event.preventDefault();this.classList.add('over')"
+            ondragleave="this.classList.remove('over')"
+            ondrop="event.preventDefault();this.classList.remove('over');handleDrop(event)">
+            <div class="drop-ic">📷</div>
+            <div class="drop-text">Cliquez ou déposez une photo ici</div>
+            <div class="drop-text" style="margin-top:5px;font-size:.74rem">JPG, PNG, WEBP — max 6MB</div>
+          </div>
+          <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFile(this.files[0])"/>
+          <div id="scan-preview" style="display:none;flex-direction:column;gap:12px;margin-top:14px">
+            <img id="scan-img" class="scan-img-preview"/>
+            <button class="btn btn-p btn-full" id="btn-scan" onclick="doScan()">🔬 Analyser avec l'IA</button>
+            <div class="err-box" id="scan-err"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Mes analyses</div>
+          <div id="scans-list" class="empty"><span class="empty-ic">🔬</span>Aucune analyse</div>
+        </div>
+      </div>
+
+      <!-- PROFILE -->
+      <div class="tab" id="t-profile">
+        <div class="page-header">
+          <div class="page-title">👤 Mon Profil</div>
+          <div class="page-sub">Gérez vos informations personnelles</div>
+        </div>
+
+        <div class="card">
+          <div class="profile-head">
+            <div class="avatar" id="p-avatar">?</div>
+            <div>
+              <div class="profile-name" id="p-name">—</div>
+              <div class="profile-email" id="p-email"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="stats-row">
+            <div class="stat"><div class="stat-v" id="st-sess">—</div><div class="stat-l">Séances</div></div>
+            <div class="stat"><div class="stat-v" id="st-scans">—</div><div class="stat-l">Scans</div></div>
+            <div class="stat"><div class="stat-v" id="st-posts">—</div><div class="stat-l">Posts</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Modifier mon profil</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="field"><div class="lbl">Pseudo affiché</div>
+              <input type="text" id="p-pseudo" placeholder="Votre pseudo…"/>
+            </div>
+            <button class="btn btn-p btn-full" id="btn-save-profile" onclick="saveProfile()">💾 Enregistrer</button>
+          </div>
+        </div>
+
+        <div class="card" style="border-color:#ef444440">
+          <div class="card-title" style="color:var(--red)">Zone danger</div>
+          <button class="btn btn-d btn-sm" onclick="doLogout()">🚪 Déconnexion complète</button>
+        </div>
+      </div>
+
+    </div><!-- /scroll -->
+  </div><!-- /app-main -->
+</div><!-- /app -->
 
 <div id="toast"></div>
 <script src="/app.js"></script>
