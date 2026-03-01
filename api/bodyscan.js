@@ -13,7 +13,7 @@ function getGemini() {
 
 const { createClient } = require("@supabase/supabase-js");
 const BUCKET = process.env.BUCKET || "user_uploads";
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash-exp";
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
 function json(res, status, body) {
   if (res.writableEnded) return;
