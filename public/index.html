@@ -10,11 +10,11 @@
   --bg:#f0f2f7;
   --surf:#ffffff;
   --surf2:#f5f6fa;
-  --surf3:#eceef5;
   --border:#e2e5eb;
   --accent:#7c6fff;
   --accent2:#5b8af5;
   --grad:linear-gradient(135deg,#7c6fff,#5b8af5);
+  --grad-logo:linear-gradient(135deg,#4880f0,#7c6fff);
   --green:#16a34a;
   --red:#ef4444;
   --orange:#f97316;
@@ -51,52 +51,82 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe 
 
 /* ── SIDEBAR ── */
 .sidebar{
-  width:260px;flex-shrink:0;
+  width:270px;flex-shrink:0;
   background:var(--surf);border-right:1px solid var(--border);
   display:flex;flex-direction:column;
-  padding:28px 16px 24px;gap:6px;
+  padding:22px 14px 20px;
   overflow-y:auto;
 }
-.sidebar-brand{
-  font-size:1.4rem;font-weight:900;
-  background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  padding:0 8px 18px;
+
+/* Brand block */
+.sidebar-brand-block{
+  display:flex;align-items:center;gap:12px;
+  padding:0 6px 18px;
   border-bottom:1px solid var(--border);
-  margin-bottom:6px;
+  margin-bottom:10px;
 }
+.sidebar-logo-icon{
+  width:46px;height:46px;flex-shrink:0;
+  background:var(--grad-logo);
+  border-radius:14px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.5rem;
+  box-shadow:0 4px 14px rgba(72,128,240,.35);
+}
+.sidebar-brand-text{flex:1;min-width:0}
+.sidebar-brand-name{font-size:1.05rem;font-weight:900;color:var(--text)}
+.sidebar-brand-sub{font-size:.72rem;color:var(--muted);margin-top:2px}
+
+/* Dark toggle */
+.dark-toggle{
+  display:flex;align-items:center;gap:8px;
+  background:var(--surf2);border:1.5px solid var(--border);
+  border-radius:10px;padding:9px 14px;
+  cursor:pointer;font-size:.82rem;font-weight:600;
+  color:var(--muted);width:100%;font-family:inherit;
+  transition:all .2s;margin-bottom:10px;
+}
+.dark-toggle:hover{border-color:var(--accent);color:var(--text)}
+.dark-toggle-ic{font-size:1rem}
+
+/* User block in sidebar */
 .sidebar-user{
   display:flex;align-items:center;gap:10px;
-  padding:10px 8px;border-radius:12px;
-  background:var(--surf2);margin-bottom:6px;
+  padding:10px 10px;border-radius:12px;
+  background:var(--surf2);border:1px solid var(--border);
+  margin-bottom:8px;
 }
-.sidebar-avatar{
-  width:36px;height:36px;border-radius:50%;
+.sidebar-avatar-wrap{
+  width:34px;height:34px;border-radius:50%;
   background:var(--grad);
   display:flex;align-items:center;justify-content:center;
-  font-size:1rem;font-weight:900;color:#fff;flex-shrink:0;
+  font-size:.95rem;font-weight:900;color:#fff;flex-shrink:0;
 }
 .sidebar-user-info{flex:1;min-width:0}
 .sidebar-user-name{font-size:.8rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sidebar-user-role{font-size:.7rem;color:var(--muted)}
+.sidebar-user-role{font-size:.68rem;color:var(--muted);margin-top:1px}
 #btn-out{
   background:none;border:none;color:var(--muted);
-  padding:5px;cursor:pointer;font-size:1rem;
-  border-radius:8px;transition:color .2s;flex-shrink:0;
+  padding:5px;cursor:pointer;font-size:.9rem;
+  border-radius:6px;transition:color .2s;flex-shrink:0;
 }
 #btn-out:hover{color:var(--red)}
 
-/* ── SIDEBAR NAV ── */
-.bnav{display:flex;flex-direction:column;gap:3px;flex:1}
+/* ── NAV ── */
+.bnav{display:flex;flex-direction:column;gap:2px}
 .bnav-btn{
   display:flex;align-items:center;gap:12px;
   background:none;border:none;color:var(--muted);
-  cursor:pointer;padding:11px 14px;
+  cursor:pointer;padding:11px 12px;
   font-size:.88rem;font-weight:600;
   border-radius:12px;transition:all .2s;
-  font-family:inherit;text-align:left;
-  width:100%;
+  font-family:inherit;text-align:left;width:100%;
+  position:relative;
 }
-.bnav-btn .ic{font-size:1.2rem;line-height:1;flex-shrink:0}
+.bnav-btn .ic{
+  font-size:1.1rem;line-height:1;flex-shrink:0;
+  width:28px;text-align:center;
+}
 .bnav-btn .nav-label{flex:1}
 .nav-dot{
   width:6px;height:6px;border-radius:50%;
@@ -111,15 +141,28 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe 
 
 /* ── MAIN CONTENT ── */
 .app-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
-.scroll{flex:1;overflow-y:auto;padding:28px 32px;max-width:780px;width:100%;margin:0 auto}
+.scroll{flex:1;overflow-y:auto;padding:28px 32px;max-width:900px;width:100%;margin:0 auto}
 
 /* ── PAGE HEADER ── */
-.page-header{margin-bottom:24px}
-.page-title{font-size:1.55rem;font-weight:900;color:var(--text);line-height:1.2}
+.page-header{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  gap:16px;margin-bottom:24px;flex-wrap:wrap;
+}
+.page-header-left{}
+.page-greeting{font-size:.88rem;color:var(--muted);font-weight:500;margin-bottom:4px}
+.page-title{font-size:1.6rem;font-weight:900;color:var(--text);line-height:1.2}
 .page-sub{font-size:.85rem;color:var(--muted);margin-top:5px}
+.page-header-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.page-date{
+  display:flex;align-items:center;gap:6px;
+  background:var(--surf);border:1px solid var(--border);
+  border-radius:20px;padding:7px 14px;
+  font-size:.82rem;font-weight:600;color:var(--muted);
+  box-shadow:0 1px 4px rgba(0,0,0,.04);
+}
 
 /* ── TABS ── */
-.tab{display:none;flex-direction:column;gap:18px}
+.tab{display:none;flex-direction:column;gap:16px}
 .tab.on{display:flex}
 
 /* ── COMMON UI ── */
@@ -150,6 +193,9 @@ textarea{resize:vertical;min-height:78px}
 .btn-d{background:#ef444412;color:var(--red);border:1px solid #ef444435}
 .btn-sm{padding:7px 13px;font-size:.78rem;border-radius:8px}
 .btn-full{width:100%}
+/* Orange CTA (like Nouveau plan IA) */
+.btn-orange{background:linear-gradient(135deg,#f97316,#fb923c);color:#fff;box-shadow:0 4px 16px rgba(249,115,22,.28)}
+.btn-orange:hover:not(:disabled){opacity:.9;transform:translateY(-1px)}
 
 .empty{text-align:center;padding:36px 16px;color:var(--muted);font-size:.85rem}
 .empty-ic{font-size:2.2rem;display:block;margin-bottom:10px}
@@ -166,11 +212,61 @@ textarea{resize:vertical;min-height:78px}
 #toast.ok{border-color:var(--green);color:var(--green)}
 #toast.err{border-color:var(--red);color:var(--red)}
 
-/* ── GOAL ── */
+/* ── GOAL tab ── */
+.objective-card{
+  display:flex;align-items:center;gap:14px;
+  background:var(--surf);border:1px solid var(--border);
+  border-radius:var(--radius);padding:18px 20px;
+  box-shadow:0 1px 8px rgba(0,0,0,.05);
+  cursor:pointer;transition:box-shadow .2s;
+}
+.objective-card:hover{box-shadow:0 4px 18px rgba(0,0,0,.1)}
+.objective-icon{
+  width:44px;height:44px;border-radius:12px;
+  background:linear-gradient(135deg,#7c6fff,#5b8af5);
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.3rem;flex-shrink:0;
+}
+.objective-content{flex:1;min-width:0}
+.objective-label{font-size:.72rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+.objective-value{font-size:1rem;font-weight:800;color:var(--text)}
+.objective-arrow{color:var(--muted);font-size:1.1rem}
+
+/* AI suggestion alert */
+.ai-alert{
+  background:#fff5f5;border:1px solid #fca5a5;border-radius:var(--radius);padding:18px 20px;
+}
+.ai-alert-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.ai-alert-dot{width:20px;height:20px;border-radius:50%;background:#ef444420;border:2px solid var(--red);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.7rem;color:var(--red)}
+.ai-alert-title{font-size:.92rem;font-weight:800;color:var(--red)}
+.ai-alert-body{font-size:.83rem;color:#ef444499;margin-left:30px;line-height:1.5}
+.ai-alert-link{display:inline-block;margin-top:8px;margin-left:30px;font-size:.83rem;font-weight:700;color:var(--red);text-decoration:none;cursor:pointer}
+.ai-alert-link:hover{text-decoration:underline}
+
+/* Dashboard stats row */
+.stats-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat-card{
+  background:var(--surf);border:1px solid var(--border);
+  border-radius:var(--radius);padding:18px 14px;
+  box-shadow:0 1px 8px rgba(0,0,0,.05);
+}
+.stat-card-icon{
+  width:42px;height:42px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.2rem;margin-bottom:12px;
+}
+.stat-card-icon.orange{background:linear-gradient(135deg,#f97316,#fb923c);box-shadow:0 4px 12px rgba(249,115,22,.3)}
+.stat-card-icon.blue{background:linear-gradient(135deg,#3b82f6,#6366f1);box-shadow:0 4px 12px rgba(59,130,246,.3)}
+.stat-card-icon.green{background:linear-gradient(135deg,#10b981,#06b6d4);box-shadow:0 4px 12px rgba(16,185,129,.3)}
+.stat-card-icon.purple{background:linear-gradient(135deg,#a855f7,#ec4899);box-shadow:0 4px 12px rgba(168,85,247,.3)}
+.stat-card-val{font-size:1.5rem;font-weight:900;color:var(--text)}
+.stat-card-lbl{font-size:.72rem;color:var(--muted);font-weight:600;margin-top:3px}
+
+/* Goal saved */
 .goal-saved-row{display:flex;gap:8px;align-items:baseline;font-size:.86rem}
 .goal-saved-row strong{color:var(--accent);min-width:90px;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
 
-/* ── COACH / PLAN ── */
+/* ── COACH ── */
 .plan-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .plan-title-text{font-size:1.05rem;font-weight:800}
 .block{background:var(--surf2);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--border)}
@@ -188,15 +284,49 @@ textarea{resize:vertical;min-height:78px}
 .sess-row:last-child{border-bottom:none}
 
 /* ── NUTRITION ── */
-.macro-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-.macro-card{background:var(--surf2);border-radius:12px;padding:16px 10px;text-align:center;border:1px solid var(--border)}
-.macro-icon{font-size:1.5rem;display:block;margin-bottom:6px}
-.macro-val{font-size:1.3rem;font-weight:900}
-.macro-lbl{font-size:.67rem;color:var(--muted);font-weight:700;margin-top:3px;text-transform:uppercase}
-.macro-card:nth-child(1) .macro-val{color:var(--orange)}
-.macro-card:nth-child(2) .macro-val{color:var(--blue)}
-.macro-card:nth-child(3) .macro-val{color:var(--green)}
-.macro-card:nth-child(4) .macro-val{color:var(--yellow)}
+
+/* Horizontal macro bar (matches screenshot) */
+.macro-bar{
+  display:flex;gap:0;
+  padding:0 4px 20px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:18px;
+}
+.macro-stat{
+  flex:1;text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+}
+.macro-stat-icon{font-size:1.25rem;line-height:1}
+.macro-stat-icon.letter{
+  width:26px;height:26px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.82rem;font-weight:900;
+}
+.macro-stat-icon.letter-g{background:#16a34a18;color:var(--green)}
+.macro-stat-icon.letter-l{background:#ca8a0418;color:var(--yellow)}
+.macro-stat-val{font-size:1.4rem;font-weight:900;line-height:1}
+.macro-stat-val.red{color:var(--red)}
+.macro-stat-val.blue{color:var(--blue)}
+.macro-stat-val.green{color:var(--green)}
+.macro-stat-val.yellow{color:var(--yellow)}
+.macro-stat-lbl{font-size:.7rem;color:var(--muted);font-weight:600}
+
+/* Sub-tabs (visual only) */
+.sub-tabs{
+  display:flex;border-bottom:1px solid var(--border);
+  margin-bottom:20px;gap:0;
+}
+.sub-tab{
+  flex:1;padding:10px 8px;text-align:center;
+  font-size:.84rem;font-weight:600;color:var(--muted);
+  border:none;background:none;cursor:pointer;
+  border-bottom:2px solid transparent;transition:all .2s;
+  font-family:inherit;
+}
+.sub-tab.on{color:var(--orange);border-bottom-color:var(--orange)}
+.sub-tab:hover:not(.on){color:var(--text)}
+
+/* Meal rows */
 .meal-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .meal-row:last-child{border-bottom:none}
 .meal-name{font-weight:700;font-size:.88rem;flex:1;min-width:100px}
@@ -240,7 +370,7 @@ textarea{resize:vertical;min-height:78px}
 /* ── ERR MSG ── */
 .err-box{color:var(--red);font-size:.8rem;padding:8px 12px;background:#ef444412;border:1px solid #ef444430;border-radius:8px;display:none}
 
-/* ── RESPONSIVE: mobile bottom nav ── */
+/* ── RESPONSIVE ── */
 @media(max-width:767px){
   #app{flex-direction:column}
   .sidebar{
@@ -252,20 +382,20 @@ textarea{resize:vertical;min-height:78px}
     overflow-x:auto;overflow-y:visible;
     gap:0;height:64px;flex-shrink:0;
   }
-  .sidebar-brand,.sidebar-user{display:none}
+  .sidebar-brand-block,.sidebar-user,.dark-toggle{display:none}
   .bnav{flex-direction:row;gap:0;width:100%;height:100%;align-items:stretch}
   .bnav-btn{
     flex:1;flex-direction:column;gap:2px;
-    padding:6px 4px;
-    font-size:.58rem;letter-spacing:.03em;text-transform:uppercase;
+    padding:6px 4px;font-size:.56rem;letter-spacing:.02em;text-transform:uppercase;
     border-radius:0;justify-content:center;align-items:center;
   }
   .bnav-btn .nav-label{flex:none}
-  .bnav-btn .ic{font-size:1.2rem}
+  .bnav-btn .ic{font-size:1.15rem;width:auto}
   .nav-dot{display:none}
   .bnav-btn.on{background:none;color:var(--accent);box-shadow:none}
   .app-main{padding-bottom:64px}
   .scroll{padding:20px 16px 24px}
+  .stats-cards{grid-template-columns:repeat(2,1fr)}
   #btn-out{display:none}
 }
 </style>
@@ -306,15 +436,32 @@ textarea{resize:vertical;min-height:78px}
 
   <!-- SIDEBAR -->
   <aside class="sidebar">
-    <div class="sidebar-brand">FitAI Pro</div>
+    <!-- Brand -->
+    <div class="sidebar-brand-block">
+      <div class="sidebar-logo-icon">⚡</div>
+      <div class="sidebar-brand-text">
+        <div class="sidebar-brand-name">FitAI Pro</div>
+        <div class="sidebar-brand-sub">Coach IA personnel</div>
+      </div>
+    </div>
+
+    <!-- Dark mode toggle -->
+    <button class="dark-toggle" onclick="document.documentElement.classList.toggle('dark-mode')">
+      <span class="dark-toggle-ic">🌙</span>
+      Mode sombre
+    </button>
+
+    <!-- User info -->
     <div class="sidebar-user">
-      <div class="sidebar-avatar">💪</div>
+      <div class="sidebar-avatar-wrap">💪</div>
       <div class="sidebar-user-info">
         <div class="sidebar-user-name" id="tu">—</div>
-        <div class="sidebar-user-role">Membre</div>
+        <div class="sidebar-user-role">Membre Pro</div>
       </div>
       <button id="btn-out" onclick="doLogout()" title="Déconnexion">🚪</button>
     </div>
+
+    <!-- Nav -->
     <nav class="bnav">
       <button class="bnav-btn on" id="n-goal" onclick="gotoTab('goal')">
         <span class="ic">🎯</span><span class="nav-label">Objectif</span><span class="nav-dot"></span>
@@ -329,7 +476,7 @@ textarea{resize:vertical;min-height:78px}
         <span class="ic">🌍</span><span class="nav-label">Communauté</span><span class="nav-dot"></span>
       </button>
       <button class="bnav-btn" id="n-bodyscan" onclick="gotoTab('bodyscan')">
-        <span class="ic">📸</span><span class="nav-label">Body Scan</span><span class="nav-dot"></span>
+        <span class="ic">📸</span><span class="nav-label">Scan IA</span><span class="nav-dot"></span>
       </button>
       <button class="bnav-btn" id="n-profile" onclick="gotoTab('profile')">
         <span class="ic">👤</span><span class="nav-label">Profil</span><span class="nav-dot"></span>
@@ -337,25 +484,39 @@ textarea{resize:vertical;min-height:78px}
     </nav>
   </aside>
 
-  <!-- MAIN CONTENT -->
+  <!-- MAIN -->
   <div class="app-main">
     <div class="scroll" id="scroll">
 
-      <!-- GOAL -->
+      <!-- ── GOAL ── -->
       <div class="tab on" id="t-goal">
         <div class="page-header">
-          <div class="page-title">🎯 Mon Objectif</div>
-          <div class="page-sub">Définissez votre objectif fitness personnalisé</div>
+          <div class="page-header-left">
+            <div class="page-greeting">Bonjour 👋</div>
+            <div class="page-title" id="greeting-name">Mon Objectif</div>
+            <div class="page-sub">Définissez et suivez votre objectif fitness</div>
+          </div>
+          <div class="page-header-right">
+            <div class="page-date">✨ <span id="today-date"></span></div>
+          </div>
         </div>
 
+        <!-- Goal saved view -->
         <div class="card" id="goal-view" style="display:none">
-          <div class="card-title">Objectif enregistré ✓</div>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+            <div class="objective-icon">🎯</div>
+            <div>
+              <div class="objective-label">Mon objectif</div>
+              <div style="font-size:1rem;font-weight:800;color:var(--text)">Objectif enregistré ✓</div>
+            </div>
+          </div>
           <div id="goal-view-body" style="display:flex;flex-direction:column;gap:7px"></div>
           <div style="margin-top:14px">
             <button class="btn btn-g btn-sm" onclick="goalEdit()">✏️ Modifier</button>
           </div>
         </div>
 
+        <!-- Goal form -->
         <div class="card" id="goal-form">
           <div class="card-title">Définir mon objectif</div>
           <div style="display:flex;flex-direction:column;gap:13px">
@@ -388,13 +549,49 @@ textarea{resize:vertical;min-height:78px}
             <button class="btn btn-p btn-full" id="btn-save-goal" onclick="saveGoal()">💾 Enregistrer l'objectif</button>
           </div>
         </div>
+
+        <!-- AI suggestion -->
+        <div class="ai-alert">
+          <div class="ai-alert-head">
+            <div class="ai-alert-dot">!</div>
+            <div class="ai-alert-title">Reprenez l'entraînement</div>
+          </div>
+          <div class="ai-alert-body">Aucune séance détectée cette semaine. Commencez par le Coach IA.</div>
+          <div class="ai-alert-link" onclick="gotoTab('coach')">Démarrer →</div>
+        </div>
+
+        <!-- Stats row -->
+        <div class="stats-cards">
+          <div class="stat-card">
+            <div class="stat-card-icon orange">🔥</div>
+            <div class="stat-card-val" id="st-kcal">0</div>
+            <div class="stat-card-lbl">Calories brûlées</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-icon blue">🎯</div>
+            <div class="stat-card-val">0</div>
+            <div class="stat-card-lbl">Séances / semaine</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-icon green">⏱</div>
+            <div class="stat-card-val">0h</div>
+            <div class="stat-card-lbl">Temps total</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-icon purple">⚡</div>
+            <div class="stat-card-val">0</div>
+            <div class="stat-card-lbl">Énergie moyenne</div>
+          </div>
+        </div>
       </div>
 
-      <!-- COACH -->
+      <!-- ── COACH ── -->
       <div class="tab" id="t-coach">
         <div class="page-header">
-          <div class="page-title">🤖 Coach IA</div>
-          <div class="page-sub">Générez des séances personnalisées avec l'IA</div>
+          <div class="page-header-left">
+            <div class="page-title">🤖 Coach IA</div>
+            <div class="page-sub">Générez des séances personnalisées avec l'IA</div>
+          </div>
         </div>
 
         <div class="card">
@@ -425,39 +622,52 @@ textarea{resize:vertical;min-height:78px}
         </div>
       </div>
 
-      <!-- NUTRITION -->
+      <!-- ── NUTRITION ── -->
       <div class="tab" id="t-nutrition">
         <div class="page-header">
-          <div class="page-title">🥗 Nutrition</div>
-          <div class="page-sub">Suivez vos apports nutritionnels quotidiens</div>
-        </div>
-
-        <div class="card">
-          <div class="card-title">Totaux du jour</div>
-          <div class="macro-grid">
-            <div class="macro-card">
-              <span class="macro-icon">🔥</span>
-              <div class="macro-val" id="m-kcal">0</div>
-              <div class="macro-lbl">Kcal</div>
-            </div>
-            <div class="macro-card">
-              <span class="macro-icon">💪</span>
-              <div class="macro-val" id="m-prot">0g</div>
-              <div class="macro-lbl">Protéines</div>
-            </div>
-            <div class="macro-card">
-              <span class="macro-icon">🌾</span>
-              <div class="macro-val" id="m-carb">0g</div>
-              <div class="macro-lbl">Glucides</div>
-            </div>
-            <div class="macro-card">
-              <span class="macro-icon">🥑</span>
-              <div class="macro-val" id="m-fat">0g</div>
-              <div class="macro-lbl">Lipides</div>
-            </div>
+          <div class="page-header-left">
+            <div class="page-title">Nutrition</div>
+            <div class="page-sub">Plan alimentaire personnalisé par IA</div>
+          </div>
+          <div class="page-header-right">
+            <button class="btn btn-orange btn-sm" onclick="gotoTab('coach')">✨ Nouveau plan IA</button>
           </div>
         </div>
 
+        <!-- Macro bar (horizontal, matches screenshot) -->
+        <div class="card" style="padding:20px 20px 0">
+          <div class="macro-bar">
+            <div class="macro-stat">
+              <span class="macro-stat-icon">🔥</span>
+              <div class="macro-stat-val red" id="m-kcal">0</div>
+              <div class="macro-stat-lbl">Calories</div>
+            </div>
+            <div class="macro-stat">
+              <span class="macro-stat-icon">🎯</span>
+              <div class="macro-stat-val blue" id="m-prot">0g</div>
+              <div class="macro-stat-lbl">Protéines</div>
+            </div>
+            <div class="macro-stat">
+              <span class="macro-stat-icon letter letter-g">G</span>
+              <div class="macro-stat-val green" id="m-carb">0g</div>
+              <div class="macro-stat-lbl">Glucides</div>
+            </div>
+            <div class="macro-stat">
+              <span class="macro-stat-icon letter letter-l">L</span>
+              <div class="macro-stat-val yellow" id="m-fat">0g</div>
+              <div class="macro-stat-lbl">Lipides</div>
+            </div>
+          </div>
+          <!-- Sub-tabs (visual, Aujourd'hui active) -->
+          <div class="sub-tabs">
+            <button class="sub-tab on">Aujourd'hui</button>
+            <button class="sub-tab">Ingrédients</button>
+            <button class="sub-tab">Macros</button>
+            <button class="sub-tab">Planning</button>
+          </div>
+        </div>
+
+        <!-- Add meal -->
         <div class="card">
           <div class="card-title">Ajouter un repas</div>
           <div style="display:flex;flex-direction:column;gap:12px">
@@ -480,11 +690,13 @@ textarea{resize:vertical;min-height:78px}
         </div>
       </div>
 
-      <!-- COMMUNITY -->
+      <!-- ── COMMUNITY ── -->
       <div class="tab" id="t-community">
         <div class="page-header">
-          <div class="page-title">🌍 Communauté</div>
-          <div class="page-sub">Partagez vos performances et inspirez les autres</div>
+          <div class="page-header-left">
+            <div class="page-title">🌍 Communauté</div>
+            <div class="page-sub">Partagez vos performances et inspirez les autres</div>
+          </div>
         </div>
 
         <div class="card">
@@ -497,7 +709,7 @@ textarea{resize:vertical;min-height:78px}
           </div>
         </div>
 
-        <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px">
           <div style="font-size:1rem;font-weight:800;color:var(--text)">Fil d'actualité</div>
           <button class="btn btn-g btn-sm" onclick="loadFeed()">🔄</button>
         </div>
@@ -506,11 +718,13 @@ textarea{resize:vertical;min-height:78px}
         </div>
       </div>
 
-      <!-- BODYSCAN -->
+      <!-- ── BODYSCAN ── -->
       <div class="tab" id="t-bodyscan">
         <div class="page-header">
-          <div class="page-title">📸 Body Scan IA</div>
-          <div class="page-sub">Analysez votre physique avec l'intelligence artificielle</div>
+          <div class="page-header-left">
+            <div class="page-title">📸 Scan IA</div>
+            <div class="page-sub">Analysez votre physique avec l'intelligence artificielle</div>
+          </div>
         </div>
 
         <div class="card">
@@ -537,11 +751,13 @@ textarea{resize:vertical;min-height:78px}
         </div>
       </div>
 
-      <!-- PROFILE -->
+      <!-- ── PROFILE ── -->
       <div class="tab" id="t-profile">
         <div class="page-header">
-          <div class="page-title">👤 Mon Profil</div>
-          <div class="page-sub">Gérez vos informations personnelles</div>
+          <div class="page-header-left">
+            <div class="page-title">👤 Mon Profil</div>
+            <div class="page-sub">Gérez vos informations personnelles</div>
+          </div>
         </div>
 
         <div class="card">
@@ -583,6 +799,16 @@ textarea{resize:vertical;min-height:78px}
 </div><!-- /app -->
 
 <div id="toast"></div>
+<script>
+// Display today's date
+(function(){
+  var d=new Date();
+  var days=['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
+  var months=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  var el=document.getElementById('today-date');
+  if(el) el.textContent=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()];
+})();
+</script>
 <script src="/app.js"></script>
 </body>
 </html>
