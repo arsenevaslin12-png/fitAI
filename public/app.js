@@ -395,7 +395,7 @@ async function doScan() {
   try {
     const token = await tok();
     const ext = (FILE.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "");
-    const path = U.id + "/" + Date.now() + "." + ext;
+    const path = U.id + "/bodyscans/" + Date.now() + "." + ext.toLowerCase();
     const { error: upErr } = await SB.storage.from("user_uploads").upload(path, FILE, { contentType: FILE.type });
     if (upErr) throw new Error("Upload: " + upErr.message);
     const { error: dbErr } = await SB.from("body_scans").insert({ user_id: U.id, image_path: path });
