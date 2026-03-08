@@ -45,13 +45,11 @@ async function boot() {
     auth: { persistSession: true, autoRefreshToken: false, detectSessionInUrl: true }
   });
 
-
-
   window.addEventListener("online", () => toast("Connexion rétablie ✓", "ok"));
   window.addEventListener("offline", () => toast("Vous êtes hors ligne. Vérifiez votre connexion.", "err"));
 
-  const check = await SB.auth.getSession();
-  if (check.error && /network|fetch|cors|failed/i.test(String(check.error.message || ""))) {
+  const initialSessionResult = await SB.auth.getSession();
+  if (initialSessionResult.error && /network|fetch|cors|failed/i.test(String(initialSessionResult.error.message || ""))) {
     toast("Erreur réseau Supabase. Vérifiez URL Supabase, DNS et bloqueurs de requêtes.", "err");
   }
 
@@ -65,7 +63,7 @@ async function boot() {
     }
   });
 
-  const session = check?.data?.session || null;
+  const session = initialSessionResult?.data?.session || null;
   hideBoot();
   if (session?.user) {
     U = session.user;
