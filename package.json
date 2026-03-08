@@ -2,9 +2,15 @@
   "name": "fitai-pro",
   "version": "4.1.0",
   "private": true,
-  "engines": { "node": "20.x" },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@supabase/supabase-js": "^2.45.4"
+  },
+  "scripts": {
+    "check:conflicts": "bash -lc \"! rg -n '^(<<<<<<<|=======|>>>>>>>)' public api supabase vercel.json package.json\"",
+    "check:syntax": "node --check public/app.js && node --check api/generate-plan.js && node --check api/generate-nutrition.js"
   }
 }
