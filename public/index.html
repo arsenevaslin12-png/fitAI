@@ -7,14 +7,14 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#f0f2f7;
-  --surf:#ffffff;
-  --surf2:#f5f6fa;
+  --bg:#eceef1;
+  --surf:#f8f9fb;
+  --surf2:#eef1f6;
   --surf3:#eceef5;
-  --border:#e2e5eb;
-  --accent:#7c6fff;
-  --accent2:#5b8af5;
-  --grad:linear-gradient(135deg,#7c6fff,#5b8af5);
+  --border:#d9dee8;
+  --accent:#3b82f6;
+  --accent2:#22c1c3;
+  --grad:linear-gradient(135deg,#3568e5,#22c1c3);
   --green:#16a34a;
   --red:#ef4444;
   --orange:#f97316;
@@ -51,19 +51,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe 
 
 /* ── SIDEBAR ── */
 .sidebar{
-  width:260px;flex-shrink:0;
+  width:286px;flex-shrink:0;
   background:var(--surf);border-right:1px solid var(--border);
   display:flex;flex-direction:column;
-  padding:28px 16px 24px;gap:6px;
+  padding:24px 18px 24px;gap:10px;
   overflow-y:auto;
 }
-.sidebar-brand{
-  font-size:1.4rem;font-weight:900;
-  background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  padding:0 8px 18px;
-  border-bottom:1px solid var(--border);
-  margin-bottom:6px;
-}
+.sidebar-brand{font-size:2rem;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;padding:4px 6px 0;margin-bottom:0}
 .sidebar-user{
   display:flex;align-items:center;gap:10px;
   padding:10px 8px;border-radius:12px;
@@ -227,6 +221,25 @@ textarea{resize:vertical;min-height:78px}
 .score-l{font-size:.65rem;color:var(--muted);margin-top:2px;font-weight:700;text-transform:uppercase}
 .scan-feedback{font-size:.82rem;line-height:1.6}
 
+/* ── DASHBOARD V2 ── */
+.db-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.db-greet small{display:block;color:var(--muted);font-size:1.7rem;font-weight:800;color:#172036;line-height:1.1}
+.db-chip{padding:10px 18px;border:1px solid #cddcf9;background:#edf3ff;border-radius:999px;font-weight:800;color:#2454c6;font-size:.95rem}
+.db-goal{display:flex;align-items:center;justify-content:space-between;gap:12px;border:2px dashed #ccd4df;background:#f2f5f9;border-radius:16px;padding:18px 16px}
+.db-goal-main{display:flex;align-items:center;gap:14px}
+.db-goal-ic{width:44px;height:44px;border-radius:12px;background:#e4e9f2;display:flex;align-items:center;justify-content:center;font-size:1.2rem}
+.db-grid{display:grid;grid-template-columns:2fr 1fr;gap:18px}
+.db-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.db-stat{background:#f8fafc;border:1px solid var(--border);border-radius:16px;padding:14px}
+.db-stat .macro-val{font-size:2rem;color:#111827}
+.db-main-card{background:var(--surf);border:1px solid var(--border);border-radius:18px;overflow:hidden}
+.db-main-head{background:var(--grad);padding:14px 18px;color:#fff;font-weight:800}
+.db-main-body{padding:16px}
+.db-actions{display:flex;flex-direction:column;gap:10px}
+.db-action{display:flex;align-items:center;justify-content:space-between;background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:12px 14px;font-weight:700}
+.db-week{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:10px}
+.db-day{background:#e7ebf1;border-radius:10px;height:74px}
+@media(max-width:1000px){.db-grid{grid-template-columns:1fr}.db-stats{grid-template-columns:repeat(2,1fr)}}
 /* ── PROFILE ── */
 .avatar{width:68px;height:68px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900;color:#fff;flex-shrink:0}
 .profile-head{display:flex;align-items:center;gap:18px}
@@ -240,6 +253,12 @@ textarea{resize:vertical;min-height:78px}
 /* ── ERR MSG ── */
 .err-box{color:var(--red);font-size:.8rem;padding:8px 12px;background:#ef444412;border:1px solid #ef444430;border-radius:8px;display:none}
 
+
+.global-loader{position:fixed;inset:0;background:#ffffffc2;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;z-index:9998;flex-direction:column;gap:10px}
+.progress-wrap{margin-top:12px;background:var(--surf2);border:1px solid var(--border);border-radius:12px;padding:10px}
+.progress-track{height:10px;background:#e8ebf3;border-radius:999px;overflow:hidden}
+.progress-fill{height:100%;width:0;background:var(--grad);transition:width .3s}
+.progress-text{margin-top:6px;font-size:.78rem;color:var(--muted);font-weight:700;text-align:right}
 /* ── RESPONSIVE: mobile bottom nav ── */
 @media(max-width:767px){
   #app{flex-direction:column}
@@ -316,7 +335,10 @@ textarea{resize:vertical;min-height:78px}
       <button id="btn-out" onclick="doLogout()" title="Déconnexion">🚪</button>
     </div>
     <nav class="bnav">
-      <button class="bnav-btn on" id="n-goal" onclick="gotoTab('goal')">
+      <button class="bnav-btn" id="n-dashboard" onclick="gotoTab('dashboard')">
+        <span class="ic">📊</span><span class="nav-label">Dashboard</span><span class="nav-dot"></span>
+      </button>
+      <button class="bnav-btn" id="n-goal" onclick="gotoTab('goal')">
         <span class="ic">🎯</span><span class="nav-label">Objectif</span><span class="nav-dot"></span>
       </button>
       <button class="bnav-btn" id="n-coach" onclick="gotoTab('coach')">
@@ -341,8 +363,74 @@ textarea{resize:vertical;min-height:78px}
   <div class="app-main">
     <div class="scroll" id="scroll">
 
+      <!-- DASHBOARD -->
+      <div class="tab" id="t-dashboard">
+        <div class="db-top">
+          <div class="db-greet">
+            <div class="page-sub" style="margin:0">Bon après-midi 👋</div>
+            <small>Champion</small>
+          </div>
+          <div class="db-chip">✨ dimanche 8 mars</div>
+        </div>
+
+        <div class="db-goal">
+          <div class="db-goal-main">
+            <div class="db-goal-ic">🎯</div>
+            <div>
+              <div style="font-weight:800;font-size:1.1rem">Définir mon objectif physique</div>
+              <div class="page-sub" style="margin:0">Pour des entraînements ultra-personnalisés</div>
+            </div>
+          </div>
+          <button class="btn btn-g btn-sm" onclick="gotoTab('goal')">→</button>
+        </div>
+
+        <div class="db-stats">
+          <div class="db-stat"><div class="macro-val" id="db-kcal">0</div><div class="macro-lbl">Calories brûlées</div></div>
+          <div class="db-stat"><div class="macro-val" id="db-sess">0</div><div class="macro-lbl">Séances / semaine</div></div>
+          <div class="db-stat"><div class="macro-val" id="db-time">0h</div><div class="macro-lbl">Temps total</div></div>
+          <div class="db-stat"><div class="macro-val" id="db-energy">0</div><div class="macro-lbl">Énergie moyenne</div></div>
+        </div>
+
+        <div class="db-grid">
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="db-main-card">
+              <div class="db-main-head">Entraînement du jour</div>
+              <div class="db-main-body">
+                <div class="meal-info" style="margin-bottom:12px">0 exercices · 30 min · ~350 kcal</div>
+                <button class="btn btn-p btn-full" onclick="gotoTab('coach')">▶ Commencer</button>
+              </div>
+            </div>
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div class="card-title" style="margin:0">Activité cette semaine</div>
+                <span class="badge bg-green">0 / 7 jours</span>
+              </div>
+              <div class="db-week">
+                <div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="card">
+              <div class="card-title">Actions rapides</div>
+              <div class="db-actions">
+                <button class="db-action" onclick="gotoTab('coach')"><span>⚡ Express 15min</span><span>›</span></button>
+                <button class="db-action" onclick="gotoTab('coach')"><span>💬 Coach IA</span><span>›</span></button>
+                <button class="db-action" onclick="gotoTab('nutrition')"><span>🥗 Nutrition</span><span>›</span></button>
+                <button class="db-action" onclick="gotoTab('profile')"><span>📈 Progrès</span><span>›</span></button>
+              </div>
+            </div>
+            <div class="card" style="background:#fff8e9;border-color:#f0dfb6">
+              <div class="card-title" style="margin-bottom:8px">🏅 Séances totales</div>
+              <div style="font-size:2rem;font-weight:900" id="db-total-sessions">0</div>
+              <div class="meal-info">🔥 Continue comme ça champion !</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- GOAL -->
-      <div class="tab on" id="t-goal">
+      <div class="tab" id="t-goal">
         <div class="page-header">
           <div class="page-title">🎯 Mon Objectif</div>
           <div class="page-sub">Définissez votre objectif fitness personnalisé</div>
@@ -582,6 +670,7 @@ textarea{resize:vertical;min-height:78px}
   </div><!-- /app-main -->
 </div><!-- /app -->
 
+<div class="global-loader" id="global-loader"><div class="spinner"></div><div class="boot-msg">Chargement…</div></div>
 <div id="toast"></div>
 <script src="/app.js"></script>
 </body>
