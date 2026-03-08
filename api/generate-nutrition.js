@@ -1,14 +1,10 @@
+"use strict";
+
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { createClient } = require("@supabase/supabase-js");
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
-
-function sendJson(res, status, payload) {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(payload));
-}
+const MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"];
+const GEMINI_TIMEOUT_MS = 18000;
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -16,235 +12,150 @@ function setCors(res) {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
 }
 
+function sendJson(res, status, payload) {
+  if (res.writableEnded) return;
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.end(JSON.stringify(payload));
+}
+
 function parseBody(req) {
-  const b = req.body;
-  if (!b) return null;
-  if (typeof b === "object") return b;
-  if (typeof b === "string") {
-    try { return JSON.parse(b); } catch { return null; }
+  if (!req.body) return {};
+  if (typeof req.body === "string") {
+    try { return JSON.parse(req.body); } catch { return {}; }
   }
-  return null;
-}
-
-function buildNutritionPrompt(profile) {
-  const weight = profile?.weight || 75;
-  const bodyfatProxy = profile?.bodyfat_proxy || null;
-  const goal = profile?.goal || "maintenance";
-  const activityLevel = profile?.activity_level || "moderate";
-
-  let bodyfatInfo = "";
-  if (bodyfatProxy && bodyfatProxy > 0) {
-    bodyfatInfo = `Bodyfat estimé: ${bodyfatProxy}%`;
-  }
-
-  return `Tu es FitAI Nutrition Coach. Génère des macros nutritionnelles PRÉCISES et RÉALISTES.
-
-PROFIL:
-- Poids: ${weight}kg
-${bodyfatInfo}
-- Objectif: ${goal}
-- Niveau activité: ${activityLevel}
-
-RÈGLES STRICTES:
-1. Calories basées sur poids × facteur d'activité
-2. Protéines: minimum 1.6g/kg, jusqu'à 2.2g/kg si cut
-3. Lipides: minimum 0.8g/kg, max 1.2g/kg
-4. Glucides: le reste des calories
-5. Si cut → déficit 300-500kcal, si bulk → surplus 200-400kcal
-
-FORMAT JSON UNIQUEMENT (pas de markdown):
-{
-  "calories": 2400,
-  "protein": 160,
-  "carbs": 280,
-  "fats": 70,
-  "notes": "Maintenance modéré. Ajuste selon progression."
-}
-
-Valide que:
-- calories entre 1500 et 4000
-- protein entre 100 et 300
-- carbs entre 100 et 500
-- fats entre 40 et 150
-
-NE PAS inclure de blabla, juste le JSON pur.`;
+  return req.body;
 }
 
 function safeJsonExtract(text) {
-  const s = String(text || "").trim();
+  const s = String(text || "");
   const a = s.indexOf("{");
   const b = s.lastIndexOf("}");
-  if (a === -1 || b === -1 || b <= a) return null;
-  const slice = s.slice(a, b + 1);
-  try { return JSON.parse(slice); } catch { return null; }
+  if (a < 0 || b <= a) return null;
+  try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
 }
 
-function validateNutrition(obj) {
-  if (!obj || typeof obj !== "object") return null;
-
-  const calories = Number(obj.calories);
-  const protein = Number(obj.protein);
-  const carbs = Number(obj.carbs);
-  const fats = Number(obj.fats);
-
-  if (!Number.isInteger(calories) || calories < 1500 || calories > 4000) return null;
-  if (!Number.isInteger(protein) || protein < 100 || protein > 300) return null;
-  if (!Number.isInteger(carbs) || carbs < 100 || carbs > 500) return null;
-  if (!Number.isInteger(fats) || fats < 40 || fats > 150) return null;
-
-  const totalCals = (protein * 4) + (carbs * 4) + (fats * 9);
-  if (Math.abs(totalCals - calories) > 100) return null;
-
-  return {
-    calories,
-    protein,
-    carbs,
-    fats,
-    notes: String(obj.notes || "").trim() || "Plan généré automatiquement.",
+function validateNutrition(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const nutrition = {
+    calories: Number(raw.calories),
+    protein: Number(raw.protein),
+    carbs: Number(raw.carbs),
+    fats: Number(raw.fats),
+    notes: String(raw.notes || "").trim() || "Plan généré automatiquement."
   };
+  const isInt = Number.isInteger;
+  if (!isInt(nutrition.calories) || nutrition.calories < 1200 || nutrition.calories > 4500) return null;
+  if (!isInt(nutrition.protein) || nutrition.protein < 70 || nutrition.protein > 320) return null;
+  if (!isInt(nutrition.carbs) || nutrition.carbs < 80 || nutrition.carbs > 550) return null;
+  if (!isInt(nutrition.fats) || nutrition.fats < 30 || nutrition.fats > 180) return null;
+  return nutrition;
 }
 
-async function geminiGenerateNutrition(apiKey, profile) {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: MODEL,
-    generationConfig: { temperature: 0.6, topP: 0.9, maxOutputTokens: 600 },
-  });
+function fallbackNutrition(weight = 75, goal = "maintenance") {
+  const base = Math.round(weight * 30);
+  const calories = goal === "cut" ? base - 350 : goal === "bulk" ? base + 250 : base;
+  const protein = Math.round(weight * (goal === "cut" ? 2.1 : 1.8));
+  const fats = Math.round(weight * 0.9);
+  const carbs = Math.max(100, Math.round((calories - (protein * 4 + fats * 9)) / 4));
+  return { calories, protein, carbs, fats, notes: "Fallback auto (Gemini indisponible)." };
+}
 
-  const prompt = buildNutritionPrompt(profile);
-  const result = await model.generateContent(prompt);
-  const text = result?.response?.text?.() || "";
-  
-  const parsed = safeJsonExtract(text);
-  return validateNutrition(parsed);
+function buildPrompt(profile) {
+  return `Génère des macros nutrition JSON strict pour ce profil: ${JSON.stringify(profile)}.
+Format uniquement:
+{"calories":2400,"protein":160,"carbs":280,"fats":70,"notes":"..."}
+Aucun markdown.`;
+}
+
+function withTimeout(promise, ms) {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(Object.assign(new Error("GEMINI_TIMEOUT"), { code: "TIMEOUT" })), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
+async function callGemini(apiKey, profile) {
+  const client = new GoogleGenerativeAI(apiKey);
+  let lastErr;
+  for (const modelName of MODELS) {
+    try {
+      const model = client.getGenerativeModel({
+        model: process.env.GEMINI_MODEL || modelName,
+        generationConfig: { temperature: 0.4, maxOutputTokens: 500 }
+      });
+      const response = await withTimeout(model.generateContent(buildPrompt(profile)), GEMINI_TIMEOUT_MS);
+      const text = response?.response?.text?.() || "";
+      const nutrition = validateNutrition(safeJsonExtract(text));
+      if (nutrition) return { nutrition, model: modelName };
+      lastErr = new Error("INVALID_NUTRITION_FORMAT");
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("NUTRITION_GENERATION_FAILED");
+}
+
+async function loadProfile(supabase, userId) {
+  const byUser = await supabase.from("profiles").select("weight").eq("user_id", userId).maybeSingle();
+  if (!byUser.error && byUser.data) return byUser.data;
+  const byId = await supabase.from("profiles").select("weight").eq("id", userId).maybeSingle();
+  return byId.data || {};
 }
 
 module.exports = async function handler(req, res) {
   setCors(res);
-
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   if (req.method === "OPTIONS") {
     res.statusCode = 204;
     return res.end();
   }
+  if (req.method !== "POST") return sendJson(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", requestId });
 
-  if (req.method !== "POST") {
-    return sendJson(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", requestId });
-  }
+  const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return sendJson(res, 401, { ok: false, error: "UNAUTHORIZED", requestId });
 
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const { GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return sendJson(res, 500, { ok: false, error: "SERVER_MISCONFIG_SUPABASE", requestId });
 
-  if (!GEMINI_API_KEY) {
-    console.error("[generate-nutrition] missing GEMINI_API_KEY", { requestId });
-    return sendJson(res, 500, { ok: false, error: "SERVER_MISCONFIG_GEMINI", requestId });
-  }
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+  const auth = await supabase.auth.getUser(token);
+  const userId = auth?.data?.user?.id;
+  if (!userId) return sendJson(res, 401, { ok: false, error: "INVALID_TOKEN", requestId });
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    console.error("[generate-nutrition] missing Supabase config", { requestId });
-    return sendJson(res, 500, { ok: false, error: "SERVER_MISCONFIG_SUPABASE", requestId });
-  }
-
-  const authHeader = req.headers.authorization || "";
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-
-  if (!token) {
-    return sendJson(res, 401, { ok: false, error: "UNAUTHORIZED", detail: "Missing Authorization header", requestId });
-  }
-
-  const body = parseBody(req) || {};
-  const goalOverride = body.goal || null;
-  const activityOverride = body.activity_level || null;
-
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-  let userId;
-  try {
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) {
-      return sendJson(res, 401, { ok: false, error: "INVALID_TOKEN", requestId });
-    }
-    userId = user.id;
-  } catch (e) {
-    console.error("[generate-nutrition] auth error", { requestId, err: e.message });
-    return sendJson(res, 401, { ok: false, error: "AUTH_FAILED", requestId });
-  }
+  const body = parseBody(req);
 
   try {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("weight, kpis")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const { data: latestScan } = await supabase
-      .from("body_scans")
-      .select("bodyfat_proxy")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const enrichedProfile = {
-      weight: profile?.weight || 75,
-      bodyfat_proxy: latestScan?.bodyfat_proxy || null,
-      goal: goalOverride || "maintenance",
-      activity_level: activityOverride || "moderate",
-    };
-
-    const nutrition = await geminiGenerateNutrition(GEMINI_API_KEY, enrichedProfile);
-
-    if (!nutrition) {
-      return sendJson(res, 500, { ok: false, error: "NUTRITION_GENERATION_FAILED", detail: "Invalid nutrition format", requestId });
-    }
-
-    const updateResult = await supabase
-      .from("nutrition_targets")
-      .update({
-        calories: nutrition.calories,
-        protein: nutrition.protein,
-        carbs: nutrition.carbs,
-        fats: nutrition.fats,
-        notes: nutrition.notes,
-      })
-      .eq("user_id", userId)
-      .select("user_id")
-      .maybeSingle();
-
-    if (!updateResult.error && updateResult.data?.user_id) {
-      return sendJson(res, 200, {
-        ok: true,
-        nutrition,
-        requestId,
+    const profile = await loadProfile(supabase, userId);
+    let result;
+    if (GEMINI_API_KEY) {
+      result = await callGemini(GEMINI_API_KEY, {
+        weight: Number(profile.weight || 75),
+        goal: String(body.goal || "maintenance"),
+        activity_level: String(body.activity_level || "moderate")
       });
+    } else {
+      result = { nutrition: fallbackNutrition(Number(profile.weight || 75), String(body.goal || "maintenance")), model: "fallback" };
     }
 
-    const insertResult = await supabase
-      .from("nutrition_targets")
-      .insert({
-        user_id: userId,
-        calories: nutrition.calories,
-        protein: nutrition.protein,
-        carbs: nutrition.carbs,
-        fats: nutrition.fats,
-        notes: nutrition.notes,
-      });
+    const upsert = await supabase.from("nutrition_targets").upsert({
+      user_id: userId,
+      calories: result.nutrition.calories,
+      protein: result.nutrition.protein,
+      carbs: result.nutrition.carbs,
+      fats: result.nutrition.fats,
+      notes: result.nutrition.notes,
+      updated_at: new Date().toISOString()
+    }, { onConflict: "user_id" });
+    if (upsert.error) throw upsert.error;
 
-    if (insertResult.error) {
-      console.error("[generate-nutrition] insert error", { requestId, err: insertResult.error });
-      return sendJson(res, 500, { ok: false, error: "DB_INSERT_FAILED", requestId });
-    }
-
-    return sendJson(res, 200, {
-      ok: true,
-      nutrition,
-      requestId,
-    });
-
+    return sendJson(res, 200, { ok: true, requestId, nutrition: result.nutrition, model: result.model });
   } catch (e) {
-    console.error("[generate-nutrition] error", { requestId, err: e.message });
-    return sendJson(res, 500, { ok: false, error: "SERVER_ERROR", requestId });
+    const profile = await loadProfile(supabase, userId);
+    const nutrition = fallbackNutrition(Number(profile.weight || 75), String(body.goal || "maintenance"));
+    return sendJson(res, 200, { ok: true, requestId, nutrition, fallback: true, error: String(e.message || "generation_failed") });
   }
-}; 
+};

@@ -3,13 +3,15 @@
   "builds": [
     { "src": "api/*.js", "use": "@vercel/node" },
     { "src": "public/index.html", "use": "@vercel/static" },
-    { "src": "public/app.js",     "use": "@vercel/static" }
+    { "src": "public/app.js", "use": "@vercel/static" }
   ],
   "routes": [
-    { "src": "/api/config",   "dest": "/api/config.js" },
-    { "src": "/api/workout",  "dest": "/api/workout.js" },
+    { "src": "/api/config", "dest": "/api/config.js" },
+    { "src": "/api/workout", "dest": "/api/workout.js" },
     { "src": "/api/bodyscan", "dest": "/api/bodyscan.js" },
-    { "src": "/app.js",       "dest": "/public/app.js" },
-    { "src": "/(.*)",         "dest": "/public/index.html" }
+    { "src": "/api/generate-plan", "dest": "/api/generate-plan.js" },
+    { "src": "/api/generate-nutrition", "dest": "/api/generate-nutrition.js" },
+    { "src": "/app.js", "dest": "/public/app.js" },
+    { "src": "/(.*)", "dest": "/public/index.html" }
   ]
 }
