@@ -54,6 +54,7 @@ async function boot() {
   if (check.error && /network|fetch|cors|failed/i.test(String(check.error.message || ""))) {
     toast("Erreur réseau Supabase. Vérifiez URL Supabase, DNS et bloqueurs de requêtes.", "err");
   }
+
   SB.auth.onAuthStateChange((_, session) => {
     if (session?.user) {
       U = session.user;
@@ -64,7 +65,7 @@ async function boot() {
     }
   });
 
-  const { data: { session } } = await SB.auth.getSession();
+  const session = check?.data?.session || null;
   hideBoot();
   if (session?.user) {
     U = session.user;
