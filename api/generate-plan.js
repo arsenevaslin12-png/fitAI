@@ -113,9 +113,9 @@ function getWeekStartDate() {
 }
 
 async function loadProfile(supabase, userId) {
-  const byUser = await supabase.from("profiles").select("weight,kpis,equipment,last_workout_date").eq("user_id", userId).maybeSingle();
+  const byUser = await supabase.from("profiles").select("weight").eq("user_id", userId).maybeSingle();
   if (!byUser.error && byUser.data) return byUser.data;
-  const byId = await supabase.from("profiles").select("weight,kpis,equipment,last_workout_date").eq("id", userId).maybeSingle();
+  const byId = await supabase.from("profiles").select("weight").eq("id", userId).maybeSingle();
   return byId.data || null;
 }
 
