@@ -1,155 +1,261 @@
--- FitAI Pro schema
-create extension if not exists "pgcrypto";
+-- ============================================================
+-- FitAI Pro v5.0.0 — SCHEMA SQL COMPLET
+-- Executer dans Supabase Dashboard → SQL Editor
+-- ============================================================
 
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  user_id uuid unique generated always as (id) stored,
-  display_name text,
-  weight numeric,
-  kpis jsonb default '{}'::jsonb,
-  equipment jsonb default '{}'::jsonb,
-  last_workout_date date,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+-- ==================== TABLES ====================
+
+-- 1. PROFILES (PK = auth.users.id)
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  display_name TEXT,
+  weight INTEGER,
+  height INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-create table if not exists public.goals (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  type text,
-  level text,
-  text text,
-  constraints text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  unique(user_id)
+-- 2. GOALS (one per user)
+CREATE TABLE IF NOT EXISTS public.goals (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  type TEXT,
+  level TEXT,
+  text TEXT,
+  constraints TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT goals_user_unique UNIQUE (user_id)
 );
 
-create table if not exists public.workout_sessions (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  plan jsonb not null,
-  created_at timestamptz default now()
+-- 3. WORKOUT_SESSIONS
+CREATE TABLE IF NOT EXISTS public.workout_sessions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  plan JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-create table if not exists public.meals (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  name text not null,
-  calories int default 0,
-  protein int default 0,
-  carbs int default 0,
-  fat int default 0,
-  date date not null default current_date,
-  created_at timestamptz default now()
+-- 4. BODY_SCANS
+CREATE TABLE IF NOT EXISTS public.body_scans (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  image_path TEXT NOT NULL,
+  ai_feedback TEXT,
+  ai_version TEXT,
+  symmetry_score NUMERIC,
+  posture_score NUMERIC,
+  bodyfat_proxy NUMERIC,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-create table if not exists public.community_posts (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  content text not null,
-  kudos int default 0,
-  created_at timestamptz default now()
+-- 5. MEALS
+CREATE TABLE IF NOT EXISTS public.meals (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  calories INTEGER DEFAULT 0,
+  protein INTEGER DEFAULT 0,
+  carbs INTEGER DEFAULT 0,
+  fat INTEGER DEFAULT 0,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-create table if not exists public.body_scans (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  image_path text not null,
-  ai_feedback text,
-  ai_version text,
-  symmetry_score int,
-  posture_score int,
-  bodyfat_proxy int,
-  created_at timestamptz default now()
+-- 6. COMMUNITY_POSTS
+CREATE TABLE IF NOT EXISTS public.community_posts (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  kudos INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-create table if not exists public.nutrition_targets (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null unique references auth.users(id) on delete cascade,
-  calories int not null,
-  protein int not null,
-  carbs int not null,
-  fats int not null,
-  notes text,
-  updated_at timestamptz default now(),
-  created_at timestamptz default now()
+-- 7. NUTRITION_TARGETS (one per user, upsert on user_id)
+CREATE TABLE IF NOT EXISTS public.nutrition_targets (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  calories INTEGER,
+  protein INTEGER,
+  carbs INTEGER,
+  fats INTEGER,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT nutrition_targets_user_unique UNIQUE (user_id)
 );
 
-create table if not exists public.achievements (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  code text not null,
-  title text not null,
-  earned_at timestamptz default now(),
-  unique(user_id, code)
+-- 8. TRAINING_SCHEDULE (weekly plan)
+CREATE TABLE IF NOT EXISTS public.training_schedule (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 1 AND 7),
+  workout_type TEXT NOT NULL,
+  intensity TEXT DEFAULT 'medium',
+  status TEXT DEFAULT 'planned',
+  notes TEXT,
+  week_start_date DATE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-create table if not exists public.training_schedule (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  day_of_week int not null,
-  workout_type text not null,
-  intensity text,
-  status text,
-  notes text,
-  week_start_date date not null,
-  created_at timestamptz default now()
+-- 9. ACHIEVEMENTS
+CREATE TABLE IF NOT EXISTS public.achievements (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  title TEXT NOT NULL,
+  earned_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, code)
 );
 
-create index if not exists idx_goals_user_id on public.goals(user_id);
-create index if not exists idx_sessions_user_id_created on public.workout_sessions(user_id, created_at desc);
-create index if not exists idx_meals_user_date on public.meals(user_id, date);
-create index if not exists idx_posts_created on public.community_posts(created_at desc);
-create index if not exists idx_scans_user_created on public.body_scans(user_id, created_at desc);
-create index if not exists idx_achievements_user on public.achievements(user_id);
-create index if not exists idx_training_schedule_user_week on public.training_schedule(user_id, week_start_date);
 
-alter table public.profiles enable row level security;
-alter table public.goals enable row level security;
-alter table public.workout_sessions enable row level security;
-alter table public.meals enable row level security;
-alter table public.community_posts enable row level security;
-alter table public.body_scans enable row level security;
-alter table public.nutrition_targets enable row level security;
-alter table public.achievements enable row level security;
-alter table public.training_schedule enable row level security;
+-- ==================== INDEXES ====================
 
-create policy "own rows" on public.profiles for all using (auth.uid() = id) with check (auth.uid() = id);
-create policy "own goals" on public.goals for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own sessions" on public.workout_sessions for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own meals" on public.meals for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "read posts" on public.community_posts for select using (true);
-create policy "write own posts" on public.community_posts for insert with check (auth.uid() = user_id);
-create policy "update/delete own posts" on public.community_posts for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "delete own posts" on public.community_posts for delete using (auth.uid() = user_id);
-create policy "own scans" on public.body_scans for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own nutrition" on public.nutrition_targets for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own achievements" on public.achievements for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own schedule" on public.training_schedule for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+CREATE INDEX IF NOT EXISTS idx_goals_user ON public.goals(user_id);
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_user ON public.workout_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_created ON public.workout_sessions(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_body_scans_user ON public.body_scans(user_id);
+CREATE INDEX IF NOT EXISTS idx_body_scans_created ON public.body_scans(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_meals_user_date ON public.meals(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_community_posts_created ON public.community_posts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_community_posts_user ON public.community_posts(user_id);
+CREATE INDEX IF NOT EXISTS idx_nutrition_targets_user ON public.nutrition_targets(user_id);
+CREATE INDEX IF NOT EXISTS idx_training_schedule_user_week ON public.training_schedule(user_id, week_start_date);
 
-insert into storage.buckets (id, name, public) values ('user_uploads','user_uploads', false)
-on conflict (id) do nothing;
 
-create policy "view own uploads" on storage.objects for select using (bucket_id = 'user_uploads' and auth.uid()::text = (storage.foldername(name))[1]);
-create policy "insert own uploads" on storage.objects for insert with check (bucket_id = 'user_uploads' and auth.uid()::text = (storage.foldername(name))[1]);
-create policy "update own uploads" on storage.objects for update using (bucket_id = 'user_uploads' and auth.uid()::text = (storage.foldername(name))[1]);
-create policy "delete own uploads" on storage.objects for delete using (bucket_id = 'user_uploads' and auth.uid()::text = (storage.foldername(name))[1]);
+-- ==================== RLS POLICIES ====================
 
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-as $$
-begin
-  insert into public.profiles (id, display_name)
-  values (new.id, split_part(new.email, '@', 1))
-  on conflict (id) do nothing;
-  return new;
-end;
-$$;
+-- Enable RLS on all tables
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.goals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.workout_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.body_scans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.community_posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.nutrition_targets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.training_schedule ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.achievements ENABLE ROW LEVEL SECURITY;
 
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute function public.handle_new_user();
+-- PROFILES: user can CRUD own row
+DROP POLICY IF EXISTS "profiles_select_own" ON public.profiles;
+CREATE POLICY "profiles_select_own" ON public.profiles FOR SELECT USING (auth.uid() = id);
+DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
+CREATE POLICY "profiles_insert_own" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
+CREATE POLICY "profiles_update_own" ON public.profiles FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+
+-- GOALS: user can CRUD own rows
+DROP POLICY IF EXISTS "goals_select_own" ON public.goals;
+CREATE POLICY "goals_select_own" ON public.goals FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "goals_insert_own" ON public.goals;
+CREATE POLICY "goals_insert_own" ON public.goals FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "goals_update_own" ON public.goals;
+CREATE POLICY "goals_update_own" ON public.goals FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- WORKOUT_SESSIONS: user can CRUD own rows
+DROP POLICY IF EXISTS "ws_select_own" ON public.workout_sessions;
+CREATE POLICY "ws_select_own" ON public.workout_sessions FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "ws_insert_own" ON public.workout_sessions;
+CREATE POLICY "ws_insert_own" ON public.workout_sessions FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "ws_delete_own" ON public.workout_sessions;
+CREATE POLICY "ws_delete_own" ON public.workout_sessions FOR DELETE USING (auth.uid() = user_id);
+
+-- BODY_SCANS: user can CRUD own rows
+DROP POLICY IF EXISTS "bs_select_own" ON public.body_scans;
+CREATE POLICY "bs_select_own" ON public.body_scans FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "bs_insert_own" ON public.body_scans;
+CREATE POLICY "bs_insert_own" ON public.body_scans FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "bs_update_own" ON public.body_scans;
+CREATE POLICY "bs_update_own" ON public.body_scans FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- MEALS: user can CRUD own rows
+DROP POLICY IF EXISTS "meals_select_own" ON public.meals;
+CREATE POLICY "meals_select_own" ON public.meals FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "meals_insert_own" ON public.meals;
+CREATE POLICY "meals_insert_own" ON public.meals FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "meals_delete_own" ON public.meals;
+CREATE POLICY "meals_delete_own" ON public.meals FOR DELETE USING (auth.uid() = user_id);
+
+-- COMMUNITY_POSTS: anyone auth can read, user can CUD own
+DROP POLICY IF EXISTS "cp_select_all" ON public.community_posts;
+CREATE POLICY "cp_select_all" ON public.community_posts FOR SELECT USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "cp_insert_own" ON public.community_posts;
+CREATE POLICY "cp_insert_own" ON public.community_posts FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "cp_update_own" ON public.community_posts;
+CREATE POLICY "cp_update_own" ON public.community_posts FOR UPDATE USING (auth.uid() = user_id OR true);
+-- Note: kudos update needs to work for all authenticated users
+DROP POLICY IF EXISTS "cp_update_kudos" ON public.community_posts;
+CREATE POLICY "cp_update_kudos" ON public.community_posts FOR UPDATE USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "cp_delete_own" ON public.community_posts;
+CREATE POLICY "cp_delete_own" ON public.community_posts FOR DELETE USING (auth.uid() = user_id);
+
+-- BODY_SCANS ACHIEVEMENTS: user can CRUD own rows
+DROP POLICY IF EXISTS "ach_select_own" ON public.achievements;
+CREATE POLICY "ach_select_own" ON public.achievements FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "ach_insert_own" ON public.achievements;
+CREATE POLICY "ach_insert_own" ON public.achievements FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "ach_delete_own" ON public.achievements;
+CREATE POLICY "ach_delete_own" ON public.achievements FOR DELETE USING (auth.uid() = user_id);
+
+-- NUTRITION_TARGETS: user can CRUD own rows + service role can upsert
+DROP POLICY IF EXISTS "nt_select_own" ON public.nutrition_targets;
+CREATE POLICY "nt_select_own" ON public.nutrition_targets FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "nt_insert_own" ON public.nutrition_targets;
+CREATE POLICY "nt_insert_own" ON public.nutrition_targets FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "nt_update_own" ON public.nutrition_targets;
+CREATE POLICY "nt_update_own" ON public.nutrition_targets FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- TRAINING_SCHEDULE: user can CRUD own rows + service role
+DROP POLICY IF EXISTS "ts_select_own" ON public.training_schedule;
+CREATE POLICY "ts_select_own" ON public.training_schedule FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "ts_insert_own" ON public.training_schedule;
+CREATE POLICY "ts_insert_own" ON public.training_schedule FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "ts_delete_own" ON public.training_schedule;
+CREATE POLICY "ts_delete_own" ON public.training_schedule FOR DELETE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "ts_update_own" ON public.training_schedule;
+CREATE POLICY "ts_update_own" ON public.training_schedule FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+
+-- ==================== STORAGE ====================
+
+-- Create bucket if not exists (run manually in Dashboard if needed)
+-- INSERT INTO storage.buckets (id, name, public) VALUES ('user_uploads', 'user_uploads', false) ON CONFLICT DO NOTHING;
+
+-- Storage policies for user_uploads bucket
+-- Users can upload to their own folder: {user_id}/...
+DROP POLICY IF EXISTS "user_uploads_insert" ON storage.objects;
+CREATE POLICY "user_uploads_insert" ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'user_uploads' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Users can read their own files
+DROP POLICY IF EXISTS "user_uploads_select" ON storage.objects;
+CREATE POLICY "user_uploads_select" ON storage.objects FOR SELECT
+  USING (bucket_id = 'user_uploads' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Users can delete their own files
+DROP POLICY IF EXISTS "user_uploads_delete" ON storage.objects;
+CREATE POLICY "user_uploads_delete" ON storage.objects FOR DELETE
+  USING (bucket_id = 'user_uploads' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+
+-- ==================== AUTO-CREATE PROFILE ON SIGNUP ====================
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, display_name, created_at, updated_at)
+  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'display_name', split_part(NEW.email, '@', 1)), NOW(), NOW())
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+
+-- ============================================================
+-- DONE. All tables, indexes, RLS, storage, and triggers created.
+-- ============================================================

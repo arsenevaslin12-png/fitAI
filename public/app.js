@@ -536,7 +536,7 @@ async function saveProfile() {
   if (!display_name) return toast("Pseudo requis.", "err");
   const btn = document.getElementById("btn-save-profile");
   await withButton(btn, "Enregistrement…", async () => {
-    const { error } = await SB.from("profiles").upsert({ id: U.id, user_id: U.id, display_name, updated_at: new Date().toISOString() }, { onConflict: "id" });
+    const { error } = await SB.from("profiles").upsert({ id: U.id, display_name, updated_at: new Date().toISOString() }, { onConflict: "id" });
     if (error) throw error;
     toast("Profil mis à jour ✓", "ok");
     await loadProfile();
