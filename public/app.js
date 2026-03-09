@@ -556,7 +556,8 @@ async function loadStats() {
   if (dbSess) dbSess.textContent = sessions.count ?? "0";
   const totalSess = document.getElementById("db-total-sessions");
   if (totalSess) totalSess.textContent = sessions.count ?? "0";
-  document.getElementById("d-stats").innerHTML = `
+  const dStats = document.getElementById("d-stats");
+  if (dStats) dStats.innerHTML = `
     <div class="stat"><div class="stat-v">${sessions.count ?? 0}</div><div class="stat-l">Séances</div></div>
     <div class="stat"><div class="stat-v">${scans.count ?? 0}</div><div class="stat-l">Scans</div></div>
     <div class="stat"><div class="stat-v">${posts.count ?? 0}</div><div class="stat-l">Posts</div></div>`;
@@ -565,18 +566,24 @@ async function loadStats() {
 async function loadNutritionTargets() {
   const { data } = await SB.from("nutrition_targets").select("calories,protein,carbs,fats").eq("user_id", U.id).maybeSingle();
   const target = data || { calories: 2200, protein: 140, carbs: 260, fats: 70 };
-  document.getElementById("target-kcal").textContent = String(target.calories);
-  document.getElementById("target-prot").textContent = `${target.protein}g`;
-  document.getElementById("target-carb").textContent = `${target.carbs}g`;
-  document.getElementById("target-fat").textContent = `${target.fats}g`;
+  const tKcal = document.getElementById("target-kcal");
+  const tProt = document.getElementById("target-prot");
+  const tCarb = document.getElementById("target-carb");
+  const tFat  = document.getElementById("target-fat");
+  if (tKcal) tKcal.textContent = String(target.calories);
+  if (tProt) tProt.textContent = `${target.protein}g`;
+  if (tCarb) tCarb.textContent = `${target.carbs}g`;
+  if (tFat)  tFat.textContent  = `${target.fats}g`;
 }
 
 async function renderNutritionProgress(totals) {
   const { data } = await SB.from("nutrition_targets").select("calories").eq("user_id", U.id).maybeSingle();
   const targetKcal = data?.calories || 2200;
   const pct = Math.max(0, Math.min(100, Math.round((totals.kcal / targetKcal) * 100)));
-  document.getElementById("cal-progress-fill").style.width = `${pct}%`;
-  document.getElementById("cal-progress-text").textContent = `${totals.kcal} / ${targetKcal} kcal`;
+  const fill = document.getElementById("cal-progress-fill");
+  const text = document.getElementById("cal-progress-text");
+  if (fill) fill.style.width = `${pct}%`;
+  if (text) text.textContent = `${totals.kcal} / ${targetKcal} kcal`;
 }
 
 function showGlobalLoader(show, text = "Chargement…") {

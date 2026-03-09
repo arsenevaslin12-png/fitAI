@@ -391,6 +391,8 @@ textarea{resize:vertical;min-height:78px}
           <div class="db-stat"><div class="macro-val" id="db-energy">0</div><div class="macro-lbl">Énergie moyenne</div></div>
         </div>
 
+        <div class="stats-row" id="d-stats" style="display:flex;justify-content:space-around;margin:0 0 4px"></div>
+
         <div class="db-grid">
           <div style="display:flex;flex-direction:column;gap:14px">
             <div class="db-main-card">
@@ -542,6 +544,38 @@ textarea{resize:vertical;min-height:78px}
               <span class="macro-icon">🥑</span>
               <div class="macro-val" id="m-fat">0g</div>
               <div class="macro-lbl">Lipides</div>
+            </div>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-track">
+              <div class="progress-fill" id="cal-progress-fill"></div>
+            </div>
+            <div class="progress-text" id="cal-progress-text">0 / 2200 kcal</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Objectifs nutritionnels</div>
+          <div class="macro-grid">
+            <div class="macro-card">
+              <span class="macro-icon">🎯</span>
+              <div class="macro-val" id="target-kcal">—</div>
+              <div class="macro-lbl">Objectif Kcal</div>
+            </div>
+            <div class="macro-card">
+              <span class="macro-icon">💪</span>
+              <div class="macro-val" id="target-prot">—</div>
+              <div class="macro-lbl">Objectif Prot.</div>
+            </div>
+            <div class="macro-card">
+              <span class="macro-icon">🌾</span>
+              <div class="macro-val" id="target-carb">—</div>
+              <div class="macro-lbl">Objectif Gluc.</div>
+            </div>
+            <div class="macro-card">
+              <span class="macro-icon">🥑</span>
+              <div class="macro-val" id="target-fat">—</div>
+              <div class="macro-lbl">Objectif Lip.</div>
             </div>
           </div>
         </div>
