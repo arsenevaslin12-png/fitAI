@@ -1,102 +1,126 @@
-# FitAI Pro — Guide de déploiement v3.4.0
+# FitAI Pro v2.0
 
-## Structure finale du repo
+Application de coaching fitness alimentée par l'IA.
+
+## 🚀 Fonctionnalités
+
+### Coach IA Amélioré
+- Génération de programmes personnalisés selon objectif, niveau, équipement
+- Prise en compte des blessures et limitations
+- Alternatives pour chaque exercice
+- Structure détaillée: échauffement, corps principal, récupération
+
+### Body Scan Enrichi
+- Score physique global (0-100)
+- Analyse posture détaillée
+- Équilibre musculaire (points forts/faibles)
+- Recommandations personnalisées
+- Suivi de progression vs scans précédents
+
+### Communauté v2
+- Système de commentaires
+- Kudos sécurisés (anti-double)
+- Système de streaks automatique
+- Différents types de posts (texte, workout, transformation)
+
+### Nutrition
+- Tracking des macros quotidiens
+- Objectifs personnalisés
+- Progression visuelle
+
+## 📦 Stack technique
+
+- **Frontend**: Vanilla JS, HTML, CSS
+- **Backend**: Vercel Serverless Functions
+- **Database**: Supabase (PostgreSQL + Auth + Storage)
+- **AI**: Google Gemini 2.0 Flash
+
+## 🔧 Installation
+
+### 1. Cloner et déployer sur Vercel
+
+```bash
+git clone <repo>
+cd fitai-pro
+vercel deploy
+```
+
+### 2. Configurer Supabase
+
+1. Créer un projet sur [supabase.com](https://supabase.com)
+2. Exécuter `supabase/schema.sql` dans le SQL Editor
+3. Créer le bucket `user_uploads` dans Storage (privé)
+4. Configurer Authentication → URL Configuration:
+   - Site URL: `https://votre-app.vercel.app`
+   - Redirect URLs: `https://votre-app.vercel.app/**`
+
+### 3. Variables d'environnement Vercel
+
+Dans Vercel Dashboard → Settings → Environment Variables:
+
+| Variable | Description |
+|----------|-------------|
+| `SUPABASE_URL` | `https://xxxxx.supabase.co` |
+| `SUPABASE_ANON_KEY` | Clé publique (anon) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Clé service (pour API) |
+| `GEMINI_API_KEY` | Clé Google AI Studio |
+| `ALLOWED_ORIGIN` | (optionnel) Domaine autorisé |
+
+### 4. Redéployer
+
+```bash
+vercel --prod
+```
+
+## 📁 Structure
 
 ```
 fitai-pro/
 ├── api/
-│   ├── config.js       ← NOUVEAU — config Supabase publique (retourne TOUJOURS JSON)
-│   ├── workout.js      ← POST uniquement — génération IA
-│   └── bodyscan.js     ← POST uniquement — analyse photo
+│   ├── config.js      # Config endpoint
+│   ├── workout.js     # Coach IA
+│   └── bodyscan.js    # Body Scan IA
+├── lib/
+│   └── logger.js      # Structured logging
 ├── public/
-│   ├── index.html      ← SPA complète, 6 onglets fonctionnels
-│   └── app.js          ← logique complète
-├── vercel.json         ← routing explicite avec @vercel/node
-├── package.json        ← node 20.x (IMPORTANT, pas 24.x)
-└── supabase-schema.sql ← à coller dans Supabase SQL Editor
+│   ├── index.html     # SPA
+│   └── app.js         # Frontend logic
+├── supabase/
+│   └── schema.sql     # Database schema
+├── vercel.json        # Vercel config
+└── package.json
 ```
 
-## Checklist déploiement (dans l'ordre)
+## 🔒 Sécurité
 
-### 1. Git — vérifiez que tous les fichiers sont trackés
-```bash
-git status
-git add -A
-git commit -m "FitAI Pro v3.4.0 — fix routing + tous onglets"
-git push
-```
+- Row Level Security (RLS) sur toutes les tables
+- Validation des tokens côté API
+- Input sanitization
+- CORS restrictif en production
+- Headers de sécurité (X-Frame-Options, CSP, etc.)
+- Fonction RPC sécurisée pour kudos (anti-exploit)
 
-### 2. Vercel — Variables d'environnement
-Dans Vercel Dashboard → votre projet → Settings → Environment Variables
-Ajouter ces 4 variables (Production + Preview + Development) :
+## 🎯 Roadmap
 
-| Variable                    | Valeur                        |
-|-----------------------------|-------------------------------|
-| SUPABASE_URL                | https://xxxx.supabase.co      |
-| SUPABASE_ANON_KEY           | eyJhbGciO...                  |
-| SUPABASE_SERVICE_ROLE_KEY   | eyJhbGciO... (service role)   |
-| GEMINI_API_KEY              | AIza...                       |
+### Phase 1 ✅ (actuel)
+- [x] Coach IA amélioré
+- [x] Body Scan enrichi
+- [x] Système de commentaires
+- [x] Streaks automatiques
+- [x] Sécurité renforcée
 
-### 3. Supabase — Exécuter le SQL
-Dashboard → SQL Editor → coller supabase-schema.sql → Run
+### Phase 2 (à venir)
+- [ ] Posts avec images
+- [ ] Leaderboard streaks
+- [ ] Achievements/badges
+- [ ] Export PDF des programmes
 
-### 4. Supabase — Créer le bucket Storage
-Dashboard → Storage → New Bucket
-- Name: `user_uploads`
-- Public: NON (décoché)
+### Phase 3 (futur)
+- [ ] PWA + notifications
+- [ ] Mode offline
+- [ ] Multi-langue
+- [ ] Intégration wearables
 
-Puis Storage → Policies → ajouter 2 policies sur `user_uploads` :
-- INSERT : `(bucket_id = 'user_uploads') AND ((auth.uid())::text = (storage.foldername(name))[1])`
-- SELECT : `(bucket_id = 'user_uploads') AND ((auth.uid())::text = (storage.foldername(name))[1])`
+## 📄 Licence
 
-### 5. Vercel — Redéployer
-Settings → Deployments → Redeploy (ou pousser un nouveau commit)
-
----
-
-## Tests curl post-déploiement
-
-Remplacer `VOTRE-URL.vercel.app` par votre vraie URL.
-
-```bash
-# Test 1 — Config endpoint (doit retourner JSON {"ok":true,...})
-curl -s "https://VOTRE-URL.vercel.app/api/config" | python3 -m json.tool
-
-# Test 2 — Content-Type (doit afficher application/json)
-curl -sI "https://VOTRE-URL.vercel.app/api/config" | grep -i content-type
-
-# Test 3 — Workout POST (doit retourner un plan JSON)
-curl -s -X POST "https://VOTRE-URL.vercel.app/api/workout" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"HIIT 20min sans matériel"}' | python3 -m json.tool
-
-# Test 4 — OPTIONS preflight (doit retourner 204)
-curl -s -o /dev/null -w "%{http_code}" -X OPTIONS \
-  "https://VOTRE-URL.vercel.app/api/workout"
-```
-
-**Résultats attendus :**
-- Test 1 : `{"ok": true, "supabaseUrl": "https://...", "supabaseAnonKey": "eyJ..."}`
-- Test 2 : `content-type: application/json; charset=utf-8`
-- Test 3 : `{"ok": true, "data": {"title": "...", "blocks": [...]}}`
-- Test 4 : `204`
-
----
-
-## Diagnostic si /api/config retourne encore du HTML
-
-1. **`git status`** → vérifier que `api/config.js` est dans le repo
-2. **Vercel Dashboard → Functions** → vérifier que les 3 fonctions apparaissent
-3. **Vercel Dashboard → Deployments → votre déploiement → Build logs** → chercher des erreurs
-4. **`node -e "require('./api/config.js')"` en local** → vérifier pas d'erreur de syntaxe
-
-## Fonctionnalités par onglet
-
-| Onglet      | Fonctionnalités                                              |
-|-------------|--------------------------------------------------------------|
-| 🎯 Objectif  | Créer/modifier objectif (type, niveau, texte, contraintes)  |
-| 🤖 Coach     | Génération IA Gemini + sauvegarde + historique 8 séances    |
-| 🥗 Nutrition | Ajout repas, totaux macros jour, suppression                 |
-| 🌍 Communauté| Feed global, publication, kudos, suppression propres posts  |
-| 📸 Scan      | Upload photo → analyse Gemini Vision → scores + feedback    |
-| 👤 Profil    | Pseudo, stats (séances/scans/posts), déconnexion            |
+Propriétaire - Tous droits réservés

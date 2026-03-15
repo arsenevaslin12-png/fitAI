@@ -1,10 +1,19 @@
 {
   "name": "fitai-pro",
-  "version": "4.1.0",
+  "version": "2.0.0",
+  "description": "FitAI Pro - AI-powered fitness coaching application",
   "private": true,
-  "engines": { "node": "20.x" },
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Static build - no compilation needed'",
+    "lint": "echo 'No linter configured'"
+  },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
-    "@supabase/supabase-js": "^2.45.4"
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
