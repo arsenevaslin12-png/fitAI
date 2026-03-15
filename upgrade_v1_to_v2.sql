@@ -63,7 +63,54 @@ async function boot() {
     return bootError("URL Supabase invalide. Vérifiez la configuration Vercel.");
   }
 
-  // 4. Initialiser le client Supabase avec options complètes
+  // 3b. Health check — vérifier que Supabase est joignable AVANT de créer le client
+  bootMsg("Vérification de Supabase…");
+  try {
+    const hc = new AbortController();
+    const hcTimer = setTimeout(() => hc.abort(), 8000);
+    const healthRes = await fetch(cfg.supabaseUrl + "/auth/v1/health", {
+      signal: hc.signal,
+      headers: { "apikey": cfg.supabaseAnonKey }
+    });
+    clearTimeout(hcTimer);
+
+    if (!healthRes.ok) {
+      const st = healthRes.status;
+      if (st === 401 || st === 403) {
+        return bootError(
+          "Clé Supabase (SUPABASE_ANON_KEY) invalide ou ne correspond pas au projet.\n" +
+          "→ Supabase Dashboard → Settings → API → anon/public key\n" +
+          "→ Vercel Dashboard → Settings → Environment Variables → SUPABASE_ANON_KEY"
+        );
+      }
+      return bootError(
+        "Supabase a répondu avec une erreur (HTTP " + st + ").\n" +
+        "Vérifiez que votre projet Supabase est actif:\n" +
+        "→ https://supabase.com/dashboard/projects"
+      );
+    }
+  } catch (e) {
+    if (e.name === "AbortError") {
+      return bootError(
+        "Supabase ne répond pas (timeout 8s).\n\n" +
+        "Causes probables:\n" +
+        "• Projet Supabase pausé (free tier = pause après 7j d'inactivité)\n" +
+        "• URL incorrecte dans SUPABASE_URL\n\n" +
+        "→ https://supabase.com/dashboard/projects → Restore project\n" +
+        "→ Puis redéployez sur Vercel"
+      );
+    }
+    return bootError(
+      "Impossible de joindre Supabase.\n\n" +
+      "Causes probables:\n" +
+      "• Projet Supabase pausé (free tier = pause auto après inactivité)\n" +
+      "• URL incorrecte: " + cfg.supabaseUrl + "\n\n" +
+      "→ https://supabase.com/dashboard/projects → Restore project\n" +
+      "→ Vérifiez SUPABASE_URL dans Vercel"
+    );
+  }
+
+  // 4. Initialiser le client Supabase
   bootMsg("Connexion à Supabase…");
   try {
     SB = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
@@ -127,7 +174,12 @@ async function boot() {
     console.error("[Auth] Session check failed:", e);
     // Erreur réseau probable (CORS, offline, etc.)
     if (isCorsOrNetworkError(e)) {
-      return bootError("Erreur de connexion à Supabase. Vérifiez:\n• Votre connexion internet\n• La configuration CORS dans Supabase\n• Que le projet Supabase n'est pas pausé");
+      return bootError(
+        "Erreur de connexion à Supabase.\n\n" +
+        "• Vérifiez votre connexion internet\n" +
+        "• Le projet Supabase est peut-être pausé\n" +
+        "→ https://supabase.com/dashboard/projects"
+      );
     }
     await clearLocalSession();
     hideBoot();
@@ -156,7 +208,7 @@ async function clearLocalSession() {
       }
     });
     if (SB) {
-      await SB.auth.signOut({ scope: "local" });
+      try { await SB.auth.signOut({ scope: "local" }); } catch (_) {}
     }
   } catch (e) {
     console.error("[Auth] clearLocalSession error:", e);
@@ -176,7 +228,7 @@ function bootError(message) {
   if (msg) msg.style.display = "none";
   if (err) {
     err.style.display = "block";
-    err.textContent = message;
+    err.innerHTML = message.replace(/\n/g, "<br>");
   }
 }
 
@@ -293,7 +345,9 @@ async function doAuth() {
       let msg = e.message || "Erreur d'authentification";
       
       if (isCorsOrNetworkError(e)) {
-        msg = "Erreur réseau. Vérifiez votre connexion et la configuration Supabase.";
+        msg = "Impossible de joindre Supabase. Votre projet est peut-être pausé → supabase.com/dashboard";
+      } else if (msg.includes("Signups not allowed")) {
+        msg = "Inscriptions désactivées. Supabase Dashboard → Authentication → Settings → Enable Sign Up";
       } else if (msg.includes("Invalid login")) {
         msg = "Email ou mot de passe incorrect.";
       } else if (msg.includes("Email not confirmed")) {
