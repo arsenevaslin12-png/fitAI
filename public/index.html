@@ -546,6 +546,37 @@ textarea{resize:vertical;min-height:78px}
           </div>
         </div>
 
+        <!-- OBJECTIFS NUTRITIONNELS (IDs manquants ajoutés) -->
+        <div class="card">
+          <div class="card-title">Objectifs du jour</div>
+          <div class="progress-wrap">
+            <div class="progress-track"><div class="progress-fill" id="cal-progress-fill"></div></div>
+            <div class="progress-text" id="cal-progress-text">0 / 2200 kcal</div>
+          </div>
+          <div class="macro-grid" style="margin-top:12px">
+            <div class="macro-card">
+              <span class="macro-icon">🎯</span>
+              <div class="macro-val" id="target-kcal">2200</div>
+              <div class="macro-lbl">Objectif</div>
+            </div>
+            <div class="macro-card">
+              <span class="macro-icon">💪</span>
+              <div class="macro-val" id="target-prot">140g</div>
+              <div class="macro-lbl">Prot. cible</div>
+            </div>
+            <div class="macro-card">
+              <span class="macro-icon">🌾</span>
+              <div class="macro-val" id="target-carb">260g</div>
+              <div class="macro-lbl">Gluc. cible</div>
+            </div>
+            <div class="macro-card">
+              <span class="macro-icon">🥑</span>
+              <div class="macro-val" id="target-fat">70g</div>
+              <div class="macro-lbl">Lip. cible</div>
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-title">Ajouter un repas</div>
           <div style="display:flex;flex-direction:column;gap:12px">
@@ -643,7 +674,7 @@ textarea{resize:vertical;min-height:78px}
         </div>
 
         <div class="card">
-          <div class="stats-row">
+          <div class="stats-row" id="d-stats">
             <div class="stat"><div class="stat-v" id="st-sess">—</div><div class="stat-l">Séances</div></div>
             <div class="stat"><div class="stat-v" id="st-scans">—</div><div class="stat-l">Scans</div></div>
             <div class="stat"><div class="stat-v" id="st-posts">—</div><div class="stat-l">Posts</div></div>
