@@ -5,6 +5,8 @@ let U = null;
 let MODE = "login";
 let PLAN = null;
 let FILE = null;
+let COACH_HISTORY = [];
+const MAX_COACH_HISTORY = 20;
 let AUTH_ERROR_COUNT = 0;
 const MAX_AUTH_ERRORS = 3;
 const LIKED = new Set((() => {
@@ -390,7 +392,7 @@ function gotoTab(name) {
 
   if (name === "dashboard") loadDashboard();
   if (name === "goal") loadGoal();
-  if (name === "coach") loadHistory();
+  if (name === "coach") { loadCoachHistory(); loadHistory(); }
   if (name === "nutrition") loadMeals();
   if (name === "community") loadFeed();
   if (name === "bodyscan") loadScans();
@@ -488,49 +490,152 @@ async function saveGoal() {
 // COACH IA
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function generateWorkout() {
-  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
-  
-  const coachInput = document.getElementById("coach-input");
-  const prompt = coachInput ? coachInput.value.trim() : "";
-  const errorEl = document.getElementById("coach-err");
-  if (errorEl) errorEl.style.display = "none";
-  
-  if (!prompt) {
-    if (errorEl) {
-      errorEl.textContent = "Décrivez la séance souhaitée.";
-      errorEl.style.display = "block";
+// ── Coach Chat Memory ──
+function loadCoachHistory() {
+  try {
+    const stored = localStorage.getItem("fp_coach_history");
+    if (stored) COACH_HISTORY = JSON.parse(stored);
+  } catch { COACH_HISTORY = []; }
+  renderCoachChat();
+}
+
+function saveCoachHistory() {
+  try {
+    if (COACH_HISTORY.length > MAX_COACH_HISTORY) {
+      COACH_HISTORY = COACH_HISTORY.slice(-MAX_COACH_HISTORY);
     }
+    localStorage.setItem("fp_coach_history", JSON.stringify(COACH_HISTORY));
+  } catch {}
+}
+
+function renderCoachChat() {
+  const el = document.getElementById("chat-messages");
+  if (!el) return;
+
+  if (!COACH_HISTORY.length) {
+    const userName = U?.email?.split("@")[0] || "champion";
+    el.innerHTML = `
+      <div class="chat-msg chat-msg-ai">
+        <div class="chat-avatar">🤖</div>
+        <div class="chat-bubble">
+          <div>Salut ${escapeHtml(userName)} ! 👋</div>
+          <div style="margin-top:6px">Je suis ton <strong>Coach IA</strong> personnel FitAI Pro. J'analyse tes données en temps réel pour te donner les meilleurs conseils.</div>
+          <ul style="margin:8px 0 0 16px;list-style:disc;color:rgba(238,238,245,.8);font-size:.84rem">
+            <li>Prêt à démarrer ta semaine d'entraînement ?</li>
+            <li>Niveau détecté : en attente</li>
+          </ul>
+          <div style="margin-top:8px"><strong>Qu'est-ce qui te ferait plaisir aujourd'hui ?</strong></div>
+          <span class="chat-time">${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</span>
+        </div>
+      </div>`;
     return;
   }
 
+  el.innerHTML = COACH_HISTORY.map(msg => {
+    if (msg.role === "user") {
+      return `<div class="chat-msg chat-msg-user"><div class="chat-bubble">${escapeHtml(msg.content)}<span class="chat-time">${msg.time || ""}</span></div></div>`;
+    } else {
+      return `<div class="chat-msg chat-msg-ai"><div class="chat-avatar">🤖</div><div class="chat-bubble">${msg.content}<span class="chat-time">${msg.time || ""}</span></div></div>`;
+    }
+  }).join("");
+
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendCoachMsg(quickMsg) {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+
+  const coachInput = document.getElementById("coach-input");
+  const prompt = quickMsg || (coachInput ? coachInput.value.trim() : "");
+  const errorEl = document.getElementById("coach-err");
+  if (errorEl) errorEl.style.display = "none";
+
+  if (!prompt) return;
+  if (coachInput) coachInput.value = "";
+
+  const now = new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+  COACH_HISTORY.push({ role: "user", content: prompt, time: now });
+  saveCoachHistory();
+  renderCoachChat();
+
+  // Scroll chat to bottom
+  const chatEl = document.getElementById("chat-messages");
+  if (chatEl) setTimeout(() => chatEl.scrollTop = chatEl.scrollHeight, 50);
+
+  // Hide quick chips after first message
+  const quickEl = document.getElementById("chat-quick");
+  if (quickEl && COACH_HISTORY.length > 1) quickEl.style.display = "none";
+
   const btn = document.getElementById("btn-gen");
-  await withButton(btn, "Génération…", async () => {
+  if (btn) btn.disabled = true;
+
+  try {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
-    
+
     // Charger le contexte d'objectif
     let goalContext = null;
     try {
       const { data } = await SB.from("goals").select("type,level,constraints").eq("user_id", U.id).maybeSingle();
       if (data) goalContext = data;
     } catch (e) { console.warn("[Coach] Could not load goal:", e); }
-    
+
+    // Build conversation context from history (last 6 messages)
+    const recentHistory = COACH_HISTORY.slice(-7, -1).map(m => `${m.role === "user" ? "User" : "Coach"}: ${m.content}`).join("\n");
+    const contextPrompt = recentHistory ? `Conversation précédente:\n${recentHistory}\n\nNouvelle demande: ${prompt}` : prompt;
+
     const r = await fetch("/api/workout", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ prompt, goalContext })
+      body: JSON.stringify({ prompt: contextPrompt, goalContext })
     });
     const j = await safeResponseJson(r);
     if (!r.ok || !j.ok) throw new Error(j.error || `Erreur serveur (HTTP ${r.status})`);
+
     PLAN = j.data;
+
+    // Format AI response as chat message
+    let aiResponse = `<strong>${escapeHtml(PLAN.title || "Séance générée")}</strong>`;
+    if (PLAN.notes) aiResponse += `<div style="margin-top:6px;font-style:italic;opacity:.8">${escapeHtml(PLAN.notes)}</div>`;
+    if (PLAN.blocks?.length) {
+      aiResponse += '<div style="margin-top:8px">';
+      PLAN.blocks.forEach(b => {
+        aiResponse += `<div style="margin-top:6px"><strong>${escapeHtml(b.title)}</strong> <span style="opacity:.6">(${formatDuration(b.duration_sec)})</span></div>`;
+        if (b.items?.length) {
+          aiResponse += '<ul style="margin:4px 0 0 16px;list-style:disc;font-size:.82rem;color:rgba(238,238,245,.75)">';
+          b.items.forEach(it => { aiResponse += `<li>${escapeHtml(it)}</li>`; });
+          aiResponse += '</ul>';
+        }
+      });
+      aiResponse += '</div>';
+    }
+    aiResponse += '<div style="margin-top:10px;font-size:.82rem;opacity:.7">💾 Tu peux sauvegarder cette séance ci-dessous.</div>';
+
+    const aiTime = new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+    COACH_HISTORY.push({ role: "ai", content: aiResponse, time: aiTime });
+    saveCoachHistory();
+    renderCoachChat();
     renderPlan(PLAN);
-  }).catch((e) => {
+
+    if (chatEl) setTimeout(() => chatEl.scrollTop = chatEl.scrollHeight, 50);
+
+  } catch (e) {
+    const errTime = new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+    COACH_HISTORY.push({ role: "ai", content: `⚠️ <strong>Erreur:</strong> ${escapeHtml(e.message)}`, time: errTime });
+    saveCoachHistory();
+    renderCoachChat();
     if (errorEl) {
       errorEl.textContent = `Erreur: ${e.message}`;
       errorEl.style.display = "block";
     }
-  });
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Keep original generateWorkout as alias
+async function generateWorkout() {
+  return sendCoachMsg();
 }
 
 function renderPlan(plan) {
@@ -1197,6 +1302,7 @@ boot();
 // Exports globaux pour les événements HTML onclick
 window.authTab = authMode;
 window.gotoTab = gotoTab;
+window.sendCoachMsg = sendCoachMsg;
 window.doAuth = doAuth;
 window.doLogout = doLogout;
 window.goalEdit = goalEdit;

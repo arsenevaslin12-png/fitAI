@@ -7,14 +7,15 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#f5f5f7;
-  --surf:#ffffff;
-  --surf2:#f0f0f2;
-  --surf3:#e8e8ed;
-  --border:#e5e5ea;
+  --bg:#0c0c1d;
+  --surf:#151529;
+  --surf2:#1c1c35;
+  --surf3:#252545;
+  --border:#2a2a4a;
   --accent:#ff6b6b;
   --accent2:#ff8a80;
-  --grad:linear-gradient(135deg,#38b2ff,#00d4aa);
+  --grad:linear-gradient(135deg,#7c5cfc,#38b2ff);
+  --grad-accent:linear-gradient(135deg,#ff6b6b,#ff8a80);
   --green:#22c55e;
   --red:#ef4444;
   --orange:#f97316;
@@ -22,13 +23,13 @@
   --blue:#3b82f6;
   --purple:#8b5cf6;
   --teal:#06b6d4;
-  --text:#1a1a2e;
-  --muted:#8e8e93;
+  --text:#eeeef5;
+  --muted:#7a7a95;
   --radius:18px;
-  --glass:rgba(0,0,0,.02);
-  --glass-border:rgba(0,0,0,.06);
-  --shadow:0 2px 12px rgba(0,0,0,.06);
-  --shadow-lg:0 8px 30px rgba(0,0,0,.08);
+  --glass:rgba(255,255,255,.03);
+  --glass-border:rgba(255,255,255,.06);
+  --shadow:0 2px 12px rgba(0,0,0,.3);
+  --shadow-lg:0 8px 30px rgba(0,0,0,.4);
 }
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
 
@@ -37,8 +38,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 #boot.hidden{opacity:0;pointer-events:none}
 .boot-logo{font-size:2.8rem;font-weight:900;color:var(--accent)}
 .boot-msg{font-size:.85rem;color:var(--muted)}
-.boot-err{color:var(--red);font-size:.82rem;max-width:380px;text-align:center;line-height:1.5;padding:14px 18px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);border-radius:16px;display:none}
-.spinner{width:28px;height:28px;border:3px solid rgba(255,107,107,.15);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+.boot-err{color:var(--red);font-size:.82rem;max-width:380px;text-align:center;line-height:1.5;padding:14px 18px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:16px;display:none}
+.spinner{width:28px;height:28px;border:3px solid rgba(124,92,252,.15);border-top-color:var(--purple);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── AUTH ── */
@@ -47,7 +48,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .auth-card{background:var(--surf);border:1px solid var(--border);border-radius:24px;padding:36px;width:100%;max-width:400px;display:flex;flex-direction:column;gap:18px;box-shadow:var(--shadow-lg)}
 .auth-tabs{display:flex;background:var(--surf2);border-radius:14px;padding:4px;gap:4px}
 .atab{flex:1;padding:10px;background:none;border:none;color:var(--muted);cursor:pointer;border-radius:12px;font-weight:700;font-size:.88rem;transition:all .25s;font-family:inherit}
-.atab.on{background:var(--surf);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.atab.on{background:var(--surf3);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.3)}
 .auth-msg{font-size:.82rem;text-align:center;min-height:18px;line-height:1.4}
 .auth-ok{color:var(--green)}.auth-err{color:var(--red)}
 
@@ -57,61 +58,65 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 
 /* ── SIDEBAR ── */
 .sidebar{
-  width:260px;flex-shrink:0;
+  width:240px;flex-shrink:0;
   background:var(--surf);border-right:1px solid var(--border);
   display:flex;flex-direction:column;
-  padding:20px 14px;gap:6px;
+  padding:20px 12px;gap:4px;
   overflow-y:auto;
 }
-.sidebar-brand{font-size:1.5rem;font-weight:900;color:var(--accent);padding:4px 8px 0;margin-bottom:2px;letter-spacing:-.02em}
+.sidebar-brand{display:flex;align-items:center;gap:10px;padding:4px 8px 16px}
+.sidebar-brand-icon{width:38px;height:38px;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}
+.sidebar-brand-text{display:flex;flex-direction:column}
+.sidebar-brand-name{font-size:1.2rem;font-weight:900;color:var(--accent);letter-spacing:-.02em}
+.sidebar-brand-sub{font-size:.65rem;color:var(--muted);font-weight:500}
 .sidebar-user{
   display:flex;align-items:center;gap:10px;
-  padding:10px 10px;border-radius:16px;
-  background:var(--surf2);border:1px solid var(--border);margin-bottom:6px;
+  padding:10px 10px;border-radius:14px;
+  background:var(--surf2);border:1px solid var(--border);margin-bottom:8px;
 }
 .sidebar-avatar{
-  width:34px;height:34px;border-radius:50%;
-  background:linear-gradient(135deg,var(--accent),#ff8a80);
+  width:32px;height:32px;border-radius:50%;
+  background:var(--grad);
   display:flex;align-items:center;justify-content:center;
-  font-size:.9rem;font-weight:900;color:#fff;flex-shrink:0;
+  font-size:.8rem;font-weight:900;color:#fff;flex-shrink:0;
 }
 .sidebar-user-info{flex:1;min-width:0}
-.sidebar-user-name{font-size:.78rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sidebar-user-role{font-size:.68rem;color:var(--muted)}
+.sidebar-user-name{font-size:.76rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-user-role{font-size:.65rem;color:var(--muted)}
 #btn-out{
   background:none;border:none;color:var(--muted);
-  padding:5px;cursor:pointer;font-size:1rem;
-  border-radius:10px;transition:all .2s;flex-shrink:0;
+  padding:5px;cursor:pointer;font-size:.9rem;
+  border-radius:8px;transition:all .2s;flex-shrink:0;
 }
-#btn-out:hover{color:var(--red);background:rgba(239,68,68,.08)}
+#btn-out:hover{color:var(--red);background:rgba(239,68,68,.1)}
 
 /* ── SIDEBAR NAV ── */
 .bnav{display:flex;flex-direction:column;gap:2px;flex:1}
 .bnav-btn{
   display:flex;align-items:center;gap:12px;
-  background:none;border:none;color:#555;
+  background:none;border:none;color:var(--muted);
   cursor:pointer;padding:10px 14px;
   font-size:.86rem;font-weight:600;
-  border-radius:14px;transition:all .2s;
+  border-radius:12px;transition:all .2s;
   font-family:inherit;text-align:left;
   width:100%;
 }
-.bnav-btn .ic{font-size:1.15rem;line-height:1;flex-shrink:0}
+.bnav-btn .ic{font-size:1.1rem;line-height:1;flex-shrink:0}
 .bnav-btn .nav-label{flex:1}
 .nav-dot{
-  width:5px;height:5px;border-radius:50%;
-  background:var(--accent);opacity:0;transition:opacity .2s;flex-shrink:0;
+  width:6px;height:6px;border-radius:50%;
+  background:#fff;opacity:0;transition:opacity .2s;flex-shrink:0;
 }
 .bnav-btn:hover:not(.on){background:var(--surf2);color:var(--text)}
 .bnav-btn.on{
-  background:rgba(255,107,107,.08);color:var(--accent);
-  font-weight:700;
+  background:var(--grad);color:#fff;
+  box-shadow:0 4px 20px rgba(124,92,252,.35);
 }
 .bnav-btn.on .nav-dot{opacity:1}
 
 /* ── MAIN CONTENT ── */
 .app-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
-.scroll{flex:1;overflow-y:auto;padding:28px 32px;max-width:840px;width:100%;margin:0 auto}
+.scroll{flex:1;overflow-y:auto;padding:28px 32px;max-width:900px;width:100%;margin:0 auto}
 
 /* ── PAGE HEADER ── */
 .page-header{margin-bottom:24px}
@@ -129,26 +134,26 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .sep{height:1px;background:var(--border);margin:12px 0}
 
 input,select,textarea{
-  width:100%;background:var(--surf);
+  width:100%;background:var(--surf2);
   border:1.5px solid var(--border);border-radius:14px;
   color:var(--text);padding:11px 16px;
   font-size:.88rem;outline:none;font-family:inherit;
   transition:border-color .25s;appearance:none;
 }
-input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,107,107,.1)}
+input:focus,select:focus,textarea:focus{border-color:var(--purple);box-shadow:0 0 0 3px rgba(124,92,252,.15)}
 textarea{resize:vertical;min-height:78px}
-select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238e8e93' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%237a7a95' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
 .lbl{font-size:.76rem;font-weight:700;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
 .field{display:flex;flex-direction:column}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:12px 22px;border:none;border-radius:14px;font-weight:800;cursor:pointer;font-size:.88rem;transition:all .25s;font-family:inherit;white-space:nowrap}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-.btn-p{background:linear-gradient(135deg,var(--accent),#ff8a80);color:#fff;box-shadow:0 4px 20px rgba(255,107,107,.3)}
-.btn-p:hover:not(:disabled){opacity:.9;transform:translateY(-1px);box-shadow:0 8px 30px rgba(255,107,107,.4)}
+.btn-p{background:var(--grad);color:#fff;box-shadow:0 4px 20px rgba(124,92,252,.35)}
+.btn-p:hover:not(:disabled){opacity:.9;transform:translateY(-1px);box-shadow:0 8px 30px rgba(124,92,252,.45)}
 .btn-g{background:var(--surf2);color:var(--text);border:1.5px solid var(--border)}
-.btn-g:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
-.btn-d{background:rgba(239,68,68,.06);color:var(--red);border:1px solid rgba(239,68,68,.15)}
+.btn-g:hover:not(:disabled){border-color:var(--purple);color:var(--purple)}
+.btn-d{background:rgba(239,68,68,.08);color:var(--red);border:1px solid rgba(239,68,68,.2)}
 .btn-sm{padding:7px 14px;font-size:.78rem;border-radius:10px}
 .btn-full{width:100%}
 
@@ -156,20 +161,54 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .empty-ic{font-size:2.2rem;display:block;margin-bottom:10px}
 
 .badge{display:inline-flex;align-items:center;padding:4px 12px;border-radius:20px;font-size:.72rem;font-weight:800}
-.bg-green{background:rgba(34,197,94,.1);color:var(--green)}
-.bg-purple{background:rgba(139,92,246,.1);color:var(--purple)}
-.bg-orange{background:rgba(249,115,22,.1);color:var(--orange)}
-.bg-red{background:rgba(239,68,68,.1);color:var(--red)}
+.bg-green{background:rgba(34,197,94,.12);color:var(--green)}
+.bg-purple{background:rgba(139,92,246,.12);color:var(--purple)}
+.bg-orange{background:rgba(249,115,22,.12);color:var(--orange)}
+.bg-red{background:rgba(239,68,68,.12);color:var(--red)}
 
 /* ── TOAST ── */
-#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--surf);border:1px solid var(--border);color:var(--text);padding:12px 24px;border-radius:28px;font-size:.84rem;font-weight:700;opacity:0;transition:all .3s;z-index:9999;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis;box-shadow:var(--shadow-lg)}
+#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--surf);border:1px solid var(--border);color:var(--text);padding:12px 24px;border-radius:28px;font-size:.84rem;font-weight:700;opacity:0;transition:all .3s;z-index:9999;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis;box-shadow:var(--shadow-lg);backdrop-filter:blur(20px)}
 #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.ok{border-color:var(--green);color:var(--green)}
 #toast.err{border-color:var(--red);color:var(--red)}
 
 /* ── GOAL ── */
 .goal-saved-row{display:flex;gap:8px;align-items:baseline;font-size:.86rem}
-.goal-saved-row strong{color:var(--accent);min-width:90px;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+.goal-saved-row strong{color:var(--purple);min-width:90px;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+
+/* ── COACH CHAT ── */
+.coach-header{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+.coach-header-icon{width:44px;height:44px;border-radius:14px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
+.coach-header-text{flex:1}
+.coach-header-title{font-size:1.3rem;font-weight:900}
+.coach-header-sub{font-size:.8rem;color:var(--muted)}
+.coach-status{padding:6px 14px;border:1px solid rgba(34,197,94,.3);background:rgba(34,197,94,.08);border-radius:999px;font-size:.75rem;font-weight:700;color:var(--green);white-space:nowrap}
+.coach-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+.coach-stat{background:var(--surf);border:1px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center}
+.coach-stat-icon{font-size:1rem;display:block;margin-bottom:4px}
+.coach-stat-val{font-size:1.1rem;font-weight:900}
+.coach-stat-lbl{font-size:.62rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
+.coach-stat:nth-child(1) .coach-stat-val{color:var(--orange)}
+.coach-stat:nth-child(2) .coach-stat-val{color:var(--green)}
+.coach-stat:nth-child(3) .coach-stat-val{color:var(--orange)}
+.coach-stat:nth-child(4) .coach-stat-val{color:var(--teal)}
+.chat-messages{display:flex;flex-direction:column;gap:12px;margin-bottom:16px;min-height:60px}
+.chat-msg{display:flex;gap:10px;align-items:flex-start}
+.chat-msg-ai .chat-avatar{width:32px;height:32px;border-radius:10px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0}
+.chat-bubble{background:var(--surf2);border:1px solid var(--border);border-radius:16px;padding:14px 18px;font-size:.88rem;line-height:1.55;max-width:85%;color:rgba(238,238,245,.9)}
+.chat-bubble strong{color:var(--text)}
+.chat-bubble .chat-time{display:block;font-size:.68rem;color:var(--muted);margin-top:6px;text-align:right}
+.chat-msg-user{flex-direction:row-reverse}
+.chat-msg-user .chat-bubble{background:var(--grad);border:none;color:#fff}
+.chat-msg-user .chat-bubble .chat-time{color:rgba(255,255,255,.6)}
+.chat-quick{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.chat-chip{padding:8px 14px;background:var(--surf);border:1px solid var(--border);border-radius:24px;font-size:.78rem;font-weight:600;color:var(--text);cursor:pointer;transition:all .2s;font-family:inherit}
+.chat-chip:hover{border-color:var(--purple);color:var(--purple)}
+.chat-input-row{display:flex;gap:10px;align-items:center}
+.chat-input-row input{flex:1;border-radius:24px;padding:12px 20px}
+.chat-send{width:42px;height:42px;border-radius:50%;background:var(--grad);border:none;color:#fff;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
+.chat-send:hover{opacity:.9;transform:scale(1.05)}
+.chat-send:disabled{opacity:.3;cursor:not-allowed}
 
 /* ── COACH / PLAN ── */
 .plan-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
@@ -178,11 +217,11 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .block-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .block-name{font-weight:800;font-size:.9rem}
 .block-meta{display:flex;gap:6px;align-items:center}
-.rpe{font-size:.7rem;padding:3px 10px;background:rgba(255,107,107,.08);color:var(--accent);border-radius:12px;font-weight:700}
+.rpe{font-size:.7rem;padding:3px 10px;background:rgba(124,92,252,.12);color:var(--purple);border-radius:12px;font-weight:700}
 .bdur{font-size:.74rem;color:var(--muted)}
 .block-items{list-style:none;display:flex;flex-direction:column;gap:4px}
-.block-items li{font-size:.84rem;color:rgba(26,26,46,.75)}
-.block-items li::before{content:"\2192 ";color:var(--accent)}
+.block-items li{font-size:.84rem;color:rgba(238,238,245,.75)}
+.block-items li::before{content:"\2192 ";color:var(--purple)}
 .plan-notes-text{font-size:.82rem;color:var(--muted);font-style:italic}
 .sessions-list{display:flex;flex-direction:column;gap:0}
 .sess-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
@@ -205,67 +244,73 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .meal-kcal{font-weight:800;color:var(--orange);font-size:.9rem;white-space:nowrap}
 
 /* ── COMMUNITY ── */
-.post{background:var(--surf);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border);box-shadow:var(--shadow)}
+.post{background:var(--surf2);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)}
 .post-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.post-author{font-weight:800;font-size:.85rem;color:var(--accent)}
+.post-author{font-weight:800;font-size:.85rem;color:var(--purple)}
 .post-date{font-size:.72rem;color:var(--muted)}
-.post-body{font-size:.86rem;line-height:1.55;color:rgba(26,26,46,.8)}
+.post-body{font-size:.86rem;line-height:1.55;color:rgba(238,238,245,.85)}
 .post-footer{display:flex;align-items:center;gap:10px}
 .kudos-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:24px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .25s;font-family:inherit}
 .kudos-btn:hover{border-color:var(--orange);color:var(--orange)}
-.kudos-btn.on{border-color:var(--orange);color:var(--orange);background:rgba(249,115,22,.06)}
+.kudos-btn.on{border-color:var(--orange);color:var(--orange);background:rgba(249,115,22,.08)}
 
 /* ── BODYSCAN ── */
-.drop-zone{border:2px dashed var(--border);border-radius:18px;padding:40px 20px;text-align:center;cursor:pointer;transition:all .25s;user-select:none;background:var(--surf2)}
-.drop-zone:hover,.drop-zone.over{border-color:var(--accent);background:rgba(255,107,107,.04)}
+.drop-zone{border:2px dashed var(--border);border-radius:18px;padding:40px 20px;text-align:center;cursor:pointer;transition:all .25s;user-select:none;background:var(--glass)}
+.drop-zone:hover,.drop-zone.over{border-color:var(--purple);background:rgba(124,92,252,.06)}
 .drop-ic{font-size:2.5rem;margin-bottom:10px}
 .drop-text{color:var(--muted);font-size:.84rem}
 .scan-img-preview{width:100%;max-height:240px;object-fit:cover;border-radius:16px;display:block}
-.scan-card{background:var(--surf);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)}
+.scan-card{background:var(--surf2);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)}
 .scores-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.score-chip{background:var(--surf2);border-radius:14px;padding:14px;text-align:center;border:1px solid var(--border)}
-.score-v{font-size:1.25rem;font-weight:900;color:var(--accent)}
+.score-chip{background:var(--surf);border-radius:14px;padding:14px;text-align:center;border:1px solid var(--border)}
+.score-v{font-size:1.25rem;font-weight:900;color:var(--purple)}
 .score-l{font-size:.65rem;color:var(--muted);margin-top:2px;font-weight:700;text-transform:uppercase}
-.scan-feedback{font-size:.82rem;line-height:1.6;color:rgba(26,26,46,.75)}
+.scan-feedback{font-size:.82rem;line-height:1.6;color:rgba(238,238,245,.8)}
 
 /* ── DASHBOARD V2 ── */
 .db-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
 .db-greet small{display:block;font-size:1.7rem;font-weight:800;color:var(--text);line-height:1.1}
-.db-chip{padding:10px 18px;border:1px solid rgba(255,107,107,.25);background:rgba(255,107,107,.06);border-radius:999px;font-weight:800;color:var(--accent);font-size:.95rem}
+.db-chip{padding:10px 18px;border:1px solid rgba(124,92,252,.3);background:rgba(124,92,252,.08);border-radius:999px;font-weight:800;color:var(--purple);font-size:.95rem}
 .db-goal{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--border);background:var(--surf);border-radius:20px;padding:18px 16px;box-shadow:var(--shadow)}
 .db-goal-main{display:flex;align-items:center;gap:14px}
 .db-goal-ic{width:44px;height:44px;border-radius:14px;background:var(--surf2);display:flex;align-items:center;justify-content:center;font-size:1.2rem}
 .db-grid{display:grid;grid-template-columns:2fr 1fr;gap:18px}
 .db-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.db-stat{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:16px;box-shadow:var(--shadow)}
-.db-stat .macro-val{font-size:2rem;color:var(--text)}
+.db-stat{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:16px}
+.db-stat-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;margin-bottom:10px}
+.db-stat-icon.ic-orange{background:rgba(249,115,22,.12);color:var(--orange)}
+.db-stat-icon.ic-green{background:rgba(34,197,94,.12);color:var(--green)}
+.db-stat-icon.ic-teal{background:rgba(6,182,212,.12);color:var(--teal)}
+.db-stat-icon.ic-purple{background:rgba(139,92,246,.12);color:var(--purple)}
+.db-stat .macro-val{font-size:1.8rem;color:var(--text)}
 .db-main-card{background:var(--surf);border:1px solid var(--border);border-radius:22px;overflow:hidden;box-shadow:var(--shadow)}
-.db-main-head{background:var(--grad);padding:20px 24px;color:#fff;font-weight:800;font-size:1.15rem}
+.db-main-head{background:var(--grad);padding:20px 24px;color:#fff;font-weight:800;font-size:1.15rem;min-height:100px;display:flex;align-items:flex-end}
 .db-main-body{padding:18px}
 .db-actions{display:flex;flex-direction:column;gap:10px}
-.db-action{display:flex;align-items:center;justify-content:space-between;background:var(--surf);border:1px solid var(--border);border-radius:14px;padding:13px 16px;font-weight:700;transition:all .2s;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.04)}
-.db-action:hover{background:var(--surf2);border-color:var(--accent)}
+.db-action{display:flex;align-items:center;justify-content:space-between;background:var(--surf2);border:1px solid var(--border);border-radius:14px;padding:13px 16px;font-weight:700;transition:all .2s;cursor:pointer}
+.db-action:hover{background:var(--surf3);border-color:var(--purple)}
 .db-week{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:10px}
+.db-week-label{text-align:center;font-size:.68rem;color:var(--muted);font-weight:700;margin-bottom:4px}
 .db-day{background:var(--surf2);border-radius:12px;height:74px;border:1px solid var(--border)}
 @media(max-width:1000px){.db-grid{grid-template-columns:1fr}.db-stats{grid-template-columns:repeat(2,1fr)}}
 
 /* ── PROFILE ── */
-.avatar{width:68px;height:68px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#ff8a80);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900;color:#fff;flex-shrink:0;box-shadow:0 4px 20px rgba(255,107,107,.25)}
+.avatar{width:68px;height:68px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900;color:#fff;flex-shrink:0;box-shadow:0 4px 20px rgba(124,92,252,.3)}
 .profile-head{display:flex;align-items:center;gap:18px}
 .profile-name{font-size:1.1rem;font-weight:800}
 .profile-email{font-size:.78rem;color:var(--muted);margin-top:2px}
 .stats-row{display:flex;justify-content:space-around}
 .stat{text-align:center}
-.stat-v{font-size:1.6rem;font-weight:900;color:var(--accent)}
+.stat-v{font-size:1.6rem;font-weight:900;color:var(--purple)}
 .stat-l{font-size:.7rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
 
 /* ── ERR MSG ── */
-.err-box{color:var(--red);font-size:.8rem;padding:10px 14px;background:rgba(239,68,68,.04);border:1px solid rgba(239,68,68,.12);border-radius:12px;display:none}
+.err-box{color:var(--red);font-size:.8rem;padding:10px 14px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);border-radius:12px;display:none}
 
-.global-loader{position:fixed;inset:0;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;z-index:9998;flex-direction:column;gap:10px}
+.global-loader{position:fixed;inset:0;background:rgba(12,12,29,.85);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;z-index:9998;flex-direction:column;gap:10px}
 .progress-wrap{margin-top:12px;background:var(--surf2);border:1px solid var(--border);border-radius:14px;padding:12px}
 .progress-track{height:8px;background:var(--surf3);border-radius:999px;overflow:hidden}
-.progress-fill{height:100%;width:0;background:linear-gradient(135deg,var(--accent),#ff8a80);transition:width .3s;border-radius:999px}
+.progress-fill{height:100%;width:0;background:var(--grad);transition:width .3s;border-radius:999px}
 .progress-text{margin-top:6px;font-size:.78rem;color:var(--muted);font-weight:700;text-align:right}
 
 /* ── SCROLLBAR ── */
@@ -286,7 +331,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     overflow-x:auto;overflow-y:visible;
     gap:0;height:64px;flex-shrink:0;
     backdrop-filter:blur(20px);
-    background:rgba(255,255,255,.92);
+    background:rgba(21,21,41,.92);
   }
   .sidebar-brand,.sidebar-user{display:none}
   .bnav{flex-direction:row;gap:0;width:100%;height:100%;align-items:stretch}
@@ -299,10 +344,11 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   .bnav-btn .nav-label{flex:none}
   .bnav-btn .ic{font-size:1.2rem}
   .nav-dot{display:none}
-  .bnav-btn.on{background:none;color:var(--accent);box-shadow:none}
+  .bnav-btn.on{background:none;color:var(--purple);box-shadow:none}
   .app-main{padding-bottom:64px}
   .scroll{padding:20px 16px 24px}
   #btn-out{display:none}
+  .coach-stats{grid-template-columns:repeat(2,1fr)}
 }
 </style>
 </head>
@@ -342,7 +388,13 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
   <!-- SIDEBAR -->
   <aside class="sidebar">
-    <div class="sidebar-brand">FitAI Pro<div style="font-size:.7rem;font-weight:500;color:var(--muted);margin-top:2px;-webkit-text-fill-color:var(--muted)">Coach IA personnel</div></div>
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-icon">⚡</div>
+      <div class="sidebar-brand-text">
+        <div class="sidebar-brand-name">FitAI Pro</div>
+        <div class="sidebar-brand-sub">Coach IA personnel</div>
+      </div>
+    </div>
     <div class="sidebar-user">
       <div class="sidebar-avatar">💪</div>
       <div class="sidebar-user-info">
@@ -353,25 +405,25 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     </div>
     <nav class="bnav">
       <button class="bnav-btn" id="n-dashboard" onclick="gotoTab('dashboard')">
-        <span class="ic">📊</span><span class="nav-label">Dashboard</span><span class="nav-dot"></span>
+        <span class="ic">🏠</span><span class="nav-label">Dashboard</span><span class="nav-dot"></span>
       </button>
       <button class="bnav-btn" id="n-goal" onclick="gotoTab('goal')">
-        <span class="ic">🎯</span><span class="nav-label">Objectif</span><span class="nav-dot"></span>
+        <span class="ic">⏱️</span><span class="nav-label">Express 15min</span><span class="nav-dot"></span>
       </button>
       <button class="bnav-btn" id="n-coach" onclick="gotoTab('coach')">
-        <span class="ic">🤖</span><span class="nav-label">Coach IA</span><span class="nav-dot"></span>
-      </button>
-      <button class="bnav-btn" id="n-nutrition" onclick="gotoTab('nutrition')">
-        <span class="ic">🥗</span><span class="nav-label">Nutrition</span><span class="nav-dot"></span>
-      </button>
-      <button class="bnav-btn" id="n-community" onclick="gotoTab('community')">
-        <span class="ic">🌍</span><span class="nav-label">Communauté</span><span class="nav-dot"></span>
+        <span class="ic">💬</span><span class="nav-label">Coach IA</span><span class="nav-dot"></span>
       </button>
       <button class="bnav-btn" id="n-bodyscan" onclick="gotoTab('bodyscan')">
-        <span class="ic">📸</span><span class="nav-label">Body Scan</span><span class="nav-dot"></span>
+        <span class="ic">⚡</span><span class="nav-label">Scan IA</span><span class="nav-dot"></span>
+      </button>
+      <button class="bnav-btn" id="n-community" onclick="gotoTab('community')">
+        <span class="ic">🏋️</span><span class="nav-label">Entraînements</span><span class="nav-dot"></span>
+      </button>
+      <button class="bnav-btn" id="n-nutrition" onclick="gotoTab('nutrition')">
+        <span class="ic">🍽️</span><span class="nav-label">Nutrition</span><span class="nav-dot"></span>
       </button>
       <button class="bnav-btn" id="n-profile" onclick="gotoTab('profile')">
-        <span class="ic">👤</span><span class="nav-label">Profil</span><span class="nav-dot"></span>
+        <span class="ic">📈</span><span class="nav-label">Progrès</span><span class="nav-dot"></span>
       </button>
     </nav>
   </aside>
@@ -384,43 +436,79 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       <div class="tab" id="t-dashboard">
         <div class="db-top">
           <div class="db-greet">
-            <div class="page-sub" style="margin:0">Bon après-midi 👋</div>
+            <div class="page-sub" style="margin:0">Bonjour 👋</div>
             <small>Champion</small>
           </div>
-          <div class="db-chip">✨ dimanche 8 mars</div>
+          <div class="db-chip">📅 lundi 16 mars</div>
         </div>
 
         <div class="db-goal">
           <div class="db-goal-main">
             <div class="db-goal-ic">🎯</div>
             <div>
-              <div style="font-weight:800;font-size:1.1rem">Définir mon objectif physique</div>
+              <div style="font-weight:800;font-size:1.05rem">Définir mon objectif physique</div>
               <div class="page-sub" style="margin:0">Pour des entraînements ultra-personnalisés</div>
             </div>
           </div>
           <button class="btn btn-g btn-sm" onclick="gotoTab('goal')">→</button>
         </div>
 
+        <div class="card" style="background:transparent;border:none;box-shadow:none;padding:0">
+          <div style="font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:10px">Coach IA · Suggestions</div>
+          <div class="card" style="border-left:3px solid var(--accent)">
+            <div style="font-weight:700;color:var(--accent);font-size:.9rem">Reprenez l'entraînement</div>
+            <div class="meal-info" style="margin-top:4px">Aucune séance détectée cette semaine. Commencez par 15min express.</div>
+            <div style="margin-top:8px"><a href="#" onclick="gotoTab('coach');return false" style="color:var(--accent);font-weight:700;font-size:.82rem;text-decoration:none">Démarrer →</a></div>
+          </div>
+        </div>
+
         <div class="db-stats">
-          <div class="db-stat"><div class="macro-val" id="db-kcal">0</div><div class="macro-lbl">Calories brûlées</div></div>
-          <div class="db-stat"><div class="macro-val" id="db-sess">0</div><div class="macro-lbl">Séances / semaine</div></div>
-          <div class="db-stat"><div class="macro-val" id="db-time">0h</div><div class="macro-lbl">Temps total</div></div>
-          <div class="db-stat"><div class="macro-val" id="db-energy">0</div><div class="macro-lbl">Énergie moyenne</div></div>
+          <div class="db-stat">
+            <div class="db-stat-icon ic-orange">🔥</div>
+            <div class="macro-val" id="db-kcal">0</div>
+            <div class="macro-lbl">Calories brûlées</div>
+          </div>
+          <div class="db-stat">
+            <div class="db-stat-icon ic-green">🎯</div>
+            <div class="macro-val" id="db-sess">0</div>
+            <div class="macro-lbl">Séances / semaine</div>
+          </div>
+          <div class="db-stat">
+            <div class="db-stat-icon ic-teal">⏱️</div>
+            <div class="macro-val" id="db-time">0h</div>
+            <div class="macro-lbl">Temps total</div>
+          </div>
+          <div class="db-stat">
+            <div class="db-stat-icon ic-purple">📊</div>
+            <div class="macro-val" id="db-energy">0</div>
+            <div class="macro-lbl">Énergie moyenne</div>
+          </div>
         </div>
 
         <div class="db-grid">
           <div style="display:flex;flex-direction:column;gap:14px">
             <div class="db-main-card">
-              <div class="db-main-head">Entraînement du jour</div>
+              <div class="db-main-head">
+                <div>
+                  <div style="font-size:.7rem;opacity:.7;margin-bottom:4px">+ Recommandé</div>
+                  Entraînement du jour
+                </div>
+              </div>
               <div class="db-main-body">
-                <div class="meal-info" style="margin-bottom:12px">0 exercices · 30 min · ~350 kcal</div>
-                <button class="btn btn-p btn-full" onclick="gotoTab('coach')">▶ Commencer</button>
+                <div class="meal-info" style="margin-bottom:12px">🏋️ 0 exercices · ⏱️ 30 min · 🔥 ~350 kcal</div>
+                <div style="display:flex;gap:10px">
+                  <button class="btn btn-p" style="flex:1" onclick="gotoTab('coach')">▶ Commencer</button>
+                  <button class="btn btn-g" style="width:44px;padding:0" onclick="gotoTab('coach')">🔄</button>
+                </div>
               </div>
             </div>
             <div class="card">
               <div style="display:flex;justify-content:space-between;align-items:center">
                 <div class="card-title" style="margin:0">Activité cette semaine</div>
-                <span class="badge bg-green">0 / 7 jours</span>
+                <span class="badge bg-orange" id="db-week-count">0 / 7 jours</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:8px">
+                <div class="db-week-label">L</div><div class="db-week-label">M</div><div class="db-week-label">M</div><div class="db-week-label">J</div><div class="db-week-label">V</div><div class="db-week-label">S</div><div class="db-week-label">D</div>
               </div>
               <div class="db-week">
                 <div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div>
@@ -433,20 +521,25 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
               <div class="db-actions">
                 <button class="db-action" onclick="gotoTab('coach')"><span>⚡ Express 15min</span><span>›</span></button>
                 <button class="db-action" onclick="gotoTab('coach')"><span>💬 Coach IA</span><span>›</span></button>
-                <button class="db-action" onclick="gotoTab('nutrition')"><span>🥗 Nutrition</span><span>›</span></button>
+                <button class="db-action" onclick="gotoTab('nutrition')"><span>🍽️ Nutrition</span><span>›</span></button>
                 <button class="db-action" onclick="gotoTab('profile')"><span>📈 Progrès</span><span>›</span></button>
               </div>
             </div>
-            <div class="card" style="background:linear-gradient(135deg,#fff0f0,#ffe8e8);border-color:#ffd4d4">
-              <div class="card-title" style="margin-bottom:8px">🏅 Séances totales</div>
-              <div style="font-size:2rem;font-weight:900" id="db-total-sessions">0</div>
+            <div class="card" style="background:linear-gradient(135deg,rgba(255,107,107,.12),rgba(255,138,128,.08));border-color:rgba(255,107,107,.2)">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                <div class="db-stat-icon" style="background:rgba(255,107,107,.15);width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.9rem">🏅</div>
+                <div>
+                  <div style="font-size:1.6rem;font-weight:900;color:var(--accent)" id="db-total-sessions">0</div>
+                  <div style="font-size:.72rem;color:var(--accent);font-weight:700">Séances totales</div>
+                </div>
+              </div>
               <div class="meal-info">🔥 Continue comme ça champion !</div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- GOAL -->
+      <!-- GOAL (Express 15min) -->
       <div class="tab" id="t-goal">
         <div class="page-header">
           <div class="page-title">🎯 Mon Objectif</div>
@@ -495,22 +588,39 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         </div>
       </div>
 
-      <!-- COACH -->
+      <!-- COACH IA (Chat style) -->
       <div class="tab" id="t-coach">
-        <div class="page-header">
-          <div class="page-title">🤖 Coach IA</div>
-          <div class="page-sub">Générez des séances personnalisées avec l'IA</div>
+        <div class="coach-header">
+          <div class="coach-header-icon">🤖</div>
+          <div class="coach-header-text">
+            <div class="coach-header-title">Coach IA Expert</div>
+            <div class="coach-header-sub">Personnalisé à votre profil</div>
+          </div>
+          <div class="coach-status">🟢 En ligne</div>
         </div>
 
-        <div class="card">
-          <div class="card-title">Générer une séance</div>
-          <div style="display:flex;flex-direction:column;gap:12px">
-            <div class="field"><div class="lbl">Décrivez la séance souhaitée</div>
-              <textarea id="coach-input" placeholder="Ex: HIIT 30 min sans matériel, focus cardio et abdos…"></textarea>
-            </div>
-            <div class="err-box" id="coach-err"></div>
-            <button class="btn btn-p btn-full" id="btn-gen" onclick="generateWorkout()">✨ Générer ma séance</button>
+        <div class="coach-stats">
+          <div class="coach-stat"><span class="coach-stat-icon">⚡</span><div class="coach-stat-val" id="cs-week">0</div><div class="coach-stat-lbl">Semaine</div></div>
+          <div class="coach-stat"><span class="coach-stat-icon">🎯</span><div class="coach-stat-val" id="cs-level">—</div><div class="coach-stat-lbl">Niveau</div></div>
+          <div class="coach-stat"><span class="coach-stat-icon">🔥</span><div class="coach-stat-val" id="cs-kcal">0.0k</div><div class="coach-stat-lbl">Calories</div></div>
+          <div class="coach-stat"><span class="coach-stat-icon">📊</span><div class="coach-stat-val" id="cs-energy">—</div><div class="coach-stat-lbl">Énergie</div></div>
+        </div>
+
+        <div class="card" style="padding:18px">
+          <div class="chat-messages" id="chat-messages">
+            <!-- Messages will be rendered by JS -->
           </div>
+          <div class="chat-quick" id="chat-quick">
+            <button class="chat-chip" onclick="sendCoachMsg('Programme HIIT 20min intense')">💪 Programme HIIT 20min intense</button>
+            <button class="chat-chip" onclick="sendCoachMsg('Comment améliorer mes abdos ?')">🎯 Comment améliorer mes abdos ?</button>
+            <button class="chat-chip" onclick="sendCoachMsg('Repas post-workout optimal')">🍽️ Repas post-workout optimal</button>
+            <button class="chat-chip" onclick="sendCoachMsg('Je stagne, que faire ?')">📋 Je stagne, que faire ?</button>
+          </div>
+          <div class="chat-input-row">
+            <input type="text" id="coach-input" placeholder="Pose ta question au coach…" onkeydown="if(event.key==='Enter')sendCoachMsg()"/>
+            <button class="chat-send" id="btn-gen" onclick="sendCoachMsg()">➤</button>
+          </div>
+          <div class="err-box" id="coach-err"></div>
         </div>
 
         <div class="card" id="plan-card" style="display:none">
@@ -533,7 +643,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       <!-- NUTRITION -->
       <div class="tab" id="t-nutrition">
         <div class="page-header">
-          <div class="page-title">🥗 Nutrition</div>
+          <div class="page-title">🍽️ Nutrition</div>
           <div class="page-sub">Suivez vos apports nutritionnels quotidiens</div>
         </div>
 
@@ -563,7 +673,6 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           </div>
         </div>
 
-        <!-- OBJECTIFS NUTRITIONNELS (IDs manquants ajoutés) -->
         <div class="card">
           <div class="card-title">Objectifs du jour</div>
           <div class="progress-wrap">
@@ -616,7 +725,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         </div>
       </div>
 
-      <!-- COMMUNITY -->
+      <!-- COMMUNITY (Entraînements) -->
       <div class="tab" id="t-community">
         <div class="page-header">
           <div class="page-title">🌍 Communauté</div>
@@ -642,10 +751,10 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         </div>
       </div>
 
-      <!-- BODYSCAN -->
+      <!-- BODYSCAN (Scan IA) -->
       <div class="tab" id="t-bodyscan">
         <div class="page-header">
-          <div class="page-title">📸 Body Scan IA</div>
+          <div class="page-title">⚡ Scan IA</div>
           <div class="page-sub">Analysez votre physique avec l'intelligence artificielle</div>
         </div>
 
@@ -673,7 +782,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         </div>
       </div>
 
-      <!-- PROFILE -->
+      <!-- PROFILE (Progrès) -->
       <div class="tab" id="t-profile">
         <div class="page-header">
           <div class="page-title">👤 Mon Profil</div>
@@ -708,7 +817,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           </div>
         </div>
 
-        <div class="card" style="border-color:#ef444440">
+        <div class="card" style="border-color:rgba(239,68,68,.2)">
           <div class="card-title" style="color:var(--red)">Zone danger</div>
           <button class="btn btn-d btn-sm" onclick="doLogout()">🚪 Déconnexion complète</button>
         </div>
