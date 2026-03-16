@@ -319,6 +319,35 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 ::-webkit-scrollbar-thumb{background:var(--surf3);border-radius:10px}
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
+/* ── DÉFIS ── */
+.defi-header{display:flex;align-items:center;gap:18px;padding:20px;background:var(--surf);border:1px solid var(--border);border-radius:20px;margin-bottom:8px}
+.defi-level-badge{width:52px;height:52px;border-radius:16px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:900;color:#fff;flex-shrink:0}
+.defi-header-stats{display:flex;gap:20px;margin-left:auto}
+.defi-header-stat{text-align:center}
+.defi-header-stat-v{font-size:1.2rem;font-weight:900}
+.defi-header-stat-l{font-size:.62rem;color:var(--muted);font-weight:700;text-transform:uppercase}
+.defi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.defi-card{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:18px}
+.defi-tabs{display:flex;gap:0;margin-bottom:16px}
+.defi-tab{flex:1;padding:10px;background:none;border:none;color:var(--muted);font-weight:700;font-size:.85rem;cursor:pointer;border-radius:12px;font-family:inherit;transition:all .2s}
+.defi-tab.on{background:var(--surf2);color:var(--text)}
+
+/* ── FEED PHOTO ── */
+.feed-img{width:100%;max-height:300px;object-fit:cover;border-radius:14px;margin-top:8px}
+.comment-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:24px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .25s;font-family:inherit}
+.comment-btn:hover{border-color:var(--purple);color:var(--purple)}
+.comment{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:.82rem}
+.comment-author{font-weight:700;color:var(--purple);font-size:.78rem}
+.comment-text{flex:1;color:rgba(238,238,245,.85)}
+.comment-time{font-size:.68rem;color:var(--muted)}
+.comment-input{display:flex;gap:8px;margin-top:8px}
+.comment-input input{flex:1;border-radius:20px;padding:8px 14px;font-size:.82rem}
+.btn-mini{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem;padding:2px 6px;border-radius:6px}
+.btn-mini:hover{color:var(--red)}
+.physical-score{display:flex;align-items:baseline;gap:6px;margin:8px 0}
+.score-big{font-size:2rem;font-weight:900;color:var(--purple)}
+.score-label{font-size:.78rem;color:var(--muted)}
+
 /* ── RESPONSIVE: mobile bottom nav ── */
 @media(max-width:767px){
   #app{flex-direction:column}
@@ -424,6 +453,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       </button>
       <button class="bnav-btn" id="n-profile" onclick="gotoTab('profile')">
         <span class="ic">📈</span><span class="nav-label">Progrès</span><span class="nav-dot"></span>
+      </button>
+      <button class="bnav-btn" id="n-defis" onclick="gotoTab('defis')">
+        <span class="ic">🏆</span><span class="nav-label">Défis</span><span class="nav-dot"></span>
       </button>
     </nav>
   </aside>
@@ -738,6 +770,14 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
             <div class="field"><div class="lbl">Votre message</div>
               <textarea id="post-input" placeholder="Ex: Nouvelle PR au squat 120kg × 5 💪 Trop content !"></textarea>
             </div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <button class="btn btn-g btn-sm" onclick="document.getElementById('post-photo-input').click()">📷 Photo</button>
+              <span class="meal-info" id="post-photo-name"></span>
+              <input type="file" id="post-photo-input" accept="image/*" style="display:none" onchange="previewPostPhoto(this.files[0])"/>
+            </div>
+            <div id="post-photo-preview" style="display:none">
+              <img id="post-photo-img" style="width:100%;max-height:200px;object-fit:cover;border-radius:14px"/>
+            </div>
             <button class="btn btn-p btn-full" id="btn-post" onclick="createPost()">📢 Publier</button>
           </div>
         </div>
@@ -779,6 +819,34 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         <div class="card">
           <div class="card-title">Mes analyses</div>
           <div id="scans-list" class="empty"><span class="empty-ic">🔬</span>Aucune analyse</div>
+        </div>
+      </div>
+
+      <!-- DÉFIS -->
+      <div class="tab" id="t-defis">
+        <div class="defi-header">
+          <div class="defi-level-badge" id="defi-level">1</div>
+          <div>
+            <div style="font-size:1.2rem;font-weight:900">Niveau <span id="defi-level-text">1</span></div>
+            <div class="meal-info" id="defi-completed">0/7 défis complétés</div>
+          </div>
+          <div class="defi-header-stats">
+            <div class="defi-header-stat"><div class="defi-header-stat-v" style="color:var(--purple)">🏆</div><div class="defi-header-stat-l">Complétés</div></div>
+            <div class="defi-header-stat"><div class="defi-header-stat-v" style="color:var(--teal)">📊 0</div><div class="defi-header-stat-l">En cours</div></div>
+            <div class="defi-header-stat"><div class="defi-header-stat-v" style="color:var(--yellow)" id="defi-xp">0</div><div class="defi-header-stat-l">XP total</div></div>
+          </div>
+        </div>
+
+        <div class="card" style="padding:12px">
+          <div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">Niveau 1</div>
+          <div class="progress-track" style="height:8px"><div class="progress-fill" id="defi-progress-fill" style="width:0%"></div></div>
+          <div class="meal-info" style="margin-top:4px" id="defi-progress-text">0 / 1000 XP pour atteindre le niveau 2</div>
+        </div>
+
+        <div style="font-size:.9rem;font-weight:800;margin-top:6px">🔒 À DÉBLOQUER</div>
+
+        <div class="defi-grid" id="defis-list">
+          <div class="empty"><span class="empty-ic">🏆</span>Chargement des défis…</div>
         </div>
       </div>
 

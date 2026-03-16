@@ -396,6 +396,7 @@ function gotoTab(name) {
   if (name === "nutrition") loadMeals();
   if (name === "community") loadFeed();
   if (name === "bodyscan") loadScans();
+  if (name === "defis") loadDefis();
   if (name === "profile") {
     loadProfile();
     loadStats();
@@ -832,18 +833,66 @@ async function renderNutritionProgress(totals) {
 // COMMUNAUTÉ
 // ══════════════════════════════════════════════════════════════════════════════
 
+let POST_PHOTO = null;
+let POST_PHOTO_BASE64 = null;
+
+function previewPostPhoto(file) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) return toast("Format image requis.", "err");
+  if (file.size > 4 * 1024 * 1024) return toast("Photo trop volumineuse (max 4MB).", "err");
+  POST_PHOTO = file;
+  const nameEl = document.getElementById("post-photo-name");
+  if (nameEl) nameEl.textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = () => {
+    POST_PHOTO_BASE64 = reader.result;
+    const img = document.getElementById("post-photo-img");
+    const preview = document.getElementById("post-photo-preview");
+    if (img) img.src = reader.result;
+    if (preview) preview.style.display = "block";
+  };
+  reader.readAsDataURL(file);
+}
+
 async function createPost() {
   if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
-  
+
   const postInput = document.getElementById("post-input");
   const content = postInput ? postInput.value.trim() : "";
-  if (!content) return toast("Écrivez un message.", "err");
-  
+  if (!content && !POST_PHOTO) return toast("Écrivez un message ou ajoutez une photo.", "err");
+
   const btn = document.getElementById("btn-post");
   await withButton(btn, "Publication…", async () => {
-    const { error } = await SB.from("community_posts").insert({ user_id: U.id, content, kudos: 0 });
+    let image_url = null;
+
+    // Upload photo if exists
+    if (POST_PHOTO) {
+      const ext = (POST_PHOTO.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").toLowerCase();
+      const path = `${U.id}/posts/${Date.now()}.${ext}`;
+      const upload = await SB.storage.from("user_uploads").upload(path, POST_PHOTO, { contentType: POST_PHOTO.type });
+      if (upload.error) {
+        console.warn("[Post] Photo upload failed:", upload.error);
+        // Continue without photo
+      } else {
+        const { data: urlData } = SB.storage.from("user_uploads").getPublicUrl(path);
+        image_url = urlData?.publicUrl || null;
+      }
+    }
+
+    const payload = { user_id: U.id, content: content || "📸", kudos: 0 };
+    if (image_url) payload.image_url = image_url;
+
+    const { error } = await SB.from("community_posts").insert(payload);
     if (error) throw error;
     if (postInput) postInput.value = "";
+    POST_PHOTO = null;
+    POST_PHOTO_BASE64 = null;
+    const nameEl = document.getElementById("post-photo-name");
+    const preview = document.getElementById("post-photo-preview");
+    const fileInput = document.getElementById("post-photo-input");
+    if (nameEl) nameEl.textContent = "";
+    if (preview) preview.style.display = "none";
+    if (fileInput) fileInput.value = "";
     await loadFeed();
     toast("Publié ✓", "ok");
   }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
@@ -882,7 +931,7 @@ async function loadFeed() {
   
   try {
     const { data, error } = await SB.from("community_posts")
-      .select("id,user_id,content,kudos,comment_count,post_type,created_at")
+      .select("id,user_id,content,kudos,comment_count,post_type,image_url,created_at")
       .order("created_at", { ascending: false })
       .limit(25);
     if (error) throw error;
@@ -904,6 +953,7 @@ async function loadFeed() {
             <div class="post-date">${date}</div>
           </div>
           <div class="post-body">${escapeHtml(post.content)}</div>
+            ${post.image_url ? `<img class="feed-img" src="${escapeHtml(post.image_url)}" alt="Photo" loading="lazy"/>` : ""}
           <div class="post-footer">
             <button class="kudos-btn ${liked ? "on" : ""}" onclick="giveKudos('${post.id}', ${post.kudos || 0})">${liked ? "❤️" : "🤍"} ${post.kudos || 0}</button>
             <button class="comment-btn" onclick="toggleComments('${post.id}')">💬 ${commentCount}</button>
@@ -1035,8 +1085,8 @@ function formatFeedback(text) {
 async function loadProfile() {
   if (!U) return;
   try {
-    const { data } = await SB.from("profiles").select("display_name").eq("id", U.id).maybeSingle();
-    const name = data?.display_name || U.email?.split("@")[0] || "Membre";
+    const { data } = await SB.from("profiles").select("full_name").eq("user_id", U.id).maybeSingle();
+    const name = data?.full_name || U.email?.split("@")[0] || "Membre";
     const pName = document.getElementById("p-name");
     const pEmail = document.getElementById("p-email");
     const pAvatar = document.getElementById("p-avatar");
@@ -1045,7 +1095,7 @@ async function loadProfile() {
     if (pName) pName.textContent = name;
     if (pEmail) pEmail.textContent = U.email || "";
     if (pAvatar) pAvatar.textContent = name.charAt(0).toUpperCase();
-    if (pPseudo) pPseudo.value = data?.display_name || "";
+    if (pPseudo) pPseudo.value = data?.full_name || "";
     if (tu) tu.textContent = name;
   } catch (e) {
     console.error("[Profile] Load error:", e);
@@ -1054,14 +1104,14 @@ async function loadProfile() {
 
 async function saveProfile() {
   if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
-  
+
   const pPseudo = document.getElementById("p-pseudo");
-  const display_name = pPseudo ? pPseudo.value.trim() : "";
-  if (!display_name) return toast("Pseudo requis.", "err");
-  
+  const full_name = pPseudo ? pPseudo.value.trim() : "";
+  if (!full_name) return toast("Pseudo requis.", "err");
+
   const btn = document.getElementById("btn-save-profile");
   await withButton(btn, "Enregistrement…", async () => {
-    const { error } = await SB.from("profiles").upsert({ id: U.id, display_name, updated_at: new Date().toISOString() }, { onConflict: "id" });
+    const { error } = await SB.from("profiles").upsert({ user_id: U.id, full_name, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
     if (error) throw error;
     toast("Profil mis à jour ✓", "ok");
     await loadProfile();
@@ -1089,6 +1139,90 @@ async function loadStats() {
   } catch (e) {
     console.error("[Stats] Load error:", e);
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DÉFIS & SUCCÈS
+// ══════════════════════════════════════════════════════════════════════════════
+
+const DEFIS_LIST = [
+  { id: "7days", icon: "🔥", title: "7 jours consécutifs", desc: "Entraîne-toi 7 jours de suite sans interruption", difficulty: "Moyen", xp: 500, color: "#f97316", target: 7, unit: "jours", metric: "streak" },
+  { id: "10kcal", icon: "⚡", title: "10 000 calories brûlées", desc: "Cumule 10 000 calories brûlées sur l'ensemble de tes séances", difficulty: "Difficile", xp: 1000, color: "#eab308", target: 10000, unit: "kcal", metric: "calories" },
+  { id: "30sess", icon: "🏋️", title: "30 séances d'entraînement", desc: "Complète 30 séances au total pour débloquer ce défi", difficulty: "Difficile", xp: 1500, color: "#ef4444", target: 30, unit: "séances", metric: "sessions" },
+  { id: "5h_week", icon: "⏱️", title: "5h d'entraînement en 1 semaine", desc: "Totalise 5 heures de sport sur une même semaine", difficulty: "Moyen", xp: 600, color: "#8b5cf6", target: 300, unit: "minutes", metric: "weekly_time" },
+  { id: "variety", icon: "🌈", title: "Polyvalence totale", desc: "Effectue au moins 3 types d'entraînement différents en une semaine", difficulty: "Moyen", xp: 400, color: "#f97316", target: 3, unit: "types", metric: "variety" },
+  { id: "early", icon: "🌅", title: "Lève-tôt champion", desc: "Entraîne-toi 5 fois avant 8h du matin", difficulty: "Difficile", xp: 800, color: "#ec4899", target: 5, unit: "matins", metric: "early" },
+  { id: "perfect_week", icon: "💎", title: "Semaine parfaite", desc: "Entraîne-toi ET suis ta nutrition toute une semaine (7/7)", difficulty: "Expert", xp: 2000, color: "#3b82f6", target: 7, unit: "jours", metric: "perfect" }
+];
+
+async function loadDefis() {
+  if (!U) return;
+  const el = document.getElementById("defis-list");
+  if (!el) return;
+
+  // Load user stats for progress
+  let totalSessions = 0, currentStreak = 0;
+  try {
+    const [sessRes, streakRes] = await Promise.all([
+      SB.from("workout_sessions").select("id", { count: "exact", head: true }).eq("user_id", U.id),
+      SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle()
+    ]);
+    totalSessions = sessRes.count || 0;
+    currentStreak = streakRes.data?.current_streak || 0;
+  } catch (e) { console.error("[Defis] Stats error:", e); }
+
+  // Calculate progress for each defi
+  const defisProgress = DEFIS_LIST.map(d => {
+    let current = 0;
+    if (d.metric === "sessions") current = totalSessions;
+    else if (d.metric === "streak") current = currentStreak;
+    else current = 0;
+    const pct = Math.min(100, Math.round((current / d.target) * 100));
+    const completed = current >= d.target;
+    return { ...d, current, pct, completed };
+  });
+
+  // Save XP locally
+  const completedCount = defisProgress.filter(d => d.completed).length;
+  const totalXP = defisProgress.filter(d => d.completed).reduce((a, d) => a + d.xp, 0);
+  const level = Math.floor(totalXP / 1000) + 1;
+  const xpInLevel = totalXP % 1000;
+
+  // Update header stats
+  const elLevel = document.getElementById("defi-level");
+  const elXP = document.getElementById("defi-xp");
+  const elCompleted = document.getElementById("defi-completed");
+  const elProgress = document.getElementById("defi-progress-fill");
+  const elProgressText = document.getElementById("defi-progress-text");
+  if (elLevel) elLevel.textContent = level;
+  if (elXP) elXP.textContent = totalXP;
+  if (elCompleted) elCompleted.textContent = `${completedCount}/${DEFIS_LIST.length}`;
+  if (elProgress) elProgress.style.width = `${(xpInLevel / 1000) * 100}%`;
+  if (elProgressText) elProgressText.textContent = `${xpInLevel} / 1000 XP pour atteindre le niveau ${level + 1}`;
+
+  const diffColors = { "Moyen": "var(--yellow)", "Difficile": "var(--red)", "Expert": "var(--accent)" };
+
+  el.innerHTML = defisProgress.map(d => `
+    <div class="defi-card" style="border-top:3px solid ${d.color}">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <span style="font-size:1.5rem">${d.icon}</span>
+        <div style="flex:1">
+          <div style="font-weight:800;font-size:.95rem">${escapeHtml(d.title)}</div>
+          <div class="meal-info">${escapeHtml(d.desc)}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <span class="badge" style="background:rgba(255,255,255,.06);color:${diffColors[d.difficulty] || "var(--muted)"}">${d.difficulty}</span>
+        <span class="badge" style="background:rgba(234,179,8,.1);color:var(--yellow)">+${d.xp} XP</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:.78rem;margin-bottom:6px">
+        <span style="color:var(--muted)">Progression</span>
+        <span style="font-weight:700">${d.current} / ${d.target} ${d.unit}</span>
+      </div>
+      <div class="progress-track" style="height:6px"><div class="progress-fill" style="width:${d.pct}%;background:${d.color}"></div></div>
+      <div style="font-size:.72rem;color:var(--muted);margin-top:4px">${d.pct}% accompli</div>
+    </div>
+  `).join("");
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1322,3 +1456,5 @@ window.saveProfile = saveProfile;
 window.toggleComments = toggleComments;
 window.addComment = addComment;
 window.deleteComment = deleteComment;
+window.loadDefis = loadDefis;
+window.previewPostPhoto = previewPostPhoto;
