@@ -7,348 +7,293 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0c0c1d;
-  --surf:#151529;
-  --surf2:#1c1c35;
-  --surf3:#252545;
-  --border:#2a2a4a;
-  --accent:#ff6b6b;
-  --accent2:#ff8a80;
-  --grad:linear-gradient(135deg,#7c5cfc,#38b2ff);
-  --grad-accent:linear-gradient(135deg,#ff6b6b,#ff8a80);
-  --green:#22c55e;
+  --bg:#f0f2f7;
+  --surf:#ffffff;
+  --surf2:#f5f6fa;
+  --surf3:#eceef5;
+  --border:#e2e5eb;
+  --accent:#7c6fff;
+  --accent2:#5b8af5;
+  --grad:linear-gradient(135deg,#7c6fff,#5b8af5);
+  --green:#16a34a;
   --red:#ef4444;
   --orange:#f97316;
-  --yellow:#eab308;
-  --blue:#3b82f6;
-  --purple:#8b5cf6;
-  --teal:#06b6d4;
-  --text:#eeeef5;
-  --muted:#7a7a95;
-  --radius:18px;
-  --glass:rgba(255,255,255,.03);
-  --glass-border:rgba(255,255,255,.06);
-  --shadow:0 2px 12px rgba(0,0,0,.3);
-  --shadow-lg:0 8px 30px rgba(0,0,0,.4);
+  --yellow:#ca8a04;
+  --blue:#2563eb;
+  --text:#1a1a2e;
+  --muted:#8891a5;
+  --radius:16px;
 }
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
 
-/* ── BOOT ── */
-#boot{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:9999;transition:opacity .4s}
+/* -- BOOT -- */
+#boot{position:fixed;inset:0;background:var(--surf);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:9999;transition:opacity .4s}
 #boot.hidden{opacity:0;pointer-events:none}
-.boot-logo{font-size:2.8rem;font-weight:900;color:var(--accent)}
+.boot-logo{font-size:2.8rem;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .boot-msg{font-size:.85rem;color:var(--muted)}
-.boot-err{color:var(--red);font-size:.82rem;max-width:380px;text-align:center;line-height:1.5;padding:14px 18px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:16px;display:none}
-.spinner{width:28px;height:28px;border:3px solid rgba(124,92,252,.15);border-top-color:var(--purple);border-radius:50%;animation:spin .7s linear infinite}
+.boot-err{color:var(--red);font-size:.82rem;max-width:340px;text-align:center;line-height:1.5;padding:12px 16px;background:#ef444415;border:1px solid #ef444440;border-radius:10px;display:none}
+.spinner{width:28px;height:28px;border:3px solid #7c6fff20;border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* ── AUTH ── */
+/* -- AUTH -- */
 #auth{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:28px;padding:20px;background:var(--bg)}
-.auth-logo{font-size:2.2rem;font-weight:900;color:var(--accent)}
-.auth-card{background:var(--surf);border:1px solid var(--border);border-radius:24px;padding:36px;width:100%;max-width:400px;display:flex;flex-direction:column;gap:18px;box-shadow:var(--shadow-lg)}
-.auth-tabs{display:flex;background:var(--surf2);border-radius:14px;padding:4px;gap:4px}
-.atab{flex:1;padding:10px;background:none;border:none;color:var(--muted);cursor:pointer;border-radius:12px;font-weight:700;font-size:.88rem;transition:all .25s;font-family:inherit}
-.atab.on{background:var(--surf3);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.3)}
-.auth-msg{font-size:.82rem;text-align:center;min-height:18px;line-height:1.4}
-.auth-ok{color:var(--green)}.auth-err{color:var(--red)}
+.auth-logo{font-size:2.2rem;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.auth-card{background:var(--surf);border:1px solid var(--border);border-radius:20px;padding:32px;width:100%;max-width:390px;display:flex;flex-direction:column;gap:18px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.auth-tabs{display:flex;background:var(--bg);border-radius:10px;padding:4px;gap:4px}
+.atab{flex:1;padding:9px;background:none;border:none;color:var(--muted);cursor:pointer;border-radius:8px;font-weight:700;font-size:.88rem;transition:all .2s;font-family:inherit}
+.atab.on{background:var(--surf);color:var(--text);box-shadow:0 1px 6px rgba(0,0,0,.08)}
+.auth-msg{font-size:.82rem;text-align:center;min-height:18px}
+.auth-ok,.amsg.ok{color:var(--green)}.auth-err,.amsg.er{color:var(--red)}
 
-/* ── APP LAYOUT ── */
+/* -- APP LAYOUT -- */
 #app{display:none;flex-direction:row;height:100vh;overflow:hidden}
 #app.on{display:flex}
 
-/* ── SIDEBAR ── */
+/* -- SIDEBAR -- */
 .sidebar{
   width:240px;flex-shrink:0;
   background:var(--surf);border-right:1px solid var(--border);
   display:flex;flex-direction:column;
-  padding:20px 12px;gap:4px;
+  padding:20px 12px 16px;gap:4px;
   overflow-y:auto;
 }
-.sidebar-brand{display:flex;align-items:center;gap:10px;padding:4px 8px 16px}
-.sidebar-brand-icon{width:38px;height:38px;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}
-.sidebar-brand-text{display:flex;flex-direction:column}
-.sidebar-brand-name{font-size:1.2rem;font-weight:900;color:var(--accent);letter-spacing:-.02em}
-.sidebar-brand-sub{font-size:.65rem;color:var(--muted);font-weight:500}
+.sidebar-brand{
+  font-size:1.3rem;font-weight:900;
+  background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  padding:0 8px 14px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:4px;
+}
 .sidebar-user{
-  display:flex;align-items:center;gap:10px;
-  padding:10px 10px;border-radius:14px;
-  background:var(--surf2);border:1px solid var(--border);margin-bottom:8px;
+  display:flex;align-items:center;gap:8px;
+  padding:8px;border-radius:10px;
+  background:var(--surf2);margin-bottom:4px;
 }
 .sidebar-avatar{
   width:32px;height:32px;border-radius:50%;
   background:var(--grad);
   display:flex;align-items:center;justify-content:center;
-  font-size:.8rem;font-weight:900;color:#fff;flex-shrink:0;
+  font-size:.9rem;font-weight:900;color:#fff;flex-shrink:0;
 }
 .sidebar-user-info{flex:1;min-width:0}
 .sidebar-user-name{font-size:.76rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sidebar-user-role{font-size:.65rem;color:var(--muted)}
 #btn-out{
   background:none;border:none;color:var(--muted);
-  padding:5px;cursor:pointer;font-size:.9rem;
-  border-radius:8px;transition:all .2s;flex-shrink:0;
+  padding:4px;cursor:pointer;font-size:.9rem;
+  border-radius:8px;transition:color .2s;flex-shrink:0;
 }
-#btn-out:hover{color:var(--red);background:rgba(239,68,68,.1)}
+#btn-out:hover{color:var(--red)}
 
-/* ── SIDEBAR NAV ── */
+/* -- SIDEBAR NAV -- */
 .bnav{display:flex;flex-direction:column;gap:2px;flex:1}
+.nav-sep{font-size:.62rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:10px 12px 4px;opacity:.7}
 .bnav-btn{
-  display:flex;align-items:center;gap:12px;
+  display:flex;align-items:center;gap:10px;
   background:none;border:none;color:var(--muted);
-  cursor:pointer;padding:10px 14px;
-  font-size:.86rem;font-weight:600;
-  border-radius:12px;transition:all .2s;
+  cursor:pointer;padding:9px 12px;
+  font-size:.82rem;font-weight:600;
+  border-radius:10px;transition:all .2s;
   font-family:inherit;text-align:left;
   width:100%;
 }
 .bnav-btn .ic{font-size:1.1rem;line-height:1;flex-shrink:0}
 .bnav-btn .nav-label{flex:1}
 .nav-dot{
-  width:6px;height:6px;border-radius:50%;
+  width:5px;height:5px;border-radius:50%;
   background:#fff;opacity:0;transition:opacity .2s;flex-shrink:0;
 }
 .bnav-btn:hover:not(.on){background:var(--surf2);color:var(--text)}
 .bnav-btn.on{
   background:var(--grad);color:#fff;
-  box-shadow:0 4px 20px rgba(124,92,252,.35);
+  box-shadow:0 3px 12px rgba(124,111,255,.25);
 }
 .bnav-btn.on .nav-dot{opacity:1}
 
-/* ── MAIN CONTENT ── */
+/* -- MAIN CONTENT -- */
 .app-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
-.scroll{flex:1;overflow-y:auto;padding:28px 32px;max-width:900px;width:100%;margin:0 auto}
+.scroll{flex:1;overflow-y:auto;padding:24px 28px;max-width:820px;width:100%;margin:0 auto}
 
-/* ── PAGE HEADER ── */
-.page-header{margin-bottom:24px}
-.page-title{font-size:1.55rem;font-weight:900;color:var(--text);line-height:1.2;letter-spacing:-.02em}
-.page-sub{font-size:.85rem;color:var(--muted);margin-top:5px}
+/* -- PAGE HEADER -- */
+.page-header{margin-bottom:20px}
+.page-title{font-size:1.45rem;font-weight:900;color:var(--text);line-height:1.2}
+.page-sub{font-size:.82rem;color:var(--muted);margin-top:4px}
 
-/* ── TABS ── */
-.tab{display:none;flex-direction:column;gap:18px}
+/* -- TABS -- */
+.tab{display:none;flex-direction:column;gap:16px}
 .tab.on{display:flex}
 
-/* ── COMMON UI ── */
-.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow)}
-.card-title{font-size:.95rem;font-weight:800;margin-bottom:16px;color:var(--text)}
+/* -- COMMON UI -- */
+.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:0 1px 8px rgba(0,0,0,.04)}
+.card-title{font-size:.92rem;font-weight:800;margin-bottom:14px;color:var(--text)}
 .section-head{display:none}
-.sep{height:1px;background:var(--border);margin:12px 0}
+.sep{height:1px;background:var(--border);margin:10px 0}
 
 input,select,textarea{
   width:100%;background:var(--surf2);
-  border:1.5px solid var(--border);border-radius:14px;
-  color:var(--text);padding:11px 16px;
-  font-size:.88rem;outline:none;font-family:inherit;
-  transition:border-color .25s;appearance:none;
+  border:1.5px solid var(--border);border-radius:10px;
+  color:var(--text);padding:10px 14px;
+  font-size:.86rem;outline:none;font-family:inherit;
+  transition:border-color .2s;appearance:none;
 }
-input:focus,select:focus,textarea:focus{border-color:var(--purple);box-shadow:0 0 0 3px rgba(124,92,252,.15)}
-textarea{resize:vertical;min-height:78px}
-select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%237a7a95' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
-.lbl{font-size:.76rem;font-weight:700;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:72px}
+.lbl{font-size:.76rem;font-weight:700;color:var(--muted);margin-bottom:4px}
 .field{display:flex;flex-direction:column}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:12px 22px;border:none;border-radius:14px;font-weight:800;cursor:pointer;font-size:.88rem;transition:all .25s;font-family:inherit;white-space:nowrap}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.btn-p{background:var(--grad);color:#fff;box-shadow:0 4px 20px rgba(124,92,252,.35)}
-.btn-p:hover:not(:disabled){opacity:.9;transform:translateY(-1px);box-shadow:0 8px 30px rgba(124,92,252,.45)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 18px;border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:.86rem;transition:all .2s;font-family:inherit;white-space:nowrap}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-p{background:var(--grad);color:#fff;box-shadow:0 4px 16px rgba(124,111,255,.28)}
+.btn-p:hover:not(:disabled){opacity:.9;transform:translateY(-1px);box-shadow:0 6px 20px rgba(124,111,255,.38)}
 .btn-g{background:var(--surf2);color:var(--text);border:1.5px solid var(--border)}
-.btn-g:hover:not(:disabled){border-color:var(--purple);color:var(--purple)}
-.btn-d{background:rgba(239,68,68,.08);color:var(--red);border:1px solid rgba(239,68,68,.2)}
-.btn-sm{padding:7px 14px;font-size:.78rem;border-radius:10px}
+.btn-g:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.btn-d{background:#ef444412;color:var(--red);border:1px solid #ef444435}
+.btn-sm{padding:7px 13px;font-size:.78rem;border-radius:8px}
 .btn-full{width:100%}
 
-.empty{text-align:center;padding:36px 16px;color:var(--muted);font-size:.85rem}
-.empty-ic{font-size:2.2rem;display:block;margin-bottom:10px}
+.empty{text-align:center;padding:28px 16px;color:var(--muted);font-size:.84rem}
+.empty-ic{font-size:2rem;display:block;margin-bottom:8px}
 
-.badge{display:inline-flex;align-items:center;padding:4px 12px;border-radius:20px;font-size:.72rem;font-weight:800}
-.bg-green{background:rgba(34,197,94,.12);color:var(--green)}
-.bg-purple{background:rgba(139,92,246,.12);color:var(--purple)}
-.bg-orange{background:rgba(249,115,22,.12);color:var(--orange)}
-.bg-red{background:rgba(239,68,68,.12);color:var(--red)}
+/* -- BADGES -- */
+.badge,.bdg{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:800}
+.bg-green,.bgreen{background:#16a34a15;color:var(--green)}
+.bg-purple,.bpurple{background:#7c6fff15;color:var(--accent)}
+.bg-orange,.borange{background:#f9731615;color:var(--orange)}
+.bg-red,.bred{background:#ef444415;color:var(--red)}
+.bg-blue,.bblue{background:#2563eb15;color:var(--blue)}
 
-/* ── TOAST ── */
-#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--surf);border:1px solid var(--border);color:var(--text);padding:12px 24px;border-radius:28px;font-size:.84rem;font-weight:700;opacity:0;transition:all .3s;z-index:9999;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis;box-shadow:var(--shadow-lg);backdrop-filter:blur(20px)}
+/* -- TOAST -- */
+#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--surf);border:1px solid var(--border);color:var(--text);padding:10px 22px;border-radius:24px;font-size:.84rem;font-weight:700;opacity:0;transition:all .3s;z-index:9999;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 20px rgba(0,0,0,.1)}
 #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.ok{border-color:var(--green);color:var(--green)}
 #toast.err{border-color:var(--red);color:var(--red)}
+#toast.warn{border-color:var(--orange);color:var(--orange)}
 
-/* ── GOAL ── */
-.goal-saved-row{display:flex;gap:8px;align-items:baseline;font-size:.86rem}
-.goal-saved-row strong{color:var(--purple);min-width:90px;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+/* -- GOAL -- */
+.gline{display:flex;gap:8px;align-items:baseline;font-size:.84rem}
+.gline strong{color:var(--accent);min-width:85px;font-size:.76rem;text-transform:uppercase;letter-spacing:.04em}
 
-/* ── COACH CHAT ── */
-.coach-header{display:flex;align-items:center;gap:14px;margin-bottom:20px}
-.coach-header-icon{width:44px;height:44px;border-radius:14px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
-.coach-header-text{flex:1}
-.coach-header-title{font-size:1.3rem;font-weight:900}
-.coach-header-sub{font-size:.8rem;color:var(--muted)}
-.coach-status{padding:6px 14px;border:1px solid rgba(34,197,94,.3);background:rgba(34,197,94,.08);border-radius:999px;font-size:.75rem;font-weight:700;color:var(--green);white-space:nowrap}
-.coach-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
-.coach-stat{background:var(--surf);border:1px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center}
-.coach-stat-icon{font-size:1rem;display:block;margin-bottom:4px}
-.coach-stat-val{font-size:1.1rem;font-weight:900}
-.coach-stat-lbl{font-size:.62rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
-.coach-stat:nth-child(1) .coach-stat-val{color:var(--orange)}
-.coach-stat:nth-child(2) .coach-stat-val{color:var(--green)}
-.coach-stat:nth-child(3) .coach-stat-val{color:var(--orange)}
-.coach-stat:nth-child(4) .coach-stat-val{color:var(--teal)}
-.chat-messages{display:flex;flex-direction:column;gap:12px;margin-bottom:16px;min-height:60px}
-.chat-msg{display:flex;gap:10px;align-items:flex-start}
-.chat-msg-ai .chat-avatar{width:32px;height:32px;border-radius:10px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0}
-.chat-bubble{background:var(--surf2);border:1px solid var(--border);border-radius:16px;padding:14px 18px;font-size:.88rem;line-height:1.55;max-width:85%;color:rgba(238,238,245,.9)}
-.chat-bubble strong{color:var(--text)}
-.chat-bubble .chat-time{display:block;font-size:.68rem;color:var(--muted);margin-top:6px;text-align:right}
-.chat-msg-user{flex-direction:row-reverse}
-.chat-msg-user .chat-bubble{background:var(--grad);border:none;color:#fff}
-.chat-msg-user .chat-bubble .chat-time{color:rgba(255,255,255,.6)}
-.chat-quick{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
-.chat-chip{padding:8px 14px;background:var(--surf);border:1px solid var(--border);border-radius:24px;font-size:.78rem;font-weight:600;color:var(--text);cursor:pointer;transition:all .2s;font-family:inherit}
-.chat-chip:hover{border-color:var(--purple);color:var(--purple)}
-.chat-input-row{display:flex;gap:10px;align-items:center}
-.chat-input-row input{flex:1;border-radius:24px;padding:12px 20px}
-.chat-send{width:42px;height:42px;border-radius:50%;background:var(--grad);border:none;color:#fff;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
-.chat-send:hover{opacity:.9;transform:scale(1.05)}
-.chat-send:disabled{opacity:.3;cursor:not-allowed}
-
-/* ── COACH / PLAN ── */
+/* -- PLAN / WORKOUT -- */
 .plan-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.plan-title-text{font-size:1.05rem;font-weight:800}
-.block{background:var(--surf2);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--border)}
-.block-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.block-name{font-weight:800;font-size:.9rem}
-.block-meta{display:flex;gap:6px;align-items:center}
-.rpe{font-size:.7rem;padding:3px 10px;background:rgba(124,92,252,.12);color:var(--purple);border-radius:12px;font-weight:700}
+.plan-t{font-size:1rem;font-weight:800}
+.bloc{background:var(--surf2);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--border)}
+.bloc-hd{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.bloc-name{font-weight:800;font-size:.88rem}
+.bloc-meta{display:flex;gap:6px;align-items:center}
+.rpe{font-size:.7rem;padding:2px 8px;background:#7c6fff15;color:var(--accent);border-radius:10px;font-weight:700}
 .bdur{font-size:.74rem;color:var(--muted)}
-.block-items{list-style:none;display:flex;flex-direction:column;gap:4px}
-.block-items li{font-size:.84rem;color:rgba(238,238,245,.75)}
-.block-items li::before{content:"\2192 ";color:var(--purple)}
-.plan-notes-text{font-size:.82rem;color:var(--muted);font-style:italic}
-.sessions-list{display:flex;flex-direction:column;gap:0}
-.sess-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
-.sess-row:last-child{border-bottom:none}
+.bloc-items{list-style:none;display:flex;flex-direction:column;gap:4px}
+.bloc-items li{font-size:.83rem}
+.bloc-items li::before{content:"\2192 ";color:var(--accent)}
+.plan-notes-text{font-size:.8rem;color:var(--muted);font-style:italic}
+.hist-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
+.hist-row:last-child{border-bottom:none}
 
-/* ── NUTRITION ── */
+/* -- NUTRITION -- */
 .macro-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-.macro-card{background:var(--surf);border-radius:16px;padding:16px 10px;text-align:center;border:1px solid var(--border)}
-.macro-icon{font-size:1.5rem;display:block;margin-bottom:6px}
-.macro-val{font-size:1.3rem;font-weight:900}
-.macro-lbl{font-size:.67rem;color:var(--muted);font-weight:700;margin-top:3px;text-transform:uppercase;letter-spacing:.03em}
+.macro-card{background:var(--surf2);border-radius:12px;padding:14px 8px;text-align:center;border:1px solid var(--border)}
+.macro-icon{font-size:1.3rem;display:block;margin-bottom:4px}
+.macro-val{font-size:1.2rem;font-weight:900}
+.macro-lbl{font-size:.65rem;color:var(--muted);font-weight:700;margin-top:2px;text-transform:uppercase}
 .macro-card:nth-child(1) .macro-val{color:var(--orange)}
 .macro-card:nth-child(2) .macro-val{color:var(--blue)}
 .macro-card:nth-child(3) .macro-val{color:var(--green)}
 .macro-card:nth-child(4) .macro-val{color:var(--yellow)}
-.meal-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.meal-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .meal-row:last-child{border-bottom:none}
-.meal-name{font-weight:700;font-size:.88rem;flex:1;min-width:100px}
-.meal-info{font-size:.75rem;color:var(--muted)}
-.meal-kcal{font-weight:800;color:var(--orange);font-size:.9rem;white-space:nowrap}
+.meal-name{font-weight:700;font-size:.86rem;flex:1;min-width:100px}
+.meal-info{font-size:.74rem;color:var(--muted)}
+.meal-kcal{font-weight:800;color:var(--orange);font-size:.88rem;white-space:nowrap}
+.target-card{background:var(--surf2);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center}
+.target-val{font-size:1.4rem;font-weight:900;color:var(--accent)}
+.target-lbl{font-size:.68rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
+.progress-bar{width:100%;height:8px;background:var(--surf3);border-radius:8px;overflow:hidden;margin-top:8px}
+.progress-fill{height:100%;border-radius:8px;transition:width .3s}
 
-/* ── COMMUNITY ── */
-.post{background:var(--surf2);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)}
-.post-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.post-author{font-weight:800;font-size:.85rem;color:var(--purple)}
-.post-date{font-size:.72rem;color:var(--muted)}
-.post-body{font-size:.86rem;line-height:1.55;color:rgba(238,238,245,.85)}
-.post-footer{display:flex;align-items:center;gap:10px}
-.kudos-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:24px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .25s;font-family:inherit}
-.kudos-btn:hover{border-color:var(--orange);color:var(--orange)}
-.kudos-btn.on{border-color:var(--orange);color:var(--orange);background:rgba(249,115,22,.08)}
+/* -- RECIPE -- */
+.recipe-result{background:var(--surf2);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.recipe-title{font-size:1.05rem;font-weight:900;color:var(--accent)}
+.recipe-meta{display:flex;gap:12px;flex-wrap:wrap;font-size:.78rem;color:var(--muted)}
+.recipe-meta span{display:flex;align-items:center;gap:4px}
+.recipe-macros{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.recipe-macro{text-align:center;background:var(--surf);border-radius:8px;padding:8px;border:1px solid var(--border)}
+.recipe-macro .rv{font-weight:900;font-size:1rem;color:var(--accent)}
+.recipe-macro .rl{font-size:.65rem;color:var(--muted);text-transform:uppercase;font-weight:700}
+.recipe-steps{list-style:none;display:flex;flex-direction:column;gap:6px}
+.recipe-steps li{font-size:.84rem;padding:6px 0;border-bottom:1px solid var(--border)}
+.recipe-steps li:last-child{border-bottom:none}
+.recipe-tips{font-size:.8rem;color:var(--muted);font-style:italic;background:var(--surf);border-radius:8px;padding:10px;border:1px solid var(--border)}
 
-/* ── BODYSCAN ── */
-.drop-zone{border:2px dashed var(--border);border-radius:18px;padding:40px 20px;text-align:center;cursor:pointer;transition:all .25s;user-select:none;background:var(--glass)}
-.drop-zone:hover,.drop-zone.over{border-color:var(--purple);background:rgba(124,92,252,.06)}
-.drop-ic{font-size:2.5rem;margin-bottom:10px}
-.drop-text{color:var(--muted);font-size:.84rem}
-.scan-img-preview{width:100%;max-height:240px;object-fit:cover;border-radius:16px;display:block}
-.scan-card{background:var(--surf2);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)}
-.scores-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.score-chip{background:var(--surf);border-radius:14px;padding:14px;text-align:center;border:1px solid var(--border)}
-.score-v{font-size:1.25rem;font-weight:900;color:var(--purple)}
-.score-l{font-size:.65rem;color:var(--muted);margin-top:2px;font-weight:700;text-transform:uppercase}
-.scan-feedback{font-size:.82rem;line-height:1.6;color:rgba(238,238,245,.8)}
+/* -- COMMUNITY -- */
+.post{background:var(--surf2);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--border)}
+.post-hd{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.post-author{font-weight:800;font-size:.84rem;color:var(--accent)}
+.post-date{font-size:.7rem;color:var(--muted)}
+.post-body{font-size:.84rem;line-height:1.5}
+.post-foot{display:flex;align-items:center;gap:10px}
+.kudos{display:inline-flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--border);color:var(--muted);padding:5px 13px;border-radius:20px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .2s;font-family:inherit}
+.kudos:hover{border-color:var(--orange);color:var(--orange)}
+.kudos.on{border-color:var(--orange);color:var(--orange);background:#f9731612}
 
-/* ── DASHBOARD V2 ── */
-.db-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
-.db-greet small{display:block;font-size:1.7rem;font-weight:800;color:var(--text);line-height:1.1}
-.db-chip{padding:10px 18px;border:1px solid rgba(124,92,252,.3);background:rgba(124,92,252,.08);border-radius:999px;font-weight:800;color:var(--purple);font-size:.95rem}
-.db-goal{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--border);background:var(--surf);border-radius:20px;padding:18px 16px;box-shadow:var(--shadow)}
-.db-goal-main{display:flex;align-items:center;gap:14px}
-.db-goal-ic{width:44px;height:44px;border-radius:14px;background:var(--surf2);display:flex;align-items:center;justify-content:center;font-size:1.2rem}
-.db-grid{display:grid;grid-template-columns:2fr 1fr;gap:18px}
-.db-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.db-stat{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:16px}
-.db-stat-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;margin-bottom:10px}
-.db-stat-icon.ic-orange{background:rgba(249,115,22,.12);color:var(--orange)}
-.db-stat-icon.ic-green{background:rgba(34,197,94,.12);color:var(--green)}
-.db-stat-icon.ic-teal{background:rgba(6,182,212,.12);color:var(--teal)}
-.db-stat-icon.ic-purple{background:rgba(139,92,246,.12);color:var(--purple)}
-.db-stat .macro-val{font-size:1.8rem;color:var(--text)}
-.db-main-card{background:var(--surf);border:1px solid var(--border);border-radius:22px;overflow:hidden;box-shadow:var(--shadow)}
-.db-main-head{background:var(--grad);padding:20px 24px;color:#fff;font-weight:800;font-size:1.15rem;min-height:100px;display:flex;align-items:flex-end}
-.db-main-body{padding:18px}
-.db-actions{display:flex;flex-direction:column;gap:10px}
-.db-action{display:flex;align-items:center;justify-content:space-between;background:var(--surf2);border:1px solid var(--border);border-radius:14px;padding:13px 16px;font-weight:700;transition:all .2s;cursor:pointer}
-.db-action:hover{background:var(--surf3);border-color:var(--purple)}
-.db-week{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:10px}
-.db-week-label{text-align:center;font-size:.68rem;color:var(--muted);font-weight:700;margin-bottom:4px}
-.db-day{background:var(--surf2);border-radius:12px;height:74px;border:1px solid var(--border)}
-@media(max-width:1000px){.db-grid{grid-template-columns:1fr}.db-stats{grid-template-columns:repeat(2,1fr)}}
+/* -- BODYSCAN -- */
+.drop-zone{border:2px dashed var(--border);border-radius:14px;padding:32px 20px;text-align:center;cursor:pointer;transition:all .2s;user-select:none;background:var(--surf2)}
+.drop-zone:hover,.drop-zone.over{border-color:var(--accent);background:#7c6fff08}
+.drop-ic{font-size:2.2rem;margin-bottom:8px}
+.drop-text{color:var(--muted);font-size:.82rem}
+.scan-img-preview{width:100%;max-height:220px;object-fit:cover;border-radius:12px;display:block}
+.scan-card{background:var(--surf2);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)}
+.scores{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.schip{background:var(--surf);border-radius:10px;padding:10px;text-align:center;border:1px solid var(--border)}
+.scval{font-size:1.2rem;font-weight:900;color:var(--accent)}
+.sclbl{font-size:.64rem;color:var(--muted);margin-top:2px;font-weight:700;text-transform:uppercase}
+.scan-fb{font-size:.82rem;line-height:1.6;white-space:pre-line}
 
-/* ── PROFILE ── */
-.avatar{width:68px;height:68px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900;color:#fff;flex-shrink:0;box-shadow:0 4px 20px rgba(124,92,252,.3)}
-.profile-head{display:flex;align-items:center;gap:18px}
-.profile-name{font-size:1.1rem;font-weight:800}
-.profile-email{font-size:.78rem;color:var(--muted);margin-top:2px}
+/* -- PROFILE -- */
+.avatar{width:60px;height:60px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:1.8rem;font-weight:900;color:#fff;flex-shrink:0}
+.profile-head{display:flex;align-items:center;gap:16px}
+.profile-name{font-size:1.05rem;font-weight:800}
+.profile-email{font-size:.76rem;color:var(--muted);margin-top:2px}
 .stats-row{display:flex;justify-content:space-around}
 .stat{text-align:center}
-.stat-v{font-size:1.6rem;font-weight:900;color:var(--purple)}
-.stat-l{font-size:.7rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
+.stat-v{font-size:1.5rem;font-weight:900;color:var(--accent)}
+.stat-l{font-size:.68rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
 
-/* ── ERR MSG ── */
-.err-box{color:var(--red);font-size:.8rem;padding:10px 14px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);border-radius:12px;display:none}
+/* -- DASHBOARD -- */
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.dash-card{background:var(--surf);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center}
+.dash-val{font-size:1.6rem;font-weight:900;color:var(--accent)}
+.dash-lbl{font-size:.7rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.dash-icon{font-size:1.3rem;margin-bottom:4px}
+.quick-actions{display:flex;gap:8px;flex-wrap:wrap}
+/* Weekly schedule */
+.week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.week-day{background:var(--surf2);border:1px solid var(--border);border-radius:10px;padding:10px 4px;text-align:center;font-size:.72rem}
+.week-day .wd-label{font-weight:800;color:var(--text);margin-bottom:3px}
+.week-day .wd-type{color:var(--muted);font-size:.65rem;line-height:1.3}
+.week-day.rest{opacity:.6}
+.week-day.today{border-color:var(--accent);box-shadow:0 0 0 2px rgba(124,111,255,.15)}
+/* Tip card */
+.tip-card{background:linear-gradient(135deg,#7c6fff10,#5b8af510);border:1px solid #7c6fff25;border-radius:14px;padding:16px;font-size:.84rem;line-height:1.5;color:var(--text)}
+.tip-card .tip-icon{font-size:1.3rem;margin-bottom:6px;display:block}
+.tip-card .tip-text{font-style:italic}
 
-.global-loader{position:fixed;inset:0;background:rgba(12,12,29,.85);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;z-index:9998;flex-direction:column;gap:10px}
-.progress-wrap{margin-top:12px;background:var(--surf2);border:1px solid var(--border);border-radius:14px;padding:12px}
-.progress-track{height:8px;background:var(--surf3);border-radius:999px;overflow:hidden}
-.progress-fill{height:100%;width:0;background:var(--grad);transition:width .3s;border-radius:999px}
-.progress-text{margin-top:6px;font-size:.78rem;color:var(--muted);font-weight:700;text-align:right}
+/* -- RATE LIMIT BANNER -- */
+.rate-limit-banner{background:#f9731615;border:1px solid #f9731640;border-radius:10px;padding:12px 16px;font-size:.82rem;color:var(--orange);display:none;align-items:center;gap:8px;font-weight:600}
+.rate-limit-banner.on{display:flex}
+.rate-limit-banner .rl-timer{font-weight:900;font-size:.9rem;min-width:30px}
 
-/* ── SCROLLBAR ── */
-::-webkit-scrollbar{width:6px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--surf3);border-radius:10px}
-::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+/* -- ERR MSG -- */
+.err-box{color:var(--red);font-size:.8rem;padding:8px 12px;background:#ef444412;border:1px solid #ef444430;border-radius:8px;display:none}
 
-/* ── DÉFIS ── */
-.defi-header{display:flex;align-items:center;gap:18px;padding:20px;background:var(--surf);border:1px solid var(--border);border-radius:20px;margin-bottom:8px}
-.defi-level-badge{width:52px;height:52px;border-radius:16px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:900;color:#fff;flex-shrink:0}
-.defi-header-stats{display:flex;gap:20px;margin-left:auto}
-.defi-header-stat{text-align:center}
-.defi-header-stat-v{font-size:1.2rem;font-weight:900}
-.defi-header-stat-l{font-size:.62rem;color:var(--muted);font-weight:700;text-transform:uppercase}
-.defi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
-.defi-card{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:18px}
-.defi-tabs{display:flex;gap:0;margin-bottom:16px}
-.defi-tab{flex:1;padding:10px;background:none;border:none;color:var(--muted);font-weight:700;font-size:.85rem;cursor:pointer;border-radius:12px;font-family:inherit;transition:all .2s}
-.defi-tab.on{background:var(--surf2);color:var(--text)}
+/* -- GLOBAL LOADER -- */
+#global-loader{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:9998}
+#global-loader.on{display:flex}
+#global-loader .spinner{width:40px;height:40px;border-width:4px}
 
-/* ── FEED PHOTO ── */
-.feed-img{width:100%;max-height:300px;object-fit:cover;border-radius:14px;margin-top:8px}
-.comment-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:24px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .25s;font-family:inherit}
-.comment-btn:hover{border-color:var(--purple);color:var(--purple)}
-.comment{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:.82rem}
-.comment-author{font-weight:700;color:var(--purple);font-size:.78rem}
-.comment-text{flex:1;color:rgba(238,238,245,.85)}
-.comment-time{font-size:.68rem;color:var(--muted)}
-.comment-input{display:flex;gap:8px;margin-top:8px}
-.comment-input input{flex:1;border-radius:20px;padding:8px 14px;font-size:.82rem}
-.btn-mini{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem;padding:2px 6px;border-radius:6px}
-.btn-mini:hover{color:var(--red)}
-.physical-score{display:flex;align-items:baseline;gap:6px;margin:8px 0}
-.score-big{font-size:2rem;font-weight:900;color:var(--purple)}
-.score-label{font-size:.78rem;color:var(--muted)}
-
-/* ── RESPONSIVE: mobile bottom nav ── */
+/* -- RESPONSIVE -- */
 @media(max-width:767px){
   #app{flex-direction:column}
   .sidebar{
@@ -358,26 +303,32 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     position:fixed;bottom:0;left:0;right:0;
     background:var(--surf);z-index:100;
     overflow-x:auto;overflow-y:visible;
-    gap:0;height:64px;flex-shrink:0;
-    backdrop-filter:blur(20px);
-    background:rgba(21,21,41,.92);
+    gap:0;height:60px;flex-shrink:0;
   }
-  .sidebar-brand,.sidebar-user{display:none}
+  .sidebar-brand,.sidebar-user,.nav-sep{display:none}
   .bnav{flex-direction:row;gap:0;width:100%;height:100%;align-items:stretch}
   .bnav-btn{
     flex:1;flex-direction:column;gap:2px;
-    padding:6px 4px;
-    font-size:.56rem;letter-spacing:.03em;text-transform:uppercase;
+    padding:6px 2px;
+    font-size:.52rem;letter-spacing:.02em;text-transform:uppercase;
     border-radius:0;justify-content:center;align-items:center;
+    min-width:0;
   }
   .bnav-btn .nav-label{flex:none}
-  .bnav-btn .ic{font-size:1.2rem}
+  .bnav-btn .ic{font-size:1.1rem}
   .nav-dot{display:none}
-  .bnav-btn.on{background:none;color:var(--purple);box-shadow:none}
-  .app-main{padding-bottom:64px}
-  .scroll{padding:20px 16px 24px}
+  .bnav-btn.on{background:none;color:var(--accent);box-shadow:none}
+  .app-main{padding-bottom:60px}
+  .scroll{padding:16px 14px 20px}
   #btn-out{display:none}
-  .coach-stats{grid-template-columns:repeat(2,1fr)}
+  .macro-grid{grid-template-columns:repeat(2,1fr)}
+  .dash-grid{grid-template-columns:repeat(2,1fr)}
+  .week-grid{grid-template-columns:repeat(4,1fr)}
+  .recipe-macros{grid-template-columns:repeat(3,1fr)}
+  .scores{grid-template-columns:repeat(3,1fr)}
+}
+@media(max-width:400px){
+  .week-grid{grid-template-columns:repeat(3,1fr)}
 }
 </style>
 </head>
@@ -387,13 +338,13 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 <div id="boot">
   <div class="boot-logo">FitAI Pro</div>
   <div class="spinner" id="boot-sp"></div>
-  <div class="boot-msg" id="boot-msg">Initialisation…</div>
+  <div class="boot-msg" id="boot-msg">Initialisation...</div>
   <div class="boot-err" id="boot-err"></div>
 </div>
 
 <!-- AUTH -->
 <div id="auth">
-  <div class="auth-logo">FitAI Pro 💪</div>
+  <div class="auth-logo">FitAI Pro</div>
   <div class="auth-card">
     <div class="auth-tabs">
       <button class="atab on" id="atab-login" onclick="authTab('login')">Connexion</button>
@@ -405,57 +356,60 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     </div>
     <div class="field">
       <div class="lbl">Mot de passe</div>
-      <input type="password" id="a-pwd" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAuth()"/>
+      <input type="password" id="a-pwd" placeholder="????????" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAuth()"/>
     </div>
     <div class="auth-msg" id="auth-msg"></div>
     <button class="btn btn-p btn-full" id="auth-btn" onclick="doAuth()">Se connecter</button>
   </div>
 </div>
 
+<!-- GLOBAL LOADER -->
+<div id="global-loader"><div class="spinner"></div></div>
+
 <!-- APP -->
 <div id="app">
 
   <!-- SIDEBAR -->
   <aside class="sidebar">
-    <div class="sidebar-brand">
-      <div class="sidebar-brand-icon">⚡</div>
-      <div class="sidebar-brand-text">
-        <div class="sidebar-brand-name">FitAI Pro</div>
-        <div class="sidebar-brand-sub">Coach IA personnel</div>
-      </div>
-    </div>
+    <div class="sidebar-brand">FitAI Pro</div>
     <div class="sidebar-user">
-      <div class="sidebar-avatar">💪</div>
+      <div class="sidebar-avatar" id="sb-avatar">?</div>
       <div class="sidebar-user-info">
-        <div class="sidebar-user-name" id="tu">—</div>
+        <div class="sidebar-user-name" id="tu">--</div>
         <div class="sidebar-user-role">Membre</div>
       </div>
-      <button id="btn-out" onclick="doLogout()" title="Déconnexion">🚪</button>
+      <button id="btn-out" onclick="doLogout()" title="Deconnexion">&#x1F6AA;</button>
     </div>
     <nav class="bnav">
-      <button class="bnav-btn" id="n-dashboard" onclick="gotoTab('dashboard')">
-        <span class="ic">🏠</span><span class="nav-label">Dashboard</span><span class="nav-dot"></span>
+      <button class="bnav-btn on" id="n-dashboard" onclick="gotoTab('dashboard')">
+        <span class="ic">&#x1F3E0;</span><span class="nav-label">Dashboard</span><span class="nav-dot"></span>
+      </button>
+
+      <div class="nav-sep">Entrainement</div>
+      <button class="bnav-btn" id="n-coach" onclick="gotoTab('coach')">
+        <span class="ic">&#x1F916;</span><span class="nav-label">Coach IA</span><span class="nav-dot"></span>
       </button>
       <button class="bnav-btn" id="n-goal" onclick="gotoTab('goal')">
-        <span class="ic">⏱️</span><span class="nav-label">Express 15min</span><span class="nav-dot"></span>
+        <span class="ic">&#x1F3AF;</span><span class="nav-label">Objectif</span><span class="nav-dot"></span>
       </button>
-      <button class="bnav-btn" id="n-coach" onclick="gotoTab('coach')">
-        <span class="ic">💬</span><span class="nav-label">Coach IA</span><span class="nav-dot"></span>
+      <button class="bnav-btn" id="n-progress" onclick="gotoTab('progress')">
+        <span class="ic">&#x1F4C8;</span><span class="nav-label">Progres</span><span class="nav-dot"></span>
+      </button>
+
+      <div class="nav-sep">Sante</div>
+      <button class="bnav-btn" id="n-nutrition" onclick="gotoTab('nutrition')">
+        <span class="ic">&#x1F957;</span><span class="nav-label">Nutrition</span><span class="nav-dot"></span>
       </button>
       <button class="bnav-btn" id="n-bodyscan" onclick="gotoTab('bodyscan')">
-        <span class="ic">⚡</span><span class="nav-label">Scan IA</span><span class="nav-dot"></span>
+        <span class="ic">&#x1F4F8;</span><span class="nav-label">Body Scan</span><span class="nav-dot"></span>
       </button>
+
+      <div class="nav-sep">Social</div>
       <button class="bnav-btn" id="n-community" onclick="gotoTab('community')">
-        <span class="ic">🏋️</span><span class="nav-label">Entraînements</span><span class="nav-dot"></span>
-      </button>
-      <button class="bnav-btn" id="n-nutrition" onclick="gotoTab('nutrition')">
-        <span class="ic">🍽️</span><span class="nav-label">Nutrition</span><span class="nav-dot"></span>
+        <span class="ic">&#x1F30D;</span><span class="nav-label">Communaute</span><span class="nav-dot"></span>
       </button>
       <button class="bnav-btn" id="n-profile" onclick="gotoTab('profile')">
-        <span class="ic">📈</span><span class="nav-label">Progrès</span><span class="nav-dot"></span>
-      </button>
-      <button class="bnav-btn" id="n-defis" onclick="gotoTab('defis')">
-        <span class="ic">🏆</span><span class="nav-label">Défis</span><span class="nav-dot"></span>
+        <span class="ic">&#x1F464;</span><span class="nav-label">Profil</span><span class="nav-dot"></span>
       </button>
     </nav>
   </aside>
@@ -464,430 +418,354 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   <div class="app-main">
     <div class="scroll" id="scroll">
 
-      <!-- DASHBOARD -->
-      <div class="tab" id="t-dashboard">
-        <div class="db-top">
-          <div class="db-greet">
-            <div class="page-sub" style="margin:0">Bonjour 👋</div>
-            <small>Champion</small>
-          </div>
-          <div class="db-chip">📅 lundi 16 mars</div>
+      <!-- RATE LIMIT BANNER (global) -->
+      <div class="rate-limit-banner" id="rate-limit-banner">
+        &#x23F3; Gemini est temporairement limite. Reessayez dans <span class="rl-timer" id="rl-timer">--</span>s
+      </div>
+
+      <!-- ===================== DASHBOARD ===================== -->
+      <div class="tab on" id="t-dashboard">
+        <div class="page-header">
+          <div class="page-title">&#x1F3E0; Dashboard</div>
+          <div class="page-sub">Vue d'ensemble de votre progression</div>
         </div>
 
-        <div class="db-goal">
-          <div class="db-goal-main">
-            <div class="db-goal-ic">🎯</div>
-            <div>
-              <div style="font-weight:800;font-size:1.05rem">Définir mon objectif physique</div>
-              <div class="page-sub" style="margin:0">Pour des entraînements ultra-personnalisés</div>
-            </div>
-          </div>
-          <button class="btn btn-g btn-sm" onclick="gotoTab('goal')">→</button>
+        <!-- Stats grid -->
+        <div class="dash-grid" id="dash-stats">
+          <div class="dash-card"><div class="dash-icon">&#x1F3CB;</div><div class="dash-val" id="d-sessions">--</div><div class="dash-lbl">Seances</div></div>
+          <div class="dash-card"><div class="dash-icon">&#x1F525;</div><div class="dash-val" id="d-kcal">--</div><div class="dash-lbl">Kcal aujourd'hui</div></div>
+          <div class="dash-card"><div class="dash-icon">&#x1F4F8;</div><div class="dash-val" id="d-scans">--</div><div class="dash-lbl">Body Scans</div></div>
+          <div class="dash-card"><div class="dash-icon">&#x1F30D;</div><div class="dash-val" id="d-posts">--</div><div class="dash-lbl">Publications</div></div>
+          <div class="dash-card"><div class="dash-icon">&#x1F4AA;</div><div class="dash-val" id="d-streak">0</div><div class="dash-lbl">Jours actifs</div></div>
+          <div class="dash-card"><div class="dash-icon">&#x1F957;</div><div class="dash-val" id="d-meals">--</div><div class="dash-lbl">Repas today</div></div>
         </div>
 
-        <div class="card" style="background:transparent;border:none;box-shadow:none;padding:0">
-          <div style="font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:10px">Coach IA · Suggestions</div>
-          <div class="card" style="border-left:3px solid var(--accent)">
-            <div style="font-weight:700;color:var(--accent);font-size:.9rem">Reprenez l'entraînement</div>
-            <div class="meal-info" style="margin-top:4px">Aucune séance détectée cette semaine. Commencez par 15min express.</div>
-            <div style="margin-top:8px"><a href="#" onclick="gotoTab('coach');return false" style="color:var(--accent);font-weight:700;font-size:.82rem;text-decoration:none">Démarrer →</a></div>
-          </div>
-        </div>
-
-        <div class="db-stats">
-          <div class="db-stat">
-            <div class="db-stat-icon ic-orange">🔥</div>
-            <div class="macro-val" id="db-kcal">0</div>
-            <div class="macro-lbl">Calories brûlées</div>
-          </div>
-          <div class="db-stat">
-            <div class="db-stat-icon ic-green">🎯</div>
-            <div class="macro-val" id="db-sess">0</div>
-            <div class="macro-lbl">Séances / semaine</div>
-          </div>
-          <div class="db-stat">
-            <div class="db-stat-icon ic-teal">⏱️</div>
-            <div class="macro-val" id="db-time">0h</div>
-            <div class="macro-lbl">Temps total</div>
-          </div>
-          <div class="db-stat">
-            <div class="db-stat-icon ic-purple">📊</div>
-            <div class="macro-val" id="db-energy">0</div>
-            <div class="macro-lbl">Énergie moyenne</div>
+        <!-- Quick actions -->
+        <div class="card">
+          <div class="card-title">Actions rapides</div>
+          <div class="quick-actions">
+            <button class="btn btn-p btn-sm" onclick="gotoTab('coach')">&#x2728; Generer une seance</button>
+            <button class="btn btn-g btn-sm" onclick="gotoTab('nutrition')">&#x1F957; Nutrition</button>
+            <button class="btn btn-g btn-sm" onclick="gotoTab('bodyscan')">&#x1F4F8; Body Scan</button>
+            <button class="btn btn-g btn-sm" onclick="gotoTab('community')">&#x1F30D; Communaute</button>
           </div>
         </div>
 
-        <div class="db-grid">
-          <div style="display:flex;flex-direction:column;gap:14px">
-            <div class="db-main-card">
-              <div class="db-main-head">
-                <div>
-                  <div style="font-size:.7rem;opacity:.7;margin-bottom:4px">+ Recommandé</div>
-                  Entraînement du jour
-                </div>
-              </div>
-              <div class="db-main-body">
-                <div class="meal-info" style="margin-bottom:12px">🏋️ 0 exercices · ⏱️ 30 min · 🔥 ~350 kcal</div>
-                <div style="display:flex;gap:10px">
-                  <button class="btn btn-p" style="flex:1" onclick="gotoTab('coach')">▶ Commencer</button>
-                  <button class="btn btn-g" style="width:44px;padding:0" onclick="gotoTab('coach')">🔄</button>
-                </div>
-              </div>
-            </div>
-            <div class="card">
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <div class="card-title" style="margin:0">Activité cette semaine</div>
-                <span class="badge bg-orange" id="db-week-count">0 / 7 jours</span>
-              </div>
-              <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:8px">
-                <div class="db-week-label">L</div><div class="db-week-label">M</div><div class="db-week-label">M</div><div class="db-week-label">J</div><div class="db-week-label">V</div><div class="db-week-label">S</div><div class="db-week-label">D</div>
-              </div>
-              <div class="db-week">
-                <div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div><div class="db-day"></div>
-              </div>
-            </div>
+        <!-- Weekly schedule -->
+        <div class="card">
+          <div class="card-title">&#x1F4C5; Planning semaine</div>
+          <div class="week-grid" id="dash-week">
+            <div class="week-day"><div class="wd-label">Lun</div><div class="wd-type">--</div></div>
+            <div class="week-day"><div class="wd-label">Mar</div><div class="wd-type">--</div></div>
+            <div class="week-day"><div class="wd-label">Mer</div><div class="wd-type">--</div></div>
+            <div class="week-day"><div class="wd-label">Jeu</div><div class="wd-type">--</div></div>
+            <div class="week-day"><div class="wd-label">Ven</div><div class="wd-type">--</div></div>
+            <div class="week-day"><div class="wd-label">Sam</div><div class="wd-type">--</div></div>
+            <div class="week-day"><div class="wd-label">Dim</div><div class="wd-type">--</div></div>
           </div>
-          <div style="display:flex;flex-direction:column;gap:14px">
-            <div class="card">
-              <div class="card-title">Actions rapides</div>
-              <div class="db-actions">
-                <button class="db-action" onclick="gotoTab('coach')"><span>⚡ Express 15min</span><span>›</span></button>
-                <button class="db-action" onclick="gotoTab('coach')"><span>💬 Coach IA</span><span>›</span></button>
-                <button class="db-action" onclick="gotoTab('nutrition')"><span>🍽️ Nutrition</span><span>›</span></button>
-                <button class="db-action" onclick="gotoTab('profile')"><span>📈 Progrès</span><span>›</span></button>
-              </div>
-            </div>
-            <div class="card" style="background:linear-gradient(135deg,rgba(255,107,107,.12),rgba(255,138,128,.08));border-color:rgba(255,107,107,.2)">
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-                <div class="db-stat-icon" style="background:rgba(255,107,107,.15);width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.9rem">🏅</div>
-                <div>
-                  <div style="font-size:1.6rem;font-weight:900;color:var(--accent)" id="db-total-sessions">0</div>
-                  <div style="font-size:.72rem;color:var(--accent);font-weight:700">Séances totales</div>
-                </div>
-              </div>
-              <div class="meal-info">🔥 Continue comme ça champion !</div>
-            </div>
-          </div>
+        </div>
+
+        <!-- Tip of the day -->
+        <div class="tip-card" id="dash-tip">
+          <span class="tip-icon">&#x1F4A1;</span>
+          <span class="tip-text" id="dash-tip-text">Restez regulier : meme 15 minutes d'exercice par jour font une grande difference sur le long terme.</span>
+        </div>
+
+        <!-- Last session -->
+        <div class="card">
+          <div class="card-title">Derniere seance</div>
+          <div id="dash-last-session" class="empty"><span class="empty-ic">&#x1F4CB;</span>Aucune seance enregistree</div>
         </div>
       </div>
 
-      <!-- GOAL (Express 15min) -->
+      <!-- ===================== GOAL ===================== -->
       <div class="tab" id="t-goal">
         <div class="page-header">
-          <div class="page-title">🎯 Mon Objectif</div>
-          <div class="page-sub">Définissez votre objectif fitness personnalisé</div>
+          <div class="page-title">&#x1F3AF; Mon Objectif</div>
+          <div class="page-sub">Definissez votre objectif fitness personnalise</div>
         </div>
-
         <div class="card" id="goal-view" style="display:none">
-          <div class="card-title">Objectif enregistré ✓</div>
+          <div class="card-title">Objectif enregistre</div>
           <div id="goal-view-body" style="display:flex;flex-direction:column;gap:7px"></div>
-          <div style="margin-top:14px">
-            <button class="btn btn-g btn-sm" onclick="goalEdit()">✏️ Modifier</button>
-          </div>
+          <div style="margin-top:12px"><button class="btn btn-g btn-sm" onclick="goalEdit()">Modifier</button></div>
         </div>
-
         <div class="card" id="goal-form">
-          <div class="card-title">Définir mon objectif</div>
-          <div style="display:flex;flex-direction:column;gap:13px">
+          <div class="card-title">Definir mon objectif</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
             <div class="field"><div class="lbl">Type d'objectif</div>
               <select id="g-type">
-                <option value="">Sélectionner…</option>
-                <option value="prise_de_masse">💪 Prise de masse</option>
-                <option value="perte_de_poids">🔥 Perte de poids</option>
-                <option value="endurance">🏃 Endurance</option>
-                <option value="force">🏋️ Force</option>
-                <option value="remise_en_forme">🌟 Remise en forme</option>
-                <option value="maintien">⚖️ Maintien</option>
+                <option value="">Selectionner...</option>
+                <option value="prise_de_masse">Prise de masse</option>
+                <option value="perte_de_poids">Perte de poids</option>
+                <option value="endurance">Endurance</option>
+                <option value="force">Force</option>
+                <option value="remise_en_forme">Remise en forme</option>
+                <option value="maintien">Maintien</option>
               </select>
             </div>
             <div class="field"><div class="lbl">Niveau</div>
               <select id="g-level">
-                <option value="">Sélectionner…</option>
-                <option value="debutant">Débutant</option>
-                <option value="intermediaire">Intermédiaire</option>
-                <option value="avance">Avancé</option>
-                <option value="elite">Élite</option>
+                <option value="">Selectionner...</option>
+                <option value="debutant">Debutant</option>
+                <option value="intermediaire">Intermediaire</option>
+                <option value="avance">Avance</option>
+                <option value="elite">Elite</option>
               </select>
             </div>
             <div class="field"><div class="lbl">Description de votre objectif</div>
-              <textarea id="g-text" placeholder="Ex: Perdre 5kg en 3 mois, 3 séances/semaine…"></textarea>
+              <textarea id="g-text" placeholder="Ex: Perdre 5kg en 3 mois, 3 seances/semaine..."></textarea>
             </div>
             <div class="field"><div class="lbl">Contraintes / blessures (optionnel)</div>
-              <textarea id="g-constraints" placeholder="Ex: Genou fragile, pas de course…" style="min-height:56px"></textarea>
+              <textarea id="g-constraints" placeholder="Ex: Genou fragile, pas de course..." style="min-height:50px"></textarea>
             </div>
-            <button class="btn btn-p btn-full" id="btn-save-goal" onclick="saveGoal()">💾 Enregistrer l'objectif</button>
+            <button class="btn btn-p btn-full" id="btn-save-goal" onclick="saveGoal()">Enregistrer l'objectif</button>
           </div>
         </div>
       </div>
 
-      <!-- COACH IA (Chat style) -->
+      <!-- ===================== COACH ===================== -->
       <div class="tab" id="t-coach">
-        <div class="coach-header">
-          <div class="coach-header-icon">🤖</div>
-          <div class="coach-header-text">
-            <div class="coach-header-title">Coach IA Expert</div>
-            <div class="coach-header-sub">Personnalisé à votre profil</div>
-          </div>
-          <div class="coach-status">🟢 En ligne</div>
+        <div class="page-header">
+          <div class="page-title">&#x1F916; Coach IA</div>
+          <div class="page-sub">Generez des seances personnalisees avec l'IA</div>
         </div>
-
-        <div class="coach-stats">
-          <div class="coach-stat"><span class="coach-stat-icon">⚡</span><div class="coach-stat-val" id="cs-week">0</div><div class="coach-stat-lbl">Semaine</div></div>
-          <div class="coach-stat"><span class="coach-stat-icon">🎯</span><div class="coach-stat-val" id="cs-level">—</div><div class="coach-stat-lbl">Niveau</div></div>
-          <div class="coach-stat"><span class="coach-stat-icon">🔥</span><div class="coach-stat-val" id="cs-kcal">0.0k</div><div class="coach-stat-lbl">Calories</div></div>
-          <div class="coach-stat"><span class="coach-stat-icon">📊</span><div class="coach-stat-val" id="cs-energy">—</div><div class="coach-stat-lbl">Énergie</div></div>
+        <div class="card">
+          <div class="card-title">Generer une seance</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="field"><div class="lbl">Decrivez la seance souhaitee</div>
+              <textarea id="coach-input" placeholder="Ex: HIIT 30 min sans materiel, focus cardio et abdos..."></textarea>
+            </div>
+            <div class="err-box" id="coach-err"></div>
+            <button class="btn btn-p btn-full" id="btn-gen" onclick="generateWorkout()">Generer ma seance</button>
+          </div>
         </div>
-
-        <div class="card" style="padding:18px">
-          <div class="chat-messages" id="chat-messages">
-            <!-- Messages will be rendered by JS -->
-          </div>
-          <div class="chat-quick" id="chat-quick">
-            <button class="chat-chip" onclick="sendCoachMsg('Programme HIIT 20min intense')">💪 Programme HIIT 20min intense</button>
-            <button class="chat-chip" onclick="sendCoachMsg('Comment améliorer mes abdos ?')">🎯 Comment améliorer mes abdos ?</button>
-            <button class="chat-chip" onclick="sendCoachMsg('Repas post-workout optimal')">🍽️ Repas post-workout optimal</button>
-            <button class="chat-chip" onclick="sendCoachMsg('Je stagne, que faire ?')">📋 Je stagne, que faire ?</button>
-          </div>
-          <div class="chat-input-row">
-            <input type="text" id="coach-input" placeholder="Pose ta question au coach…" onkeydown="if(event.key==='Enter')sendCoachMsg()"/>
-            <button class="chat-send" id="btn-gen" onclick="sendCoachMsg()">➤</button>
-          </div>
-          <div class="err-box" id="coach-err"></div>
-        </div>
-
         <div class="card" id="plan-card" style="display:none">
           <div class="plan-header" id="plan-head"></div>
           <div class="sep"></div>
           <div class="plan-notes-text" id="plan-notes"></div>
-          <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px" id="plan-blocks"></div>
-          <div style="margin-top:16px;display:flex;gap:10px">
-            <button class="btn btn-g btn-sm" onclick="saveSession()">💾 Sauvegarder</button>
-            <button class="btn btn-g btn-sm" onclick="document.getElementById('plan-card').style.display='none'">✕</button>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px" id="plan-blocks"></div>
+          <div style="margin-top:14px;display:flex;gap:10px">
+            <button class="btn btn-g btn-sm" onclick="saveSession()">Sauvegarder</button>
+            <button class="btn btn-g btn-sm" onclick="document.getElementById('plan-card').style.display='none'">Fermer</button>
           </div>
         </div>
-
         <div class="card">
-          <div class="card-title">Historique des séances</div>
-          <div id="history-list" class="empty"><span class="empty-ic">📋</span>Aucune séance sauvegardée</div>
+          <div class="card-title">Historique des seances</div>
+          <div id="history-list" class="empty"><span class="empty-ic">&#x1F4CB;</span>Aucune seance sauvegardee</div>
         </div>
       </div>
 
-      <!-- NUTRITION -->
+      <!-- ===================== PROGRESS ===================== -->
+      <div class="tab" id="t-progress">
+        <div class="page-header">
+          <div class="page-title">&#x1F4C8; Mes Progres</div>
+          <div class="page-sub">Suivez votre evolution au fil du temps</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Activite recente</div>
+          <div id="progress-activity" class="empty"><span class="empty-ic">&#x1F4CA;</span>Chargement...</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Historique des scans</div>
+          <div id="progress-scans" class="empty"><span class="empty-ic">&#x1F4F8;</span>Chargement...</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Evolution poids</div>
+          <div id="progress-weight" class="empty"><span class="empty-ic">&#x2696;</span>Enregistrez votre poids dans le profil pour suivre l'evolution</div>
+        </div>
+      </div>
+
+      <!-- ===================== NUTRITION ===================== -->
       <div class="tab" id="t-nutrition">
         <div class="page-header">
-          <div class="page-title">🍽️ Nutrition</div>
-          <div class="page-sub">Suivez vos apports nutritionnels quotidiens</div>
+          <div class="page-title">&#x1F957; Nutrition</div>
+          <div class="page-sub">Suivez vos apports et generez des recettes IA</div>
         </div>
 
+        <!-- AI targets -->
+        <div class="card" id="nutrition-targets-card">
+          <div class="card-title">Objectifs IA</div>
+          <div id="nutrition-targets" style="display:none">
+            <div class="grid4" id="nt-grid">
+              <div class="target-card"><div class="target-val" id="nt-kcal">--</div><div class="target-lbl">Kcal cible</div></div>
+              <div class="target-card"><div class="target-val" id="nt-prot">--</div><div class="target-lbl">Proteines</div></div>
+              <div class="target-card"><div class="target-val" id="nt-carb">--</div><div class="target-lbl">Glucides</div></div>
+              <div class="target-card"><div class="target-val" id="nt-fat">--</div><div class="target-lbl">Lipides</div></div>
+            </div>
+            <div style="margin-top:6px;font-size:.76rem;color:var(--muted);font-style:italic" id="nt-notes"></div>
+          </div>
+          <div id="nutrition-targets-empty">
+            <div class="empty" style="padding:14px"><span class="empty-ic">&#x1F916;</span>Aucun objectif nutritionnel calcule</div>
+          </div>
+          <div style="margin-top:10px">
+            <button class="btn btn-p btn-sm" id="btn-gen-nutrition" onclick="generateNutrition()">Calculer mes macros IA</button>
+          </div>
+        </div>
+
+        <!-- Daily totals -->
         <div class="card">
           <div class="card-title">Totaux du jour</div>
           <div class="macro-grid">
-            <div class="macro-card">
-              <span class="macro-icon">🔥</span>
-              <div class="macro-val" id="m-kcal">0</div>
-              <div class="macro-lbl">Kcal</div>
-            </div>
-            <div class="macro-card">
-              <span class="macro-icon">💪</span>
-              <div class="macro-val" id="m-prot">0g</div>
-              <div class="macro-lbl">Protéines</div>
-            </div>
-            <div class="macro-card">
-              <span class="macro-icon">🌾</span>
-              <div class="macro-val" id="m-carb">0g</div>
-              <div class="macro-lbl">Glucides</div>
-            </div>
-            <div class="macro-card">
-              <span class="macro-icon">🥑</span>
-              <div class="macro-val" id="m-fat">0g</div>
-              <div class="macro-lbl">Lipides</div>
-            </div>
+            <div class="macro-card"><span class="macro-icon">&#x1F525;</span><div class="macro-val" id="m-kcal">0</div><div class="macro-lbl">Kcal</div></div>
+            <div class="macro-card"><span class="macro-icon">&#x1F4AA;</span><div class="macro-val" id="m-prot">0g</div><div class="macro-lbl">Proteines</div></div>
+            <div class="macro-card"><span class="macro-icon">&#x1F33E;</span><div class="macro-val" id="m-carb">0g</div><div class="macro-lbl">Glucides</div></div>
+            <div class="macro-card"><span class="macro-icon">&#x1F951;</span><div class="macro-val" id="m-fat">0g</div><div class="macro-lbl">Lipides</div></div>
+          </div>
+          <div id="macro-progress" style="margin-top:10px;display:none">
+            <div class="lbl">Progression vs objectif</div>
+            <div class="progress-bar"><div class="progress-fill" id="kcal-progress" style="width:0%;background:var(--grad)"></div></div>
+            <div style="font-size:.72rem;color:var(--muted);margin-top:4px" id="kcal-progress-text"></div>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-title">Objectifs du jour</div>
-          <div class="progress-wrap">
-            <div class="progress-track"><div class="progress-fill" id="cal-progress-fill"></div></div>
-            <div class="progress-text" id="cal-progress-text">0 / 2200 kcal</div>
-          </div>
-          <div class="macro-grid" style="margin-top:12px">
-            <div class="macro-card">
-              <span class="macro-icon">🎯</span>
-              <div class="macro-val" id="target-kcal">2200</div>
-              <div class="macro-lbl">Objectif</div>
-            </div>
-            <div class="macro-card">
-              <span class="macro-icon">💪</span>
-              <div class="macro-val" id="target-prot">140g</div>
-              <div class="macro-lbl">Prot. cible</div>
-            </div>
-            <div class="macro-card">
-              <span class="macro-icon">🌾</span>
-              <div class="macro-val" id="target-carb">260g</div>
-              <div class="macro-lbl">Gluc. cible</div>
-            </div>
-            <div class="macro-card">
-              <span class="macro-icon">🥑</span>
-              <div class="macro-val" id="target-fat">70g</div>
-              <div class="macro-lbl">Lip. cible</div>
-            </div>
-          </div>
-        </div>
-
+        <!-- Add meal -->
         <div class="card">
           <div class="card-title">Ajouter un repas</div>
           <div style="display:flex;flex-direction:column;gap:12px">
             <div class="field"><div class="lbl">Nom du repas</div>
-              <input type="text" id="n-name" placeholder="Ex: Poulet riz légumes"/>
+              <input type="text" id="meal-name" placeholder="Ex: Poulet riz legumes"/>
             </div>
             <div class="grid2">
-              <div class="field"><div class="lbl">Calories (kcal)</div><input type="number" id="n-kcal" placeholder="450" min="0"/></div>
-              <div class="field"><div class="lbl">Protéines (g)</div><input type="number" id="n-prot" placeholder="35" min="0"/></div>
-              <div class="field"><div class="lbl">Glucides (g)</div><input type="number" id="n-carb" placeholder="55" min="0"/></div>
-              <div class="field"><div class="lbl">Lipides (g)</div><input type="number" id="n-fat" placeholder="12" min="0"/></div>
+              <div class="field"><div class="lbl">Calories (kcal)</div><input type="number" id="meal-kcal" placeholder="450" min="0"/></div>
+              <div class="field"><div class="lbl">Proteines (g)</div><input type="number" id="meal-prot" placeholder="35" min="0"/></div>
+              <div class="field"><div class="lbl">Glucides (g)</div><input type="number" id="meal-carb" placeholder="55" min="0"/></div>
+              <div class="field"><div class="lbl">Lipides (g)</div><input type="number" id="meal-fat" placeholder="12" min="0"/></div>
             </div>
-            <button class="btn btn-p btn-full" id="btn-meal" onclick="addMeal()">➕ Ajouter ce repas</button>
+            <button class="btn btn-p btn-full" id="btn-meal" onclick="addMeal()">Ajouter ce repas</button>
           </div>
         </div>
 
+        <!-- Meals list -->
         <div class="card">
           <div class="card-title">Repas du jour</div>
-          <div id="meals-list" class="empty"><span class="empty-ic">🍽️</span>Aucun repas aujourd'hui</div>
+          <div id="meals-list" class="empty"><span class="empty-ic">&#x1F37D;</span>Aucun repas aujourd'hui</div>
         </div>
+
+        <!-- RECIPE AI -->
+        <div class="card">
+          <div class="card-title">&#x1F373; Generateur de recettes IA</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="field"><div class="lbl">Ingredients disponibles</div>
+              <textarea id="recipe-ingredients" placeholder="Ex: poulet, riz, brocoli, oignon, huile d'olive..." style="min-height:60px"></textarea>
+            </div>
+            <div class="grid2">
+              <div class="field"><div class="lbl">Objectif recette</div>
+                <select id="recipe-goal">
+                  <option value="Repas equilibre">Equilibre</option>
+                  <option value="Riche en proteines">Riche en proteines</option>
+                  <option value="Low carb">Low carb</option>
+                  <option value="Post-entrainement">Post-entrainement</option>
+                  <option value="Leger et rapide">Leger et rapide</option>
+                </select>
+              </div>
+              <div class="field"><div class="lbl">Calories cibles (optionnel)</div>
+                <input type="number" id="recipe-calories" placeholder="500" min="100" max="2000"/>
+              </div>
+            </div>
+            <div class="err-box" id="recipe-err"></div>
+            <button class="btn btn-p btn-full" id="btn-gen-recipe" onclick="generateRecipe()">&#x1F373; Generer la recette</button>
+          </div>
+        </div>
+
+        <!-- Recipe result -->
+        <div id="recipe-result-card" style="display:none"></div>
       </div>
 
-      <!-- COMMUNITY (Entraînements) -->
+      <!-- ===================== COMMUNITY ===================== -->
       <div class="tab" id="t-community">
         <div class="page-header">
-          <div class="page-title">🌍 Communauté</div>
+          <div class="page-title">&#x1F30D; Communaute</div>
           <div class="page-sub">Partagez vos performances et inspirez les autres</div>
         </div>
-
         <div class="card">
           <div class="card-title">Partager une performance</div>
           <div style="display:flex;flex-direction:column;gap:12px">
             <div class="field"><div class="lbl">Votre message</div>
-              <textarea id="post-input" placeholder="Ex: Nouvelle PR au squat 120kg × 5 💪 Trop content !"></textarea>
+              <textarea id="post-input" placeholder="Ex: Nouvelle PR au squat 120kg x 5 ! Trop content !"></textarea>
             </div>
-            <div style="display:flex;gap:10px;align-items:center">
-              <button class="btn btn-g btn-sm" onclick="document.getElementById('post-photo-input').click()">📷 Photo</button>
-              <span class="meal-info" id="post-photo-name"></span>
-              <input type="file" id="post-photo-input" accept="image/*" style="display:none" onchange="previewPostPhoto(this.files[0])"/>
-            </div>
-            <div id="post-photo-preview" style="display:none">
-              <img id="post-photo-img" style="width:100%;max-height:200px;object-fit:cover;border-radius:14px"/>
-            </div>
-            <button class="btn btn-p btn-full" id="btn-post" onclick="createPost()">📢 Publier</button>
+            <button class="btn btn-p btn-full" id="btn-post" onclick="createPost()">Publier</button>
           </div>
         </div>
-
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <div style="font-size:1rem;font-weight:800;color:var(--text)">Fil d'actualité</div>
-          <button class="btn btn-g btn-sm" onclick="loadFeed()">🔄</button>
+          <div style="font-size:.95rem;font-weight:800;color:var(--text)">Fil d'actualite</div>
+          <button class="btn btn-g btn-sm" onclick="loadFeed()">Actualiser</button>
         </div>
         <div id="feed" style="display:flex;flex-direction:column;gap:12px">
-          <div class="empty"><span class="empty-ic">👥</span>Chargement…</div>
+          <div class="empty"><span class="empty-ic">&#x1F465;</span>Chargement...</div>
         </div>
       </div>
 
-      <!-- BODYSCAN (Scan IA) -->
+      <!-- ===================== BODYSCAN ===================== -->
       <div class="tab" id="t-bodyscan">
         <div class="page-header">
-          <div class="page-title">⚡ Scan IA</div>
+          <div class="page-title">&#x1F4F8; Body Scan IA</div>
           <div class="page-sub">Analysez votre physique avec l'intelligence artificielle</div>
         </div>
-
         <div class="card">
           <div class="card-title">Analyser une photo</div>
           <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()"
             ondragover="event.preventDefault();this.classList.add('over')"
             ondragleave="this.classList.remove('over')"
             ondrop="event.preventDefault();this.classList.remove('over');handleDrop(event)">
-            <div class="drop-ic">📷</div>
-            <div class="drop-text">Cliquez ou déposez une photo ici</div>
-            <div class="drop-text" style="margin-top:5px;font-size:.74rem">JPG, PNG, WEBP — max 6MB</div>
+            <div class="drop-ic">&#x1F4F7;</div>
+            <div class="drop-text">Cliquez ou deposez une photo ici</div>
+            <div class="drop-text" style="margin-top:4px;font-size:.72rem">JPG, PNG, WEBP — max 6MB</div>
           </div>
           <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFile(this.files[0])"/>
-          <div id="scan-preview" style="display:none;flex-direction:column;gap:12px;margin-top:14px">
-            <img id="scan-img" class="scan-img-preview"/>
-            <button class="btn btn-p btn-full" id="btn-scan" onclick="doScan()">🔬 Analyser avec l'IA</button>
+          <div id="scan-preview" style="display:none;flex-direction:column;gap:12px;margin-top:12px">
+            <img id="scan-img" class="scan-img-preview" alt="Preview"/>
+            <button class="btn btn-p btn-full" id="btn-scan" onclick="doScan()">Analyser avec l'IA</button>
             <div class="err-box" id="scan-err"></div>
           </div>
         </div>
-
         <div class="card">
           <div class="card-title">Mes analyses</div>
-          <div id="scans-list" class="empty"><span class="empty-ic">🔬</span>Aucune analyse</div>
+          <div id="scans-list" class="empty"><span class="empty-ic">&#x1F52C;</span>Aucune analyse</div>
         </div>
       </div>
 
-      <!-- DÉFIS -->
-      <div class="tab" id="t-defis">
-        <div class="defi-header">
-          <div class="defi-level-badge" id="defi-level">1</div>
-          <div>
-            <div style="font-size:1.2rem;font-weight:900">Niveau <span id="defi-level-text">1</span></div>
-            <div class="meal-info" id="defi-completed">0/7 défis complétés</div>
-          </div>
-          <div class="defi-header-stats">
-            <div class="defi-header-stat"><div class="defi-header-stat-v" style="color:var(--purple)">🏆</div><div class="defi-header-stat-l">Complétés</div></div>
-            <div class="defi-header-stat"><div class="defi-header-stat-v" style="color:var(--teal)">📊 0</div><div class="defi-header-stat-l">En cours</div></div>
-            <div class="defi-header-stat"><div class="defi-header-stat-v" style="color:var(--yellow)" id="defi-xp">0</div><div class="defi-header-stat-l">XP total</div></div>
-          </div>
-        </div>
-
-        <div class="card" style="padding:12px">
-          <div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">Niveau 1</div>
-          <div class="progress-track" style="height:8px"><div class="progress-fill" id="defi-progress-fill" style="width:0%"></div></div>
-          <div class="meal-info" style="margin-top:4px" id="defi-progress-text">0 / 1000 XP pour atteindre le niveau 2</div>
-        </div>
-
-        <div style="font-size:.9rem;font-weight:800;margin-top:6px">🔒 À DÉBLOQUER</div>
-
-        <div class="defi-grid" id="defis-list">
-          <div class="empty"><span class="empty-ic">🏆</span>Chargement des défis…</div>
-        </div>
-      </div>
-
-      <!-- PROFILE (Progrès) -->
+      <!-- ===================== PROFILE ===================== -->
       <div class="tab" id="t-profile">
         <div class="page-header">
-          <div class="page-title">👤 Mon Profil</div>
-          <div class="page-sub">Gérez vos informations personnelles</div>
+          <div class="page-title">&#x1F464; Mon Profil</div>
+          <div class="page-sub">Gerez vos informations personnelles</div>
         </div>
-
         <div class="card">
           <div class="profile-head">
             <div class="avatar" id="p-avatar">?</div>
             <div>
-              <div class="profile-name" id="p-name">—</div>
+              <div class="profile-name" id="p-name">--</div>
               <div class="profile-email" id="p-email"></div>
             </div>
           </div>
         </div>
-
         <div class="card">
-          <div class="stats-row" id="d-stats">
-            <div class="stat"><div class="stat-v" id="st-sess">—</div><div class="stat-l">Séances</div></div>
-            <div class="stat"><div class="stat-v" id="st-scans">—</div><div class="stat-l">Scans</div></div>
-            <div class="stat"><div class="stat-v" id="st-posts">—</div><div class="stat-l">Posts</div></div>
+          <div class="stats-row">
+            <div class="stat"><div class="stat-v" id="st-sess">--</div><div class="stat-l">Seances</div></div>
+            <div class="stat"><div class="stat-v" id="st-scans">--</div><div class="stat-l">Scans</div></div>
+            <div class="stat"><div class="stat-v" id="st-posts">--</div><div class="stat-l">Posts</div></div>
           </div>
         </div>
-
         <div class="card">
           <div class="card-title">Modifier mon profil</div>
           <div style="display:flex;flex-direction:column;gap:12px">
-            <div class="field"><div class="lbl">Pseudo affiché</div>
-              <input type="text" id="p-pseudo" placeholder="Votre pseudo…"/>
+            <div class="field"><div class="lbl">Pseudo affiche</div>
+              <input type="text" id="p-pseudo" placeholder="Votre pseudo..."/>
             </div>
-            <button class="btn btn-p btn-full" id="btn-save-profile" onclick="saveProfile()">💾 Enregistrer</button>
+            <div class="grid2">
+              <div class="field"><div class="lbl">Poids (kg)</div>
+                <input type="number" id="p-weight" placeholder="75" min="30" max="300"/>
+              </div>
+              <div class="field"><div class="lbl">Taille (cm)</div>
+                <input type="number" id="p-height" placeholder="178" min="100" max="250"/>
+              </div>
+            </div>
+            <button class="btn btn-p btn-full" id="btn-save-profile" onclick="saveProfile()">Enregistrer</button>
           </div>
         </div>
-
-        <div class="card" style="border-color:rgba(239,68,68,.2)">
+        <div class="card" style="border-color:#ef444440">
           <div class="card-title" style="color:var(--red)">Zone danger</div>
-          <button class="btn btn-d btn-sm" onclick="doLogout()">🚪 Déconnexion complète</button>
+          <button class="btn btn-d btn-sm" onclick="doLogout()">Deconnexion complete</button>
         </div>
       </div>
 
@@ -895,7 +773,6 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   </div><!-- /app-main -->
 </div><!-- /app -->
 
-<div class="global-loader" id="global-loader"><div class="spinner"></div><div class="boot-msg">Chargement…</div></div>
 <div id="toast"></div>
 <script src="/app.js"></script>
 </body>

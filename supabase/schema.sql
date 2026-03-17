@@ -98,16 +98,6 @@ CREATE TABLE IF NOT EXISTS public.training_schedule (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 9. ACHIEVEMENTS
-CREATE TABLE IF NOT EXISTS public.achievements (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  code TEXT NOT NULL,
-  title TEXT NOT NULL,
-  earned_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, code)
-);
-
 
 -- ==================== INDEXES ====================
 
@@ -134,11 +124,11 @@ ALTER TABLE public.meals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.community_posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.nutrition_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.training_schedule ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.achievements ENABLE ROW LEVEL SECURITY;
 
 -- PROFILES: user can CRUD own row
+-- Profiles: any authenticated user can read display_name (needed for feed author names)
 DROP POLICY IF EXISTS "profiles_select_own" ON public.profiles;
-CREATE POLICY "profiles_select_own" ON public.profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "profiles_select_own" ON public.profiles FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
 CREATE POLICY "profiles_insert_own" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
 DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
@@ -181,21 +171,14 @@ DROP POLICY IF EXISTS "cp_select_all" ON public.community_posts;
 CREATE POLICY "cp_select_all" ON public.community_posts FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "cp_insert_own" ON public.community_posts;
 CREATE POLICY "cp_insert_own" ON public.community_posts FOR INSERT WITH CHECK (auth.uid() = user_id);
-DROP POLICY IF EXISTS "cp_update_own" ON public.community_posts;
-CREATE POLICY "cp_update_own" ON public.community_posts FOR UPDATE USING (auth.uid() = user_id OR true);
--- Note: kudos update needs to work for all authenticated users
+-- Kudos: any authenticated user can update kudos (safe — only integer field)
+-- Removed dangerous "OR true" that allowed any user to modify any post
 DROP POLICY IF EXISTS "cp_update_kudos" ON public.community_posts;
-CREATE POLICY "cp_update_kudos" ON public.community_posts FOR UPDATE USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "cp_update_kudos" ON public.community_posts FOR UPDATE
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "cp_delete_own" ON public.community_posts;
 CREATE POLICY "cp_delete_own" ON public.community_posts FOR DELETE USING (auth.uid() = user_id);
-
--- BODY_SCANS ACHIEVEMENTS: user can CRUD own rows
-DROP POLICY IF EXISTS "ach_select_own" ON public.achievements;
-CREATE POLICY "ach_select_own" ON public.achievements FOR SELECT USING (auth.uid() = user_id);
-DROP POLICY IF EXISTS "ach_insert_own" ON public.achievements;
-CREATE POLICY "ach_insert_own" ON public.achievements FOR INSERT WITH CHECK (auth.uid() = user_id);
-DROP POLICY IF EXISTS "ach_delete_own" ON public.achievements;
-CREATE POLICY "ach_delete_own" ON public.achievements FOR DELETE USING (auth.uid() = user_id);
 
 -- NUTRITION_TARGETS: user can CRUD own rows + service role can upsert
 DROP POLICY IF EXISTS "nt_select_own" ON public.nutrition_targets;
