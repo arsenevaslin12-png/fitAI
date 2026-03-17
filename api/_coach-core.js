@@ -1,0 +1,564 @@
+"use strict";
+
+const {
+  DEFAULT_MODEL: MODEL,
+  DEFAULT_TIMEOUT_MS: TIMEOUT_MS,
+  extractJson,
+  callGeminiText
+} = require("./_gemini");
+
+const MAX_RETRIES = 0;
+const rateLimitBuckets = new Map();
+
+function sendJson(res, status, body) {
+  if (res.writableEnded) return;
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.end(JSON.stringify(body));
+}
+
+function setCors(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+}
+
+function parseBody(req) {
+  const body = req.body;
+  if (!body) return {};
+  if (typeof body === "string") {
+    try { return JSON.parse(body); } catch { return {}; }
+  }
+  return body;
+}
+
+function sanitizeInput(input, maxLength = 1000) {
+  if (typeof input !== "string") return "";
+  return input
+    .slice(0, maxLength)
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/javascript:/gi, "")
+    .replace(/on\w+=/gi, "")
+    .trim();
+}
+
+function normalizeText(value, fallback = "") {
+  return sanitizeInput(String(value || fallback), 240);
+}
+
+function normalizeRole(value) {
+  const v = String(value || "user").toLowerCase();
+  return v === "assistant" || v === "ai" || v === "coach" ? "assistant" : "user";
+}
+
+function extractJSON(text) {
+  return extractJson(text);
+}
+
+function tryParseJson(text) {
+  try {
+    return JSON.parse(String(text || ""));
+  } catch {
+    return null;
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getIp(req) {
+  const xfwd = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return xfwd || req.socket?.remoteAddress || "unknown";
+}
+
+function checkRateLimit(bucket, key, limit = 12, windowMs = 60000) {
+  const now = Date.now();
+  const bucketKey = `${bucket}:${key}`;
+  const prev = rateLimitBuckets.get(bucketKey) || [];
+  const recent = prev.filter((ts) => now - ts < windowMs);
+  if (recent.length >= limit) {
+    rateLimitBuckets.set(bucketKey, recent);
+    const retryAfterSec = Math.max(1, Math.ceil((windowMs - (now - recent[0])) / 1000));
+    return { ok: false, retryAfterSec };
+  }
+  recent.push(now);
+  rateLimitBuckets.set(bucketKey, recent);
+  return { ok: true, remaining: Math.max(0, limit - recent.length) };
+}
+
+function detectIntent(message, responseMode) {
+  if (responseMode === "recipe_json") return "recipe_request";
+  const text = String(message || "").toLowerCase();
+  const has = (...keywords) => keywords.some((k) => text.includes(k));
+
+  if (!text) return "general_fitness";
+  if (has("salut", "bonjour", "hello", "yo", "ça va", "ca va", "hey")) return "greeting";
+  if (has("recette", "ingrédient", "ingredient", "cuisine", "plat")) return "recipe_request";
+  if (has("programme", "entraînement", "entrainement", "séance", "seance", "workout", "hiit", "full body", "upper body", "lower body", "exercice", "routine", "split")) return "workout_request";
+  if (has("proté", "prot", "calorie", "macro", "nutrition", "aliment", "repas", "glucide", "lipide", "complément", "complement")) return "nutrition_question";
+  if (has("sommeil", "repos", "récup", "recup", "courbature", "fatigue", "douleur", "blessure", "mobilité", "mobilite", "stretch")) return "recovery_question";
+  if (has("motivation", "discipline", "plateau", "stagne", "stagnation", "habitude", "mental", "mindset")) return "motivation_question";
+  if (has("progression", "progresse", "stats", "niveau", "streak", "gain", "résultat", "resultat")) return "progress_question";
+  return "general_fitness";
+}
+
+function getGoalDescription(goal) {
+  const goals = {
+    prise_de_masse: "prioriser hypertrophie, surcharge progressive et récupération solide",
+    perte_de_poids: "prioriser déficit raisonnable, volume utile et activité régulière",
+    endurance: "prioriser densité, cardio et tolérance à l'effort",
+    force: "prioriser exercices de base, qualité technique et repos plus long",
+    remise_en_forme: "prioriser adhérence, technique et progression simple",
+    maintien: "prioriser variété et maintien du niveau"
+  };
+  return goals[String(goal || "").toLowerCase()] || goals.remise_en_forme;
+}
+
+function getLevelDescription(level) {
+  const levels = {
+    beginner: "débutant, besoin d'explications claires et volume modéré",
+    debutant: "débutant, besoin d'explications claires et volume modéré",
+    intermediate: "intermédiaire, bonne base technique, progression possible",
+    intermediaire: "intermédiaire, bonne base technique, progression possible",
+    advanced: "avancé, besoin d'une progression plus fine et d'une fatigue mieux gérée",
+    avance: "avancé, besoin d'une progression plus fine et d'une fatigue mieux gérée"
+  };
+  return levels[String(level || "").toLowerCase()] || levels.beginner;
+}
+
+function makeProfileSummary(profile = {}, goalContext = {}) {
+  const goal = normalizeText(profile.goal || goalContext.type || "remise_en_forme");
+  const level = normalizeText(profile.level || goalContext.level || "beginner");
+  const constraints = normalizeText(profile.injuries || goalContext.constraints || "aucune");
+  const equipment = normalizeText(profile.equipment || "poids du corps");
+  const sleep = Number(profile.sleep_hours || 0);
+  const recovery = Number(profile.recovery_score || 0);
+  const weight = Number(profile.weight || 0);
+  const height = Number(profile.height || 0);
+
+  return {
+    goal,
+    level,
+    constraints,
+    equipment,
+    sleep: sleep > 0 ? sleep : null,
+    recovery: recovery > 0 ? recovery : null,
+    weight: weight > 0 ? weight : null,
+    height: height > 0 ? height : null,
+    display_name: normalizeText(profile.display_name || "")
+  };
+}
+
+function historyBlock(history = []) {
+  const items = Array.isArray(history) ? history.slice(-6) : [];
+  if (!items.length) return "";
+  return items.map((item) => {
+    const role = normalizeRole(item.role) === "assistant" ? "Coach" : "Utilisateur";
+    return `${role}: ${sanitizeInput(String(item.content || ""), 280)}`;
+  }).join("\n");
+}
+
+function buildWorkoutPrompt(message, history, profile, goalContext) {
+  const p = makeProfileSummary(profile, goalContext);
+  return `Tu es un préparateur physique expert. Tu réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
+
+Tu construis un programme réaliste et intelligent.
+
+Profil:
+- Objectif: ${p.goal} (${getGoalDescription(p.goal)})
+- Niveau: ${p.level} (${getLevelDescription(p.level)})
+- Équipement: ${p.equipment}
+- Blessures / contraintes: ${p.constraints}
+- Poids: ${p.weight || "non renseigné"}
+- Taille: ${p.height || "non renseignée"}
+- Sommeil moyen: ${p.sleep || "non renseigné"}
+- Récupération ressentie /10: ${p.recovery || "non renseignée"}
+
+Historique récent:
+${historyBlock(history) || "Aucun historique utile."}
+
+Demande de l'utilisateur:
+${message}
+
+Règles absolues:
+- Respecte les blessures et contraintes.
+- Prévois une progression réaliste.
+- Inclus une deload week si duration_weeks >= 4.
+- Varie les exercices et évite de répéter exactement les mêmes mouvements si l'historique en montre déjà.
+- Adapte l'intensité si sommeil < 6h ou récupération <= 5/10.
+- Donne 3 à 5 sessions par semaine maximum.
+- Garde les exercices simples si le niveau est débutant.
+
+Format JSON exact attendu:
+{
+  "title": "",
+  "goal": "",
+  "duration_weeks": 8,
+  "progression": {
+    "weeks_1_3": "",
+    "week_4_deload": "",
+    "weeks_5_8": ""
+  },
+  "recovery_advice": "",
+  "nutrition_advice": "",
+  "sessions": [
+    {
+      "day": "Monday",
+      "focus": "Upper Body",
+      "duration_min": 45,
+      "intensity": "low|medium|high",
+      "warmup": ["...", "..."],
+      "exercises": [
+        {
+          "name": "Bench Press",
+          "sets": 4,
+          "reps": "8-10",
+          "rest_sec": 90,
+          "notes": ""
+        }
+      ],
+      "cooldown": ["...", "..."]
+    }
+  ]
+}`;
+}
+
+function buildConversationPrompt(intent, message, history, profile, goalContext) {
+  const p = makeProfileSummary(profile, goalContext);
+  const intentGuide = {
+    greeting: "réponds avec chaleur, brièvement, et propose une aide concrète",
+    nutrition_question: "réponds comme un coach nutrition simple et actionnable, sans faire un programme d'entraînement",
+    recovery_question: "réponds comme un coach récupération, sommeil et fatigue, sans faire un programme d'entraînement",
+    motivation_question: "réponds comme un coach mental et d'adhérence, sans faire un programme d'entraînement",
+    progress_question: "réponds comme un coach qui interprète la progression et propose la prochaine étape",
+    general_fitness: "réponds comme un coach fitness clair et utile"
+  }[intent] || "réponds comme un coach fitness clair et utile";
+
+  return `Tu es un coach fitness expert, concret et bienveillant. Réponds en français.
+
+Profil:
+- Objectif: ${p.goal}
+- Niveau: ${p.level}
+- Équipement: ${p.equipment}
+- Blessures / contraintes: ${p.constraints}
+- Sommeil moyen: ${p.sleep || "non renseigné"}
+- Récupération ressentie /10: ${p.recovery || "non renseignée"}
+
+Historique récent:
+${historyBlock(history) || "Aucun historique utile."}
+
+Instruction:
+- ${intentGuide}
+- Donne une réponse courte mais vraiment utile: 2 à 6 phrases.
+- Si pertinent, termine par une action simple à faire aujourd'hui.
+- N'écris PAS de JSON.
+- N'écris PAS de programme complet d'exercices sauf si on te le demande explicitement.
+
+Message utilisateur:
+${message}`;
+}
+
+function buildRecipePrompt(message, profile, goalContext) {
+  const p = makeProfileSummary(profile, goalContext);
+  return `Tu es un coach nutrition. Réponds UNIQUEMENT en JSON valide, sans markdown.
+
+Profil:
+- Objectif: ${p.goal}
+- Niveau: ${p.level}
+- Contraintes: ${p.constraints}
+
+Demande:
+${message}
+
+Format JSON exact:
+{
+  "name": "",
+  "prep_time": "15 min",
+  "steps": ["", ""],
+  "calories": 500,
+  "protein": 35,
+  "carbs": 45,
+  "fat": 15,
+  "tips": ""
+}`;
+}
+
+function guessDurationFromMessage(message, fallback = 45) {
+  const match = String(message || "").match(/(\d{2,3})\s*(min|minute)/i);
+  if (!match) return fallback;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(20, Math.min(90, value));
+}
+
+function pickExercisePool(goal, level, equipment, intensityBias) {
+  const bodyweightUpper = [
+    "Pompes inclinées", "Pompes tempo", "Dips entre bancs", "Pike push-ups", "Rowing inversé sous table"
+  ];
+  const bodyweightLower = [
+    "Squats tempo", "Fentes marchées", "Split squats", "Hip thrust au sol", "Pont fessier une jambe"
+  ];
+  const gymUpper = [
+    "Développé couché haltères", "Rowing haltère", "Développé militaire assis", "Tirage vertical", "Pompes lestées"
+  ];
+  const gymLower = [
+    "Goblet squat", "Soulevé de terre roumain haltères", "Presse à cuisses", "Leg curl", "Hip thrust"
+  ];
+  const cardio = intensityBias === "low"
+    ? ["Marche inclinée", "Vélo doux", "Rameur modéré"]
+    : ["Bike intervals", "Circuit cardio", "Rameur fractionné"];
+  const useGym = /halt[eè]re|barre|salle|machine|kettlebell|banc/i.test(equipment || "");
+  return { upper: useGym ? gymUpper : bodyweightUpper, lower: useGym ? gymLower : bodyweightLower, cardio };
+}
+
+function seededIndex(seed, length, offset) {
+  if (!length) return 0;
+  let sum = 0;
+  const source = `${seed}:${offset}`;
+  for (let i = 0; i < source.length; i += 1) sum += source.charCodeAt(i) * (i + 1);
+  return sum % length;
+}
+
+function fallbackWorkout(message, profile = {}, goalContext = {}) {
+  const p = makeProfileSummary(profile, goalContext);
+  const duration = guessDurationFromMessage(message, 45);
+  const lowered = String(message || "").toLowerCase();
+  const focus = lowered.includes("hiit") ? "Conditioning" : lowered.includes("jamb") ? "Lower Body" : lowered.includes("haut") ? "Upper Body" : "Full Body";
+  const intensityBias = (p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 5) ? "low" : "medium";
+  const pools = pickExercisePool(p.goal, p.level, p.equipment, intensityBias);
+  const seed = `${message}|${p.goal}|${p.level}|${new Date().toISOString().slice(0, 10)}`;
+
+  const upper1 = pools.upper[seededIndex(seed, pools.upper.length, 1)];
+  const upper2 = pools.upper[seededIndex(seed, pools.upper.length, 2)];
+  const lower1 = pools.lower[seededIndex(seed, pools.lower.length, 3)];
+  const lower2 = pools.lower[seededIndex(seed, pools.lower.length, 4)];
+  const cardio = pools.cardio[seededIndex(seed, pools.cardio.length, 5)];
+
+  const sessions = focus === "Upper Body"
+    ? [{
+        day: "Monday",
+        focus,
+        duration_min: duration,
+        intensity: intensityBias,
+        warmup: ["3 min cardio léger", "Mobilité épaules", "Activation scapulaire"],
+        exercises: [
+          { name: upper1, sets: 4, reps: "8-10", rest_sec: 75, notes: "Garde 1-2 reps en réserve" },
+          { name: upper2, sets: 3, reps: "10-12", rest_sec: 60, notes: "Amplitude contrôlée" },
+          { name: "Gainage latéral", sets: 3, reps: "30s/side", rest_sec: 30, notes: "Tronc solide" }
+        ],
+        cooldown: ["Étirement pectoraux 45s", "Respiration nasale 2 min"]
+      }]
+    : [{
+        day: "Monday",
+        focus,
+        duration_min: duration,
+        intensity: intensityBias,
+        warmup: ["5 min cardio léger", "Mobilité hanches + épaules", "1 série technique sur chaque pattern"],
+        exercises: [
+          { name: lower1, sets: 4, reps: "8-10", rest_sec: 75, notes: "Descente contrôlée" },
+          { name: upper1, sets: 4, reps: "8-10", rest_sec: 75, notes: "Technique propre avant charge" },
+          { name: lower2, sets: 3, reps: "10-12", rest_sec: 60, notes: "Amplitude complète" },
+          { name: upper2, sets: 3, reps: "10-12", rest_sec: 60, notes: "Rythme régulier" },
+          { name: cardio, sets: 1, reps: "8 min", rest_sec: 0, notes: intensityBias === "low" ? "Rythme confortable" : "Alterne 30s vite / 60s facile" }
+        ],
+        cooldown: ["Étirement hanches 45s", "Étirement dorsaux 45s", "Respiration 2 min"]
+      }];
+
+  return {
+    title: `Plan ${focus} intelligent`,
+    goal: p.goal,
+    duration_weeks: 8,
+    progression: {
+      weeks_1_3: "Ajoute 1 rep par série ou 2 à 5 % de charge si tout est propre.",
+      week_4_deload: "Réduis le volume d'environ 35 % et garde une intensité modérée.",
+      weeks_5_8: "Repars sur le volume normal et progresse à nouveau sur la charge ou les reps."
+    },
+    recovery_advice: intensityBias === "low" ? "Récupération basse: garde une séance contrôlée et dors plus ce soir." : "Hydratation, 7 à 8h de sommeil et marche légère le lendemain.",
+    nutrition_advice: p.goal === "prise_de_masse" ? "Ajoute un repas protéiné post-séance avec glucides digestes." : p.goal === "perte_de_poids" ? "Vise protéines hautes et garde le déficit léger pour tenir la progression." : "Mets 25 à 35 g de protéines après la séance et hydrate-toi.",
+    sessions
+  };
+}
+
+function fallbackConversation(intent, message, profile = {}, goalContext = {}) {
+  const p = makeProfileSummary(profile, goalContext);
+  const lowRecovery = (p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 5);
+  if (intent === "greeting") {
+    return `Salut ${p.display_name || "champion"} 👋 Dis-moi si tu veux une séance, un conseil nutrition ou un plan récup, et je te guide sans te noyer dans le blabla.`;
+  }
+  if (intent === "nutrition_question") {
+    return p.goal === "prise_de_masse"
+      ? "Pour progresser, vise surtout une portion de protéines à chaque repas et ajoute des glucides autour de l'entraînement. Le plus simple aujourd'hui: 1 source de protéines + 1 féculent + 1 fruit après ta séance."
+      : "Le plus rentable est de sécuriser tes protéines, puis de garder des repas simples et réguliers. Aujourd'hui, vise un repas avec légumes + protéines + une portion de féculents adaptée à ta faim et à ton objectif.";
+  }
+  if (intent === "recovery_question") {
+    return lowRecovery
+      ? "Vu ton état, je baisserais l'intensité aujourd'hui: mobilité, marche ou séance technique courte. Si tu dors mal plusieurs jours d'affilée, n'essaie pas de compenser avec plus d'intensité, récupère d'abord."
+      : "Ta récup passera surtout par le sommeil, l'hydratation et une charge bien dosée. Fais 5 à 10 minutes de mobilité ce soir et garde une séance plus lourde seulement si les courbatures baissent nettement demain.";
+  }
+  if (intent === "motivation_question") {
+    return "Ne cherche pas la motivation parfaite: réduis le seuil d'entrée. Décide simplement de commencer 10 minutes aujourd'hui, puis laisse l'élan faire le reste; la régularité vaut plus qu'une séance héroïque isolée.";
+  }
+  if (intent === "progress_question") {
+    return "Regarde d'abord trois marqueurs: régularité, qualité technique et charge/reps sur tes mouvements clés. Si un seul progresse chaque semaine, tu avances déjà dans la bonne direction; le plus utile aujourd'hui est de noter ton prochain mini-objectif concret.";
+  }
+  return `Pour ton objectif ${p.goal.replaceAll("_", " ")}, garde un plan simple: 3 à 4 séances utiles, assez de protéines et une progression mesurable. Donne-moi ton contexte exact et je te répondrai de façon beaucoup plus précise.`;
+}
+
+function fallbackRecipe(message, profile = {}, goalContext = {}) {
+  const p = makeProfileSummary(profile, goalContext);
+  const name = p.goal === "prise_de_masse" ? "Bol protéiné énergie" : p.goal === "perte_de_poids" ? "Assiette lean express" : "Repas fitness équilibré";
+  return {
+    name,
+    prep_time: "15 min",
+    steps: [
+      "Prépare une source de protéines maigres et fais-la cuire rapidement.",
+      "Ajoute une base glucidique simple si l'objectif n'est pas une coupe agressive.",
+      "Complète avec légumes et une petite source de bons lipides.",
+      "Assaisonne simplement et ajuste la portion selon la faim et la séance du jour."
+    ],
+    calories: p.goal === "prise_de_masse" ? 700 : p.goal === "perte_de_poids" ? 450 : 550,
+    protein: p.goal === "prise_de_masse" ? 45 : 40,
+    carbs: p.goal === "perte_de_poids" ? 30 : 55,
+    fat: p.goal === "prise_de_masse" ? 22 : 16,
+    tips: "Ajoute 25 à 35 g de protéines par repas pour sécuriser la récupération."
+  };
+}
+
+function normalizeWorkoutOutput(raw, profile = {}, goalContext = {}) {
+  const fallback = fallbackWorkout("séance full body", profile, goalContext);
+  const source = raw && typeof raw === "object" ? raw : fallback;
+  if (Array.isArray(source.blocks)) {
+    return {
+      title: String(source.title || "Séance personnalisée"),
+      type: String(source.type || "strength"),
+      level: String(source.level || makeProfileSummary(profile, goalContext).level || "beginner"),
+      intensity: ["low", "medium", "high"].includes(source.intensity) ? source.intensity : "medium",
+      duration: typeof source.duration === "number" ? source.duration : 45,
+      calories_estimate: source.calories_estimate || null,
+      target_muscles: Array.isArray(source.target_muscles) ? source.target_muscles : [],
+      equipment_needed: Array.isArray(source.equipment_needed) ? source.equipment_needed : [],
+      notes: String(source.notes || ""),
+      created_at: new Date().toISOString(),
+      blocks: source.blocks,
+      structured_plan: source.structured_plan || null
+    };
+  }
+
+  const session = Array.isArray(source.sessions) && source.sessions.length ? source.sessions[0] : fallback.sessions[0];
+  const warmupItems = Array.isArray(session.warmup) ? session.warmup : ["5 min cardio léger", "Mobilité dynamique"];
+  const exerciseItems = Array.isArray(session.exercises) ? session.exercises.map((ex) => {
+    const name = normalizeText(ex.name || "Exercice", "Exercice");
+    const sets = Number(ex.sets || 3);
+    const reps = normalizeText(ex.reps || "10-12", "10-12");
+    const rest = Number(ex.rest_sec || 60);
+    const notes = normalizeText(ex.notes || "");
+    return `${name} — ${sets}×${reps}${rest ? ` (repos ${rest}s)` : ""}${notes ? `. ${notes}` : ""}`;
+  }) : [];
+  const cooldownItems = Array.isArray(session.cooldown) ? session.cooldown : ["Respiration 2 min", "Étirements légers"];
+  const blocks = [
+    { title: "Échauffement", duration_sec: 8 * 60, items: warmupItems.map((x) => normalizeText(x, x)), rpe: "3-4" },
+    { title: session.focus || "Séance principale", duration_sec: Math.max(20, Number(session.duration_min || 45) - 13) * 60, items: exerciseItems, rpe: session.intensity === "high" ? "8-9" : session.intensity === "low" ? "5-6" : "7-8" },
+    { title: "Récupération", duration_sec: 5 * 60, items: cooldownItems.map((x) => normalizeText(x, x)), rpe: "2-3" }
+  ];
+  const notes = [
+    source.progression?.weeks_1_3,
+    source.progression?.week_4_deload ? `Deload: ${source.progression.week_4_deload}` : "",
+    source.recovery_advice,
+    source.nutrition_advice
+  ].filter(Boolean).join(" · ");
+
+  return {
+    title: String(source.title || "Programme intelligent"),
+    type: String(/cardio|hiit/i.test(session.focus || "") ? "hiit" : "strength"),
+    level: makeProfileSummary(profile, goalContext).level || "beginner",
+    intensity: ["low", "medium", "high"].includes(session.intensity) ? session.intensity : "medium",
+    duration: Number(session.duration_min || 45),
+    calories_estimate: null,
+    target_muscles: [String(session.focus || "Full Body")],
+    equipment_needed: [],
+    notes,
+    created_at: new Date().toISOString(),
+    blocks,
+    structured_plan: source
+  };
+}
+
+async function callGemini(apiKey, prompt, options = {}) {
+  return callGeminiText({
+    apiKey,
+    prompt,
+    temperature: options.temperature ?? 0.55,
+    maxOutputTokens: options.maxOutputTokens ?? 1600,
+    timeoutMs: options.timeoutMs ?? TIMEOUT_MS,
+    retries: options.retries ?? MAX_RETRIES
+  });
+}
+
+async function generateWithRetry(apiKey, prompt, options = {}) {
+  return callGemini(apiKey, prompt, options);
+}
+
+async function generateWorkoutPlan({ apiKey, message, history, profile, goalContext }) {
+  const prompt = buildWorkoutPrompt(message, history, profile, goalContext);
+  try {
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1400, timeoutMs: 4800, retries: 0 });
+    const parsed = extractJSON(result.text);
+    if (!parsed || !Array.isArray(parsed.sessions) || !parsed.sessions.length) {
+      throw new Error("INVALID_WORKOUT_JSON");
+    }
+    return { ok: true, data: normalizeWorkoutOutput(parsed, profile, goalContext), raw: parsed, model: result.model, fallback: false };
+  } catch (error) {
+    const fallback = fallbackWorkout(message, profile, goalContext);
+    return { ok: true, data: normalizeWorkoutOutput(fallback, profile, goalContext), raw: fallback, fallback: true, error: String(error?.message || "generation_failed"), degraded_reason: "fallback_fast" };
+  }
+}
+
+async function generateConversationReply({ apiKey, intent, message, history, profile, goalContext }) {
+  const prompt = buildConversationPrompt(intent, message, history, profile, goalContext);
+  try {
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.6, maxOutputTokens: 650, timeoutMs: 4200, retries: 0 });
+    const text = String(result.text || "").replace(/^```[\w-]*\s*/g, "").replace(/```$/g, "").trim();
+    if (!text) throw new Error("EMPTY_CONVERSATION");
+    return { ok: true, message: text, model: result.model, fallback: false };
+  } catch (error) {
+    return { ok: true, message: fallbackConversation(intent, message, profile, goalContext), fallback: true, error: String(error?.message || "generation_failed"), degraded_reason: "fallback_fast" };
+  }
+}
+
+async function generateRecipeJson({ apiKey, message, profile, goalContext }) {
+  const prompt = buildRecipePrompt(message, profile, goalContext);
+  try {
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.25, maxOutputTokens: 650, timeoutMs: 4200, retries: 0 });
+    const parsed = extractJSON(result.text);
+    if (!parsed || !parsed.name) throw new Error("INVALID_RECIPE_JSON");
+    return { ok: true, data: parsed, model: result.model, fallback: false };
+  } catch (error) {
+    return { ok: true, data: fallbackRecipe(message, profile, goalContext), fallback: true, error: String(error?.message || "generation_failed"), degraded_reason: "fallback_fast" };
+  }
+}
+
+module.exports = {
+  MODEL,
+  TIMEOUT_MS,
+  sendJson,
+  setCors,
+  parseBody,
+  sanitizeInput,
+  normalizeText,
+  normalizeRole,
+  extractJSON,
+  tryParseJson,
+  getIp,
+  checkRateLimit,
+  detectIntent,
+  makeProfileSummary,
+  normalizeWorkoutOutput,
+  generateWorkoutPlan,
+  generateConversationReply,
+  generateRecipeJson,
+  fallbackWorkout,
+  fallbackConversation,
+  fallbackRecipe
+};
