@@ -90,17 +90,38 @@ function checkRateLimit(bucket, key, limit = 12, windowMs = 60000) {
 
 function detectIntent(message, responseMode) {
   if (responseMode === "recipe_json") return "recipe_request";
+  if (responseMode === "shopping_list") return "shopping_list";
+  if (responseMode === "meal_plan") return "meal_plan";
   const text = String(message || "").toLowerCase();
   const has = (...keywords) => keywords.some((k) => text.includes(k));
 
   if (!text) return "general_fitness";
-  if (has("salut", "bonjour", "hello", "yo", "ça va", "ca va", "hey")) return "greeting";
-  if (has("recette", "ingrédient", "ingredient", "cuisine", "plat")) return "recipe_request";
-  if (has("programme", "entraînement", "entrainement", "séance", "seance", "workout", "hiit", "full body", "upper body", "lower body", "exercice", "routine", "split")) return "workout_request";
-  if (has("proté", "prot", "calorie", "macro", "nutrition", "aliment", "repas", "glucide", "lipide", "complément", "complement")) return "nutrition_question";
-  if (has("sommeil", "repos", "récup", "recup", "courbature", "fatigue", "douleur", "blessure", "mobilité", "mobilite", "stretch")) return "recovery_question";
+  if (has("salut", "bonjour", "hello", "yo", "ça va", "ca va", "hey", "coucou", "cc")) return "greeting";
+
+  // Shopping list: detect before recipe to catch "liste d'ingrédients"
+  if (has("liste de course", "liste d'achat", "faire les courses", "courses pour", "ingrédients pour", "ce qu'il faut acheter", "supermarché", "marché")) return "shopping_list";
+
+  // Meal plan: full day or week planning
+  if (has("journée alimentaire", "planning repas", "planning alimentaire", "repas de la journée", "menu journée", "semaine alimentaire", "planifier mes repas", "manger toute la journée", "organisation repas")) return "meal_plan";
+
+  // Recipe detection
+  if (has("recette", "cuisine", "prépare-moi", "prepare moi", "fais-moi un plat", "comment cuisiner", "comment préparer")) return "recipe_request";
+
+  // Workout detection — broad
+  if (has("programme", "entraînement", "entrainement", "séance", "seance", "workout", "hiit", "full body", "upper body", "lower body", "exercice", "routine", "split", "abs", "cardio", "musculation", "muscul")) return "workout_request";
+
+  // Nutrition
+  if (has("proté", "prot", "calorie", "macro", "nutrition", "aliment", "repas", "glucide", "lipide", "complément", "complement", "combien manger", "que manger", "quoi manger", "après l'entraînement", "post-workout", "pre-workout")) return "nutrition_question";
+
+  // Recovery
+  if (has("sommeil", "repos", "récup", "recup", "courbature", "fatigue", "douleur", "blessure", "mobilité", "mobilite", "stretch", "étirement")) return "recovery_question";
+
+  // Motivation
   if (has("motivation", "discipline", "plateau", "stagne", "stagnation", "habitude", "mental", "mindset")) return "motivation_question";
+
+  // Progress
   if (has("progression", "progresse", "stats", "niveau", "streak", "gain", "résultat", "resultat")) return "progress_question";
+
   return "general_fitness";
 }
 
@@ -219,36 +240,167 @@ STRUCTURE exercises[] requise:
 function buildConversationPrompt(intent, message, history, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
   const intentGuide = {
-    greeting: "réponds avec chaleur, brièvement, et propose une aide concrète",
-    nutrition_question: "réponds comme un coach nutrition simple et actionnable, sans faire un programme d'entraînement",
-    recovery_question: "réponds comme un coach récupération, sommeil et fatigue, sans faire un programme d'entraînement",
-    motivation_question: "réponds comme un coach mental et d'adhérence, sans faire un programme d'entraînement",
-    progress_question: "réponds comme un coach qui interprète la progression et propose la prochaine étape",
-    general_fitness: "réponds comme un coach fitness clair et utile"
-  }[intent] || "réponds comme un coach fitness clair et utile";
+    greeting: "réponds avec chaleur et naturel, propose 2-3 options d'aide concrète (séance, nutrition, recette, liste de courses, organisation)",
+    nutrition_question: "réponds comme un coach nutrition simple et actionnable — macros, timing, aliments conseillés. Sois précis et concret.",
+    recovery_question: "réponds comme un coach récupération expert — sommeil, stress, mobilité, courbatures. Donne des conseils actionnables aujourd'hui.",
+    motivation_question: "réponds comme un coach mental bienveillant et direct. Parle vrai, sois humain, propose une action immédiate.",
+    progress_question: "analyse la situation, interprète les signaux, propose la prochaine étape concrète.",
+    general_fitness: "tu es un assistant personnel polyvalent — fitness, nutrition, lifestyle, organisation, recettes, courses. Sois utile, concret, humain. Réponds à la vraie question posée.",
+    shopping_list: "aide l'utilisateur à préparer sa liste de courses adaptée à ses objectifs nutritionnels",
+    meal_plan: "aide l'utilisateur à structurer ses repas pour la journée ou la semaine selon ses objectifs"
+  }[intent] || "réponds comme un assistant personnel fitness et lifestyle, concret et humain";
 
-  return `Tu es un coach fitness expert, concret et bienveillant. Réponds en français.
+  const lengthGuide = ["shopping_list", "meal_plan"].includes(intent)
+    ? "5 à 12 lignes organisées"
+    : intent === "greeting"
+    ? "3 à 5 phrases max"
+    : "2 à 7 phrases";
+
+  return `Tu es un assistant coach fitness et lifestyle, expert, concret et bienveillant. Réponds en français.
+
+Profil utilisateur:
+- Objectif: ${p.goal}
+- Niveau: ${p.level}
+- Équipement: ${p.equipment}
+- Contraintes / blessures: ${p.constraints}
+- Sommeil moyen: ${p.sleep || "non renseigné"} h
+- Récupération: ${p.recovery || "non renseignée"}/10
+${p.display_name ? `- Prénom: ${p.display_name}` : ""}
+
+Historique récent:
+${historyBlock(history) || "Aucun."}
+
+Instruction spécifique:
+- ${intentGuide}
+- Longueur idéale: ${lengthGuide}.
+- Si pertinent, termine par une action simple à faire aujourd'hui.
+- N'écris PAS de JSON brut.
+- N'écris PAS de programme complet d'exercices sauf si explicitement demandé.
+- Tu peux utiliser des listes à puces si ça aide la lisibilité.
+- Sois humain : tu peux avoir de l'humour bienveillant si le contexte s'y prête.
+
+Message utilisateur:
+${message}`;
+}
+Message utilisateur:
+${message}`;
+}
+
+function buildShoppingListPrompt(message, profile, goalContext) {
+  const p = makeProfileSummary(profile, goalContext);
+  return `Tu es un coach nutrition. Réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
+
+Profil:
+- Objectif: ${p.goal}
+- Contraintes: ${p.constraints}
+
+Demande:
+${message}
+
+FORMAT JSON OBLIGATOIRE (aucun texte avant ni après):
+{
+  "title": "Liste de courses",
+  "context": "Brève description du contexte (1-2 phrases)",
+  "categories": [
+    {
+      "name": "Protéines",
+      "items": [
+        { "name": "Poulet", "qty": "800g", "note": "optionnel" }
+      ]
+    }
+  ],
+  "tips": "Conseil nutrition court"
+}
+
+Catégories suggérées selon le contexte: Protéines, Légumes, Féculents/Céréales, Fruits, Produits laitiers/Oeufs, Condiments/Épices, Boissons, Divers.
+Adapte les catégories et quantités au contexte exact de la demande (occasion sociale, préparation repas de masse, etc.).`;
+}
+
+function buildMealPlanPrompt(message, profile, goalContext) {
+  const p = makeProfileSummary(profile, goalContext);
+  return `Tu es un coach nutrition. Réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
 
 Profil:
 - Objectif: ${p.goal}
 - Niveau: ${p.level}
-- Équipement: ${p.equipment}
-- Blessures / contraintes: ${p.constraints}
-- Sommeil moyen: ${p.sleep || "non renseigné"}
-- Récupération ressentie /10: ${p.recovery || "non renseignée"}
+- Contraintes: ${p.constraints}
+- Poids: ${p.weight || "non renseigné"}
 
-Historique récent:
-${historyBlock(history) || "Aucun historique utile."}
+Demande:
+${message}
 
-Instruction:
-- ${intentGuide}
-- Donne une réponse courte mais vraiment utile: 2 à 6 phrases.
-- Si pertinent, termine par une action simple à faire aujourd'hui.
-- N'écris PAS de JSON.
-- N'écris PAS de programme complet d'exercices sauf si on te le demande explicitement.
+FORMAT JSON OBLIGATOIRE (aucun texte avant ni après):
+{
+  "title": "Journée alimentaire",
+  "total_calories": 2200,
+  "total_protein": 150,
+  "meals": [
+    {
+      "name": "Petit-déjeuner",
+      "time": "7h30",
+      "calories": 500,
+      "protein": 30,
+      "items": ["Flocons d'avoine 80g", "Banane", "Fromage blanc 200g"]
+    }
+  ],
+  "notes": "Conseil court sur l'hydratation ou la répartition"
+}`;
+}
 
-Message utilisateur:
-${message}`;
+function fallbackShoppingList(message) {
+  return {
+    title: "Liste de courses équilibrée",
+    context: "Liste générée en mode secours, adaptez selon vos besoins.",
+    categories: [
+      { name: "Protéines", items: [{ name: "Poulet", qty: "1 kg" }, { name: "Œufs", qty: "12" }, { name: "Thon en boîte", qty: "3 boîtes" }] },
+      { name: "Légumes", items: [{ name: "Brocoli", qty: "500 g" }, { name: "Épinards", qty: "300 g" }, { name: "Tomates", qty: "6" }] },
+      { name: "Féculents", items: [{ name: "Riz complet", qty: "1 kg" }, { name: "Patate douce", qty: "4" }] },
+      { name: "Fruits", items: [{ name: "Bananes", qty: "8" }, { name: "Pommes", qty: "6" }] }
+    ],
+    tips: "Préparez vos repas à l'avance pour tenir votre nutrition toute la semaine."
+  };
+}
+
+function fallbackMealPlan(profile, goalContext) {
+  const p = makeProfileSummary(profile, goalContext);
+  const kcal = p.goal === "prise_de_masse" ? 2800 : p.goal === "perte_de_poids" ? 1800 : 2200;
+  const prot = Math.round(kcal * 0.3 / 4);
+  return {
+    title: "Journée alimentaire équilibrée",
+    total_calories: kcal,
+    total_protein: prot,
+    meals: [
+      { name: "Petit-déjeuner", time: "7h30", calories: Math.round(kcal * 0.22), protein: Math.round(prot * 0.2), items: ["Flocons d'avoine 80g", "Lait ou boisson végétale 200ml", "1 banane", "Fromage blanc 100g"] },
+      { name: "Déjeuner", time: "12h30", calories: Math.round(kcal * 0.35), protein: Math.round(prot * 0.35), items: ["Poulet grillé 150g", "Riz complet 100g cru", "Brocoli vapeur 200g", "Huile d'olive 1 cuillère"] },
+      { name: "Collation", time: "16h00", calories: Math.round(kcal * 0.13), protein: Math.round(prot * 0.15), items: ["Fromage blanc 150g", "Noix 20g", "1 pomme"] },
+      { name: "Dîner", time: "19h30", calories: Math.round(kcal * 0.3), protein: Math.round(prot * 0.3), items: ["Saumon 150g ou thon", "Patate douce 200g", "Épinards sautés", "Citron et herbes"] }
+    ],
+    notes: "Buvez 2 à 2.5L d'eau par jour. Adaptez les portions selon votre faim réelle."
+  };
+}
+
+async function generateShoppingList({ apiKey, message, profile, goalContext }) {
+  const prompt = buildShoppingListPrompt(message, profile, goalContext);
+  try {
+    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 5000, retries: 0 });
+    const parsed = extractJSON(result.text);
+    if (!parsed || !Array.isArray(parsed.categories)) throw new Error("INVALID_SHOPPING_JSON");
+    return { ok: true, data: parsed, fallback: false };
+  } catch (error) {
+    return { ok: true, data: fallbackShoppingList(message), fallback: true, error: String(error?.message || "generation_failed") };
+  }
+}
+
+async function generateMealPlan({ apiKey, message, profile, goalContext }) {
+  const prompt = buildMealPlanPrompt(message, profile, goalContext);
+  try {
+    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 5000, retries: 0 });
+    const parsed = extractJSON(result.text);
+    if (!parsed || !Array.isArray(parsed.meals)) throw new Error("INVALID_MEAL_PLAN_JSON");
+    return { ok: true, data: parsed, fallback: false };
+  } catch (error) {
+    return { ok: true, data: fallbackMealPlan(profile, goalContext), fallback: true, error: String(error?.message || "generation_failed") };
+  }
 }
 
 function buildRecipePrompt(message, profile, goalContext) {
@@ -645,7 +797,11 @@ module.exports = {
   generateWorkoutPlan,
   generateConversationReply,
   generateRecipeJson,
+  generateShoppingList,
+  generateMealPlan,
   fallbackWorkout,
   fallbackConversation,
-  fallbackRecipe
+  fallbackRecipe,
+  fallbackShoppingList,
+  fallbackMealPlan
 };

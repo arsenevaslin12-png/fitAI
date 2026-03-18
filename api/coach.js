@@ -10,7 +10,9 @@ const {
   detectIntent,
   generateWorkoutPlan,
   generateConversationReply,
-  generateRecipeJson
+  generateRecipeJson,
+  generateShoppingList,
+  generateMealPlan
 } = require("./_coach-core");
 const {
   DEFAULT_MODEL,
@@ -86,6 +88,34 @@ module.exports = async function handler(req, res) {
         message: null,
         fallback: !!plan.fallback,
         meta: plan.error ? { note: plan.error } : undefined,
+        model_default: DEFAULT_MODEL,
+        model_fallback: FALLBACK_MODEL
+      });
+    }
+
+    if (intent === "shopping_list") {
+      const result = await generateShoppingList({ apiKey, message, profile, goalContext });
+      return sendJson(res, 200, {
+        ok: true,
+        type: "shopping_list",
+        data: result.data,
+        message: null,
+        fallback: !!result.fallback,
+        meta: result.error ? { note: result.error } : undefined,
+        model_default: DEFAULT_MODEL,
+        model_fallback: FALLBACK_MODEL
+      });
+    }
+
+    if (intent === "meal_plan") {
+      const result = await generateMealPlan({ apiKey, message, profile, goalContext });
+      return sendJson(res, 200, {
+        ok: true,
+        type: "meal_plan",
+        data: result.data,
+        message: null,
+        fallback: !!result.fallback,
+        meta: result.error ? { note: result.error } : undefined,
         model_default: DEFAULT_MODEL,
         model_fallback: FALLBACK_MODEL
       });
