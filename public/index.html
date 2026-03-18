@@ -328,12 +328,63 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .kudos-btn.on{border-color:var(--orange);color:var(--orange);background:rgba(249,115,22,.08)}
 
 /* ── BODYSCAN ── */
-.drop-zone{border:2px dashed rgba(255,255,255,.12);border-radius:18px;padding:44px 20px;text-align:center;cursor:pointer;transition:all .25s;user-select:none;background:rgba(255,255,255,.03)}
+.drop-zone{border:2px dashed rgba(255,255,255,.12);border-radius:18px;padding:36px 20px;text-align:center;cursor:pointer;transition:all .25s;user-select:none;background:rgba(255,255,255,.03)}
 .drop-zone:hover,.drop-zone.over{border-color:var(--accent);background:rgba(37,99,235,.06)}
 .drop-ic{font-size:2.5rem;margin-bottom:10px}
 .drop-text{color:var(--muted);font-size:.84rem}
-.scan-img-preview{width:100%;max-height:240px;object-fit:cover;border-radius:16px;display:block}
+.scan-img-preview{width:100%;max-height:220px;object-fit:cover;border-radius:16px;display:block}
 .scan-card{background:rgba(17,26,44,.9);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:10px;border:1px solid rgba(255,255,255,.09)}
+
+/* ── SCAN UPLOAD GRID ── */
+.scan-upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+.scan-tips-panel{display:flex;flex-direction:column;gap:10px;padding:16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:16px}
+.scan-tip-item{display:flex;align-items:flex-start;gap:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.scan-tip-item:last-of-type{border-bottom:none}
+.scan-tip-item>span{font-size:1.2rem;flex-shrink:0;margin-top:2px}
+.scan-tip-title{font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:2px}
+.scan-tip-sub{font-size:.74rem;color:var(--muted);line-height:1.4}
+
+/* ── SCAN RESULT CARD (premium) ── */
+.scan-result-card{background:rgba(13,20,38,.95);border:1px solid rgba(255,255,255,.1);border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.45);margin-bottom:0}
+.scan-result-header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 22px;background:linear-gradient(135deg,rgba(147,51,234,.18),rgba(6,182,212,.1));border-bottom:1px solid rgba(255,255,255,.08)}
+.scan-result-title{font-weight:800;font-size:.9rem;color:var(--text)}
+.scan-score-big{font-size:2.4rem;font-weight:900;color:#fff;line-height:1;display:flex;align-items:baseline;gap:6px}
+.scan-score-label{font-size:.75rem;color:rgba(255,255,255,.55);font-weight:600}
+.scan-result-body{display:grid;grid-template-columns:1fr 1.4fr;gap:0}
+.scan-metrics-col{padding:20px;border-right:1px solid rgba(255,255,255,.07)}
+.scan-feedback-col{padding:20px}
+.scan-metric-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.scan-metric-row:last-child{border-bottom:none}
+.scan-metric-label{font-size:.76rem;color:var(--muted);font-weight:600}
+.scan-metric-value{font-size:1rem;font-weight:900;color:var(--text)}
+.scan-section-hdr{font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin:14px 0 6px;display:flex;align-items:center;gap:6px}
+.scan-section-hdr::after{content:"";flex:1;height:1px;background:rgba(255,255,255,.07)}
+.scan-point-item{display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:.8rem;color:var(--text2);line-height:1.45}
+.scan-point-item.strength::before{content:"✦";color:var(--green);font-size:.65rem;margin-top:2px;flex-shrink:0}
+.scan-point-item.weakness::before{content:"→";color:var(--orange);font-size:.8rem;flex-shrink:0}
+.scan-point-item.reco::before{content:"•";color:var(--teal);font-size:.8rem;flex-shrink:0}
+.scan-overview-text{font-size:.82rem;color:rgba(238,238,245,.8);line-height:1.6}
+@media(max-width:767px){.scan-upload-grid{grid-template-columns:1fr}.scan-result-body{grid-template-columns:1fr}.scan-metrics-col{border-right:none;border-bottom:1px solid rgba(255,255,255,.07)}}
+
+/* ── WORKOUT TIMER OVERLAY ── */
+.workout-overlay{position:fixed;inset:0;background:rgba(5,8,20,.97);backdrop-filter:blur(16px);z-index:9990;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+.workout-overlay.on{display:flex}
+.workout-timer-card{width:100%;max-width:480px;background:rgba(15,22,38,.95);border:1px solid rgba(37,99,235,.3);border-radius:24px;overflow:hidden;box-shadow:0 20px 60px rgba(37,99,235,.25)}
+.workout-timer-head{background:var(--grad);padding:20px 24px;color:#fff;position:relative;overflow:hidden}
+.workout-timer-head::after{content:"";position:absolute;top:-30px;right:-20px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.07)}
+.workout-timer-body{padding:24px;display:flex;flex-direction:column;gap:16px}
+.workout-ex-number{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.workout-ex-name{font-size:1.5rem;font-weight:900;color:var(--text);line-height:1.2}
+.workout-ex-meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+.workout-ex-badge{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;font-size:.75rem;font-weight:700;background:rgba(255,255,255,.08);color:var(--text2)}
+.workout-timer-display{font-size:4rem;font-weight:900;color:var(--text);text-align:center;letter-spacing:-.04em;font-variant-numeric:tabular-nums;line-height:1}
+.workout-timer-label{text-align:center;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-top:4px}
+.workout-timer-rest{color:var(--teal)}
+.workout-timer-work{color:var(--orange)}
+.workout-progress-track{height:6px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden;margin-top:6px}
+.workout-progress-fill{height:100%;background:var(--grad);border-radius:999px;transition:width .5s linear}
+.workout-nav{display:flex;gap:10px;justify-content:center}
+.workout-desc{font-size:.82rem;color:var(--text2);line-height:1.55;padding:12px 14px;background:rgba(255,255,255,.04);border-radius:12px;border-left:3px solid var(--accent)}
 .scores-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .score-chip{background:var(--surf2);border-radius:16px;padding:14px 10px;text-align:center;border:1px solid var(--glass-border)}
 .score-v{font-size:1.25rem;font-weight:900;color:var(--accent)}
@@ -760,12 +811,14 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
             <!-- Messages will be rendered by JS -->
           </div>
           <div class="chat-quick" id="chat-quick">
-            <button class="chat-chip" onclick="sendCoachMsg('Programme HIIT 20min intense')">🏋️ Séance HIIT</button>
-            <button class="chat-chip" onclick="sendCoachMsg('Je me sens fatigué, comment récupérer ?')">😴 Récupération</button>
-            <button class="chat-chip" onclick="sendCoachMsg('Repas post-workout optimal ?')">🍽️ Nutrition</button>
-            <button class="chat-chip" onclick="sendCoachMsg('Je stagne, comment rester motivé ?')">💪 Motivation</button>
+            <button class="chat-chip" onclick="sendCoachMsg('Séance full body 30min')">🏋️ Séance 30min</button>
+            <button class="chat-chip" onclick="sendCoachMsg('Séance HIIT 20min intense')">⚡ HIIT 20min</button>
+            <button class="chat-chip" onclick="sendCoachMsg('Fais-moi une journée alimentaire complète')">🍽️ Journée alim.</button>
+            <button class="chat-chip" onclick="sendCoachMsg('Liste de courses pour la semaine pour prise de masse')">🛒 Liste courses</button>
+            <button class="chat-chip" onclick="sendCoachMsg('Quoi manger après l\'entraînement ?')">💪 Post-workout</button>
+            <button class="chat-chip" onclick="sendCoachMsg('Je me sens fatigué, adapte ma séance')">😴 Récupération</button>
             <button class="chat-chip" onclick="sendCoachMsg('Combien de protéines par jour ?')">📊 Macros</button>
-            <button class="chat-chip" onclick="sendCoachMsg('Étirements pour les jambes')">🧘 Étirements</button>
+            <button class="chat-chip" onclick="sendCoachMsg('Fais-moi une recette riche en protéines')">👨‍🍳 Recette</button>
           </div>
           <div class="chat-input-row">
             <input type="text" id="coach-input" placeholder="Pose ta question au coach…" onkeydown="if(event.key==='Enter')sendCoachMsg()"/>
@@ -785,7 +838,8 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
             <div class="plan-notes-text" id="plan-notes"></div>
             <div style="display:flex;flex-direction:column;gap:10px" id="plan-blocks"></div>
             <div style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)">
-              <button class="btn btn-p btn-sm" onclick="saveSession()">💾 Sauvegarder la séance</button>
+              <button class="btn btn-p btn-sm" onclick="startWorkoutSession()" id="btn-start-session">▶ Commencer</button>
+              <button class="btn btn-g btn-sm" onclick="saveSession()">💾 Sauvegarder</button>
               <button class="btn btn-g btn-sm" onclick="document.getElementById('plan-card').style.display='none'">✕ Fermer</button>
             </div>
           </div>
@@ -993,32 +1047,44 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         </div>
 
         <div class="card">
-          <div class="card-title">Analyser une photo</div>
-          <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()"
-            ondragover="event.preventDefault();this.classList.add('over')"
-            ondragleave="this.classList.remove('over')"
-            ondrop="event.preventDefault();this.classList.remove('over');handleDrop(event)">
-            <div class="drop-ic">📷</div>
-            <div class="drop-text">Cliquez ou déposez une photo ici</div>
-            <div class="drop-text" style="margin-top:5px;font-size:.74rem">JPG, PNG, WEBP — max 6MB</div>
-          </div>
-          <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFile(this.files[0])"/>
-          <div id="scan-preview" style="display:none;flex-direction:column;gap:12px;margin-top:14px">
-            <img id="scan-img" class="scan-img-preview"/>
-            <button class="btn btn-p btn-full" id="btn-scan" onclick="doScan()">🔬 Analyser avec l'IA</button>
-            <div id="scan-loading" style="display:none;text-align:center;padding:16px">
-              <div class="spinner" style="margin:0 auto 10px"></div>
-              <div style="font-size:.82rem;color:var(--muted);font-weight:600">Analyse IA en cours… (~15-25 secondes)</div>
-              <div class="progress-track" style="margin-top:10px;height:6px"><div class="progress-fill" id="scan-progress-fill" style="width:0%;transition:width 25s linear"></div></div>
+          <div class="card-title">📸 Analyser une photo</div>
+          <div class="scan-upload-grid">
+            <div>
+              <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()"
+                ondragover="event.preventDefault();this.classList.add('over')"
+                ondragleave="this.classList.remove('over')"
+                ondrop="event.preventDefault();this.classList.remove('over');handleDrop(event)">
+                <div class="drop-ic">📷</div>
+                <div class="drop-text" style="font-weight:700;color:var(--text)">Cliquez ou déposez une photo</div>
+                <div class="drop-text" style="font-size:.74rem;margin-top:5px">JPG, PNG, WEBP — max 6MB</div>
+              </div>
+              <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFile(this.files[0])"/>
+              <div id="scan-preview" style="display:none;flex-direction:column;gap:12px;margin-top:14px">
+                <img id="scan-img" class="scan-img-preview"/>
+                <button class="btn btn-p btn-full" id="btn-scan" onclick="doScan()">🔬 Analyser avec l'IA</button>
+                <div id="scan-loading" style="display:none;text-align:center;padding:16px">
+                  <div class="spinner" style="margin:0 auto 10px"></div>
+                  <div style="font-size:.82rem;color:var(--muted);font-weight:600">Analyse IA en cours… (~15-25 secondes)</div>
+                  <div class="progress-track" style="margin-top:10px;height:6px"><div class="progress-fill" id="scan-progress-fill" style="width:0%;transition:width 25s linear"></div></div>
+                </div>
+                <div class="err-box" id="scan-err"></div>
+              </div>
             </div>
-            <div class="err-box" id="scan-err"></div>
+            <div class="scan-tips-panel">
+              <div style="font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:12px">Conseils pour une analyse précise</div>
+              <div class="scan-tip-item"><span>🕴️</span><div><div class="scan-tip-title">Position face à face</div><div class="scan-tip-sub">Droit, bras légèrement ouverts, regard caméra</div></div></div>
+              <div class="scan-tip-item"><span>💡</span><div><div class="scan-tip-title">Éclairage homogène</div><div class="scan-tip-sub">Éviter contre-jour et ombres dures</div></div></div>
+              <div class="scan-tip-item"><span>👕</span><div><div class="scan-tip-title">Vêtements ajustés</div><div class="scan-tip-sub">T-shirt moulant ou sans chemise recommandé</div></div></div>
+              <div class="scan-tip-item"><span>📐</span><div><div class="scan-tip-title">Corps entier visible</div><div class="scan-tip-sub">De la tête aux pieds, fond neutre idéal</div></div></div>
+              <div style="margin-top:14px;padding:12px;background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.2);border-radius:12px">
+                <div style="font-size:.72rem;color:#60a5fa;font-weight:700">⚡ IA Gemini Vision</div>
+                <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Score physique · Symétrie · Posture · Composition · Recommandations personnalisées</div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-title">Mes analyses</div>
-          <div id="scans-list" class="empty"><span class="empty-ic">🔬</span>Aucune analyse</div>
-        </div>
+        <div id="scans-list"></div>
       </div>
 
       <!-- DÉFIS -->
@@ -1127,6 +1193,39 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
 <div class="global-loader" id="global-loader"><div class="spinner"></div><div class="boot-msg">Chargement…</div></div>
 <div id="toast"></div>
+
+<!-- WORKOUT SESSION OVERLAY (Timer guidé) -->
+<div class="workout-overlay" id="workout-overlay">
+  <div class="workout-timer-card">
+    <div class="workout-timer-head">
+      <div style="font-size:.72rem;font-weight:700;opacity:.75;position:relative;z-index:1">🏋️ SÉANCE EN COURS</div>
+      <div style="font-size:1.1rem;font-weight:900;margin-top:4px;position:relative;z-index:1" id="wo-plan-title">Séance</div>
+      <div style="font-size:.78rem;opacity:.7;margin-top:2px;position:relative;z-index:1" id="wo-progress-text">Exercice 1 / 1</div>
+      <div class="workout-progress-track" style="margin-top:12px;position:relative;z-index:1">
+        <div class="workout-progress-fill" id="wo-progress-fill" style="width:0%"></div>
+      </div>
+    </div>
+    <div class="workout-timer-body">
+      <div>
+        <div class="workout-ex-number" id="wo-ex-label">EXERCICE 1</div>
+        <div class="workout-ex-name" id="wo-ex-name">—</div>
+        <div class="workout-ex-meta" id="wo-ex-meta"></div>
+      </div>
+      <div id="wo-desc" class="workout-desc" style="display:none"></div>
+      <div style="text-align:center">
+        <div class="workout-timer-display" id="wo-timer">—</div>
+        <div class="workout-timer-label workout-timer-work" id="wo-timer-label">Prêt</div>
+      </div>
+      <div class="workout-nav">
+        <button class="btn btn-g" onclick="woNav(-1)" style="width:48px;padding:0;height:44px">‹</button>
+        <button class="btn btn-p" id="wo-start-btn" onclick="woToggle()" style="flex:1">▶ Démarrer</button>
+        <button class="btn btn-g" onclick="woNav(1)" style="width:48px;padding:0;height:44px">›</button>
+      </div>
+      <button class="btn btn-d btn-sm btn-full" onclick="closeWorkoutSession()" style="margin-top:0">✕ Terminer la séance</button>
+    </div>
+  </div>
+</div>
+
 <script src="/app.js"></script>
 </body>
 </html>
