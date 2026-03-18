@@ -438,12 +438,22 @@ async function loadDashboard() {
       dateEl.textContent = "📅 " + now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
     }
     // Greet with name
-    const greetEl = document.querySelector(".db-greet small");
+    const greetEl = document.getElementById("db-greet-name");
+    const sidebarName = document.getElementById("tu");
     if (greetEl && U) {
       try {
-        const { data } = await SB.from("profiles").select("display_name").eq("id", U.id).maybeSingle();
-        greetEl.textContent = data?.display_name || U.email?.split("@")[0] || "Champion";
-      } catch { greetEl.textContent = U.email?.split("@")[0] || "Champion"; }
+        const { data } = await SB.from("profiles").select("display_name,username").eq("id", U.id).maybeSingle();
+        const name = data?.display_name || data?.username || U.email?.split("@")[0] || "Champion";
+        greetEl.textContent = name;
+        if (sidebarName) sidebarName.textContent = name;
+        // Update goal card
+        const goalText = document.getElementById("db-goal-text");
+        if (goalText) goalText.textContent = `Objectif de ${name}`;
+      } catch {
+        const name = U.email?.split("@")[0] || "Champion";
+        greetEl.textContent = name;
+        if (sidebarName) sidebarName.textContent = name;
+      }
     }
     await Promise.all([loadGoal(), loadMeals(), loadStats(), loadNutritionTargets(), loadStreak()]);
   } catch (e) {
@@ -726,12 +736,28 @@ function renderExerciseCard(ex, idx) {
 
 function renderPlan(plan) {
   const head = document.getElementById("plan-head");
+  const meta = document.getElementById("plan-meta");
   const notes = document.getElementById("plan-notes");
   const blocks = document.getElementById("plan-blocks");
 
-  const calories = plan.calories ? ` · ${plan.calories} kcal` : "";
   if (head) {
-    head.innerHTML = `<div><div class="plan-title-text">${escapeHtml(plan.title || "Séance")}</div><div class="page-sub">${escapeHtml(plan.intensity || "Équilibré")} · ${plan.duration || "?"} min${calories}</div></div>`;
+    head.innerHTML = `
+      <div style="flex:1">
+        <div class="plan-title-text">${escapeHtml(plan.title || "Séance")}</div>
+      </div>
+    `;
+  }
+  // Meta pills row
+  if (meta) {
+    const pills = [];
+    if (plan.duration) pills.push(`<span class="plan-meta-pill">⏱ ${plan.duration} min</span>`);
+    const kcal = plan.calories_estimate || plan.calories;
+    if (kcal) pills.push(`<span class="plan-meta-pill">🔥 ${kcal} kcal</span>`);
+    const lvl = { beginner: "Débutant", debutant: "Débutant", intermediate: "Intermédiaire", intermediaire: "Intermédiaire", advanced: "Avancé", avance: "Avancé" }[plan.level] || plan.level || "";
+    if (lvl) pills.push(`<span class="plan-meta-pill">🎯 ${escapeHtml(lvl)}</span>`);
+    if (plan.exercises?.length) pills.push(`<span class="plan-meta-pill">💪 ${plan.exercises.length} exercices</span>`);
+    meta.innerHTML = pills.join("");
+    meta.style.display = pills.length ? "flex" : "none";
   }
   if (notes) {
     notes.textContent = plan.notes || "";
@@ -1947,30 +1973,22 @@ async function generateRecipe() {
     seche: "repas de sèche (peu calorique, riche en protéines)"
   };
 
-  const prompt = `Crée une recette fitness avec ces ingrédients: ${ingredients}.
-Objectif: ${goalLabels[goal] || "équilibré"}, environ ${targetKcal} kcal.
-Donne le nom, les étapes courtes, et les macros (calories, protéines, glucides, lipides).
-Réponds en JSON: {"name":"...","steps":["étape1","étape2"],"prep_time":"10 min","calories":500,"protein":35,"carbs":50,"fat":15,"tips":"conseil"}`;
-
   const btn = document.getElementById("btn-recipe");
   await withButton(btn, "Génération…", async () => {
     const token = await getToken();
+    if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
-    const { response: j } = await fetchJsonWithTimeout("/api/coach", {
+    const { response: j } = await fetchJsonWithTimeout("/api/generate-recipe", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ message: prompt, history: [], profile: {}, goalContext: {}, responseMode: "recipe_json" })
-    }, 25000);
+      body: JSON.stringify({ ingredients, goal, targetKcal })
+    }, 28000);
 
+    // Normalize response: /api/generate-recipe returns { recipe, data }
     let recipe = null;
-    if (j.type === "recipe" && j.data && typeof j.data === "object") recipe = j.data;
-    if (!recipe && j.type === "conversation" && j.message) {
-      const jsonMatch = j.message.match(/\{[\s\S]*\}/);
-      if (jsonMatch) { try { recipe = JSON.parse(jsonMatch[0]); } catch {} }
-    }
-    if (!recipe && j.data && typeof j.data === "object") {
-      if (j.data.name || j.data.steps || j.data.calories) recipe = j.data;
-    }
+    if (j.recipe && typeof j.recipe === "object" && j.recipe.name) recipe = j.recipe;
+    else if (j.data && typeof j.data === "object" && j.data.name) recipe = j.data;
+    else if (j.type === "recipe" && j.data) recipe = j.data;
 
     if (!recipe) {
       // Fallback: show raw response
@@ -1983,22 +2001,27 @@ Réponds en JSON: {"name":"...","steps":["étape1","étape2"],"prep_time":"10 mi
 
     if (resultEl) {
       resultEl.style.display = "block";
-      const stepsHtml = Array.isArray(recipe.steps) ? recipe.steps.map((s, i) => `<li>${escapeHtml(s)}</li>`).join("") : "";
+      const stepsHtml = Array.isArray(recipe.steps)
+        ? recipe.steps.map((s, i) => `<li style="margin-bottom:4px">${escapeHtml(s)}</li>`).join("")
+        : "";
       resultEl.innerHTML = `
-        <div class="card" style="border-left:3px solid var(--green)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <div style="font-weight:800;font-size:1rem">${escapeHtml(recipe.name || "Recette")}</div>
-            ${recipe.prep_time ? `<span class="badge bg-green">${escapeHtml(recipe.prep_time)}</span>` : ""}
+        <div class="card" style="background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(6,182,212,.05));border-color:rgba(34,197,94,.2);padding:18px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+            <div>
+              <div style="font-size:.62rem;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">Recette IA</div>
+              <div style="font-weight:900;font-size:1.05rem;letter-spacing:-.01em">${escapeHtml(recipe.name || "Recette")}</div>
+            </div>
+            ${recipe.prep_time ? `<span class="badge bg-green">⏱ ${escapeHtml(recipe.prep_time)}</span>` : ""}
           </div>
-          <div class="macro-grid" style="margin-bottom:12px">
+          <div class="macro-grid" style="margin-bottom:14px">
             <div class="macro-card"><span class="macro-icon">🔥</span><div class="macro-val">${recipe.calories || "?"}</div><div class="macro-lbl">Kcal</div></div>
             <div class="macro-card"><span class="macro-icon">💪</span><div class="macro-val">${recipe.protein || "?"}g</div><div class="macro-lbl">Prot.</div></div>
             <div class="macro-card"><span class="macro-icon">🌾</span><div class="macro-val">${recipe.carbs || "?"}g</div><div class="macro-lbl">Gluc.</div></div>
             <div class="macro-card"><span class="macro-icon">🥑</span><div class="macro-val">${recipe.fat || "?"}g</div><div class="macro-lbl">Lip.</div></div>
           </div>
-          ${stepsHtml ? `<div style="font-weight:700;font-size:.82rem;margin-bottom:6px">Préparation:</div><ol style="margin-left:16px;font-size:.84rem;line-height:1.7;color:rgba(238,238,245,.85)">${stepsHtml}</ol>` : ""}
-          ${recipe.tips ? `<div style="margin-top:10px;font-size:.82rem;font-style:italic;color:var(--muted)">💡 ${escapeHtml(recipe.tips)}</div>` : ""}
-          <button class="btn btn-g btn-sm" style="margin-top:12px" onclick="addRecipeAsMeal()">➕ Ajouter comme repas</button>
+          ${stepsHtml ? `<div style="font-size:.65rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Préparation</div><ol style="margin-left:16px;font-size:.84rem;line-height:1.7;color:var(--text2)">${stepsHtml}</ol>` : ""}
+          ${recipe.tips ? `<div style="margin-top:12px;font-size:.8rem;color:var(--accent);font-weight:600;padding:10px;background:rgba(37,99,235,.06);border-radius:10px;border-left:3px solid var(--accent)">💡 ${escapeHtml(recipe.tips)}</div>` : ""}
+          <button class="btn btn-p btn-sm btn-full" style="margin-top:14px" onclick="addRecipeAsMeal()">➕ Ajouter comme repas</button>
         </div>`;
       // Store recipe for "add as meal"
       window._lastRecipe = recipe;
