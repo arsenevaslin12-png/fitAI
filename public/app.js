@@ -1104,9 +1104,10 @@ async function searchUsers() {
   if (!query || query.length < 2) { resultEl.innerHTML = '<div class="meal-info">Tapez au moins 2 caractères</div>'; return; }
 
   try {
+    // Search by username OR display_name (OR filter via PostgREST)
     const { data, error } = await SB.from("profiles")
       .select("id,username,display_name")
-      .ilike("username", `%${query}%`)
+      .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
       .neq("id", U.id)
       .limit(10);
     if (error) throw error;
@@ -1138,6 +1139,9 @@ async function sendFriendRequest(addresseeId) {
     if (error) {
       if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
         return toast("Demande déjà envoyée.", "err");
+      }
+      if (error.message?.includes("relation") || error.message?.includes("does not exist")) {
+        return toast("Migration SQL requise (migration_v3_social.sql)", "err");
       }
       throw error;
     }
@@ -1209,7 +1213,13 @@ async function loadFriends() {
     const countEl = document.getElementById("friend-count");
     if (countEl) countEl.textContent = data.length;
   } catch (e) {
-    el.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+    // If table doesn't exist (migration not applied) show a setup hint
+    const isTableMissing = e.message?.includes("relation") || e.message?.includes("does not exist") || e.code === "42P01";
+    if (isTableMissing) {
+      el.innerHTML = '<div class="empty"><span class="empty-ic">⚙️</span>Migration SQL requise — appliquer supabase/migration_v3_social.sql</div>';
+    } else {
+      el.innerHTML = '<div class="empty"><span class="empty-ic">👥</span>Aucun ami pour le moment</div>';
+    }
   }
 }
 
@@ -1247,7 +1257,11 @@ async function loadFriendRequests() {
     const badge = document.getElementById("friend-pending-badge");
     if (badge) { badge.textContent = data.length; badge.style.display = data.length > 0 ? "inline-flex" : "none"; }
   } catch (e) {
-    el.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+    const isTableMissing = e.message?.includes("relation") || e.message?.includes("does not exist") || e.code === "42P01";
+    if (!isTableMissing) {
+      el.innerHTML = '<div class="meal-info">Aucune demande en attente</div>';
+    }
+    // Silently ignore missing table — loadFriends shows the setup hint
   }
 }
 
