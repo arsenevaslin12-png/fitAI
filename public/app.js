@@ -664,7 +664,53 @@ async function sendCoachMsg(quickMsg) {
     const aiTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
     const fallbackBadge = j.fallback ? '<div style="margin-top:8px;font-size:.78rem;opacity:.72">⚠️ Mode secours intelligent utilisé.</div>' : "";
 
-    if (j.type === "workout" && j.data) {
+    if (j.type === "shopping_list" && j.data) {
+      const d = j.data;
+      let html = `<strong>🛒 ${escapeHtml(d.title || "Liste de courses")}</strong>`;
+      if (d.context) html += `<div style="font-size:.82rem;margin:5px 0 8px;color:rgba(238,238,245,.7)">${escapeHtml(d.context)}</div>`;
+      (d.categories || []).forEach(cat => {
+        if (!cat.items?.length) return;
+        html += `<div style="margin-top:10px;font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--teal)">${escapeHtml(cat.name)}</div>`;
+        html += '<ul style="margin:4px 0 0 0;list-style:none;display:flex;flex-direction:column;gap:2px">';
+        cat.items.forEach(item => {
+          html += `<li style="font-size:.82rem;display:flex;gap:6px"><span style="color:var(--muted)">•</span><span><strong>${escapeHtml(item.name)}</strong>${item.qty ? ` <span style="opacity:.6">— ${escapeHtml(item.qty)}</span>` : ""}${item.note ? ` <span style="opacity:.5;font-style:italic">(${escapeHtml(item.note)})</span>` : ""}</span></li>`;
+        });
+        html += '</ul>';
+      });
+      if (d.tips) html += `<div style="margin-top:10px;font-size:.78rem;font-style:italic;opacity:.6;border-top:1px solid rgba(255,255,255,.08);padding-top:8px">💡 ${escapeHtml(d.tips)}</div>`;
+      html += fallbackBadge;
+      COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
+    } else if (j.type === "meal_plan" && j.data) {
+      const d = j.data;
+      let html = `<strong>🍽️ ${escapeHtml(d.title || "Journée alimentaire")}</strong>`;
+      if (d.total_calories || d.total_protein) {
+        const parts = [];
+        if (d.total_calories) parts.push(`🔥 ${d.total_calories} kcal`);
+        if (d.total_protein) parts.push(`💪 ${d.total_protein}g protéines`);
+        html += `<div style="font-size:.8rem;margin:5px 0 8px;opacity:.7">${parts.join(" · ")}</div>`;
+      }
+      (d.meals || []).forEach(meal => {
+        html += `<div style="margin-top:10px;border-left:2px solid var(--teal);padding-left:12px">`;
+        html += `<div style="font-size:.85rem;font-weight:800;color:var(--text)">${escapeHtml(meal.name)}`;
+        if (meal.time) html += ` <span style="opacity:.5;font-weight:500;font-size:.78rem">${escapeHtml(meal.time)}</span>`;
+        html += `</div>`;
+        if (meal.calories || meal.protein) {
+          const parts = [];
+          if (meal.calories) parts.push(`🔥 ${meal.calories} kcal`);
+          if (meal.protein) parts.push(`💪 ${meal.protein}g`);
+          html += `<div style="font-size:.74rem;opacity:.6;margin:2px 0 4px">${parts.join(" · ")}</div>`;
+        }
+        if (meal.items?.length) {
+          html += '<ul style="margin:0;list-style:none;font-size:.8rem;color:rgba(238,238,245,.8);display:flex;flex-direction:column;gap:1px">';
+          meal.items.forEach(item => { html += `<li>• ${escapeHtml(item)}</li>`; });
+          html += '</ul>';
+        }
+        html += '</div>';
+      });
+      if (d.notes) html += `<div style="margin-top:10px;font-size:.78rem;font-style:italic;opacity:.6;border-top:1px solid rgba(255,255,255,.08);padding-top:8px">💡 ${escapeHtml(d.notes)}</div>`;
+      html += fallbackBadge;
+      COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
+    } else if (j.type === "workout" && j.data) {
       PLAN = j.data;
       let aiResponse = `<strong>${escapeHtml(PLAN.title || "Séance générée")}</strong>`;
       // Meta summary line
@@ -1421,6 +1467,27 @@ async function doScan() {
   });
 }
 
+function parseScanFeedback(text) {
+  if (!text) return { overview: "", strengths: [], improvements: [], recommendations: [] };
+  const lines = text.split(/\n+/).map(l => l.trim()).filter(l => l.length > 3);
+  const strengths = [], improvements = [], recommendations = [];
+  let currentSection = "overview";
+  const overviewLines = [];
+  for (const line of lines) {
+    const low = line.toLowerCase();
+    if (/point[s]?\s*(fort[s]?|positif[s]?|bien|atout)/i.test(line) || low.includes("✓") || low.includes("forces")) { currentSection = "strengths"; continue; }
+    if (/point[s]?\s*(à\s*trav|faible|améliorer|amélioration|progress|axe)/i.test(line) || low.includes("à améliorer") || low.includes("objectif")) { currentSection = "improvements"; continue; }
+    if (/recommand|conseil[s]?|plan|prochaine étape|priorité/i.test(line)) { currentSection = "recommendations"; continue; }
+    const clean = line.replace(/^[-•*→✦✗✓\d).\s]+/, "").trim();
+    if (!clean) continue;
+    if (currentSection === "strengths") strengths.push(clean);
+    else if (currentSection === "improvements") improvements.push(clean);
+    else if (currentSection === "recommendations") recommendations.push(clean);
+    else overviewLines.push(clean);
+  }
+  return { overview: overviewLines.join(" "), strengths, improvements, recommendations };
+}
+
 async function loadScans() {
   if (!U) return;
   const el = document.getElementById("scans-list");
@@ -1431,30 +1498,75 @@ async function loadScans() {
     if (error) throw error;
 
     if (!data?.length) {
-      el.innerHTML = '<div class="empty"><span class="empty-ic">🔬</span>Aucune analyse</div>';
+      el.innerHTML = '<div class="empty" style="padding:40px 16px"><span class="empty-ic">🔬</span>Aucune analyse — uploadez une photo ci-dessus</div>';
       return;
     }
 
     el.innerHTML = data.map((scan) => {
       const done = Boolean(scan.ai_feedback);
       const physScore = scan.physical_score;
-      return `
-        <div class="scan-card">
-          <div class="post-head">
-            <strong>${new Date(scan.created_at).toLocaleDateString("fr-FR")}</strong>
-            <span class="badge ${done ? "bg-green" : "bg-orange"}">${done ? "Analysé" : "En attente"}</span>
+      const date = new Date(scan.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+
+      if (!done) {
+        return `<div class="scan-result-card">
+          <div class="scan-result-header">
+            <div><div class="scan-result-title">Analyse du ${date}</div><div style="font-size:.75rem;color:var(--muted);margin-top:3px">Upload effectué, analyse en cours…</div></div>
+            <span class="badge bg-orange">⏳ En attente</span>
           </div>
-          ${done ? `
-            ${physScore ? `<div class="physical-score"><span class="score-big">${physScore}</span><span class="score-label">/100 Score Physique</span></div>` : ""}
-            <div class="scores-row">
-              <div class="score-chip"><div class="score-v">${scan.symmetry_score ?? "—"}</div><div class="score-l">Symétrie</div></div>
-              <div class="score-chip"><div class="score-v">${scan.posture_score ?? "—"}</div><div class="score-l">Posture</div></div>
-              <div class="score-chip"><div class="score-v">${scan.bodyfat_proxy ? scan.bodyfat_proxy + "%" : "—"}</div><div class="score-l">Bodyfat</div></div>
-            </div>
-            <div class="scan-feedback">${formatFeedback(scan.ai_feedback || "")}</div>
-          ` : '<div class="meal-info">Analyse en cours…</div>'}
+          <div style="padding:24px;text-align:center;color:var(--muted);font-size:.84rem">L'analyse IA est en cours de traitement.</div>
         </div>`;
-    }).join("");
+      }
+
+      const parsed = parseScanFeedback(scan.ai_feedback || "");
+      const hasStructure = parsed.strengths.length > 0 || parsed.improvements.length > 0;
+
+      return `<div class="scan-result-card">
+        <div class="scan-result-header">
+          <div>
+            <div class="scan-result-title">Analyse du ${date}</div>
+            ${physScore ? `<div class="scan-score-big" style="margin-top:8px">${physScore}<span class="scan-score-label">/100 Score Physique</span></div>` : ""}
+          </div>
+          <div style="text-align:right">
+            <span class="badge bg-green" style="display:inline-flex;margin-bottom:8px">✓ Analysé</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+              ${scan.symmetry_score != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--purple)">${scan.symmetry_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Symétrie</div></div>` : ""}
+              ${scan.posture_score != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--teal)">${scan.posture_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Posture</div></div>` : ""}
+              ${scan.bodyfat_proxy != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--orange)">${scan.bodyfat_proxy}%</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Bodyfat</div></div>` : ""}
+            </div>
+          </div>
+        </div>
+        <div class="scan-result-body">
+          <div class="scan-metrics-col">
+            ${hasStructure ? `
+              ${parsed.strengths.length ? `
+                <div class="scan-section-hdr">✦ Points forts</div>
+                ${parsed.strengths.slice(0, 4).map(s => `<div class="scan-point-item strength">${escapeHtml(s)}</div>`).join("")}
+              ` : ""}
+              ${parsed.improvements.length ? `
+                <div class="scan-section-hdr" style="margin-top:14px">→ À travailler</div>
+                ${parsed.improvements.slice(0, 4).map(s => `<div class="scan-point-item weakness">${escapeHtml(s)}</div>`).join("")}
+              ` : ""}
+            ` : `
+              <div class="scan-section-hdr">Analyse</div>
+              <div class="scan-overview-text">${parsed.overview ? escapeHtml(parsed.overview.slice(0, 300)) : formatFeedback(scan.ai_feedback.slice(0, 300))}</div>
+            `}
+          </div>
+          <div class="scan-feedback-col">
+            ${parsed.recommendations.length ? `
+              <div class="scan-section-hdr">• Recommandations</div>
+              ${parsed.recommendations.slice(0, 5).map(r => `<div class="scan-point-item reco">${escapeHtml(r)}</div>`).join("")}
+            ` : ""}
+            ${hasStructure && parsed.overview ? `
+              <div class="scan-section-hdr" style="margin-top:14px">Résumé</div>
+              <div class="scan-overview-text">${escapeHtml(parsed.overview.slice(0, 400))}</div>
+            ` : !hasStructure ? `
+              <div class="scan-section-hdr">Feedback complet</div>
+              <div class="scan-overview-text">${formatFeedback(scan.ai_feedback || "")}</div>
+            ` : ""}
+          </div>
+        </div>
+      </div>`;
+    }).join('<div style="height:16px"></div>');
   } catch (e) {
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
@@ -1504,6 +1616,15 @@ async function saveProfile() {
     if (username) payload.username = username;
     const { error } = await SB.from("profiles").upsert(payload, { onConflict: "id" });
     if (error) {
+      // username column might not exist (migration v4 not applied)
+      if (error.code === "42703" || (error.message?.includes("column") && error.message?.includes("username"))) {
+        delete payload.username;
+        const { error: e2 } = await SB.from("profiles").upsert(payload, { onConflict: "id" });
+        if (e2) throw e2;
+        toast("Pseudo mis à jour. Appliquez migration_v4 pour activer le username.", "ok");
+        await loadProfile();
+        return;
+      }
       if (error.message?.includes("idx_profiles_username") || error.message?.includes("duplicate")) {
         return toast("Ce username est déjà pris.", "err");
       }
@@ -2106,5 +2227,199 @@ window.acceptFriend = acceptFriend;
 window.rejectFriend = rejectFriend;
 window.removeFriend = removeFriend;
 window.setFeedFilter = setFeedFilter;
+window.startWorkoutSession = startWorkoutSession;
+window.closeWorkoutSession = closeWorkoutSession;
+window.woNav = woNav;
+window.woToggle = woToggle;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// WORKOUT SESSION TIMER
+// ══════════════════════════════════════════════════════════════════════════════
+
+let WO_STATE = null; // { exercises[], currentIdx, timerInterval, secondsLeft, phase:"work"|"rest", running }
+
+function startWorkoutSession() {
+  if (!PLAN || !Array.isArray(PLAN.exercises) || !PLAN.exercises.length) {
+    return toast("Aucune séance à démarrer.", "err");
+  }
+  WO_STATE = {
+    exercises: PLAN.exercises,
+    currentIdx: 0,
+    timerInterval: null,
+    secondsLeft: 0,
+    phase: "work",
+    running: false
+  };
+  const overlay = document.getElementById("workout-overlay");
+  if (overlay) overlay.classList.add("on");
+  const planTitleEl = document.getElementById("wo-plan-title");
+  if (planTitleEl) planTitleEl.textContent = PLAN.title || "Séance";
+  woRenderExercise();
+  document.body.style.overflow = "hidden";
+}
+
+function closeWorkoutSession() {
+  if (WO_STATE?.timerInterval) clearInterval(WO_STATE.timerInterval);
+  WO_STATE = null;
+  const overlay = document.getElementById("workout-overlay");
+  if (overlay) overlay.classList.remove("on");
+  document.body.style.overflow = "";
+}
+
+function woRenderExercise() {
+  if (!WO_STATE) return;
+  const ex = WO_STATE.exercises[WO_STATE.currentIdx];
+  const total = WO_STATE.exercises.length;
+  const idx = WO_STATE.currentIdx;
+
+  // Progress
+  const progFill = document.getElementById("wo-progress-fill");
+  const progText = document.getElementById("wo-progress-text");
+  if (progFill) progFill.style.width = `${Math.round(((idx + 1) / total) * 100)}%`;
+  if (progText) progText.textContent = `Exercice ${idx + 1} / ${total}`;
+
+  // Exercise info
+  const labelEl = document.getElementById("wo-ex-label");
+  const nameEl = document.getElementById("wo-ex-name");
+  const metaEl = document.getElementById("wo-ex-meta");
+  const descEl = document.getElementById("wo-desc");
+  if (labelEl) labelEl.textContent = `EXERCICE ${idx + 1}`;
+  if (nameEl) nameEl.textContent = ex.name || "Exercice";
+
+  // Badges
+  const badges = [];
+  if (ex.sets > 0) badges.push(`🔁 ${ex.sets} séries`);
+  if (ex.reps && ex.reps !== "0") badges.push(`✕ ${ex.reps} reps`);
+  if (ex.duration > 0) badges.push(`⏱ ${ex.duration}s`);
+  if (ex.rest > 0) badges.push(`💤 ${ex.rest}s repos`);
+  if (ex.muscle) badges.push(`💪 ${ex.muscle}`);
+  if (metaEl) metaEl.innerHTML = badges.map(b => `<span class="workout-ex-badge">${escapeHtml(b)}</span>`).join("");
+
+  // Description
+  if (descEl) {
+    if (ex.description) { descEl.textContent = ex.description; descEl.style.display = "block"; }
+    else descEl.style.display = "none";
+  }
+
+  // Timer setup
+  woStopTimer();
+  WO_STATE.phase = "work";
+  WO_STATE.running = false;
+  // Default: use duration if set, otherwise just show sets/reps (no countdown)
+  WO_STATE.secondsLeft = ex.duration > 0 ? ex.duration : 0;
+  woUpdateTimerDisplay();
+
+  // Reset start button
+  const btn = document.getElementById("wo-start-btn");
+  if (btn) btn.textContent = WO_STATE.secondsLeft > 0 ? "▶ Démarrer" : "✓ Suivant";
+}
+
+function woUpdateTimerDisplay() {
+  if (!WO_STATE) return;
+  const timerEl = document.getElementById("wo-timer");
+  const labelEl = document.getElementById("wo-timer-label");
+  if (!timerEl || !labelEl) return;
+
+  if (WO_STATE.phase === "rest") {
+    const m = Math.floor(WO_STATE.secondsLeft / 60);
+    const s = WO_STATE.secondsLeft % 60;
+    timerEl.textContent = WO_STATE.secondsLeft > 0 ? `${m}:${String(s).padStart(2, "0")}` : "Prêt";
+    timerEl.style.color = "var(--teal)";
+    labelEl.textContent = "REPOS";
+    labelEl.className = "workout-timer-label workout-timer-rest";
+  } else if (WO_STATE.secondsLeft > 0) {
+    const m = Math.floor(WO_STATE.secondsLeft / 60);
+    const s = WO_STATE.secondsLeft % 60;
+    timerEl.textContent = `${m}:${String(s).padStart(2, "0")}`;
+    timerEl.style.color = "var(--orange)";
+    labelEl.textContent = WO_STATE.running ? "EN COURS" : "PRÊT";
+    labelEl.className = "workout-timer-label workout-timer-work";
+  } else {
+    // No duration — sets/reps based
+    const ex = WO_STATE.exercises[WO_STATE.currentIdx];
+    timerEl.textContent = ex.sets > 1 ? `${ex.sets}×${ex.reps}` : (ex.reps || "—");
+    timerEl.style.color = "var(--text)";
+    labelEl.textContent = "SÉRIES / REPS";
+    labelEl.className = "workout-timer-label";
+  }
+}
+
+function woToggle() {
+  if (!WO_STATE) return;
+  const ex = WO_STATE.exercises[WO_STATE.currentIdx];
+
+  // No duration — just advance to next
+  if (WO_STATE.secondsLeft === 0 && WO_STATE.phase === "work") {
+    return woStartRest();
+  }
+
+  if (WO_STATE.running) {
+    woStopTimer();
+    WO_STATE.running = false;
+    const btn = document.getElementById("wo-start-btn");
+    if (btn) btn.textContent = "▶ Reprendre";
+    return;
+  }
+
+  WO_STATE.running = true;
+  const btn = document.getElementById("wo-start-btn");
+  if (btn) btn.textContent = "⏸ Pause";
+
+  WO_STATE.timerInterval = setInterval(() => {
+    if (!WO_STATE) return;
+    WO_STATE.secondsLeft = Math.max(0, WO_STATE.secondsLeft - 1);
+    woUpdateTimerDisplay();
+    if (WO_STATE.secondsLeft === 0) {
+      woStopTimer();
+      WO_STATE.running = false;
+      if (WO_STATE.phase === "work") {
+        woStartRest();
+      } else {
+        // Rest done — go to next
+        woNav(1);
+      }
+    }
+  }, 1000);
+}
+
+function woStartRest() {
+  if (!WO_STATE) return;
+  const ex = WO_STATE.exercises[WO_STATE.currentIdx];
+  const restSec = ex.rest > 0 ? ex.rest : 0;
+  if (restSec === 0) {
+    return woNav(1);
+  }
+  WO_STATE.phase = "rest";
+  WO_STATE.secondsLeft = restSec;
+  WO_STATE.running = false;
+  woUpdateTimerDisplay();
+  const btn = document.getElementById("wo-start-btn");
+  if (btn) btn.textContent = "▶ Démarrer repos";
+  toast(`Repos ${restSec}s ⏸`, "ok");
+}
+
+function woStopTimer() {
+  if (WO_STATE?.timerInterval) {
+    clearInterval(WO_STATE.timerInterval);
+    WO_STATE.timerInterval = null;
+  }
+}
+
+function woNav(dir) {
+  if (!WO_STATE) return;
+  woStopTimer();
+  const next = WO_STATE.currentIdx + dir;
+  if (next < 0) return;
+  if (next >= WO_STATE.exercises.length) {
+    // Session complete
+    closeWorkoutSession();
+    toast("🎉 Séance terminée ! N'oubliez pas de sauvegarder.", "ok");
+    return;
+  }
+  WO_STATE.currentIdx = next;
+  WO_STATE.phase = "work";
+  WO_STATE.running = false;
+  woRenderExercise();
+}
 
 document.addEventListener("DOMContentLoaded", boot);
