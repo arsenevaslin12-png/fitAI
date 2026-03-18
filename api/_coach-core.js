@@ -164,8 +164,6 @@ function buildWorkoutPrompt(message, history, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
   return `Tu es un préparateur physique expert. Tu réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
 
-Tu construis un programme réaliste et intelligent.
-
 Profil:
 - Objectif: ${p.goal} (${getGoalDescription(p.goal)})
 - Niveau: ${p.level} (${getLevelDescription(p.level)})
@@ -173,7 +171,7 @@ Profil:
 - Blessures / contraintes: ${p.constraints}
 - Poids: ${p.weight || "non renseigné"}
 - Taille: ${p.height || "non renseignée"}
-- Sommeil moyen: ${p.sleep || "non renseigné"}
+- Sommeil moyen: ${p.sleep || "non renseigné"} h
 - Récupération ressentie /10: ${p.recovery || "non renseignée"}
 
 Historique récent:
@@ -182,47 +180,40 @@ ${historyBlock(history) || "Aucun historique utile."}
 Demande de l'utilisateur:
 ${message}
 
-Règles absolues:
+RÈGLES ABSOLUES:
 - Respecte les blessures et contraintes.
-- Prévois une progression réaliste.
-- Inclus une deload week si duration_weeks >= 4.
-- Varie les exercices et évite de répéter exactement les mêmes mouvements si l'historique en montre déjà.
 - Adapte l'intensité si sommeil < 6h ou récupération <= 5/10.
-- Donne 3 à 5 sessions par semaine maximum.
-- Garde les exercices simples si le niveau est débutant.
+- Niveau débutant = exercices simples et explications claires.
+- Commence toujours par l'échauffement, termine par le retour au calme.
+- Réponds en français.
 
-Format JSON exact attendu:
+FORMAT JSON OBLIGATOIRE (aucun texte avant ni après, aucun markdown):
 {
-  "title": "",
-  "goal": "",
-  "duration_weeks": 8,
-  "progression": {
-    "weeks_1_3": "",
-    "week_4_deload": "",
-    "weeks_5_8": ""
-  },
-  "recovery_advice": "",
-  "nutrition_advice": "",
-  "sessions": [
+  "title": "Nom de la séance",
+  "duration": 45,
+  "calories": 350,
+  "exercises": [
     {
-      "day": "Monday",
-      "focus": "Upper Body",
-      "duration_min": 45,
-      "intensity": "low|medium|high",
-      "warmup": ["...", "..."],
-      "exercises": [
-        {
-          "name": "Bench Press",
-          "sets": 4,
-          "reps": "8-10",
-          "rest_sec": 90,
-          "notes": ""
-        }
-      ],
-      "cooldown": ["...", "..."]
+      "name": "Nom de l'exercice",
+      "sets": 3,
+      "reps": "10-12",
+      "duration": 0,
+      "rest": 60,
+      "description": "Conseil technique court et actionnable.",
+      "muscle": "Groupe musculaire cible",
+      "difficulty": "facile|moyen|difficile",
+      "equipment": "Aucun"
     }
   ]
-}`;
+}
+
+STRUCTURE exercises[] requise:
+1. Échauffement — 2 à 3 exercices légers (sets:1, reps:"1×" ou "30s", rest:0, difficulty:"facile").
+2. Corps principal — 4 à 7 exercices progressifs adaptés au profil.
+3. Retour au calme — 2 à 3 étirements (sets:1, reps:"30-45s", rest:0, difficulty:"facile").
+- "duration" = durée en secondes si exercice chronométré, sinon 0.
+- "rest" = repos en secondes entre les séries (0 pour échauffement/cooldown).
+- "description" = instruction pratique courte, jamais vide.`;
 }
 
 function buildConversationPrompt(intent, message, history, profile, goalContext) {
@@ -426,41 +417,127 @@ function fallbackRecipe(message, profile = {}, goalContext = {}) {
   };
 }
 
+// ─── Exercise helpers (new structured format) ────────────────────────────────
+
+function normalizeExercise(ex) {
+  return {
+    name:        normalizeText(ex.name || "Exercice", "Exercice"),
+    sets:        Math.max(1, Math.round(Number(ex.sets) || 3)),
+    reps:        normalizeText(ex.reps || "10-12", "10-12"),
+    duration:    Math.max(0, Math.round(Number(ex.duration) || 0)),
+    rest:        Math.max(0, Math.round(Number(ex.rest != null ? ex.rest : ex.rest_sec) || 0)),
+    description: normalizeText(ex.description || ex.notes || ""),
+    muscle:      normalizeText(ex.muscle || ""),
+    difficulty:  normalizeText(ex.difficulty || "moyen"),
+    equipment:   normalizeText(ex.equipment || "Aucun")
+  };
+}
+
+function exerciseToText(ex) {
+  const suffix = ex.duration > 0
+    ? `${ex.sets}×${ex.duration}s${ex.rest ? ` (repos ${ex.rest}s)` : ""}`
+    : `${ex.sets}×${ex.reps}${ex.rest ? ` (repos ${ex.rest}s)` : ""}`;
+  return `${ex.name} — ${suffix}${ex.description ? `. ${ex.description}` : ""}`;
+}
+
+function exercisesToBlocks(exercises, totalDurationMin) {
+  const n = exercises.length;
+  // Split into warmup / main / cooldown based on array position
+  let warmupCount = 0;
+  let cooldownCount = 0;
+  if (n >= 7) { warmupCount = 2; cooldownCount = 2; }
+  else if (n >= 5) { warmupCount = 2; cooldownCount = 1; }
+  else if (n >= 3) { warmupCount = 1; cooldownCount = 1; }
+
+  const warmupExs   = exercises.slice(0, warmupCount);
+  const cooldownExs = n > cooldownCount ? exercises.slice(n - cooldownCount) : [];
+  const mainExs     = exercises.slice(warmupCount, n - cooldownCount || n);
+
+  const warmupSec   = warmupCount * 90;
+  const cooldownSec = cooldownCount * 90;
+  const mainSec     = Math.max(600, (Number(totalDurationMin || 45) * 60) - warmupSec - cooldownSec);
+
+  const blocks = [];
+  if (warmupExs.length) {
+    blocks.push({ title: "Échauffement", duration_sec: warmupSec, items: warmupExs.map(exerciseToText), rpe: "3-4" });
+  }
+  if (mainExs.length) {
+    blocks.push({ title: "Séance principale", duration_sec: mainSec, items: mainExs.map(exerciseToText), rpe: "7-8" });
+  }
+  if (cooldownExs.length) {
+    blocks.push({ title: "Récupération", duration_sec: cooldownSec, items: cooldownExs.map(exerciseToText), rpe: "2-3" });
+  }
+  if (!blocks.length) {
+    blocks.push({ title: "Séance complète", duration_sec: Number(totalDurationMin || 45) * 60, items: exercises.map(exerciseToText), rpe: "7-8" });
+  }
+  return blocks;
+}
+
+// ─── Normalisation principale ─────────────────────────────────────────────────
+
 function normalizeWorkoutOutput(raw, profile = {}, goalContext = {}) {
   const fallback = fallbackWorkout("séance full body", profile, goalContext);
   const source = raw && typeof raw === "object" ? raw : fallback;
-  if (Array.isArray(source.blocks)) {
+  const p = makeProfileSummary(profile, goalContext);
+
+  // ── FORMAT 1 : exercises[] direct (nouveau format demandé) ──────────────────
+  if (Array.isArray(source.exercises) && source.exercises.length > 0) {
+    const exercises = source.exercises.map(normalizeExercise);
+    const duration  = Math.max(10, Math.round(Number(source.duration) || 45));
+    const blocks    = exercisesToBlocks(exercises, duration);
+    const muscles   = [...new Set(exercises.map((e) => e.muscle).filter(Boolean))];
+    const equip     = [...new Set(exercises.map((e) => e.equipment).filter((e) => e && e !== "Aucun"))];
     return {
-      title: String(source.title || "Séance personnalisée"),
-      type: String(source.type || "strength"),
-      level: String(source.level || makeProfileSummary(profile, goalContext).level || "beginner"),
-      intensity: ["low", "medium", "high"].includes(source.intensity) ? source.intensity : "medium",
-      duration: typeof source.duration === "number" ? source.duration : 45,
-      calories_estimate: source.calories_estimate || null,
-      target_muscles: Array.isArray(source.target_muscles) ? source.target_muscles : [],
-      equipment_needed: Array.isArray(source.equipment_needed) ? source.equipment_needed : [],
-      notes: String(source.notes || ""),
-      created_at: new Date().toISOString(),
-      blocks: source.blocks,
-      structured_plan: source.structured_plan || null
+      title:            String(source.title || "Séance personnalisée"),
+      type:             /cardio|hiit/i.test(source.title || "") ? "hiit" : "strength",
+      level:            p.level || "beginner",
+      intensity:        "medium",
+      duration,
+      calories_estimate: source.calories ? Math.round(Number(source.calories)) : null,
+      target_muscles:   muscles,
+      equipment_needed: equip,
+      notes:            String(source.notes || ""),
+      created_at:       new Date().toISOString(),
+      blocks,
+      exercises
     };
   }
 
-  const session = Array.isArray(source.sessions) && source.sessions.length ? source.sessions[0] : fallback.sessions[0];
-  const warmupItems = Array.isArray(session.warmup) ? session.warmup : ["5 min cardio léger", "Mobilité dynamique"];
+  // ── FORMAT 2 : blocks[] existants (compat arrière) ──────────────────────────
+  if (Array.isArray(source.blocks)) {
+    return {
+      title:            String(source.title || "Séance personnalisée"),
+      type:             String(source.type || "strength"),
+      level:            String(source.level || p.level || "beginner"),
+      intensity:        ["low", "medium", "high"].includes(source.intensity) ? source.intensity : "medium",
+      duration:         typeof source.duration === "number" ? source.duration : 45,
+      calories_estimate: source.calories_estimate || null,
+      target_muscles:   Array.isArray(source.target_muscles) ? source.target_muscles : [],
+      equipment_needed: Array.isArray(source.equipment_needed) ? source.equipment_needed : [],
+      notes:            String(source.notes || ""),
+      created_at:       new Date().toISOString(),
+      blocks:           source.blocks,
+      exercises:        [],
+      structured_plan:  source.structured_plan || null
+    };
+  }
+
+  // ── FORMAT 3 : sessions[] legacy ────────────────────────────────────────────
+  const session      = Array.isArray(source.sessions) && source.sessions.length ? source.sessions[0] : fallback.sessions[0];
+  const warmupItems  = Array.isArray(session.warmup)   ? session.warmup   : ["5 min cardio léger", "Mobilité dynamique"];
+  const cooldownItems = Array.isArray(session.cooldown) ? session.cooldown : ["Respiration 2 min", "Étirements légers"];
   const exerciseItems = Array.isArray(session.exercises) ? session.exercises.map((ex) => {
     const name = normalizeText(ex.name || "Exercice", "Exercice");
     const sets = Number(ex.sets || 3);
     const reps = normalizeText(ex.reps || "10-12", "10-12");
     const rest = Number(ex.rest_sec || 60);
-    const notes = normalizeText(ex.notes || "");
-    return `${name} — ${sets}×${reps}${rest ? ` (repos ${rest}s)` : ""}${notes ? `. ${notes}` : ""}`;
+    const note = normalizeText(ex.notes || "");
+    return `${name} — ${sets}×${reps}${rest ? ` (repos ${rest}s)` : ""}${note ? `. ${note}` : ""}`;
   }) : [];
-  const cooldownItems = Array.isArray(session.cooldown) ? session.cooldown : ["Respiration 2 min", "Étirements légers"];
   const blocks = [
-    { title: "Échauffement", duration_sec: 8 * 60, items: warmupItems.map((x) => normalizeText(x, x)), rpe: "3-4" },
+    { title: "Échauffement",              duration_sec: 8 * 60,  items: warmupItems.map((x) => normalizeText(x, x)),   rpe: "3-4" },
     { title: session.focus || "Séance principale", duration_sec: Math.max(20, Number(session.duration_min || 45) - 13) * 60, items: exerciseItems, rpe: session.intensity === "high" ? "8-9" : session.intensity === "low" ? "5-6" : "7-8" },
-    { title: "Récupération", duration_sec: 5 * 60, items: cooldownItems.map((x) => normalizeText(x, x)), rpe: "2-3" }
+    { title: "Récupération",              duration_sec: 5 * 60,  items: cooldownItems.map((x) => normalizeText(x, x)), rpe: "2-3" }
   ];
   const notes = [
     source.progression?.weeks_1_3,
@@ -469,19 +546,26 @@ function normalizeWorkoutOutput(raw, profile = {}, goalContext = {}) {
     source.nutrition_advice
   ].filter(Boolean).join(" · ");
 
+  // Extract exercises[] from legacy sessions[] for structured output
+  const legacyExercises = Array.isArray(session.exercises) ? session.exercises.map((ex) => normalizeExercise({
+    name: ex.name, sets: ex.sets, reps: ex.reps, duration: 0,
+    rest: ex.rest_sec, description: ex.notes, muscle: "", difficulty: "moyen", equipment: "Aucun"
+  })) : [];
+
   return {
-    title: String(source.title || "Programme intelligent"),
-    type: String(/cardio|hiit/i.test(session.focus || "") ? "hiit" : "strength"),
-    level: makeProfileSummary(profile, goalContext).level || "beginner",
-    intensity: ["low", "medium", "high"].includes(session.intensity) ? session.intensity : "medium",
-    duration: Number(session.duration_min || 45),
+    title:            String(source.title || "Programme intelligent"),
+    type:             String(/cardio|hiit/i.test(session.focus || "") ? "hiit" : "strength"),
+    level:            p.level || "beginner",
+    intensity:        ["low", "medium", "high"].includes(session.intensity) ? session.intensity : "medium",
+    duration:         Number(session.duration_min || 45),
     calories_estimate: null,
-    target_muscles: [String(session.focus || "Full Body")],
+    target_muscles:   [String(session.focus || "Full Body")],
     equipment_needed: [],
     notes,
-    created_at: new Date().toISOString(),
+    created_at:       new Date().toISOString(),
     blocks,
-    structured_plan: source
+    exercises:        legacyExercises,
+    structured_plan:  source
   };
 }
 
@@ -503,15 +587,18 @@ async function generateWithRetry(apiKey, prompt, options = {}) {
 async function generateWorkoutPlan({ apiKey, message, history, profile, goalContext }) {
   const prompt = buildWorkoutPrompt(message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1400, timeoutMs: 4800, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1600, timeoutMs: 5500, retries: 0 });
     const parsed = extractJSON(result.text);
-    if (!parsed || !Array.isArray(parsed.sessions) || !parsed.sessions.length) {
+    // Accept new exercises[] format OR legacy sessions[] format
+    const hasExercises = parsed && Array.isArray(parsed.exercises) && parsed.exercises.length > 0;
+    const hasSessions  = parsed && Array.isArray(parsed.sessions)  && parsed.sessions.length  > 0;
+    if (!parsed || (!hasExercises && !hasSessions)) {
       throw new Error("INVALID_WORKOUT_JSON");
     }
     return { ok: true, data: normalizeWorkoutOutput(parsed, profile, goalContext), raw: parsed, model: result.model, fallback: false };
   } catch (error) {
-    const fallback = fallbackWorkout(message, profile, goalContext);
-    return { ok: true, data: normalizeWorkoutOutput(fallback, profile, goalContext), raw: fallback, fallback: true, error: String(error?.message || "generation_failed"), degraded_reason: "fallback_fast" };
+    const fb = fallbackWorkout(message, profile, goalContext);
+    return { ok: true, data: normalizeWorkoutOutput(fb, profile, goalContext), raw: fb, fallback: true, error: String(error?.message || "generation_failed"), degraded_reason: "fallback_fast" };
   }
 }
 

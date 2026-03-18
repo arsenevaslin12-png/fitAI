@@ -438,12 +438,22 @@ async function loadDashboard() {
       dateEl.textContent = "📅 " + now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
     }
     // Greet with name
-    const greetEl = document.querySelector(".db-greet small");
+    const greetEl = document.getElementById("db-greet-name");
+    const sidebarName = document.getElementById("tu");
     if (greetEl && U) {
       try {
-        const { data } = await SB.from("profiles").select("display_name").eq("id", U.id).maybeSingle();
-        greetEl.textContent = data?.display_name || U.email?.split("@")[0] || "Champion";
-      } catch { greetEl.textContent = U.email?.split("@")[0] || "Champion"; }
+        const { data } = await SB.from("profiles").select("display_name,username").eq("id", U.id).maybeSingle();
+        const name = data?.display_name || data?.username || U.email?.split("@")[0] || "Champion";
+        greetEl.textContent = name;
+        if (sidebarName) sidebarName.textContent = name;
+        // Update goal card
+        const goalText = document.getElementById("db-goal-text");
+        if (goalText) goalText.textContent = `Objectif de ${name}`;
+      } catch {
+        const name = U.email?.split("@")[0] || "Champion";
+        greetEl.textContent = name;
+        if (sidebarName) sidebarName.textContent = name;
+      }
     }
     await Promise.all([loadGoal(), loadMeals(), loadStats(), loadNutritionTargets(), loadStreak()]);
   } catch (e) {
@@ -657,20 +667,35 @@ async function sendCoachMsg(quickMsg) {
     if (j.type === "workout" && j.data) {
       PLAN = j.data;
       let aiResponse = `<strong>${escapeHtml(PLAN.title || "Séance générée")}</strong>`;
-      if (PLAN.notes) aiResponse += `<div style="margin-top:6px;font-style:italic;opacity:.8">${escapeHtml(PLAN.notes)}</div>`;
-      if (PLAN.blocks?.length) {
+      // Meta summary line
+      const metaParts = [];
+      if (PLAN.duration) metaParts.push(`⏱ ${PLAN.duration} min`);
+      if (PLAN.calories_estimate) metaParts.push(`🔥 ~${PLAN.calories_estimate} kcal`);
+      if (PLAN.exercises?.length) metaParts.push(`💪 ${PLAN.exercises.length} exercices`);
+      if (metaParts.length) aiResponse += `<div style="margin-top:5px;font-size:.8rem;opacity:.7">${metaParts.join(" · ")}</div>`;
+      // Exercise list preview (first 5)
+      if (Array.isArray(PLAN.exercises) && PLAN.exercises.length > 0) {
+        aiResponse += '<ul style="margin:8px 0 0 14px;list-style:none;display:flex;flex-direction:column;gap:3px">';
+        PLAN.exercises.slice(0, 5).forEach((ex, i) => {
+          const badge = ex.sets > 1 ? `${ex.sets}×${ex.reps}` : (ex.duration > 0 ? `${ex.duration}s` : ex.reps);
+          aiResponse += `<li style="font-size:.82rem;color:rgba(238,238,245,.8)"><span style="opacity:.5">${i + 1}.</span> <strong>${escapeHtml(ex.name)}</strong> <span style="opacity:.55">${escapeHtml(badge)}</span></li>`;
+        });
+        if (PLAN.exercises.length > 5) aiResponse += `<li style="font-size:.78rem;opacity:.5">+${PLAN.exercises.length - 5} autres exercices…</li>`;
+        aiResponse += '</ul>';
+      } else if (PLAN.blocks?.length) {
         aiResponse += '<div style="margin-top:8px">';
-        PLAN.blocks.forEach((b) => {
-          aiResponse += `<div style="margin-top:6px"><strong>${escapeHtml(b.title)}</strong> <span style="opacity:.6">(${formatDuration(b.duration_sec)})</span></div>`;
+        PLAN.blocks.slice(0, 3).forEach((b) => {
+          aiResponse += `<div style="margin-top:5px;font-size:.82rem"><strong>${escapeHtml(b.title)}</strong></div>`;
           if (b.items?.length) {
-            aiResponse += '<ul style="margin:4px 0 0 16px;list-style:disc;font-size:.82rem;color:rgba(238,238,245,.75)">';
-            b.items.forEach((it) => { aiResponse += `<li>${escapeHtml(it)}</li>`; });
+            aiResponse += '<ul style="margin:3px 0 0 14px;list-style:disc;font-size:.8rem;color:rgba(238,238,245,.7)">';
+            b.items.slice(0, 3).forEach((it) => { aiResponse += `<li>${escapeHtml(it)}</li>`; });
             aiResponse += '</ul>';
           }
         });
         aiResponse += '</div>';
       }
-      aiResponse += '<div style="margin-top:10px;font-size:.82rem;opacity:.7">💾 Tu peux sauvegarder cette séance ci-dessous.</div>' + fallbackBadge;
+      if (PLAN.notes) aiResponse += `<div style="margin-top:6px;font-size:.8rem;font-style:italic;opacity:.65">${escapeHtml(PLAN.notes.slice(0, 140))}</div>`;
+      aiResponse += '<div style="margin-top:10px;font-size:.78rem;opacity:.6">👇 Séance complète ci-dessous — tu peux la sauvegarder.</div>' + fallbackBadge;
       COACH_HISTORY.push({ role: "ai", content: aiResponse, time: aiTime });
       renderPlan(PLAN);
     } else {
@@ -704,28 +729,81 @@ async function generateWorkout() {
   return sendCoachMsg();
 }
 
+function renderExerciseCard(ex, idx) {
+  const badges = [];
+  if (ex.sets && ex.sets > 0) badges.push(`<span class="ex-badge sets">🔁 ${ex.sets} séries</span>`);
+  if (ex.reps && ex.reps !== "0") badges.push(`<span class="ex-badge reps">✕ ${escapeHtml(String(ex.reps))} reps</span>`);
+  if (ex.duration && ex.duration > 0) badges.push(`<span class="ex-badge dur">⏱ ${ex.duration}s</span>`);
+  if (ex.rest && ex.rest > 0) badges.push(`<span class="ex-badge rest">💤 ${ex.rest}s repos</span>`);
+  if (ex.muscle) badges.push(`<span class="ex-badge muscle">💪 ${escapeHtml(ex.muscle)}</span>`);
+
+  return `
+    <div class="ex-card">
+      <div class="ex-num">${idx + 1}</div>
+      <div class="ex-body">
+        <div class="ex-name">${escapeHtml(ex.name || "Exercice")}</div>
+        <div class="ex-badges">${badges.join("")}</div>
+        ${ex.description ? `<div class="ex-desc">${escapeHtml(ex.description)}</div>` : ""}
+      </div>
+    </div>
+  `;
+}
+
 function renderPlan(plan) {
   const head = document.getElementById("plan-head");
+  const meta = document.getElementById("plan-meta");
   const notes = document.getElementById("plan-notes");
   const blocks = document.getElementById("plan-blocks");
 
   if (head) {
-    head.innerHTML = `<div><div class="plan-title-text">${escapeHtml(plan.title || "Séance")}</div><div class="page-sub">${escapeHtml(plan.intensity || "medium")} · ${plan.duration || "?"} min</div></div>`;
+    head.innerHTML = `
+      <div style="flex:1">
+        <div class="plan-title-text">${escapeHtml(plan.title || "Séance")}</div>
+      </div>
+    `;
+  }
+  // Meta pills row
+  if (meta) {
+    const pills = [];
+    if (plan.duration) pills.push(`<span class="plan-meta-pill">⏱ ${plan.duration} min</span>`);
+    const kcal = plan.calories_estimate || plan.calories;
+    if (kcal) pills.push(`<span class="plan-meta-pill">🔥 ${kcal} kcal</span>`);
+    const lvl = { beginner: "Débutant", debutant: "Débutant", intermediate: "Intermédiaire", intermediaire: "Intermédiaire", advanced: "Avancé", avance: "Avancé" }[plan.level] || plan.level || "";
+    if (lvl) pills.push(`<span class="plan-meta-pill">🎯 ${escapeHtml(lvl)}</span>`);
+    if (plan.exercises?.length) pills.push(`<span class="plan-meta-pill">💪 ${plan.exercises.length} exercices</span>`);
+    meta.innerHTML = pills.join("");
+    meta.style.display = pills.length ? "flex" : "none";
   }
   if (notes) {
     notes.textContent = plan.notes || "";
     notes.style.display = plan.notes ? "block" : "none";
   }
+
   if (blocks) {
-    blocks.innerHTML = (plan.blocks || []).map((b) => `
-      <div class="block">
-        <div class="block-head">
-          <span class="block-name">${escapeHtml(b.title)}</span>
-          <span class="bdur">⏱ ${formatDuration(b.duration_sec)}</span>
+    // Priority 1: exercises[] — new structured format
+    if (Array.isArray(plan.exercises) && plan.exercises.length > 0) {
+      blocks.innerHTML = `
+        <div class="plan-section-title">💪 ${plan.exercises.length} exercices</div>
+        ${plan.exercises.map((ex, i) => renderExerciseCard(ex, i)).join("")}
+      `;
+    }
+    // Priority 2: blocks[] — backward compat
+    else if (Array.isArray(plan.blocks) && plan.blocks.length > 0) {
+      blocks.innerHTML = plan.blocks.map((b) => `
+        <div class="block">
+          <div class="block-head">
+            <span class="block-name">${escapeHtml(b.title || "")}</span>
+            <span class="bdur">⏱ ${formatDuration(b.duration_sec)}</span>
+          </div>
+          ${Array.isArray(b.exercises) && b.exercises.length > 0
+            ? b.exercises.map((ex, i) => renderExerciseCard(ex, i)).join("")
+            : `<ul class="block-items">${(b.items || []).map((it) => `<li>${escapeHtml(it)}</li>`).join("")}</ul>`
+          }
         </div>
-        <ul class="block-items">${(b.items || []).map((it) => `<li>${escapeHtml(it)}</li>`).join("")}</ul>
-      </div>
-    `).join("");
+      `).join("");
+    } else {
+      blocks.innerHTML = '<div class="empty"><span class="empty-ic">🏋️</span>Aucun exercice disponible</div>';
+    }
   }
 
   const planCard = document.getElementById("plan-card");
@@ -1104,9 +1182,10 @@ async function searchUsers() {
   if (!query || query.length < 2) { resultEl.innerHTML = '<div class="meal-info">Tapez au moins 2 caractères</div>'; return; }
 
   try {
+    // Search by username OR display_name (OR filter via PostgREST)
     const { data, error } = await SB.from("profiles")
       .select("id,username,display_name")
-      .ilike("username", `%${query}%`)
+      .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
       .neq("id", U.id)
       .limit(10);
     if (error) throw error;
@@ -1138,6 +1217,9 @@ async function sendFriendRequest(addresseeId) {
     if (error) {
       if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
         return toast("Demande déjà envoyée.", "err");
+      }
+      if (error.message?.includes("relation") || error.message?.includes("does not exist")) {
+        return toast("Migration SQL requise (migration_v3_social.sql)", "err");
       }
       throw error;
     }
@@ -1209,7 +1291,13 @@ async function loadFriends() {
     const countEl = document.getElementById("friend-count");
     if (countEl) countEl.textContent = data.length;
   } catch (e) {
-    el.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+    // If table doesn't exist (migration not applied) show a setup hint
+    const isTableMissing = e.message?.includes("relation") || e.message?.includes("does not exist") || e.code === "42P01";
+    if (isTableMissing) {
+      el.innerHTML = '<div class="empty"><span class="empty-ic">⚙️</span>Migration SQL requise — appliquer supabase/migration_v3_social.sql</div>';
+    } else {
+      el.innerHTML = '<div class="empty"><span class="empty-ic">👥</span>Aucun ami pour le moment</div>';
+    }
   }
 }
 
@@ -1247,7 +1335,11 @@ async function loadFriendRequests() {
     const badge = document.getElementById("friend-pending-badge");
     if (badge) { badge.textContent = data.length; badge.style.display = data.length > 0 ? "inline-flex" : "none"; }
   } catch (e) {
-    el.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+    const isTableMissing = e.message?.includes("relation") || e.message?.includes("does not exist") || e.code === "42P01";
+    if (!isTableMissing) {
+      el.innerHTML = '<div class="meal-info">Aucune demande en attente</div>';
+    }
+    // Silently ignore missing table — loadFriends shows the setup hint
   }
 }
 
@@ -1896,30 +1988,22 @@ async function generateRecipe() {
     seche: "repas de sèche (peu calorique, riche en protéines)"
   };
 
-  const prompt = `Crée une recette fitness avec ces ingrédients: ${ingredients}.
-Objectif: ${goalLabels[goal] || "équilibré"}, environ ${targetKcal} kcal.
-Donne le nom, les étapes courtes, et les macros (calories, protéines, glucides, lipides).
-Réponds en JSON: {"name":"...","steps":["étape1","étape2"],"prep_time":"10 min","calories":500,"protein":35,"carbs":50,"fat":15,"tips":"conseil"}`;
-
   const btn = document.getElementById("btn-recipe");
   await withButton(btn, "Génération…", async () => {
     const token = await getToken();
+    if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
-    const { response: j } = await fetchJsonWithTimeout("/api/coach", {
+    const { response: j } = await fetchJsonWithTimeout("/api/generate-recipe", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ message: prompt, history: [], profile: {}, goalContext: {}, responseMode: "recipe_json" })
-    }, 25000);
+      body: JSON.stringify({ ingredients, goal, targetKcal })
+    }, 28000);
 
+    // Normalize response: /api/generate-recipe returns { recipe, data }
     let recipe = null;
-    if (j.type === "recipe" && j.data && typeof j.data === "object") recipe = j.data;
-    if (!recipe && j.type === "conversation" && j.message) {
-      const jsonMatch = j.message.match(/\{[\s\S]*\}/);
-      if (jsonMatch) { try { recipe = JSON.parse(jsonMatch[0]); } catch {} }
-    }
-    if (!recipe && j.data && typeof j.data === "object") {
-      if (j.data.name || j.data.steps || j.data.calories) recipe = j.data;
-    }
+    if (j.recipe && typeof j.recipe === "object" && j.recipe.name) recipe = j.recipe;
+    else if (j.data && typeof j.data === "object" && j.data.name) recipe = j.data;
+    else if (j.type === "recipe" && j.data) recipe = j.data;
 
     if (!recipe) {
       // Fallback: show raw response
@@ -1932,22 +2016,27 @@ Réponds en JSON: {"name":"...","steps":["étape1","étape2"],"prep_time":"10 mi
 
     if (resultEl) {
       resultEl.style.display = "block";
-      const stepsHtml = Array.isArray(recipe.steps) ? recipe.steps.map((s, i) => `<li>${escapeHtml(s)}</li>`).join("") : "";
+      const stepsHtml = Array.isArray(recipe.steps)
+        ? recipe.steps.map((s, i) => `<li style="margin-bottom:4px">${escapeHtml(s)}</li>`).join("")
+        : "";
       resultEl.innerHTML = `
-        <div class="card" style="border-left:3px solid var(--green)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <div style="font-weight:800;font-size:1rem">${escapeHtml(recipe.name || "Recette")}</div>
-            ${recipe.prep_time ? `<span class="badge bg-green">${escapeHtml(recipe.prep_time)}</span>` : ""}
+        <div class="card" style="background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(6,182,212,.05));border-color:rgba(34,197,94,.2);padding:18px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+            <div>
+              <div style="font-size:.62rem;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">Recette IA</div>
+              <div style="font-weight:900;font-size:1.05rem;letter-spacing:-.01em">${escapeHtml(recipe.name || "Recette")}</div>
+            </div>
+            ${recipe.prep_time ? `<span class="badge bg-green">⏱ ${escapeHtml(recipe.prep_time)}</span>` : ""}
           </div>
-          <div class="macro-grid" style="margin-bottom:12px">
+          <div class="macro-grid" style="margin-bottom:14px">
             <div class="macro-card"><span class="macro-icon">🔥</span><div class="macro-val">${recipe.calories || "?"}</div><div class="macro-lbl">Kcal</div></div>
             <div class="macro-card"><span class="macro-icon">💪</span><div class="macro-val">${recipe.protein || "?"}g</div><div class="macro-lbl">Prot.</div></div>
             <div class="macro-card"><span class="macro-icon">🌾</span><div class="macro-val">${recipe.carbs || "?"}g</div><div class="macro-lbl">Gluc.</div></div>
             <div class="macro-card"><span class="macro-icon">🥑</span><div class="macro-val">${recipe.fat || "?"}g</div><div class="macro-lbl">Lip.</div></div>
           </div>
-          ${stepsHtml ? `<div style="font-weight:700;font-size:.82rem;margin-bottom:6px">Préparation:</div><ol style="margin-left:16px;font-size:.84rem;line-height:1.7;color:rgba(238,238,245,.85)">${stepsHtml}</ol>` : ""}
-          ${recipe.tips ? `<div style="margin-top:10px;font-size:.82rem;font-style:italic;color:var(--muted)">💡 ${escapeHtml(recipe.tips)}</div>` : ""}
-          <button class="btn btn-g btn-sm" style="margin-top:12px" onclick="addRecipeAsMeal()">➕ Ajouter comme repas</button>
+          ${stepsHtml ? `<div style="font-size:.65rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Préparation</div><ol style="margin-left:16px;font-size:.84rem;line-height:1.7;color:var(--text2)">${stepsHtml}</ol>` : ""}
+          ${recipe.tips ? `<div style="margin-top:12px;font-size:.8rem;color:var(--accent);font-weight:600;padding:10px;background:rgba(37,99,235,.06);border-radius:10px;border-left:3px solid var(--accent)">💡 ${escapeHtml(recipe.tips)}</div>` : ""}
+          <button class="btn btn-p btn-sm btn-full" style="margin-top:14px" onclick="addRecipeAsMeal()">➕ Ajouter comme repas</button>
         </div>`;
       // Store recipe for "add as meal"
       window._lastRecipe = recipe;
