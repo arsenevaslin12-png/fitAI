@@ -667,20 +667,35 @@ async function sendCoachMsg(quickMsg) {
     if (j.type === "workout" && j.data) {
       PLAN = j.data;
       let aiResponse = `<strong>${escapeHtml(PLAN.title || "Séance générée")}</strong>`;
-      if (PLAN.notes) aiResponse += `<div style="margin-top:6px;font-style:italic;opacity:.8">${escapeHtml(PLAN.notes)}</div>`;
-      if (PLAN.blocks?.length) {
+      // Meta summary line
+      const metaParts = [];
+      if (PLAN.duration) metaParts.push(`⏱ ${PLAN.duration} min`);
+      if (PLAN.calories_estimate) metaParts.push(`🔥 ~${PLAN.calories_estimate} kcal`);
+      if (PLAN.exercises?.length) metaParts.push(`💪 ${PLAN.exercises.length} exercices`);
+      if (metaParts.length) aiResponse += `<div style="margin-top:5px;font-size:.8rem;opacity:.7">${metaParts.join(" · ")}</div>`;
+      // Exercise list preview (first 5)
+      if (Array.isArray(PLAN.exercises) && PLAN.exercises.length > 0) {
+        aiResponse += '<ul style="margin:8px 0 0 14px;list-style:none;display:flex;flex-direction:column;gap:3px">';
+        PLAN.exercises.slice(0, 5).forEach((ex, i) => {
+          const badge = ex.sets > 1 ? `${ex.sets}×${ex.reps}` : (ex.duration > 0 ? `${ex.duration}s` : ex.reps);
+          aiResponse += `<li style="font-size:.82rem;color:rgba(238,238,245,.8)"><span style="opacity:.5">${i + 1}.</span> <strong>${escapeHtml(ex.name)}</strong> <span style="opacity:.55">${escapeHtml(badge)}</span></li>`;
+        });
+        if (PLAN.exercises.length > 5) aiResponse += `<li style="font-size:.78rem;opacity:.5">+${PLAN.exercises.length - 5} autres exercices…</li>`;
+        aiResponse += '</ul>';
+      } else if (PLAN.blocks?.length) {
         aiResponse += '<div style="margin-top:8px">';
-        PLAN.blocks.forEach((b) => {
-          aiResponse += `<div style="margin-top:6px"><strong>${escapeHtml(b.title)}</strong> <span style="opacity:.6">(${formatDuration(b.duration_sec)})</span></div>`;
+        PLAN.blocks.slice(0, 3).forEach((b) => {
+          aiResponse += `<div style="margin-top:5px;font-size:.82rem"><strong>${escapeHtml(b.title)}</strong></div>`;
           if (b.items?.length) {
-            aiResponse += '<ul style="margin:4px 0 0 16px;list-style:disc;font-size:.82rem;color:rgba(238,238,245,.75)">';
-            b.items.forEach((it) => { aiResponse += `<li>${escapeHtml(it)}</li>`; });
+            aiResponse += '<ul style="margin:3px 0 0 14px;list-style:disc;font-size:.8rem;color:rgba(238,238,245,.7)">';
+            b.items.slice(0, 3).forEach((it) => { aiResponse += `<li>${escapeHtml(it)}</li>`; });
             aiResponse += '</ul>';
           }
         });
         aiResponse += '</div>';
       }
-      aiResponse += '<div style="margin-top:10px;font-size:.82rem;opacity:.7">💾 Tu peux sauvegarder cette séance ci-dessous.</div>' + fallbackBadge;
+      if (PLAN.notes) aiResponse += `<div style="margin-top:6px;font-size:.8rem;font-style:italic;opacity:.65">${escapeHtml(PLAN.notes.slice(0, 140))}</div>`;
+      aiResponse += '<div style="margin-top:10px;font-size:.78rem;opacity:.6">👇 Séance complète ci-dessous — tu peux la sauvegarder.</div>' + fallbackBadge;
       COACH_HISTORY.push({ role: "ai", content: aiResponse, time: aiTime });
       renderPlan(PLAN);
     } else {
