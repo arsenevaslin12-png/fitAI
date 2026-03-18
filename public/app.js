@@ -704,28 +704,65 @@ async function generateWorkout() {
   return sendCoachMsg();
 }
 
+function renderExerciseCard(ex, idx) {
+  const badges = [];
+  if (ex.sets && ex.sets > 0) badges.push(`<span class="ex-badge sets">🔁 ${ex.sets} séries</span>`);
+  if (ex.reps && ex.reps !== "0") badges.push(`<span class="ex-badge reps">✕ ${escapeHtml(String(ex.reps))} reps</span>`);
+  if (ex.duration && ex.duration > 0) badges.push(`<span class="ex-badge dur">⏱ ${ex.duration}s</span>`);
+  if (ex.rest && ex.rest > 0) badges.push(`<span class="ex-badge rest">💤 ${ex.rest}s repos</span>`);
+  if (ex.muscle) badges.push(`<span class="ex-badge muscle">💪 ${escapeHtml(ex.muscle)}</span>`);
+
+  return `
+    <div class="ex-card">
+      <div class="ex-num">${idx + 1}</div>
+      <div class="ex-body">
+        <div class="ex-name">${escapeHtml(ex.name || "Exercice")}</div>
+        <div class="ex-badges">${badges.join("")}</div>
+        ${ex.description ? `<div class="ex-desc">${escapeHtml(ex.description)}</div>` : ""}
+      </div>
+    </div>
+  `;
+}
+
 function renderPlan(plan) {
   const head = document.getElementById("plan-head");
   const notes = document.getElementById("plan-notes");
   const blocks = document.getElementById("plan-blocks");
 
+  const calories = plan.calories ? ` · ${plan.calories} kcal` : "";
   if (head) {
-    head.innerHTML = `<div><div class="plan-title-text">${escapeHtml(plan.title || "Séance")}</div><div class="page-sub">${escapeHtml(plan.intensity || "medium")} · ${plan.duration || "?"} min</div></div>`;
+    head.innerHTML = `<div><div class="plan-title-text">${escapeHtml(plan.title || "Séance")}</div><div class="page-sub">${escapeHtml(plan.intensity || "Équilibré")} · ${plan.duration || "?"} min${calories}</div></div>`;
   }
   if (notes) {
     notes.textContent = plan.notes || "";
     notes.style.display = plan.notes ? "block" : "none";
   }
+
   if (blocks) {
-    blocks.innerHTML = (plan.blocks || []).map((b) => `
-      <div class="block">
-        <div class="block-head">
-          <span class="block-name">${escapeHtml(b.title)}</span>
-          <span class="bdur">⏱ ${formatDuration(b.duration_sec)}</span>
+    // Priority 1: exercises[] — new structured format
+    if (Array.isArray(plan.exercises) && plan.exercises.length > 0) {
+      blocks.innerHTML = `
+        <div class="plan-section-title">💪 ${plan.exercises.length} exercices</div>
+        ${plan.exercises.map((ex, i) => renderExerciseCard(ex, i)).join("")}
+      `;
+    }
+    // Priority 2: blocks[] — backward compat
+    else if (Array.isArray(plan.blocks) && plan.blocks.length > 0) {
+      blocks.innerHTML = plan.blocks.map((b) => `
+        <div class="block">
+          <div class="block-head">
+            <span class="block-name">${escapeHtml(b.title || "")}</span>
+            <span class="bdur">⏱ ${formatDuration(b.duration_sec)}</span>
+          </div>
+          ${Array.isArray(b.exercises) && b.exercises.length > 0
+            ? b.exercises.map((ex, i) => renderExerciseCard(ex, i)).join("")
+            : `<ul class="block-items">${(b.items || []).map((it) => `<li>${escapeHtml(it)}</li>`).join("")}</ul>`
+          }
         </div>
-        <ul class="block-items">${(b.items || []).map((it) => `<li>${escapeHtml(it)}</li>`).join("")}</ul>
-      </div>
-    `).join("");
+      `).join("");
+    } else {
+      blocks.innerHTML = '<div class="empty"><span class="empty-ic">🏋️</span>Aucun exercice disponible</div>';
+    }
   }
 
   const planCard = document.getElementById("plan-card");
