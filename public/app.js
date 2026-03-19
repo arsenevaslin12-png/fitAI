@@ -1513,7 +1513,12 @@ async function loadScans() {
         return `<div class="scan-result-card">
           <div class="scan-result-header">
             <div><div class="scan-result-title">Analyse du ${date}</div><div style="font-size:.75rem;color:var(--muted);margin-top:3px">Upload effectué, analyse en cours…</div></div>
-            <span class="badge bg-orange">⏳ En attente</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="badge bg-orange">En attente</span>
+              <button onclick="deleteBodyScan('${scan.id}')" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;border-radius:8px;line-height:1;transition:color .2s" title="Supprimer" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+              </button>
+            </div>
           </div>
           <div style="padding:24px;text-align:center;color:var(--muted);font-size:.84rem">L'analyse IA est en cours de traitement.</div>
         </div>`;
@@ -1539,7 +1544,12 @@ async function loadScans() {
             ${physScore ? `<div class="scan-score-big" style="margin-top:8px">${physScore}<span class="scan-score-label">/100 Score Physique</span></div>` : ""}
           </div>
           <div style="text-align:right">
-            <span class="badge bg-green" style="display:inline-flex;margin-bottom:8px">✓ Analysé</span>
+            <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:8px">
+              <span class="badge bg-green" style="display:inline-flex">Analysé</span>
+              <button onclick="deleteBodyScan('${scan.id}')" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;border-radius:8px;line-height:1;transition:color .2s" title="Supprimer" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+              </button>
+            </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
               ${scan.symmetry_score != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--purple)">${scan.symmetry_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Symétrie</div></div>` : ""}
               ${scan.posture_score != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--teal)">${scan.posture_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Posture</div></div>` : ""}
@@ -1594,6 +1604,20 @@ function formatFeedback(text) {
 // ══════════════════════════════════════════════════════════════════════════════
 // PROFIL
 // ══════════════════════════════════════════════════════════════════════════════
+
+async function deleteBodyScan(id) {
+  if (!id || !U) return;
+  const confirmed = window.confirm("Supprimer cette analyse corporelle ? Cette action est irréversible.");
+  if (!confirmed) return;
+  try {
+    const { error } = await SB.from("body_scans").delete().eq("id", id).eq("user_id", U.id);
+    if (error) throw error;
+    toast("Analyse supprimée", "ok");
+    await loadScans();
+  } catch (e) {
+    toast(`Erreur: ${e.message}`, "err");
+  }
+}
 
 async function loadProfile() {
   if (!U) return;
@@ -2238,6 +2262,7 @@ window.handleFile = handleFile;
 window.handleDrop = handleDrop;
 window.doScan = doScan;
 window.saveProfile = saveProfile;
+window.deleteBodyScan = deleteBodyScan;
 window.generateRecipe    = generateRecipe;
 window.generateNutrition = generateNutrition;
 window.addRecipeAsMeal = addRecipeAsMeal;
