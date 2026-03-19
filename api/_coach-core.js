@@ -835,6 +835,7 @@ module.exports = {
   checkRateLimit,
   detectIntent,
   makeProfileSummary,
+  historyBlock,
   normalizeWorkoutOutput,
   generateWorkoutPlan,
   generateConversationReply,

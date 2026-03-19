@@ -8,7 +8,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   /* ── Base44 color system ── */
-  --bg:#0f172a;
+  --bg:#020617;
   --surf:#1f2937;
   --surf2:#374151;
   --surf3:#4b5563;
@@ -47,6 +47,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .boot-err{color:var(--red);font-size:.82rem;max-width:380px;text-align:center;line-height:1.5;padding:14px 18px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:16px;display:none}
 .spinner{width:28px;height:28px;border:3px solid rgba(37,99,235,.2);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 
 /* ── AUTH ── */
 #auth{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:28px;padding:20px;background:var(--bg)}
@@ -303,14 +304,40 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
 /* ── NUTRITION ── */
 .macro-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-.macro-card{background:rgba(15,22,38,.92);border-radius:16px;padding:18px 10px;text-align:center;border:1px solid rgba(255,255,255,.09);box-shadow:0 1px 8px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.04)}
+.macro-card{background:rgba(10,16,32,.95);border-radius:1.2rem;padding:18px 10px;text-align:center;border:1px solid rgba(255,255,255,.08);box-shadow:0 1px 12px rgba(0,0,0,.4);position:relative;overflow:hidden}
+.macro-card::before{content:"";position:absolute;inset:0;border-radius:inherit;opacity:.06;pointer-events:none}
+.macro-card:nth-child(1)::before{background:var(--orange)}
+.macro-card:nth-child(2)::before{background:#ec4899}
+.macro-card:nth-child(3)::before{background:#84cc16}
+.macro-card:nth-child(4)::before{background:#f59e0b}
 .macro-icon{font-size:1.5rem;display:block;margin-bottom:6px}
 .macro-val{font-size:1.3rem;font-weight:900}
 .macro-lbl{font-size:.67rem;color:var(--muted);font-weight:700;margin-top:3px;text-transform:uppercase;letter-spacing:.03em}
 .macro-card:nth-child(1) .macro-val{color:var(--orange)}
-.macro-card:nth-child(2) .macro-val{color:var(--blue)}
-.macro-card:nth-child(3) .macro-val{color:var(--green)}
-.macro-card:nth-child(4) .macro-val{color:var(--yellow)}
+.macro-card:nth-child(2) .macro-val{color:#f472b6}
+.macro-card:nth-child(3) .macro-val{color:#a3e635}
+.macro-card:nth-child(4) .macro-val{color:#fbbf24}
+
+/* ── V2 RECIPE CARD ── */
+.recipe-v2{position:relative;overflow:hidden;background:linear-gradient(150deg,#080f1e,#0d1c38);border:1px solid rgba(255,255,255,.1);border-radius:2rem;padding:24px}
+.recipe-v2-art{position:absolute;right:-6px;top:-6px;font-size:4.5rem;line-height:1;opacity:.18;transform:rotate(-12deg);pointer-events:none;user-select:none;filter:saturate(0)}
+.recipe-v2-tag{font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#a78bfa;margin-bottom:5px}
+.recipe-v2-name{font-size:1.18rem;font-weight:900;color:#fff;letter-spacing:-.02em;line-height:1.2;margin-bottom:16px}
+.recipe-pills{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px}
+.macro-pill{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:999px;font-size:.76rem;font-weight:800;letter-spacing:.01em}
+.mp-kcal{background:rgba(251,191,36,.12);color:#fde047;border:1px solid rgba(251,191,36,.2)}
+.mp-prot{background:rgba(236,72,153,.13);color:#f472b6;border:1px solid rgba(236,72,153,.22)}
+.mp-carb{background:rgba(132,204,22,.12);color:#a3e635;border:1px solid rgba(132,204,22,.22)}
+.mp-fat{background:rgba(249,115,22,.12);color:#fb923c;border:1px solid rgba(249,115,22,.2)}
+.recipe-v2-steps{list-style:none;display:flex;flex-direction:column;gap:7px;margin-bottom:16px}
+.recipe-v2-step{display:flex;gap:10px;align-items:flex-start;font-size:.83rem;line-height:1.6;color:rgba(255,255,255,.72)}
+.recipe-v2-step-n{min-width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:.64rem;font-weight:800;color:rgba(255,255,255,.45);flex-shrink:0;margin-top:2px}
+.recipe-v2-tip{padding:10px 14px;background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.18);border-radius:12px;font-size:.79rem;color:#a5b4fc;line-height:1.5;margin-bottom:14px}
+
+/* ── V2 CHARACTER ILLUSTRATIONS ── */
+.char-svg{width:36px;height:40px;display:block;margin:0 auto 4px}
+.char-svg path,.char-svg line,.char-svg circle,.char-svg rect,.char-svg ellipse{transition:all .2s}
+.db-action-bento:hover .char-svg path,.db-action-bento:hover .char-svg line,.db-action-bento:hover .char-svg circle{stroke:var(--accent)}
 .meal-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .meal-row:last-child{border-bottom:none}
 .meal-name{font-weight:700;font-size:.88rem;flex:1;min-width:100px}
@@ -410,18 +437,19 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .db-goal-main{display:flex;align-items:center;gap:14px}
 .db-goal-ic{width:42px;height:42px;border-radius:13px;background:var(--surf2);display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}
 /* Bento base */
-.bento{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:auto;gap:12px}
-.bento-card{background:var(--surf);border:1px solid var(--border);border-radius:20px;padding:18px;position:relative;overflow:hidden;transition:box-shadow .2s}
-.bento-card:hover{box-shadow:0 4px 20px rgba(0,0,0,.3)}
+.bento{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:auto;gap:14px}
+.bento-card{background:rgba(15,23,42,0.8);border:1px solid #1e293b;border-radius:2.5rem;padding:22px;position:relative;overflow:hidden;transition:box-shadow .25s,transform .2s;backdrop-filter:blur(12px)}
+.bento-card:hover{box-shadow:0 8px 32px rgba(0,0,0,.5);transform:translateY(-1px)}
 /* Bento placements (desktop) */
-.b-seance{grid-column:1/3;grid-row:1/3;background:linear-gradient(145deg,#0f172a,#111827);border-color:rgba(255,255,255,.1)}
-.b-streak{grid-column:3;grid-row:1}
-.b-calories{grid-column:4;grid-row:1}
-.b-sessions{grid-column:3;grid-row:2}
-.b-scans{grid-column:4;grid-row:2}
-.b-coach{grid-column:1/3;grid-row:3}
-.b-activite{grid-column:3/5;grid-row:3}
-.b-actions{grid-column:1/5;grid-row:4}
+.b-mood{grid-column:1/5;grid-row:1}
+.b-seance{grid-column:1/3;grid-row:2/4;background:linear-gradient(145deg,#0a1628,#0f1f3d);border-color:rgba(37,99,235,.18)}
+.b-streak{grid-column:3;grid-row:2}
+.b-calories{grid-column:4;grid-row:2}
+.b-sessions{grid-column:3;grid-row:3}
+.b-scan-mini{grid-column:4;grid-row:3;cursor:pointer}
+.b-coach{grid-column:1/3;grid-row:4}
+.b-activite{grid-column:3/5;grid-row:4}
+.b-actions{grid-column:1/5;grid-row:5}
 /* Stat card helpers */
 .db-stat-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:.9rem;margin-bottom:12px}
 .db-stat-icon.ic-orange{background:rgba(249,115,22,.15);color:var(--orange)}
@@ -430,7 +458,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .db-stat-icon.ic-purple{background:rgba(147,51,234,.15);color:var(--purple)}
 /* Actions bento row */
 .db-actions-bento{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-.db-action-bento{display:flex;flex-direction:column;align-items:center;gap:7px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px 10px;font-weight:700;cursor:pointer;color:var(--text2);transition:all .18s}
+.db-action-bento{display:flex;flex-direction:column;align-items:center;gap:7px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:1.2rem;padding:14px 10px;font-weight:700;cursor:pointer;color:var(--text2);transition:all .18s}
 .db-action-bento:hover{background:rgba(37,99,235,.1);border-color:rgba(37,99,235,.3);color:var(--text)}
 .db-ab-label{font-size:.76rem;font-weight:700;text-align:center;line-height:1.2}
 /* Weekly activity */
@@ -441,17 +469,48 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 /* Button icon */
 .btn-icon{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.85rem;transition:all .15s}
 .btn-icon:hover{background:rgba(255,255,255,.12)}
-/* Responsive */
+
+/* ── V2 MOOD TRACKER ── */
+.mood-tile-label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.35);margin-bottom:12px}
+.mood-tile-title{font-size:1.25rem;font-weight:900;color:#fff;margin-bottom:16px;letter-spacing:-.02em}
+.mood-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mood-emoji-btn{width:52px;height:52px;border-radius:50%;border:2px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);font-size:1.45rem;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.mood-emoji-btn:hover{border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.08);transform:scale(1.12)}
+.mood-emoji-btn.selected{border-color:#00FFFF;background:rgba(0,255,255,.1);box-shadow:0 0 14px rgba(0,255,255,.35);transform:scale(1.18)}
+.mood-start-btn{margin-left:auto;background:#020617;color:rgba(255,255,255,.7);border:1.5px solid rgba(255,255,255,.15);border-radius:999px;padding:12px 30px;font-weight:800;font-size:.88rem;cursor:pointer;transition:all .25s;font-family:inherit;flex-shrink:0}
+.mood-start-btn:hover{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.3);color:#fff}
+.mood-start-btn.active{border-color:#00FFFF;color:#00FFFF;background:rgba(0,255,255,.06);box-shadow:0 0 16px rgba(0,255,255,.2)}
+
+/* ── V2 SCAN IA MINI TILE ── */
+.scan-mini-label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(0,255,255,.6);margin-bottom:8px}
+.scan-avatar-wrap{position:relative;display:flex;align-items:center;justify-content:center;flex:1;min-height:80px;margin:6px 0}
+.scan-laser{position:absolute;left:8%;right:8%;height:2px;background:linear-gradient(to right,transparent,#00FFFF 30%,#00FFFF 70%,transparent);box-shadow:0 0 8px #00FFFF,0 0 18px rgba(0,255,255,.45);animation:laser-sweep 2.4s ease-in-out infinite;top:0;z-index:2}
+@keyframes laser-sweep{0%{top:5%;opacity:0}8%{opacity:1}92%{opacity:1}100%{top:95%;opacity:0}}
+.scan-score-num{font-family:'Georgia','Times New Roman',serif;font-size:1.9rem;font-weight:900;color:#fff;line-height:1;text-align:center}
+.scan-score-sub{font-size:.6rem;color:rgba(255,255,255,.35);font-weight:700;text-align:center;margin-top:2px;letter-spacing:.06em;text-transform:uppercase}
+.scan-no-data{font-size:.75rem;color:rgba(255,255,255,.3);text-align:center;padding:8px 0}
+
+/* ── V2 PROGRESS RINGS ── */
+.rings-row{display:flex;gap:10px;justify-content:center;margin-top:8px}
+.ring-item{display:flex;flex-direction:column;align-items:center;gap:3px}
+.ring-svg{transform:rotate(-90deg)}
+.ring-track{fill:none;stroke:rgba(255,255,255,.07);stroke-width:3.5}
+.ring-fill{fill:none;stroke-width:3.5;stroke-linecap:round;transition:stroke-dasharray .9s ease}
+.ring-lbl{font-size:.54rem;color:rgba(255,255,255,.4);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+
+/* ── Responsive ── */
 @media(max-width:640px){
   .bento{grid-template-columns:repeat(2,1fr)}
-  .b-seance,.b-coach,.b-activite,.b-actions{grid-column:span 2;grid-row:auto}
-  .b-streak,.b-calories,.b-sessions,.b-scans{grid-column:auto;grid-row:auto}
+  .b-mood,.b-seance,.b-coach,.b-activite,.b-actions{grid-column:span 2;grid-row:auto}
+  .b-streak,.b-calories,.b-sessions,.b-scan-mini{grid-column:auto;grid-row:auto}
   .db-actions-bento{grid-template-columns:repeat(2,1fr)}
+  .mood-start-btn{margin-left:0;width:100%}
 }
 @media(min-width:641px) and (max-width:900px){
   .bento{grid-template-columns:repeat(2,1fr)}
+  .b-mood{grid-column:span 2;grid-row:auto}
   .b-seance{grid-column:1/3;grid-row:auto}
-  .b-streak,.b-calories,.b-sessions,.b-scans{grid-column:auto;grid-row:auto}
+  .b-streak,.b-calories,.b-sessions,.b-scan-mini{grid-column:auto;grid-row:auto}
   .b-coach,.b-activite{grid-column:span 2;grid-row:auto}
   .b-actions{grid-column:span 2;grid-row:auto}
   .db-actions-bento{grid-template-columns:repeat(4,1fr)}
@@ -674,6 +733,15 @@ body.light,body.light #app,body.light .scroll{background:var(--bg)}
 body.light .app-main{background:var(--bg)}
 /* Cards */
 body.light .card{background:#fff;border-color:rgba(15,23,42,.1);box-shadow:0 2px 12px rgba(15,23,42,.07)}
+body.light .bento-card{background:rgba(255,255,255,.92);border-color:rgba(15,23,42,.1);box-shadow:0 2px 16px rgba(15,23,42,.08)}
+body.light .mood-tile-title{color:#0f172a}
+body.light .mood-tile-label{color:rgba(15,23,42,.45)}
+body.light .mood-emoji-btn{border-color:rgba(15,23,42,.12);background:rgba(15,23,42,.04)}
+body.light .mood-start-btn{background:#fff;color:#0f172a;border-color:rgba(15,23,42,.2)}
+body.light .scan-score-num{color:#0f172a}
+body.light .scan-score-sub{color:rgba(15,23,42,.4)}
+body.light .scan-mini-label{color:rgba(0,150,180,.7)}
+body.light .scan-avatar-svg{opacity:.4}
 body.light .chart-card{background:#fff;border-color:rgba(15,23,42,.1);box-shadow:0 2px 12px rgba(15,23,42,.07)}
 body.light .progress-stat-card{background:#fff;border-color:rgba(15,23,42,.1)}
 /* Forms */
@@ -864,6 +932,21 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
         <!-- ── Bento grid ── -->
         <div class="bento">
 
+          <!-- [0] Mood Tracker — full width -->
+          <div class="bento-card b-mood">
+            <div class="mood-tile-label">Comment vous sentez-vous ?</div>
+            <div class="mood-tile-title">How Do You Feel Today?</div>
+            <div class="mood-bar">
+              <button class="mood-emoji-btn" onclick="selectMood(this,'😴')" title="Fatigué">😴</button>
+              <button class="mood-emoji-btn" onclick="selectMood(this,'😕')" title="Pas top">😕</button>
+              <button class="mood-emoji-btn" onclick="selectMood(this,'😐')" title="Neutre">😐</button>
+              <button class="mood-emoji-btn" onclick="selectMood(this,'🙂')" title="Bien">🙂</button>
+              <button class="mood-emoji-btn" onclick="selectMood(this,'😁')" title="Super">😁</button>
+              <button class="mood-emoji-btn" onclick="selectMood(this,'🔥')" title="En feu !">🔥</button>
+              <button class="mood-start-btn" id="mood-start-btn" onclick="gotoTab('coach')">Start →</button>
+            </div>
+          </div>
+
           <!-- [1] Séance du jour — hero 2×2 -->
           <div class="bento-card b-seance">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -897,11 +980,25 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
             <div class="macro-lbl" style="font-size:.7rem;margin-top:5px;color:var(--muted)">Séances</div>
           </div>
 
-          <!-- [5] Scans IA — 1×1 -->
-          <div class="bento-card b-scans" style="background:linear-gradient(145deg,rgba(147,51,234,.1),rgba(109,40,217,.04));border-color:rgba(147,51,234,.2)">
-            <div class="db-stat-icon ic-purple">📊</div>
-            <div class="macro-val" id="db-scans" style="font-size:2.1rem;font-weight:900;line-height:1">0</div>
-            <div class="macro-lbl" style="font-size:.7rem;margin-top:5px;color:var(--muted)">Scans IA</div>
+          <!-- [5] Scan IA mini tile — 1×1 -->
+          <div class="bento-card b-scan-mini" onclick="gotoTab('scan')" title="Voir mon scan IA" style="background:linear-gradient(145deg,rgba(0,255,255,.04),rgba(6,182,212,.03));border-color:rgba(0,255,255,.15);display:flex;flex-direction:column">
+            <div class="scan-mini-label">⚡ Scan IA</div>
+            <div class="scan-avatar-wrap" id="scan-mini-avatar">
+              <!-- Avatar SVG + laser injected by JS -->
+              <svg class="scan-avatar-svg" viewBox="0 0 60 80" fill="none" xmlns="http://www.w3.org/2000/svg" style="opacity:.55">
+                <ellipse cx="30" cy="12" rx="9" ry="9" fill="#94a3b8"/>
+                <path d="M12 38c0-10 8-18 18-18s18 8 18 18v4H12v-4z" fill="#64748b"/>
+                <path d="M20 42v26h6V54h8v14h6V42H20z" fill="#475569"/>
+                <path d="M12 38l-6 16h8M48 38l6 16h-8" fill="#475569"/>
+              </svg>
+              <div class="scan-laser" id="scan-mini-laser"></div>
+            </div>
+            <div id="scan-mini-score-wrap">
+              <div class="scan-score-num" id="scan-mini-score">—</div>
+              <div class="scan-score-sub">Score physique</div>
+            </div>
+            <div class="rings-row" id="scan-mini-rings"></div>
+            <span id="db-scans" style="display:none">0</span>
           </div>
 
           <!-- [6] Coach IA suggestion — 2×1 -->
@@ -933,20 +1030,60 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
           <div class="bento-card b-actions">
             <div style="font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:12px">Actions rapides</div>
             <div class="db-actions-bento">
+              <!-- Yoga / Stretch character -->
               <button class="db-action-bento" onclick="gotoTab('coach')">
-                <span style="font-size:1.3rem">⚡</span>
+                <svg class="char-svg" viewBox="0 0 40 48" fill="none" stroke="rgba(255,255,255,.75)" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="20" cy="6" r="4.5" fill="rgba(255,255,255,.2)" stroke="rgba(255,255,255,.6)" stroke-width="1.8"/>
+                  <line x1="20" y1="11" x2="20" y2="28" stroke-width="2.2"/>
+                  <line x1="20" y1="17" x2="7" y2="13" stroke-width="2"/>
+                  <line x1="20" y1="17" x2="33" y2="13" stroke-width="2"/>
+                  <line x1="20" y1="28" x2="11" y2="43" stroke-width="2.2"/>
+                  <line x1="20" y1="28" x2="32" y2="38" stroke-width="2.2"/>
+                  <line x1="32" y1="38" x2="38" y2="44" stroke-width="2" opacity=".6"/>
+                </svg>
                 <span class="db-ab-label">Express<br>15 min</span>
               </button>
+              <!-- Coach IA / Brain character -->
               <button class="db-action-bento" onclick="gotoTab('coach')">
-                <span style="font-size:1.3rem">💬</span>
+                <svg class="char-svg" viewBox="0 0 40 48" fill="none" stroke="rgba(255,255,255,.75)" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="20" cy="7" r="5" fill="rgba(99,102,241,.25)" stroke="#818cf8" stroke-width="1.8"/>
+                  <path d="M17 7 Q20 3 23 7" stroke="#a5b4fc" stroke-width="1.2" fill="none"/>
+                  <line x1="20" y1="12" x2="20" y2="28" stroke-width="2.2"/>
+                  <line x1="20" y1="18" x2="10" y2="23" stroke-width="2"/>
+                  <line x1="20" y1="18" x2="30" y2="23" stroke-width="2"/>
+                  <line x1="10" y1="23" x2="7" y2="18" stroke-width="1.8" opacity=".7"/>
+                  <line x1="30" y1="23" x2="33" y2="18" stroke-width="1.8" opacity=".7"/>
+                  <line x1="20" y1="28" x2="14" y2="43" stroke-width="2.2"/>
+                  <line x1="20" y1="28" x2="26" y2="43" stroke-width="2.2"/>
+                </svg>
                 <span class="db-ab-label">Coach<br>IA</span>
               </button>
+              <!-- Chef / Nutrition character -->
               <button class="db-action-bento" onclick="gotoTab('nutrition')">
-                <span style="font-size:1.3rem">🍽️</span>
+                <svg class="char-svg" viewBox="0 0 40 48" fill="none" stroke="rgba(255,255,255,.75)" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="20" cy="7" r="4.5" fill="rgba(163,230,53,.15)" stroke="#a3e635" stroke-width="1.8"/>
+                  <path d="M14 7 Q20 2 26 7" stroke="#a3e635" stroke-width="1.5" fill="rgba(163,230,53,.1)"/>
+                  <line x1="20" y1="12" x2="20" y2="27" stroke-width="2.2"/>
+                  <line x1="20" y1="19" x2="10" y2="26" stroke-width="2"/>
+                  <ellipse cx="7" cy="30" rx="5" ry="3.5" stroke="#a3e635" stroke-width="1.5" fill="rgba(163,230,53,.1)"/>
+                  <line x1="20" y1="19" x2="30" y2="24" stroke-width="2"/>
+                  <line x1="20" y1="27" x2="14" y2="42" stroke-width="2.2"/>
+                  <line x1="20" y1="27" x2="26" y2="42" stroke-width="2.2"/>
+                </svg>
                 <span class="db-ab-label">Nutrition</span>
               </button>
+              <!-- Scan / Tech character -->
               <button class="db-action-bento" onclick="gotoTab('scan')">
-                <span style="font-size:1.3rem">🔍</span>
+                <svg class="char-svg" viewBox="0 0 40 48" fill="none" stroke="rgba(255,255,255,.75)" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="20" cy="7" r="4.5" fill="rgba(0,255,255,.12)" stroke="#00FFFF" stroke-width="1.8"/>
+                  <line x1="20" y1="12" x2="20" y2="28" stroke-width="2.2"/>
+                  <line x1="20" y1="18" x2="10" y2="23" stroke-width="2"/>
+                  <line x1="20" y1="18" x2="30" y2="23" stroke-width="2"/>
+                  <line x1="20" y1="28" x2="14" y2="43" stroke-width="2.2"/>
+                  <line x1="20" y1="28" x2="26" y2="43" stroke-width="2.2"/>
+                  <!-- Scan beam -->
+                  <line x1="4" y1="22" x2="36" y2="22" stroke="#00FFFF" stroke-width="1" opacity=".7" stroke-dasharray="3 2"/>
+                </svg>
                 <span class="db-ab-label">Scan IA</span>
               </button>
             </div>
