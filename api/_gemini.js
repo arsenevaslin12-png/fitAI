@@ -1,13 +1,12 @@
 "use strict";
 
-const DEFAULT_MODEL = "gemini-2.5-flash";
-const FALLBACK_MODEL = "gemini-2.5-flash-lite";
-const DEFAULT_TIMEOUT_MS = 5500;
+const DEFAULT_MODEL = "gemini-2.0-flash";
+const FALLBACK_MODEL = "gemini-2.0-flash-lite";
+const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_RETRIES = 0;
 const FORBIDDEN_MODELS = new Set([
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
   "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
   "gemini-1.5-pro"
 ]);
 

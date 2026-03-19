@@ -411,7 +411,7 @@ function fallbackMealPlan(profile, goalContext) {
 async function generateShoppingList({ apiKey, message, profile, goalContext }) {
   const prompt = buildShoppingListPrompt(message, profile, goalContext);
   try {
-    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 3800, retries: 0 });
+    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 8000, retries: 0 });
     const parsed = extractJSON(result.text);
     if (!parsed || !Array.isArray(parsed.categories)) throw new Error("INVALID_SHOPPING_JSON");
     return { ok: true, data: parsed, fallback: false };
@@ -423,7 +423,7 @@ async function generateShoppingList({ apiKey, message, profile, goalContext }) {
 async function generateMealPlan({ apiKey, message, profile, goalContext }) {
   const prompt = buildMealPlanPrompt(message, profile, goalContext);
   try {
-    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 3800, retries: 0 });
+    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 8000, retries: 0 });
     const parsed = extractJSON(result.text);
     if (!parsed || !Array.isArray(parsed.meals)) throw new Error("INVALID_MEAL_PLAN_JSON");
     return { ok: true, data: parsed, fallback: false };
@@ -434,26 +434,39 @@ async function generateMealPlan({ apiKey, message, profile, goalContext }) {
 
 function buildRecipePrompt(message, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
-  return `Tu es un coach nutrition. Réponds UNIQUEMENT en JSON valide, sans markdown.
+  return `Tu es un chef cuisinier et nutritionniste sportif. Réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
 
-Profil:
-- Objectif: ${p.goal}
-- Niveau: ${p.level}
-- Contraintes: ${p.constraints}
+Profil utilisateur:
+- Objectif fitness: ${p.goal}
+- Contraintes alimentaires: ${p.constraints}
 
-Demande:
+Demande de l'utilisateur:
 ${message}
 
-Format JSON exact:
+RÈGLES ABSOLUES:
+1. Identifie tous les ingrédients mentionnés dans la demande et utilise-les TOUS dans les étapes
+2. Nomme chaque ingrédient spécifiquement dans chaque étape (ex: "Coupez le poulet en dés", pas "Préparez les protéines")
+3. Si les ingrédients semblent incohérents ou inhabituels ensemble, mentionne-le dans "tips" et propose quand même une recette originale qui les utilise
+4. Les étapes doivent être des instructions de cuisine précises avec températures, temps et techniques (ex: "Faites revenir l'oignon 3 min à feu moyen jusqu'à transparence")
+5. Minimum 5 étapes détaillées, maximum 8 étapes
+6. Les macros doivent correspondre réellement aux ingrédients mentionnés
+
+Format JSON exact (respecte exactement cette structure):
 {
-  "name": "",
-  "prep_time": "15 min",
-  "steps": ["", ""],
+  "name": "Nom créatif du plat basé sur les vrais ingrédients",
+  "prep_time": "X min",
+  "steps": [
+    "Étape 1 avec action précise + ingrédient nommé + temps/technique",
+    "Étape 2 avec action précise + ingrédient nommé + temps/technique",
+    "Étape 3...",
+    "Étape 4...",
+    "Étape 5..."
+  ],
   "calories": 500,
   "protein": 35,
   "carbs": 45,
   "fat": 15,
-  "tips": ""
+  "tips": "Conseil spécifique aux ingrédients utilisés (ou note si combo inhabituel)"
 }`;
 }
 
@@ -768,7 +781,7 @@ async function generateWithRetry(apiKey, prompt, options = {}) {
 async function generateWorkoutPlan({ apiKey, message, history, profile, goalContext }) {
   const prompt = buildWorkoutPrompt(message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1200, timeoutMs: 4000, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1200, timeoutMs: 10000, retries: 0 });
     const parsed = extractJSON(result.text);
     // Accept new exercises[] format OR legacy sessions[] format
     const hasExercises = parsed && Array.isArray(parsed.exercises) && parsed.exercises.length > 0;
@@ -786,7 +799,7 @@ async function generateWorkoutPlan({ apiKey, message, history, profile, goalCont
 async function generateConversationReply({ apiKey, intent, message, history, profile, goalContext }) {
   const prompt = buildConversationPrompt(intent, message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.6, maxOutputTokens: 650, timeoutMs: 3500, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.6, maxOutputTokens: 650, timeoutMs: 8000, retries: 0 });
     const text = String(result.text || "").replace(/^```[\w-]*\s*/g, "").replace(/```$/g, "").trim();
     if (!text) throw new Error("EMPTY_CONVERSATION");
     return { ok: true, message: text, model: result.model, fallback: false };
@@ -798,7 +811,7 @@ async function generateConversationReply({ apiKey, intent, message, history, pro
 async function generateRecipeJson({ apiKey, message, profile, goalContext }) {
   const prompt = buildRecipePrompt(message, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.25, maxOutputTokens: 650, timeoutMs: 3500, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.4, maxOutputTokens: 1000, timeoutMs: 8000, retries: 0 });
     const parsed = extractJSON(result.text);
     if (!parsed || !parsed.name) throw new Error("INVALID_RECIPE_JSON");
     return { ok: true, data: parsed, model: result.model, fallback: false };

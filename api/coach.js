@@ -40,6 +40,16 @@ module.exports = async function handler(req, res) {
         fallback: true, error_code: "UNCAUGHT_ERROR"
       });
     }
+  } finally {
+    // Last-resort safety net: ensure a response is always sent to prevent FUNCTION_INVOCATION_FAILED
+    if (!res.writableEnded) {
+      console.error("[coach][safety-net] Response not sent — sending emergency fallback");
+      sendJson(res, 200, {
+        ok: true, type: "conversation",
+        message: "Une erreur inattendue s'est produite. Reessayez dans quelques secondes.",
+        fallback: true, error_code: "SAFETY_NET"
+      });
+    }
   }
 };
 
