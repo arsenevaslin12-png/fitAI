@@ -1273,14 +1273,25 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
         <div class="card">
           <div class="card-title">Modifier mon profil</div>
           <div style="display:flex;flex-direction:column;gap:12px">
-            <div class="field"><div class="lbl">Pseudo affiché</div>
-              <input type="text" id="p-pseudo" placeholder="Votre pseudo…"/>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="field" style="grid-column:1/-1"><div class="lbl">Pseudo affiché</div>
+                <input type="text" id="p-pseudo" placeholder="Votre pseudo…"/>
+              </div>
+              <div class="field" style="grid-column:1/-1"><div class="lbl">Username unique</div>
+                <input type="text" id="p-username" placeholder="votre_username" pattern="[a-z0-9_]+" style="text-transform:lowercase"/>
+                <div class="meal-info" style="margin-top:3px">Lettres minuscules, chiffres et underscore uniquement</div>
+              </div>
+              <div class="field"><div class="lbl">Âge</div>
+                <input type="number" id="p-age" placeholder="25" min="10" max="99" step="1"/>
+              </div>
+              <div class="field"><div class="lbl">Poids (kg)</div>
+                <input type="number" id="p-weight" placeholder="75" min="30" max="300" step="0.5"/>
+              </div>
+              <div class="field"><div class="lbl">Taille (cm)</div>
+                <input type="number" id="p-height" placeholder="175" min="100" max="250" step="1"/>
+              </div>
             </div>
-            <div class="field"><div class="lbl">Username unique (pour être trouvé par vos amis)</div>
-              <input type="text" id="p-username" placeholder="votre_username" pattern="[a-z0-9_]+" style="text-transform:lowercase"/>
-              <div class="meal-info" style="margin-top:3px">Lettres minuscules, chiffres et underscore uniquement</div>
-            </div>
-            <button class="btn btn-p btn-full" id="btn-save-profile" onclick="saveProfile()">💾 Enregistrer</button>
+            <button class="btn btn-p btn-full" id="btn-save-profile" onclick="saveProfile()" style="margin-top:4px">Enregistrer le profil</button>
           </div>
         </div>
 

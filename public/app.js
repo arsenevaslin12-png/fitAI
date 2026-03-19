@@ -444,7 +444,7 @@ async function loadDashboard() {
     const sidebarName = document.getElementById("tu");
     if (greetEl && U) {
       try {
-        const { data } = await SB.from("profiles").select("display_name,username").eq("id", U.id).maybeSingle();
+        const { data } = await SB.from("profiles").select("display_name,username,age,weight,height").eq("id", U.id).maybeSingle();
         const name = data?.display_name || data?.username || U.email?.split("@")[0] || "Champion";
         greetEl.textContent = name;
         if (sidebarName) sidebarName.textContent = name;
@@ -1598,7 +1598,7 @@ function formatFeedback(text) {
 async function loadProfile() {
   if (!U) return;
   try {
-    const { data } = await SB.from("profiles").select("display_name,username").eq("id", U.id).maybeSingle();
+    const { data } = await SB.from("profiles").select("display_name,username,age,weight,height").eq("id", U.id).maybeSingle();
     const name = data?.display_name || U.email?.split("@")[0] || "Membre";
     const pName = document.getElementById("p-name");
     const pEmail = document.getElementById("p-email");
@@ -1612,6 +1612,12 @@ async function loadProfile() {
     if (pPseudo) pPseudo.value = data?.display_name || "";
     if (pUsername) pUsername.value = data?.username || "";
     if (tu) tu.textContent = name;
+    const pAge = document.getElementById("p-age");
+    const pWeight = document.getElementById("p-weight");
+    const pHeight = document.getElementById("p-height");
+    if (pAge) pAge.value = data?.age || "";
+    if (pWeight) pWeight.value = data?.weight || "";
+    if (pHeight) pHeight.value = data?.height || "";
   } catch (e) { console.error("[Profile] Load error:", e); }
 }
 
@@ -1621,6 +1627,9 @@ async function saveProfile() {
   const pUsername = document.getElementById("p-username");
   const display_name = pPseudo ? pPseudo.value.trim() : "";
   const username = pUsername ? pUsername.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "") : "";
+  const age = parseInt(document.getElementById("p-age")?.value || "0", 10) || null;
+  const weight = parseFloat(document.getElementById("p-weight")?.value || "0") || null;
+  const height = parseFloat(document.getElementById("p-height")?.value || "0") || null;
   if (!display_name) return toast("Pseudo requis.", "err");
   if (username && username.length < 3) return toast("Username: 3 caractères minimum.", "err");
 
@@ -1628,6 +1637,9 @@ async function saveProfile() {
   await withButton(btn, "Enregistrement…", async () => {
     const payload = { id: U.id, display_name, updated_at: new Date().toISOString() };
     if (username) payload.username = username;
+    if (age) payload.age = age;
+    if (weight) payload.weight = weight;
+    if (height) payload.height = height;
     const { error } = await SB.from("profiles").upsert(payload, { onConflict: "id" });
     if (error) {
       // username column might not exist (migration v4 not applied)
