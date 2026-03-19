@@ -193,6 +193,35 @@ async function callGeminiText({
   throw lastError || new Error("Gemini unavailable");
 }
 
+async function callGeminiStream({
+  apiKey,
+  prompt,
+  contents,
+  temperature = 0.6,
+  maxOutputTokens = 900,
+  onChunk
+}) {
+  const Gemini = getGeminiCtor();
+  if (!Gemini) { const err = new Error("@google/generative-ai manquant"); err.code = "MISSING_DEP"; throw err; }
+  if (!String(apiKey || "").trim()) { const err = new Error("GEMINI_API_KEY manquant"); err.code = "MISSING_API_KEY"; throw err; }
+
+  const client = new Gemini(String(apiKey).trim());
+  const modelName = uniqueModels()[0];
+  const model = client.getGenerativeModel({ model: modelName, generationConfig: { temperature, maxOutputTokens } });
+  const input = contents || prompt || "";
+  const { stream } = await model.generateContentStream(input);
+  let fullText = "";
+  for await (const chunk of stream) {
+    const text = chunk.text();
+    if (text) {
+      fullText += text;
+      if (typeof onChunk === "function") onChunk(text);
+    }
+  }
+  if (!fullText.trim()) { const err = new Error("EMPTY_STREAM_RESPONSE"); err.code = "EMPTY"; throw err; }
+  return { model: modelName, text: fullText };
+}
+
 module.exports = {
   DEFAULT_MODEL,
   FALLBACK_MODEL,
@@ -210,5 +239,6 @@ module.exports = {
   isQuotaIssue,
   isRetryableIssue,
   normalizeGeminiError,
-  callGeminiText
+  callGeminiText,
+  callGeminiStream
 };

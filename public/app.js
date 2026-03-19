@@ -737,21 +737,66 @@ async function sendCoachMsg(quickMsg) {
       equipment: "poids du corps"
     };
 
-    const { response: j } = await fetchJsonWithTimeout("/api/coach", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        message: prompt,
-        history: historyForApi,
-        profile: coachProfile,
-        goalContext
-      })
-    }, 30000);
+    // Try SSE streaming first; fall back to standard JSON endpoint
+    let j = null;
+    const streamCtrl = new AbortController();
+    const aiTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+    const thinkElPre = document.getElementById("coach-thinking");
+    let streamBubble = null;
+
+    try {
+      // Insert a live-updating bubble for streaming
+      if (thinkElPre) {
+        thinkElPre.querySelector(".chat-bubble").innerHTML = '<span id="stream-cursor" style="display:inline-block;width:2px;height:1em;background:currentColor;opacity:.7;animation:blink .8s step-end infinite;vertical-align:text-bottom"></span>';
+        streamBubble = thinkElPre.querySelector(".chat-bubble");
+      }
+
+      const streamedText = await fetchCoachStream({
+        url: "/api/coach-stream",
+        body: { message: prompt, history: historyForApi, profile: coachProfile, goalContext },
+        token,
+        signal: streamCtrl.signal,
+        onChunk: (accumulated) => {
+          if (streamBubble) {
+            streamBubble.innerHTML = formatCoachText(accumulated) + '<span id="stream-cursor" style="display:inline-block;width:2px;height:1em;background:currentColor;opacity:.7;animation:blink .8s step-end infinite;vertical-align:text-bottom"></span>';
+            if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+          }
+        }
+      });
+
+      const thinkEl = document.getElementById("coach-thinking");
+      if (thinkEl) thinkEl.remove();
+
+      const textHtml = formatCoachText(streamedText || "Je n'ai pas pu formuler une réponse.");
+      COACH_HISTORY.push({ role: "ai", content: textHtml, time: aiTime });
+      saveCoachHistory();
+      renderCoachChat();
+      if (chatEl) setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50);
+
+    } catch (streamErr) {
+      // Streaming failed — fall back to standard JSON endpoint silently
+      const thinkEl = document.getElementById("coach-thinking");
+      if (thinkEl) thinkEl.querySelector(".chat-bubble").innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+
+      const { response: jsonResp } = await fetchJsonWithTimeout("/api/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message: prompt, history: historyForApi, profile: coachProfile, goalContext })
+      }, 30000);
+      j = jsonResp;
+    }
+
+    if (!j) {
+      // Already handled by streaming path above
+      if (btn) btn.disabled = false;
+      ASYNC_LOCKS.delete("coach-msg");
+      return;
+    }
 
     const thinkEl = document.getElementById("coach-thinking");
     if (thinkEl) thinkEl.remove();
 
-    const aiTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
     const fallbackBadge = j.fallback ? '<div style="margin-top:8px;font-size:.78rem;opacity:.72">⚠️ Mode secours intelligent utilisé.</div>' : "";
 
     if (j.type === "shopping_list" && j.data) {
@@ -1631,12 +1676,27 @@ async function loadScans() {
         return `<div class="scan-v2-zone-card"><div class="scan-v2-zone-ic">${icons[k]}</div><div class="scan-v2-zone-name">${labels[k]}</div><div class="scan-v2-zone-txt">${escapeHtml(String(desc || "").slice(0, 90))}</div></div>`;
       }).join("") : "";
 
+      // Progress rings replacing raw score chips (Apple Watch style)
+      function scanRing(pct, color, label, valLabel) {
+        const r = 22; const c = +(2 * Math.PI * r).toFixed(1);
+        const filled = +((pct / 100) * c).toFixed(1);
+        return `<div class="ring-item">
+          <div style="position:relative;width:52px;height:52px">
+            <svg class="ring-svg" width="52" height="52" viewBox="0 0 52 52">
+              <circle class="ring-track" cx="26" cy="26" r="${r}"/>
+              <circle class="ring-fill" cx="26" cy="26" r="${r}" stroke="${color}" stroke-dasharray="${filled} ${c}"/>
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:900;color:${color}">${valLabel}</div>
+          </div>
+          <div class="ring-lbl">${label}</div>
+        </div>`;
+      }
       const scoreChips = [
-        scan.symmetry_score != null ? `<div style="text-align:center"><div style="font-size:1.05rem;font-weight:900;color:var(--blue)">${scan.symmetry_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:1px">Sym.</div></div>` : "",
-        extScores.muscle_definition != null ? `<div style="text-align:center"><div style="font-size:1.05rem;font-weight:900;color:var(--green)">${extScores.muscle_definition}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:1px">Défin.</div></div>` : "",
-        extScores.body_composition != null ? `<div style="text-align:center"><div style="font-size:1.05rem;font-weight:900;color:var(--cyan)">${extScores.body_composition}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:1px">Compo.</div></div>` : "",
-        scan.posture_score != null ? `<div style="text-align:center"><div style="font-size:1.05rem;font-weight:900;color:var(--teal)">${scan.posture_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:1px">Post.</div></div>` : "",
-        scan.bodyfat_proxy != null ? `<div style="text-align:center"><div style="font-size:1.05rem;font-weight:900;color:var(--orange)">${scan.bodyfat_proxy}%</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:1px">BF</div></div>` : "",
+        scan.symmetry_score != null ? scanRing(scan.symmetry_score, "#00FFFF", "Sym.", scan.symmetry_score) : "",
+        extScores.muscle_definition != null ? scanRing(extScores.muscle_definition, "#22c55e", "Défin.", extScores.muscle_definition) : "",
+        extScores.body_composition != null ? scanRing(extScores.body_composition, "#a855f7", "Compo.", extScores.body_composition) : "",
+        scan.posture_score != null ? scanRing(scan.posture_score, "#06b6d4", "Post.", scan.posture_score) : "",
+        scan.bodyfat_proxy != null ? scanRing(Math.max(0, 100 - scan.bodyfat_proxy), "#f97316", "BF", scan.bodyfat_proxy + "%") : "",
       ].filter(Boolean).join("");
 
       const reco = ext.personalized_recommendations || {};
@@ -1658,11 +1718,11 @@ async function loadScans() {
             ${scan.image_url ? `<img src="${scan.image_url}" alt="Scan" loading="lazy"/>` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">Photo non disponible</div>`}
             <div class="scan-v2-photo-overlay">
               <span class="scan-v2-pill">${date}</span>
-              ${physScore ? `<span class="scan-v2-pill">${physScore}/100</span>` : ""}
+              ${physScore ? `<span class="scan-v2-pill" style="font-family:'Georgia',serif;font-size:1rem;font-weight:900">${physScore}/100</span>` : ""}
             </div>
           </div>
           <div class="scan-v2-right">
-            ${scoreChips ? `<div style="display:flex;gap:12px;flex-wrap:wrap;padding:2px 0">${scoreChips}</div>` : ""}
+            ${scoreChips ? `<div class="rings-row" style="justify-content:flex-start;flex-wrap:wrap;margin-bottom:10px">${scoreChips}</div>` : ""}
             <div class="scan-v2-comp">
               <div class="scan-v2-comp-hdr">Composition corporelle</div>
               ${compRows || `<div class="scan-v2-comp-val" style="opacity:.6;font-size:.75rem">Score global: ${physScore || "—"}/100</div>`}
@@ -2029,7 +2089,12 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
+    // Auto-retry once on 5xx
+    let response = await fetch(url, { ...options, signal: controller.signal });
+    if (response.status >= 500) {
+      await new Promise(r => setTimeout(r, 1200));
+      response = await fetch(url, { ...options, signal: controller.signal });
+    }
     const json = await safeResponseJson(response);
     if (!response.ok || !json.ok) {
       const rawErr = json.error || `Erreur serveur (HTTP ${response.status})`;
@@ -2040,6 +2105,46 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// SSE streaming fetch for coach chat responses
+async function fetchCoachStream({ url, body, token, onChunk, signal }) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Erreur serveur (HTTP ${response.status})`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6).trim();
+      if (payload === "[DONE]") return fullText;
+      try {
+        const evt = JSON.parse(payload);
+        if (evt.error) throw new Error(evt.error);
+        if (evt.text) {
+          fullText += evt.text;
+          if (typeof onChunk === "function") onChunk(fullText);
+        }
+      } catch (parseErr) {
+        if (parseErr.message !== "[object Object]") throw parseErr;
+      }
+    }
+  }
+  return fullText;
 }
 
 function timeAgo(dateStr) {
@@ -2319,27 +2424,25 @@ async function generateRecipe() {
 
     if (resultEl) {
       resultEl.style.display = "block";
+      const name = recipe.name || "Recette";
+      const foodArt = recipeFoodArt(name);
       const stepsHtml = Array.isArray(recipe.steps)
-        ? recipe.steps.map((s, i) => `<li style="margin-bottom:4px">${escapeHtml(s)}</li>`).join("")
+        ? recipe.steps.map((s, i) => `<li class="recipe-v2-step"><div class="recipe-v2-step-n">${i + 1}</div><span>${escapeHtml(s)}</span></li>`).join("")
         : "";
       resultEl.innerHTML = `
-        <div class="card" style="background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(6,182,212,.05));border-color:rgba(34,197,94,.2);padding:18px">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-            <div>
-              <div style="font-size:.62rem;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">Recette IA</div>
-              <div style="font-weight:900;font-size:1.05rem;letter-spacing:-.01em">${escapeHtml(recipe.name || "Recette")}</div>
-            </div>
-            ${recipe.prep_time ? `<span class="badge bg-green">⏱ ${escapeHtml(recipe.prep_time)}</span>` : ""}
+        <div class="recipe-v2">
+          <div class="recipe-v2-art">${foodArt}</div>
+          <div class="recipe-v2-tag">✦ Recette IA${recipe.prep_time ? ` · ⏱ ${escapeHtml(recipe.prep_time)}` : ""}</div>
+          <div class="recipe-v2-name">${escapeHtml(name)}</div>
+          <div class="recipe-pills">
+            ${recipe.calories ? `<span class="macro-pill mp-kcal">🔥 ${recipe.calories} kcal</span>` : ""}
+            ${recipe.protein ? `<span class="macro-pill mp-prot">💪 ${recipe.protein}g prot.</span>` : ""}
+            ${recipe.carbs ? `<span class="macro-pill mp-carb">🌾 ${recipe.carbs}g gluc.</span>` : ""}
+            ${recipe.fat ? `<span class="macro-pill mp-fat">🥑 ${recipe.fat}g lip.</span>` : ""}
           </div>
-          <div class="macro-grid" style="margin-bottom:14px">
-            <div class="macro-card"><span class="macro-icon">🔥</span><div class="macro-val">${recipe.calories || "?"}</div><div class="macro-lbl">Kcal</div></div>
-            <div class="macro-card"><span class="macro-icon">💪</span><div class="macro-val">${recipe.protein || "?"}g</div><div class="macro-lbl">Prot.</div></div>
-            <div class="macro-card"><span class="macro-icon">🌾</span><div class="macro-val">${recipe.carbs || "?"}g</div><div class="macro-lbl">Gluc.</div></div>
-            <div class="macro-card"><span class="macro-icon">🥑</span><div class="macro-val">${recipe.fat || "?"}g</div><div class="macro-lbl">Lip.</div></div>
-          </div>
-          ${stepsHtml ? `<div style="font-size:.65rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Préparation</div><ol style="margin-left:16px;font-size:.84rem;line-height:1.7;color:var(--text2)">${stepsHtml}</ol>` : ""}
-          ${recipe.tips ? `<div style="margin-top:12px;font-size:.8rem;color:var(--accent);font-weight:600;padding:10px;background:rgba(37,99,235,.06);border-radius:10px;border-left:3px solid var(--accent)">💡 ${escapeHtml(recipe.tips)}</div>` : ""}
-          <button class="btn btn-p btn-sm btn-full" style="margin-top:14px" onclick="addRecipeAsMeal()">➕ Ajouter comme repas</button>
+          ${stepsHtml ? `<ul class="recipe-v2-steps">${stepsHtml}</ul>` : ""}
+          ${recipe.tips ? `<div class="recipe-v2-tip">💡 ${escapeHtml(recipe.tips)}</div>` : ""}
+          <button class="btn btn-p btn-sm btn-full" onclick="addRecipeAsMeal()">➕ Ajouter comme repas</button>
         </div>`;
       // Store recipe for "add as meal"
       window._lastRecipe = recipe;
@@ -2350,6 +2453,23 @@ async function generateRecipe() {
       errEl.style.display = "block";
     }
   });
+}
+
+function recipeFoodArt(name) {
+  const n = (name || "").toLowerCase();
+  if (/poulet|chicken|dinde|turkey/.test(n)) return "🍗";
+  if (/boeuf|steak|beef|viande/.test(n)) return "🥩";
+  if (/saumon|thon|poisson|fish|crevette|shrimp/.test(n)) return "🐟";
+  if (/oeuf|egg|omelette/.test(n)) return "🍳";
+  if (/pâtes|pasta|spaghetti|tagliatelle/.test(n)) return "🍝";
+  if (/riz|bowl|buddha/.test(n)) return "🥣";
+  if (/salade|salad/.test(n)) return "🥗";
+  if (/burger|sandwich/.test(n)) return "🍔";
+  if (/pizza/.test(n)) return "🍕";
+  if (/soupe|soup|bouillon/.test(n)) return "🍲";
+  if (/wrap|burrito|tacos/.test(n)) return "🌯";
+  if (/smoothie|shake|protein/.test(n)) return "🥤";
+  return "🍽️";
 }
 
 function addRecipeAsMeal() {
