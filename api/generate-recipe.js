@@ -10,6 +10,7 @@ const {
   callGeminiText,
   normalizeGeminiError
 } = require("./_gemini");
+const { assertEnv } = require("./_env");
 
 const GEMINI_TIMEOUT_MS = 22000;
 
@@ -107,12 +108,11 @@ function fallbackRecipe(ingredients, goal) {
 
 module.exports = async function handler(req, res) {
   setCors(res);
+  if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
+  if (assertEnv(res)) return;
+
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-  if (req.method === "OPTIONS") {
-    res.statusCode = 204;
-    return res.end();
-  }
   if (req.method !== "POST") {
     return sendJson(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", requestId });
   }
