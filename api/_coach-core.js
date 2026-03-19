@@ -95,10 +95,34 @@ function detectIntent(message, responseMode) {
   const text = String(message || "").toLowerCase();
   const has = (...keywords) => keywords.some((k) => text.includes(k));
 
-  if (!text) return "general_fitness";
+  if (responseMode === "advice") return "advice";
+  if (responseMode === "recovery") return "recovery_question";
+  if (responseMode === "motivation") return "motivation_question";
+  if (!text) return "general_chat";
   if (has("salut", "bonjour", "hello", "yo", "ça va", "ca va", "hey", "coucou", "cc")) return "greeting";
 
-  // Shopping list: detect before recipe to catch "liste d'ingrédients"
+  // Recovery — before workout to catch "j'ai mal dormi"
+  if (has("mal dormi", "pas bien dormi", "courbature", "blessure", "fatigue", "epuis",
+      "recup", "repos", "mobilite", "stretch", "etirement", "j'ai mal au")) return "recovery_question";
+
+  // Shopping list — catches social contexts like "j'ai 4 potes on fait des burgers"
+  if (has("liste de course", "liste d'achat", "faire les courses", "courses pour",
+      "ce qu'il faut acheter", "supermarche", "marche", "acheter pour",
+      "potes", "amis", "soiree", "barbecue", "bbq")) return "shopping_list";
+
+  // Meal plan / meal ideas
+  if (has("quoi manger ce soir", "quoi manger demain", "idee repas", "repas rapide",
+      "quoi manger", "que manger ce soir", "manger ce soir", "manger demain",
+      "programme semaine", "menu semaine", "planning repas",
+      "journee alimentaire", "repas de la journee", "semaine alimentaire")) return "meal_plan";
+
+  // Shopping list (original keywords)
+  if (has("ingredients pour", "ce qu'il faut", "liste d'achat")) return "shopping_list";
+
+  // Meal plan (original keywords backup)
+  if (has("planifier mes repas", "organisation repas", "manger toute la journee")) return "meal_plan";
+
+  // legacy // Shopping list: detect before recipe to catch "liste d'ingrédients"
   if (has("liste de course", "liste d'achat", "faire les courses", "courses pour", "ingrédients pour", "ce qu'il faut acheter", "supermarché", "marché")) return "shopping_list";
 
   // Meal plan: full day or week planning
@@ -122,7 +146,10 @@ function detectIntent(message, responseMode) {
   // Progress
   if (has("progression", "progresse", "stats", "niveau", "streak", "gain", "résultat", "resultat")) return "progress_question";
 
-  return "general_fitness";
+  // Advice / lifestyle catch-all
+  if (has("conseil", "tips", "astuce", "que faire", "comment", "aide moi", "lifestyle")) return "advice";
+
+  return "general_chat";
 }
 
 function getGoalDescription(goal) {
@@ -158,6 +185,7 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
   const recovery = Number(profile.recovery_score || 0);
   const weight = Number(profile.weight || 0);
   const height = Number(profile.height || 0);
+  const age = Number(profile.age || 0);
 
   return {
     goal,
@@ -168,6 +196,7 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
     recovery: recovery > 0 ? recovery : null,
     weight: weight > 0 ? weight : null,
     height: height > 0 ? height : null,
+    age: age > 0 ? age : null,
     display_name: normalizeText(profile.display_name || "")
   };
 }
@@ -382,7 +411,7 @@ function fallbackMealPlan(profile, goalContext) {
 async function generateShoppingList({ apiKey, message, profile, goalContext }) {
   const prompt = buildShoppingListPrompt(message, profile, goalContext);
   try {
-    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 5000, retries: 0 });
+    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 3800, retries: 0 });
     const parsed = extractJSON(result.text);
     if (!parsed || !Array.isArray(parsed.categories)) throw new Error("INVALID_SHOPPING_JSON");
     return { ok: true, data: parsed, fallback: false };
@@ -394,7 +423,7 @@ async function generateShoppingList({ apiKey, message, profile, goalContext }) {
 async function generateMealPlan({ apiKey, message, profile, goalContext }) {
   const prompt = buildMealPlanPrompt(message, profile, goalContext);
   try {
-    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 5000, retries: 0 });
+    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 3800, retries: 0 });
     const parsed = extractJSON(result.text);
     if (!parsed || !Array.isArray(parsed.meals)) throw new Error("INVALID_MEAL_PLAN_JSON");
     return { ok: true, data: parsed, fallback: false };
@@ -739,7 +768,7 @@ async function generateWithRetry(apiKey, prompt, options = {}) {
 async function generateWorkoutPlan({ apiKey, message, history, profile, goalContext }) {
   const prompt = buildWorkoutPrompt(message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1600, timeoutMs: 5500, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1200, timeoutMs: 4000, retries: 0 });
     const parsed = extractJSON(result.text);
     // Accept new exercises[] format OR legacy sessions[] format
     const hasExercises = parsed && Array.isArray(parsed.exercises) && parsed.exercises.length > 0;
@@ -757,7 +786,7 @@ async function generateWorkoutPlan({ apiKey, message, history, profile, goalCont
 async function generateConversationReply({ apiKey, intent, message, history, profile, goalContext }) {
   const prompt = buildConversationPrompt(intent, message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.6, maxOutputTokens: 650, timeoutMs: 4200, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.6, maxOutputTokens: 650, timeoutMs: 3500, retries: 0 });
     const text = String(result.text || "").replace(/^```[\w-]*\s*/g, "").replace(/```$/g, "").trim();
     if (!text) throw new Error("EMPTY_CONVERSATION");
     return { ok: true, message: text, model: result.model, fallback: false };
@@ -769,7 +798,7 @@ async function generateConversationReply({ apiKey, intent, message, history, pro
 async function generateRecipeJson({ apiKey, message, profile, goalContext }) {
   const prompt = buildRecipePrompt(message, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.25, maxOutputTokens: 650, timeoutMs: 4200, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.25, maxOutputTokens: 650, timeoutMs: 3500, retries: 0 });
     const parsed = extractJSON(result.text);
     if (!parsed || !parsed.name) throw new Error("INVALID_RECIPE_JSON");
     return { ok: true, data: parsed, model: result.model, fallback: false };
