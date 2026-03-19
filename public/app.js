@@ -459,10 +459,96 @@ async function loadDashboard() {
     }
     await Promise.all([loadGoal(), loadMeals(), loadStats(), loadNutritionTargets(), loadStreak()]);
     if (typeof renderDailyChallengesSection === "function") renderDailyChallengesSection();
+    loadScanMiniTile();
+    restoreMoodSelection();
   } catch (e) {
     console.error("[Dashboard] Error:", e);
   }
   showGlobalLoader(false);
+}
+
+// ── V2 MOOD TRACKER ──────────────────────────────────────────────────────────
+function selectMood(btn, emoji) {
+  document.querySelectorAll(".mood-emoji-btn").forEach(b => b.classList.remove("selected"));
+  btn.classList.add("selected");
+  const startBtn = document.getElementById("mood-start-btn");
+  if (startBtn) startBtn.classList.add("active");
+  try { localStorage.setItem("fitai_mood", emoji); localStorage.setItem("fitai_mood_date", new Date().toDateString()); } catch {}
+}
+
+function restoreMoodSelection() {
+  try {
+    const saved = localStorage.getItem("fitai_mood");
+    const savedDate = localStorage.getItem("fitai_mood_date");
+    if (saved && savedDate === new Date().toDateString()) {
+      document.querySelectorAll(".mood-emoji-btn").forEach(b => {
+        if (b.title && b.getAttribute("onclick") && b.getAttribute("onclick").includes(`'${saved}'`)) {
+          b.classList.add("selected");
+        }
+      });
+      const startBtn = document.getElementById("mood-start-btn");
+      if (startBtn) startBtn.classList.add("active");
+    }
+  } catch {}
+}
+
+// ── V2 SCAN IA MINI TILE ─────────────────────────────────────────────────────
+async function loadScanMiniTile() {
+  if (!U) return;
+  const scoreEl = document.getElementById("scan-mini-score");
+  const ringsEl = document.getElementById("scan-mini-rings");
+  try {
+    const { data } = await SB.from("body_scans")
+      .select("physical_score,symmetry_score,posture_score,bodyfat_proxy,ai_feedback,extended_analysis")
+      .eq("user_id", U.id)
+      .not("ai_feedback", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!data) {
+      if (scoreEl) scoreEl.textContent = "—";
+      if (ringsEl) ringsEl.innerHTML = '<div class="scan-no-data">Aucun scan · Tapez pour analyser</div>';
+      return;
+    }
+
+    const score = data.physical_score || 0;
+    if (scoreEl) scoreEl.textContent = score + "%";
+
+    // Progress rings: Symétrie, Posture, Compo (bodyfat proxy inverted → "Définition")
+    const sym  = Math.min(100, Math.max(0, data.symmetry_score  || 0));
+    const post = Math.min(100, Math.max(0, data.posture_score   || 0));
+    // bodyfat_proxy is a % of fat — lower is better; convert to definition score
+    const bfRaw = data.extended_analysis?.score_breakdown?.body_composition ?? data.bodyfat_proxy ?? 50;
+    const def  = Math.min(100, Math.max(0, Math.round(100 - bfRaw)));
+
+    const ringR = 14;
+    const ringC = 2 * Math.PI * ringR;
+    function ring(pct, color, label) {
+      const filled = ringC * (pct / 100);
+      return `<div class="ring-item">
+        <svg class="ring-svg" width="36" height="36" viewBox="0 0 36 36">
+          <circle class="ring-track" cx="18" cy="18" r="${ringR}"/>
+          <circle class="ring-fill" cx="18" cy="18" r="${ringR}" stroke="${color}" stroke-dasharray="${filled.toFixed(1)} ${ringC.toFixed(1)}"/>
+        </svg>
+        <div class="ring-lbl">${label}</div>
+      </div>`;
+    }
+
+    if (ringsEl) {
+      ringsEl.innerHTML =
+        ring(sym,  "#00FFFF", "Sym.") +
+        ring(post, "#a855f7", "Post.") +
+        ring(def,  "#22c55e", "Déf.");
+    }
+
+    // Update hidden compat counter
+    const countEl = document.getElementById("db-scans");
+    if (countEl) countEl.textContent = "1+";
+
+  } catch (e) {
+    console.warn("[ScanMini] load error:", e);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2307,6 +2393,7 @@ window.previewPostPhoto = previewPostPhoto;
 window.handleFile = handleFile;
 window.handleDrop = handleDrop;
 window.doScan = doScan;
+window.selectMood = selectMood;
 window.saveProfile = saveProfile;
 window.deleteBodyScan = deleteBodyScan;
 window.generateRecipe    = generateRecipe;
