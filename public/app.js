@@ -518,12 +518,33 @@ async function loadDashboard() {
 }
 
 // ── V2 MOOD TRACKER ──────────────────────────────────────────────────────────
+const MOOD_LABELS = { 1: "Épuisé", 2: "Fatigué", 3: "Neutre", 4: "Bien", 5: "En forme" };
+const MOOD_COACH_MSGS = {
+  1: "Je suis épuisé aujourd'hui. Adapte ma séance : propose quelque chose de très léger ou de la récupération active.",
+  2: "Je me sens fatigué. Propose une séance courte et modérée, rien d'intense.",
+  3: "Je me sens neutre. Lance-moi une séance standard selon mes objectifs.",
+  4: "Je me sens bien ! Propose une séance normale à intense selon mon objectif.",
+  5: "Je suis en pleine forme aujourd'hui ! Pousse-moi avec une séance intense selon mon objectif."
+};
+
 function selectMood(btn, level) {
   document.querySelectorAll(".mood-face").forEach(b => b.classList.remove("selected"));
   btn.classList.add("selected");
   const startBtn = document.getElementById("mood-start-btn");
   if (startBtn) startBtn.classList.add("active");
-  try { localStorage.setItem("fitai_mood", String(level)); localStorage.setItem("fitai_mood_date", new Date().toDateString()); } catch {}
+  try {
+    localStorage.setItem("fitai_mood", String(level));
+    localStorage.setItem("fitai_mood_label", MOOD_LABELS[level] || "");
+    localStorage.setItem("fitai_mood_date", new Date().toDateString());
+  } catch {}
+}
+
+function startWithMood() {
+  const level = parseInt(localStorage.getItem("fitai_mood") || "0");
+  gotoTab("coach");
+  if (level >= 1 && level <= 5 && localStorage.getItem("fitai_mood_date") === new Date().toDateString()) {
+    setTimeout(() => sendCoachMsg(MOOD_COACH_MSGS[level]), 300);
+  }
 }
 
 function restoreMoodSelection() {
@@ -774,6 +795,16 @@ async function sendCoachMsg(quickMsg) {
       content: m.role === "ai" ? stripHtml(m.content).slice(0, 300) : m.content
     }));
 
+    // Read today's mood from localStorage
+    let moodLabel = "";
+    try {
+      const savedMood = localStorage.getItem("fitai_mood");
+      const savedMoodDate = localStorage.getItem("fitai_mood_date");
+      if (savedMood && savedMoodDate === new Date().toDateString()) {
+        moodLabel = MOOD_LABELS[parseInt(savedMood)] || "";
+      }
+    } catch {}
+
     const coachProfile = {
       display_name: dbProfile.display_name || U.email?.split("@")[0] || "",
       weight: dbProfile.weight || null,
@@ -782,7 +813,8 @@ async function sendCoachMsg(quickMsg) {
       goal: goalContext.type || "",
       level: goalContext.level || "beginner",
       injuries: goalContext.constraints || "",
-      equipment: "poids du corps"
+      equipment: "poids du corps",
+      mood_today: moodLabel || undefined
     };
 
     // Try SSE streaming first; fall back to standard JSON endpoint
@@ -2574,6 +2606,7 @@ window.handleFile = handleFile;
 window.handleDrop = handleDrop;
 window.doScan = doScan;
 window.selectMood = selectMood;
+window.startWithMood = startWithMood;
 window.saveProfile = saveProfile;
 window.deleteBodyScan = deleteBodyScan;
 window.generateRecipe    = generateRecipe;
