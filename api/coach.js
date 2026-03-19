@@ -97,6 +97,7 @@ async function handleCoach(req, res) {
     equipment: sanitizeInput(body.profile.equipment || "", 200),
     injuries: sanitizeInput(body.profile.injuries || "", 300),
     display_name: sanitizeInput(body.profile.display_name || "", 80),
+    mood_today: sanitizeInput(String(body.profile.mood_today || ""), 30),
     weight: Number(body.profile.weight || 0) || null,
     height: Number(body.profile.height || 0) || null,
     age: Number(body.profile.age || 0) || null,

@@ -532,11 +532,19 @@ function selectMood(btn, level) {
   btn.classList.add("selected");
   const startBtn = document.getElementById("mood-start-btn");
   if (startBtn) startBtn.classList.add("active");
+  const label = MOOD_LABELS[level] || "";
   try {
     localStorage.setItem("fitai_mood", String(level));
-    localStorage.setItem("fitai_mood_label", MOOD_LABELS[level] || "");
+    localStorage.setItem("fitai_mood_label", label);
     localStorage.setItem("fitai_mood_date", new Date().toDateString());
   } catch {}
+  // Persist to Supabase daily_moods table
+  if (U) {
+    const today = new Date().toISOString().slice(0, 10);
+    SB.from("daily_moods")
+      .upsert({ user_id: U.id, mood_level: level, mood_label: label, date: today }, { onConflict: "user_id,date" })
+      .then(({ error }) => { if (error) console.warn("[mood] save failed:", error.message); });
+  }
 }
 
 function startWithMood() {
@@ -548,6 +556,7 @@ function startWithMood() {
 }
 
 function restoreMoodSelection() {
+  // First restore from localStorage (instant)
   try {
     const saved = localStorage.getItem("fitai_mood");
     const savedDate = localStorage.getItem("fitai_mood_date");
@@ -559,6 +568,25 @@ function restoreMoodSelection() {
       if (startBtn) startBtn.classList.add("active");
     }
   } catch {}
+  // Then sync from Supabase (persistent across devices)
+  if (U) {
+    const today = new Date().toISOString().slice(0, 10);
+    SB.from("daily_moods").select("mood_level,mood_label").eq("user_id", U.id).eq("date", today).maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        document.querySelectorAll(".mood-face").forEach(b => b.classList.remove("selected"));
+        document.querySelectorAll(".mood-face").forEach(b => {
+          if (b.dataset.v === String(data.mood_level)) b.classList.add("selected");
+        });
+        const startBtn = document.getElementById("mood-start-btn");
+        if (startBtn) startBtn.classList.add("active");
+        try {
+          localStorage.setItem("fitai_mood", String(data.mood_level));
+          localStorage.setItem("fitai_mood_label", data.mood_label || "");
+          localStorage.setItem("fitai_mood_date", new Date().toDateString());
+        } catch {}
+      });
+  }
 }
 
 // ── V2 SCAN IA MINI TILE ─────────────────────────────────────────────────────
@@ -2883,16 +2911,25 @@ function renderSvgChart(data, opts) {
 
 async function loadProgress() {
   if (!U) return;
+
+  // Build 30-day date range for mood
+  var moodSince = new Date();
+  moodSince.setDate(moodSince.getDate() - 29);
+
   var results = await Promise.allSettled([
     SB.from("workout_sessions").select("id,created_at,duration").eq("user_id", U.id).order("created_at", { ascending: true }).limit(80),
     SB.from("body_scans").select("created_at,physical_score").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
     SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(100),
-    SB.from("user_streaks").select("current_streak,best_streak").eq("user_id", U.id).maybeSingle()
+    SB.from("user_streaks").select("current_streak,best_streak").eq("user_id", U.id).maybeSingle(),
+    SB.from("daily_moods").select("mood_level,mood_label,date").eq("user_id", U.id)
+      .gte("date", moodSince.toISOString().slice(0, 10)).order("date", { ascending: true }).limit(30)
   ]);
+
   var sessions = results[0].status === "fulfilled" ? (results[0].value.data || []) : [];
   var scans    = results[1].status === "fulfilled" ? (results[1].value.data || []) : [];
   var meals    = results[2].status === "fulfilled" ? (results[2].value.data || []) : [];
   var streak   = results[3].status === "fulfilled" ? (results[3].value.data || {}) : {};
+  var moods    = results[4].status === "fulfilled" ? (results[4].value.data || []) : [];
 
   var elStreak = document.getElementById("prog-streak");
   var elSub    = document.getElementById("prog-streak-sub");
@@ -2903,6 +2940,13 @@ async function loadProgress() {
   if (elTotal)  elTotal.textContent  = sessions.length;
   var bestScore = scans.reduce(function(m, s) { return s.physical_score > m ? s.physical_score : m; }, 0);
   if (elBest)   elBest.textContent   = bestScore > 0 ? bestScore : "—";
+
+  // Mood stat in progress header
+  var elMoodStat = document.getElementById("prog-mood-stat");
+  if (elMoodStat && moods.length) {
+    var last = moods[moods.length - 1];
+    elMoodStat.textContent = last.mood_label || "—";
+  }
 
   var sessChart = buildWeeklySessionData(sessions, 8);
   var sessEl    = document.getElementById("chart-sessions-svg");
@@ -2928,6 +2972,59 @@ async function loadProgress() {
   if (calHead) {
     var avg = calData.length ? Math.round(calData.reduce(function(s, d) { return s + d.value; }, 0) / calData.length) : 0;
     calHead.textContent = avg > 0 ? "Moyenne: " + avg + " kcal / jour" : "Enregistrez vos repas pour voir l'evolution";
+  }
+
+  // Mood history dots
+  renderMoodDots(moods);
+}
+
+// ── Mood colours matching SVG faces ──────────────────────────────────────────
+var MOOD_COLORS = { 1: "#f87171", 2: "#fb923c", 3: "#fbbf24", 4: "#4ade80", 5: "#60a5fa" };
+
+function renderMoodDots(moods) {
+  var el = document.getElementById("chart-mood-dots");
+  var head = document.getElementById("chart-mood-headline");
+  if (!el) return;
+
+  if (!moods.length) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:.82rem">Sélectionnez votre humeur chaque jour pour voir l\'évolution ici.</div>';
+    if (head) head.textContent = "Pas encore de données";
+    return;
+  }
+
+  // Build 14-day grid (today = rightmost)
+  var today = new Date();
+  var days = 14;
+  var grid = [];
+  for (var i = days - 1; i >= 0; i--) {
+    var d = new Date(today);
+    d.setDate(today.getDate() - i);
+    var dateStr = d.toISOString().slice(0, 10);
+    var entry = moods.find(function(m) { return m.date === dateStr; });
+    grid.push({ date: d, dateStr: dateStr, entry: entry || null });
+  }
+
+  // Render as dot matrix row
+  var html = '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">';
+  grid.forEach(function(cell) {
+    var lvl = cell.entry ? cell.entry.mood_level : 0;
+    var color = lvl ? MOOD_COLORS[lvl] : "rgba(255,255,255,.07)";
+    var label = cell.entry ? cell.entry.mood_label : "Pas de donnée";
+    var dayLabel = cell.date.toLocaleDateString("fr-FR", { weekday: "short" }).slice(0, 1).toUpperCase();
+    html += '<div style="display:flex;flex-direction:column;align-items:center;gap:5px">';
+    html += '<div title="' + cell.dateStr + ' — ' + label + '" style="width:32px;height:32px;border-radius:50%;background:' + color + ';' + (lvl ? 'box-shadow:0 0 8px ' + color + '55' : 'border:2px solid rgba(255,255,255,.1)') + ';transition:transform .2s;cursor:default" onmouseenter="this.style.transform=\'scale(1.2)\'" onmouseleave="this.style.transform=\'scale(1)\'"></div>';
+    html += '<div style="font-size:.55rem;color:rgba(255,255,255,.3);font-weight:700">' + dayLabel + '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+
+  // Compute average mood
+  var filled = moods.filter(function(m) { return m.mood_level >= 1; });
+  if (head && filled.length) {
+    var avg = (filled.reduce(function(s, m) { return s + m.mood_level; }, 0) / filled.length).toFixed(1);
+    var avgLabel = MOOD_LABELS[Math.round(avg)] || avg + "/5";
+    head.textContent = filled.length + " jour(s) suivi(s) — humeur moy.: " + avgLabel;
   }
 }
 

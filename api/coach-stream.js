@@ -39,8 +39,9 @@ module.exports = async function handler(req, res) {
   try {
     // Rate limit (5 streaming calls / 10s per IP)
     const ip = getIp(req);
-    if (!checkRateLimit(ip, "coach-stream", 5, 10000)) {
-      sseWrite(res, { error: "Trop de requêtes — patientez quelques secondes." });
+    const limit = checkRateLimit("coach-stream", ip, 5, 10_000);
+    if (!limit.ok) {
+      sseWrite(res, { error: `Trop de requêtes — patientez ${limit.retryAfterSec}s.` });
       return sseDone(res);
     }
 
@@ -72,6 +73,7 @@ Profil utilisateur:
 - Niveau: ${p.level}
 - Équipement: ${p.equipment}
 - Contraintes: ${p.constraints}
+- Humeur du jour: ${p.mood || "non renseignée"}
 ${p.display_name ? `- Prénom: ${p.display_name}` : ""}
 
 Historique récent:
@@ -79,9 +81,10 @@ ${historyBlock(history) || "Aucun."}
 
 Instructions:
 - Réponds directement et concrètement à la question.
+- Si l'humeur est "Épuisé" ou "Fatigué", adapte tes conseils en conséquence (récupération, intensité réduite).
+- Si l'humeur est "En forme", propose quelque chose d'un peu plus intense.
 - Longueur: 2 à 7 phrases, ou liste à puces si pertinent.
 - N'écris PAS de JSON brut. N'écris PAS de programme complet sauf si demandé.
-- Tu peux avoir de l'humour bienveillant si le contexte s'y prête.
 
 Message utilisateur:
 ${rawMessage}`;
