@@ -518,12 +518,12 @@ async function loadDashboard() {
 }
 
 // ── V2 MOOD TRACKER ──────────────────────────────────────────────────────────
-function selectMood(btn, emoji) {
-  document.querySelectorAll(".mood-emoji-btn").forEach(b => b.classList.remove("selected"));
+function selectMood(btn, level) {
+  document.querySelectorAll(".mood-level").forEach(b => b.classList.remove("selected"));
   btn.classList.add("selected");
   const startBtn = document.getElementById("mood-start-btn");
   if (startBtn) startBtn.classList.add("active");
-  try { localStorage.setItem("fitai_mood", emoji); localStorage.setItem("fitai_mood_date", new Date().toDateString()); } catch {}
+  try { localStorage.setItem("fitai_mood", String(level)); localStorage.setItem("fitai_mood_date", new Date().toDateString()); } catch {}
 }
 
 function restoreMoodSelection() {
@@ -531,10 +531,8 @@ function restoreMoodSelection() {
     const saved = localStorage.getItem("fitai_mood");
     const savedDate = localStorage.getItem("fitai_mood_date");
     if (saved && savedDate === new Date().toDateString()) {
-      document.querySelectorAll(".mood-emoji-btn").forEach(b => {
-        if (b.title && b.getAttribute("onclick") && b.getAttribute("onclick").includes(`'${saved}'`)) {
-          b.classList.add("selected");
-        }
+      document.querySelectorAll(".mood-level").forEach(b => {
+        if (b.dataset.v === saved) b.classList.add("selected");
       });
       const startBtn = document.getElementById("mood-start-btn");
       if (startBtn) startBtn.classList.add("active");

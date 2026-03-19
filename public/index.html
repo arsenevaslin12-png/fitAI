@@ -473,15 +473,29 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .btn-icon:hover{background:rgba(255,255,255,.12)}
 
 /* ── V2 MOOD TRACKER ── */
-.mood-tile-label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.35);margin-bottom:12px}
-.mood-tile-title{font-size:1.25rem;font-weight:900;color:#fff;margin-bottom:16px;letter-spacing:-.02em}
-.mood-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.mood-emoji-btn{width:52px;height:52px;border-radius:50%;border:2px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);font-size:1.45rem;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.mood-emoji-btn:hover{border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.08);transform:scale(1.12)}
-.mood-emoji-btn.selected{border-color:#00FFFF;background:rgba(0,255,255,.1);box-shadow:0 0 14px rgba(0,255,255,.35);transform:scale(1.18)}
-.mood-start-btn{margin-left:auto;background:#020617;color:rgba(255,255,255,.7);border:1.5px solid rgba(255,255,255,.15);border-radius:999px;padding:12px 30px;font-weight:800;font-size:.88rem;cursor:pointer;transition:all .25s;font-family:inherit;flex-shrink:0}
-.mood-start-btn:hover{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.3);color:#fff}
-.mood-start-btn.active{border-color:#00FFFF;color:#00FFFF;background:rgba(0,255,255,.06);box-shadow:0 0 16px rgba(0,255,255,.2)}
+.mood-tile-label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.35);margin-bottom:8px}
+.mood-tile-title{font-size:1.1rem;font-weight:900;color:#fff;margin-bottom:18px;letter-spacing:-.02em}
+.mood-scale{display:flex;align-items:stretch;gap:8px;flex:1}
+.mood-level{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.08);border-radius:1rem;padding:12px 6px 10px;cursor:pointer;transition:all .2s;position:relative;min-width:0}
+.mood-level:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2);transform:translateY(-2px)}
+.mood-dot{width:20px;height:20px;border-radius:50%;flex-shrink:0;transition:transform .2s}
+.mood-level-lbl{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:rgba(255,255,255,.4);text-align:center;line-height:1.2}
+.mood-level[data-v="1"] .mood-dot{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}
+.mood-level[data-v="2"] .mood-dot{background:#f97316;box-shadow:0 0 8px rgba(249,115,22,.4)}
+.mood-level[data-v="3"] .mood-dot{background:#eab308;box-shadow:0 0 8px rgba(234,179,8,.4)}
+.mood-level[data-v="4"] .mood-dot{background:#84cc16;box-shadow:0 0 8px rgba(132,204,22,.4)}
+.mood-level[data-v="5"] .mood-dot{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}
+.mood-level[data-v="1"].selected{background:rgba(239,68,68,.1);border-color:#ef4444}
+.mood-level[data-v="2"].selected{background:rgba(249,115,22,.1);border-color:#f97316}
+.mood-level[data-v="3"].selected{background:rgba(234,179,8,.1);border-color:#eab308}
+.mood-level[data-v="4"].selected{background:rgba(132,204,22,.1);border-color:#84cc16}
+.mood-level[data-v="5"].selected{background:rgba(34,197,94,.1);border-color:#22c55e}
+.mood-level.selected .mood-dot{transform:scale(1.3)}
+.mood-level.selected .mood-level-lbl{color:#fff}
+.mood-row{display:flex;align-items:center;gap:12px}
+.mood-start-btn{background:rgba(255,255,255,.06);color:rgba(255,255,255,.5);border:1.5px solid rgba(255,255,255,.1);border-radius:999px;padding:12px 26px;font-weight:800;font-size:.85rem;cursor:pointer;transition:all .25s;font-family:inherit;flex-shrink:0;white-space:nowrap}
+.mood-start-btn:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.25);color:#fff}
+.mood-start-btn.active{border-color:#00FFFF;color:#00FFFF;background:rgba(0,255,255,.08);box-shadow:0 0 16px rgba(0,255,255,.2)}
 
 /* ── V2 SCAN IA MINI TILE ── */
 .scan-mini-label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(0,255,255,.6);margin-bottom:8px}
@@ -506,7 +520,8 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   .b-mood,.b-seance,.b-coach,.b-activite,.b-actions{grid-column:span 2;grid-row:auto}
   .b-streak,.b-calories,.b-sessions,.b-scan-mini{grid-column:auto;grid-row:auto}
   .db-actions-bento{grid-template-columns:repeat(2,1fr)}
-  .mood-start-btn{margin-left:0;width:100%}
+  .mood-row{flex-direction:column}
+  .mood-start-btn{width:100%}
 }
 @media(min-width:641px) and (max-width:900px){
   .bento{grid-template-columns:repeat(2,1fr)}
@@ -740,8 +755,11 @@ body.light .card{background:#fff;border-color:rgba(15,23,42,.1);box-shadow:0 2px
 body.light .bento-card{background:rgba(255,255,255,.92);border-color:rgba(15,23,42,.1);box-shadow:0 2px 16px rgba(15,23,42,.08)}
 body.light .mood-tile-title{color:#0f172a}
 body.light .mood-tile-label{color:rgba(15,23,42,.45)}
-body.light .mood-emoji-btn{border-color:rgba(15,23,42,.12);background:rgba(15,23,42,.04)}
-body.light .mood-start-btn{background:#fff;color:#0f172a;border-color:rgba(15,23,42,.2)}
+body.light .mood-level{background:rgba(15,23,42,.03);border-color:rgba(15,23,42,.1)}
+body.light .mood-level:hover{background:rgba(15,23,42,.07)}
+body.light .mood-level-lbl{color:rgba(15,23,42,.5)}
+body.light .mood-level.selected .mood-level-lbl{color:#0f172a}
+body.light .mood-start-btn{background:rgba(15,23,42,.05);color:rgba(15,23,42,.5);border-color:rgba(15,23,42,.15)}
 body.light .scan-score-num{color:#0f172a}
 body.light .scan-score-sub{color:rgba(15,23,42,.4)}
 body.light .scan-mini-label{color:rgba(0,150,180,.7)}
@@ -938,16 +956,32 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
 
           <!-- [0] Mood Tracker — full width -->
           <div class="bento-card b-mood">
-            <div class="mood-tile-label">Comment vous sentez-vous ?</div>
-            <div class="mood-tile-title">How Do You Feel Today?</div>
-            <div class="mood-bar">
-              <button class="mood-emoji-btn" onclick="selectMood(this,'😴')" title="Fatigué">😴</button>
-              <button class="mood-emoji-btn" onclick="selectMood(this,'😕')" title="Pas top">😕</button>
-              <button class="mood-emoji-btn" onclick="selectMood(this,'😐')" title="Neutre">😐</button>
-              <button class="mood-emoji-btn" onclick="selectMood(this,'🙂')" title="Bien">🙂</button>
-              <button class="mood-emoji-btn" onclick="selectMood(this,'😁')" title="Super">😁</button>
-              <button class="mood-emoji-btn" onclick="selectMood(this,'🔥')" title="En feu !">🔥</button>
-              <button class="mood-start-btn" id="mood-start-btn" onclick="gotoTab('coach')">Start →</button>
+            <div class="mood-tile-label">Humeur du jour</div>
+            <div class="mood-tile-title">Comment vous sentez-vous ?</div>
+            <div class="mood-row">
+              <div class="mood-scale">
+                <button class="mood-level" data-v="1" onclick="selectMood(this,1)">
+                  <div class="mood-dot"></div>
+                  <div class="mood-level-lbl">Épuisé</div>
+                </button>
+                <button class="mood-level" data-v="2" onclick="selectMood(this,2)">
+                  <div class="mood-dot"></div>
+                  <div class="mood-level-lbl">Fatigué</div>
+                </button>
+                <button class="mood-level" data-v="3" onclick="selectMood(this,3)">
+                  <div class="mood-dot"></div>
+                  <div class="mood-level-lbl">Neutre</div>
+                </button>
+                <button class="mood-level" data-v="4" onclick="selectMood(this,4)">
+                  <div class="mood-dot"></div>
+                  <div class="mood-level-lbl">Bien</div>
+                </button>
+                <button class="mood-level" data-v="5" onclick="selectMood(this,5)">
+                  <div class="mood-dot"></div>
+                  <div class="mood-level-lbl">En forme</div>
+                </button>
+              </div>
+              <button class="mood-start-btn" id="mood-start-btn" onclick="gotoTab('coach')">Commencer →</button>
             </div>
           </div>
 
