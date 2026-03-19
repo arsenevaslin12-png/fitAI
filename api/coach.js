@@ -20,11 +20,13 @@ const {
   FALLBACK_MODEL,
   normalizeGeminiError
 } = require("./_gemini");
+const { assertEnv } = require("./_env");
 
 // Global handler — always returns valid JSON, never crashes Vercel
 module.exports = async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
+  if (assertEnv(res)) return;
 
   try {
     await handleCoach(req, res);

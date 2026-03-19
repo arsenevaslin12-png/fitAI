@@ -620,7 +620,7 @@ async function sendCoachMsg(quickMsg) {
   if (btn) btn.disabled = true;
 
   if (chatEl) {
-    chatEl.insertAdjacentHTML("beforeend", '<div class="chat-msg chat-msg-ai" id="coach-thinking"><div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div><div class="chat-bubble ai-bubble"><div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px;border-top-color:var(--blue)"></div><span style="font-size:.84rem;color:var(--muted)">Réflexion en cours…</span></div></div>');
+    chatEl.insertAdjacentHTML("beforeend", '<div class="chat-msg chat-msg-ai" id="coach-thinking"><div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div><div class="chat-bubble ai-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div></div>');
     chatEl.scrollTop = chatEl.scrollHeight;
   }
 
@@ -761,13 +761,10 @@ async function sendCoachMsg(quickMsg) {
     if (thinkEl) thinkEl.remove();
     const errorMsg = normalizeCoachError(e.name === "AbortError" ? "timeout" : (e.message || ""));
     const errTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-    COACH_HISTORY.push({ role: "ai", content: `<strong>Le coach est temporairement indisponible.</strong><div style="margin-top:6px;font-size:.82rem;color:var(--muted)">${escapeHtml(errorMsg)}</div>`, time: errTime });
+    COACH_HISTORY.push({ role: "ai", content: `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:1.1rem">🥵</span><strong>Le coach a eu un coup de chaud.</strong></div><div style="font-size:.83rem;color:var(--muted);line-height:1.5">Réessaie dans un instant — il sera de retour très vite.</div><div style="margin-top:10px"><button class="coach-chip" onclick="retryLastCoachMessage()" style="cursor:pointer;font-size:.8rem">↩ Réessayer</button></div>`, time: errTime });
     saveCoachHistory();
     renderCoachChat();
-    if (errorEl) {
-      errorEl.innerHTML = `<div>Erreur: ${escapeHtml(errorMsg)}</div><button class="btn btn-p btn-sm" style="margin-top:8px" onclick="retryLastCoachMessage()">Réessayer</button>`;
-      errorEl.style.display = "block";
-    }
+    if (errorEl) { errorEl.style.display = "none"; errorEl.innerHTML = ""; }
   } finally {
     if (btn) btn.disabled = false;
     ASYNC_LOCKS.delete("coach-msg");
@@ -1918,21 +1915,28 @@ async function safeResponseJson(res) {
 
 function normalizeCoachError(msg, code) {
   const m = String(msg || "").toLowerCase();
+  // Vercel/infra errors — never leak raw infrastructure details to users
+  if (m.includes("function_invocation_failed") || m.includes("a server error has occurred") ||
+      /[a-z]{2,4}1::[a-z0-9]+-\d+-[a-f0-9]+/.test(String(msg || ""))) {
+    return "Le coach a eu un coup de chaud. Ré-essaie dans un instant.";
+  }
   if (code === "QUOTA" || m.includes("quota") || m.includes("429") || m.includes("rate limit") || m.includes("resource exhausted")) {
-    return "Le coach est momentanÃ©ment surchargÃ©. RÃ©essayez dans 30 secondes.";
+    return "Le coach est momentanément surchargé. Réessayez dans 30 secondes.";
   }
   if (m.includes("timeout") || m.includes("abort") || m.includes("trop de temps")) {
-    return "Le coach n'a pas rÃ©pondu Ã  temps. RÃ©essayez dans quelques secondes.";
+    return "Le coach n'a pas répondu à temps. Réessayez dans quelques secondes.";
   }
   if (m.includes("401") || m.includes("403") || m.includes("api key") || m.includes("auth")) {
-    return "ProblÃ¨me de configuration du coach. Contactez le support.";
+    return "Problème de configuration du coach. Contactez le support.";
   }
-  if (m.includes("503") || m.includes("502") || m.includes("unavailable")) {
-    return "Le service coach est momentanÃ©ment indisponible.";
+  if (m.includes("503") || m.includes("502") || m.includes("500") || m.includes("unavailable")) {
+    return "Le service coach est momentanément indisponible. Réessaie dans un instant.";
   }
-  // Truncate any remaining long messages
-  const clean = String(msg || "Erreur inconnue").replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
-  return clean.length > 120 ? clean.slice(0, 117) + "..." : (clean || "Erreur inconnue");
+  if (m.includes("error") || m.includes("exception") || m.includes("failed") || m.includes("crash")) {
+    return "Le coach a rencontré une erreur. Réessaie dans un instant.";
+  }
+  const clean = String(msg || "").replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
+  return clean.length > 80 ? "Le coach est momentanément indisponible. Réessaie dans un instant." : (clean || "Le coach est momentanément indisponible.");
 }
 
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
