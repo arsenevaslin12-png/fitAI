@@ -1517,7 +1517,17 @@ async function loadScans() {
         </div>`;
       }
 
-      const parsed = parseScanFeedback(scan.ai_feedback || "");
+      // Prefer structured extended_analysis from AI, fall back to text parsing
+      const ext = scan.extended_analysis || {};
+      const extStrengths = Array.isArray(ext.strengths) ? ext.strengths : [];
+      const extImprovements = Array.isArray(ext.areas_for_improvement) ? ext.areas_for_improvement : [];
+      const extRecos = ext.personalized_recommendations
+        ? [].concat(ext.personalized_recommendations.training || [], ext.personalized_recommendations.nutrition || [], ext.personalized_recommendations.frequency_suggestion ? [ext.personalized_recommendations.frequency_suggestion] : [])
+        : [];
+      const extScores = ext.score_breakdown || {};
+      const parsed = extStrengths.length || extImprovements.length
+        ? { strengths: extStrengths, improvements: extImprovements, recommendations: extRecos, overview: "" }
+        : parseScanFeedback(scan.ai_feedback || "");
       const hasStructure = parsed.strengths.length > 0 || parsed.improvements.length > 0;
 
       return `<div class="scan-result-card">
@@ -1532,6 +1542,8 @@ async function loadScans() {
               ${scan.symmetry_score != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--purple)">${scan.symmetry_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Symétrie</div></div>` : ""}
               ${scan.posture_score != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--teal)">${scan.posture_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Posture</div></div>` : ""}
               ${scan.bodyfat_proxy != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--orange)">${scan.bodyfat_proxy}%</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Bodyfat</div></div>` : ""}
+              ${extScores.muscle_definition != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--green)">${extScores.muscle_definition}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Definition</div></div>` : ""}
+              ${extScores.body_composition != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--cyan)">${extScores.body_composition}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Composition</div></div>` : ""}
             </div>
           </div>
         </div>
