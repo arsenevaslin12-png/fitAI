@@ -401,6 +401,7 @@ function gotoTab(name) {
   if (name === "community") loadFeed();
   if (name === "friends") { loadFriends(); loadFriendRequests(); }
   if (name === "bodyscan") loadScans();
+  if (name === "progress") loadProgress();
   if (name === "defis") loadDefis();
   if (name === "profile") {
     loadProfile();
@@ -2434,4 +2435,148 @@ function woNav(dir) {
   woRenderExercise();
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// SVG CHART ENGINE — pure SVG, no library
+// ══════════════════════════════════════════════════════════════════════════════
+
+function renderSvgChart(data, opts) {
+  opts = opts || {};
+  var color = opts.color || "#2563eb";
+  var unit  = opts.unit  || "";
+  var H     = opts.H     || 130;
+  if (!data || data.length < 2) {
+    return "<div class=\"chart-empty\">Pas encore assez de donnees - continuez a utiliser l'app !</div>";
+  }
+  var vals  = data.map(function(d) { return d.value; });
+  var minV  = Math.min.apply(null, vals);
+  var maxV  = Math.max.apply(null, vals);
+  var range = maxV - minV || 1;
+  var W = 340, padT = 24, padR = 16, padB = 28, padL = 38;
+  var cw = W - padL - padR, ch = H - padT - padB;
+  var pts = data.map(function(d, i) {
+    return {
+      x: padL + (data.length < 2 ? cw / 2 : (i / (data.length - 1)) * cw),
+      y: padT + ch - ((d.value - minV) / range) * ch,
+      d: d
+    };
+  });
+  var linePath = pts.reduce(function(acc, p, i) {
+    if (i === 0) return "M" + p.x.toFixed(1) + "," + p.y.toFixed(1);
+    var prev = pts[i - 1];
+    var cpx  = (prev.x + p.x) / 2;
+    return acc + " C" + cpx.toFixed(1) + "," + prev.y.toFixed(1) + " " + cpx.toFixed(1) + "," + p.y.toFixed(1) + " " + p.x.toFixed(1) + "," + p.y.toFixed(1);
+  }, "");
+  var baseline = padT + ch;
+  var firstSeg = linePath.indexOf(" ");
+  var areaPath = "M" + padL + "," + baseline + " L" + pts[0].x.toFixed(1) + "," + pts[0].y.toFixed(1)
+    + (firstSeg >= 0 ? linePath.slice(firstSeg) : "") + " L" + pts[pts.length - 1].x.toFixed(1) + "," + baseline + " Z";
+  var yTicks = [minV, (minV + maxV) / 2, maxV].map(function(v) {
+    var y = padT + ch - ((v - minV) / range) * ch;
+    return "<text x=\"" + (padL - 6) + "\" y=\"" + y.toFixed(1) + "\" text-anchor=\"end\" dominant-baseline=\"middle\" fill=\"currentColor\" opacity=\".4\" font-size=\"9\">" + Math.round(v) + unit + "</text>"
+      + "<line x1=\"" + padL + "\" y1=\"" + y.toFixed(1) + "\" x2=\"" + (padL + cw).toFixed(1) + "\" y2=\"" + y.toFixed(1) + "\" stroke=\"currentColor\" opacity=\".06\" stroke-width=\"1\"/>";
+  }).join("");
+  var xIdxs  = [0, Math.floor((data.length - 1) / 2), data.length - 1].filter(function(v, i, a) { return a.indexOf(v) === i; });
+  var xTicks = xIdxs.map(function(i) {
+    var p = pts[i];
+    return "<text x=\"" + p.x.toFixed(1) + "\" y=\"" + (baseline + 14).toFixed(1) + "\" text-anchor=\"middle\" fill=\"currentColor\" opacity=\".4\" font-size=\"9\">" + escapeHtml(String(data[i].label || "")) + "</text>";
+  }).join("");
+  var last    = pts[pts.length - 1];
+  var lastVal = data[data.length - 1].value;
+  var gradId  = "cg" + Math.random().toString(36).slice(2, 8);
+  return "<svg viewBox=\"0 0 " + W + " " + H + "\" xmlns=\"http://www.w3.org/2000/svg\" style=\"width:100%;display:block;color:var(--muted);overflow:visible\">"
+    + "<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0%\" stop-color=\"" + color + "\" stop-opacity=\"0.25\"/><stop offset=\"100%\" stop-color=\"" + color + "\" stop-opacity=\"0\"/></linearGradient></defs>"
+    + "<path d=\"" + areaPath + "\" fill=\"url(#" + gradId + ")\"/>"
+    + "<path d=\"" + linePath + "\" fill=\"none\" stroke=\"" + color + "\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+    + yTicks + xTicks
+    + "<circle cx=\"" + last.x.toFixed(1) + "\" cy=\"" + last.y.toFixed(1) + "\" r=\"5\" fill=\"" + color + "\" stroke=\"var(--surf)\" stroke-width=\"2.5\"/>"
+    + "<text x=\"" + last.x.toFixed(1) + "\" y=\"" + (last.y - 11).toFixed(1) + "\" text-anchor=\"middle\" fill=\"" + color + "\" font-size=\"11\" font-weight=\"800\">" + lastVal + unit + "</text>"
+    + "</svg>";
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROGRESS TAB
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadProgress() {
+  if (!U) return;
+  var results = await Promise.allSettled([
+    SB.from("workout_sessions").select("id,created_at,duration").eq("user_id", U.id).order("created_at", { ascending: true }).limit(80),
+    SB.from("body_scans").select("created_at,physical_score").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
+    SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(100),
+    SB.from("user_streaks").select("current_streak,best_streak").eq("user_id", U.id).maybeSingle()
+  ]);
+  var sessions = results[0].status === "fulfilled" ? (results[0].value.data || []) : [];
+  var scans    = results[1].status === "fulfilled" ? (results[1].value.data || []) : [];
+  var meals    = results[2].status === "fulfilled" ? (results[2].value.data || []) : [];
+  var streak   = results[3].status === "fulfilled" ? (results[3].value.data || {}) : {};
+
+  var elStreak = document.getElementById("prog-streak");
+  var elSub    = document.getElementById("prog-streak-sub");
+  var elTotal  = document.getElementById("prog-sessions-total");
+  var elBest   = document.getElementById("prog-best-score");
+  if (elStreak) elStreak.textContent = streak.current_streak != null ? streak.current_streak : sessions.length;
+  if (elSub)    elSub.textContent    = streak.current_streak != null ? "jours consecutifs" : "seances total";
+  if (elTotal)  elTotal.textContent  = sessions.length;
+  var bestScore = scans.reduce(function(m, s) { return s.physical_score > m ? s.physical_score : m; }, 0);
+  if (elBest)   elBest.textContent   = bestScore > 0 ? bestScore : "—";
+
+  var sessChart = buildWeeklySessionData(sessions, 8);
+  var sessEl    = document.getElementById("chart-sessions-svg");
+  var sessHead  = document.getElementById("chart-sessions-headline");
+  if (sessEl)   sessEl.innerHTML   = renderSvgChart(sessChart, { color: "#2563eb" });
+  if (sessHead) sessHead.textContent = sessions.length + " seances total";
+
+  var scanData = scans.filter(function(s) { return s.physical_score > 0; }).map(function(s) {
+    return { value: s.physical_score, label: new Date(s.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) };
+  });
+  var scanEl   = document.getElementById("chart-scan-svg");
+  var scanHead = document.getElementById("chart-scan-headline");
+  if (scanEl)  scanEl.innerHTML  = renderSvgChart(scanData, { color: "#9333ea", unit: "/100" });
+  if (scanHead) {
+    var ls = scans[scans.length - 1];
+    scanHead.textContent = ls && ls.physical_score ? "Dernier score: " + ls.physical_score + "/100" : scans.length + " scan(s) effectue(s)";
+  }
+
+  var calData  = buildDailyCalData(meals, 14);
+  var calEl    = document.getElementById("chart-calories-svg");
+  var calHead  = document.getElementById("chart-calories-headline");
+  if (calEl)   calEl.innerHTML = renderSvgChart(calData, { color: "#f97316", unit: " kcal", H: 110 });
+  if (calHead) {
+    var avg = calData.length ? Math.round(calData.reduce(function(s, d) { return s + d.value; }, 0) / calData.length) : 0;
+    calHead.textContent = avg > 0 ? "Moyenne: " + avg + " kcal / jour" : "Enregistrez vos repas pour voir l'evolution";
+  }
+}
+
+function buildWeeklySessionData(sessions, weeks) {
+  var now = new Date(), result = [];
+  for (var w = weeks - 1; w >= 0; w--) {
+    var ws = new Date(now);
+    ws.setDate(now.getDate() - w * 7 - now.getDay());
+    ws.setHours(0, 0, 0, 0);
+    var we = new Date(ws);
+    we.setDate(ws.getDate() + 7);
+    var count = sessions.filter(function(s) { var d = new Date(s.created_at); return d >= ws && d < we; }).length;
+    result.push({ value: count, label: ws.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) });
+  }
+  return result;
+}
+
+function buildDailyCalData(meals, days) {
+  var now = new Date(), result = [];
+  for (var d = days - 1; d >= 0; d--) {
+    var day = new Date(now);
+    day.setDate(now.getDate() - d);
+    day.setHours(0, 0, 0, 0);
+    var de = new Date(day);
+    de.setDate(day.getDate() + 1);
+    var total = meals.filter(function(m) { var md = new Date(m.created_at); return md >= day && md < de; })
+                     .reduce(function(s, m) { return s + (Number(m.calories) || 0); }, 0);
+    result.push({ value: total, label: day.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) });
+  }
+  var start = 0;
+  while (start < result.length - 2 && result[start].value === 0) start++;
+  return result.slice(start);
+}
+
+window.loadProgress = loadProgress;
 document.addEventListener("DOMContentLoaded", boot);

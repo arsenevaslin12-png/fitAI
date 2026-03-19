@@ -390,6 +390,17 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .score-v{font-size:1.25rem;font-weight:900;color:var(--accent)}
 .score-l{font-size:.65rem;color:var(--muted);margin-top:2px;font-weight:700;text-transform:uppercase}
 .scan-feedback{font-size:.82rem;line-height:1.6;color:rgba(238,238,245,.8)}
+/* ── PROGRESS CHARTS ── */
+.progress-stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:0}
+.progress-stat-card{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:4px}
+.progress-stat-val{font-size:1.8rem;font-weight:900;color:var(--text);line-height:1;letter-spacing:-.04em}
+.progress-stat-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+.progress-stat-sub{font-size:.75rem;color:var(--text2);margin-top:2px}
+.chart-card{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:20px;overflow:hidden}
+.chart-title{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.chart-title-val{font-size:1.05rem;font-weight:900;color:var(--text);margin-bottom:14px;letter-spacing:-.02em}
+.chart-empty{text-align:center;padding:32px 16px;color:var(--muted);font-size:.82rem}
+@media(max-width:640px){.progress-stat-row{grid-template-columns:repeat(3,1fr);gap:8px}.progress-stat-val{font-size:1.4rem}}
 
 /* ── DASHBOARD V2 ── */
 .db-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
@@ -607,6 +618,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       </button>
       <button class="bnav-btn" id="n-bodyscan" onclick="gotoTab('bodyscan')">
         <span class="nav-ic-wrap ic-teal">◎</span><span class="nav-label">Scan IA</span><span class="nav-dot"></span>
+      </button>
+      <button class="bnav-btn" id="n-progress" onclick="gotoTab('progress')">
+        <span class="nav-ic-wrap ic-green">📈</span><span class="nav-label">Progrès</span><span class="nav-dot"></span>
       </button>
       <div class="nav-section-label">Communauté</div>
       <button class="bnav-btn" id="n-community" onclick="gotoTab('community')">
@@ -1184,6 +1198,44 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         <div class="card" style="border-color:rgba(239,68,68,.2)">
           <div class="card-title" style="color:var(--red)">Zone danger</div>
           <button class="btn btn-d btn-sm" onclick="doLogout()">🚪 Déconnexion complète</button>
+        </div>
+      </div>
+      <div class="tab" id="t-progress">
+        <div class="page-header">
+          <div class="page-title">📈 Progrès</div>
+          <div class="page-sub">Votre évolution sur les dernières semaines</div>
+        </div>
+        <div class="progress-stat-row" id="prog-stat-row">
+          <div class="progress-stat-card">
+            <div class="progress-stat-label">🔥 Streak</div>
+            <div class="progress-stat-val" id="prog-streak">—</div>
+            <div class="progress-stat-sub" id="prog-streak-sub">jours consécutifs</div>
+          </div>
+          <div class="progress-stat-card">
+            <div class="progress-stat-label">🏋️ Séances</div>
+            <div class="progress-stat-val" id="prog-sessions-total">—</div>
+            <div class="progress-stat-sub">total</div>
+          </div>
+          <div class="progress-stat-card">
+            <div class="progress-stat-label">⚡ Score</div>
+            <div class="progress-stat-val" id="prog-best-score">—</div>
+            <div class="progress-stat-sub">meilleur scan</div>
+          </div>
+        </div>
+        <div class="chart-card" id="chart-sessions-card">
+          <div class="chart-title">🏋️ Séances — 8 dernières semaines</div>
+          <div class="chart-title-val" id="chart-sessions-headline">Chargement…</div>
+          <div id="chart-sessions-svg"></div>
+        </div>
+        <div class="chart-card" id="chart-scan-card">
+          <div class="chart-title">⚡ Score physique IA — évolution</div>
+          <div class="chart-title-val" id="chart-scan-headline">Chargement…</div>
+          <div id="chart-scan-svg"></div>
+        </div>
+        <div class="chart-card" id="chart-calories-card">
+          <div class="chart-title">🔥 Calories — 14 derniers jours</div>
+          <div class="chart-title-val" id="chart-calories-headline">Chargement…</div>
+          <div id="chart-calories-svg"></div>
         </div>
       </div>
 
