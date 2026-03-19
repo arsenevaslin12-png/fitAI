@@ -1001,6 +1001,7 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
             <button class="coach-chip" onclick="sendCoachMsg('Recette riche en protéines rapide')">Recette</button>
             <button class="coach-chip" onclick="sendCoachMsg('On fait des burgers ce soir avec des potes, liste de courses ?')">Soirée burgers</button>
           </div>
+          <div class="chat-input-row">
             <input type="text" id="coach-input" placeholder="Pose ta question au coach…" onkeydown="if(event.key==='Enter')sendCoachMsg()"/>
             <button class="chat-send" id="btn-gen" onclick="sendCoachMsg()"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
           </div>
