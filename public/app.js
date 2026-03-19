@@ -519,7 +519,7 @@ async function loadDashboard() {
 
 // ── V2 MOOD TRACKER ──────────────────────────────────────────────────────────
 function selectMood(btn, level) {
-  document.querySelectorAll(".mood-level").forEach(b => b.classList.remove("selected"));
+  document.querySelectorAll(".mood-face").forEach(b => b.classList.remove("selected"));
   btn.classList.add("selected");
   const startBtn = document.getElementById("mood-start-btn");
   if (startBtn) startBtn.classList.add("active");
@@ -531,7 +531,7 @@ function restoreMoodSelection() {
     const saved = localStorage.getItem("fitai_mood");
     const savedDate = localStorage.getItem("fitai_mood_date");
     if (saved && savedDate === new Date().toDateString()) {
-      document.querySelectorAll(".mood-level").forEach(b => {
+      document.querySelectorAll(".mood-face").forEach(b => {
         if (b.dataset.v === saved) b.classList.add("selected");
       });
       const startBtn = document.getElementById("mood-start-btn");
@@ -1174,7 +1174,7 @@ async function loadNutritionTargets() {
     const targetProt = document.getElementById("target-prot");
     const targetCarb = document.getElementById("target-carb");
     const targetFat = document.getElementById("target-fat");
-    if (targetKcal) targetKcal.textContent = String(target.calories);
+    if (targetKcal) targetKcal.innerHTML = `${target.calories} <span style="font-size:.7rem;font-weight:600;color:var(--muted)">kcal</span>`;
     if (targetProt) targetProt.textContent = `${target.protein}g`;
     if (targetCarb) targetCarb.textContent = `${target.carbs}g`;
     if (targetFat) targetFat.textContent = `${target.fats}g`;
@@ -1186,13 +1186,34 @@ async function loadNutritionTargets() {
 async function renderNutritionProgress(totals) {
   if (!U) return;
   try {
-    const { data } = await SB.from("nutrition_targets").select("calories").eq("user_id", U.id).maybeSingle();
+    const { data } = await SB.from("nutrition_targets").select("calories,protein,carbs,fats").eq("user_id", U.id).maybeSingle();
     const targetCalories = data?.calories || 2200;
-    const pct = Math.max(0, Math.min(100, Math.round((totals.kcal / targetCalories) * 100)));
+    const targetProt = data?.protein || 140;
+    const targetCarb = data?.carbs || 260;
+    const targetFat = data?.fats || 70;
+
+    // Calorie ring (SVG arc — circumference of r=46 is ≈ 289)
+    const pct = Math.max(0, Math.min(1, totals.kcal / targetCalories));
+    const arc = document.getElementById("kcal-ring-arc");
+    if (arc) {
+      const circ = 289;
+      arc.setAttribute("stroke-dasharray", `${(pct * circ).toFixed(1)} ${circ}`);
+      arc.setAttribute("stroke", pct > 0.95 ? "#f87171" : pct > 0.7 ? "#fbbf24" : "#4ade80");
+    }
+
+    // Linear bar compat (if still exists)
     const calFill = document.getElementById("cal-progress-fill");
     const calText = document.getElementById("cal-progress-text");
-    if (calFill) calFill.style.width = `${pct}%`;
+    if (calFill) calFill.style.width = `${Math.round(pct * 100)}%`;
     if (calText) calText.textContent = `${totals.kcal} / ${targetCalories} kcal`;
+
+    // Macro bars
+    const barProt = document.getElementById("bar-prot");
+    const barCarb = document.getElementById("bar-carb");
+    const barFat = document.getElementById("bar-fat");
+    if (barProt) barProt.style.width = `${Math.min(100, Math.round((totals.protein / targetProt) * 100))}%`;
+    if (barCarb) barCarb.style.width = `${Math.min(100, Math.round((totals.carbs / targetCarb) * 100))}%`;
+    if (barFat) barFat.style.width = `${Math.min(100, Math.round((totals.fat / targetFat) * 100))}%`;
   } catch (e) {
     console.error("[Nutrition] renderProgress error:", e);
   }
