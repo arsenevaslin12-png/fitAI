@@ -564,16 +564,16 @@ function renderCoachChat() {
     const userName = U?.email?.split("@")[0] || "champion";
     el.innerHTML = `
       <div class="chat-msg chat-msg-ai">
-        <div class="chat-avatar">🤖</div>
-        <div class="chat-bubble">
-          <div>Salut ${escapeHtml(userName)} ! 👋</div>
-          <div style="margin-top:6px">Je suis ton <strong>Coach IA</strong> personnel FitAI Pro. J'analyse tes données en temps réel pour te donner les meilleurs conseils.</div>
-          <ul style="margin:8px 0 0 16px;list-style:disc;color:rgba(238,238,245,.8);font-size:.84rem">
-            <li>Prêt à démarrer ta semaine d'entraînement ?</li>
-            <li>Niveau détecté : en attente</li>
+        <div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
+        <div class="chat-bubble ai-bubble">
+          <div>Bonjour ${escapeHtml(userName)} 👋 Je suis ton coach IA personnel.</div>
+          <div style="margin-top:6px;color:var(--text2);font-size:.84rem">Pose-moi n'importe quelle question — entraînement, nutrition, recettes, courses, récupération.</div>
+          <div style="margin-top:8px;font-size:.82rem;color:var(--muted)">Quelques idées :</div>
+          <ul style="margin:4px 0 0 14px;list-style:disc;color:var(--text2);font-size:.81rem;line-height:1.6">
+            <li>Séance d'aujourd'hui</li>
+            <li>J'ai 4 potes ce soir, liste de courses burgers ?</li>
+            <li>Quoi manger après l'entraînement ?</li>
           </ul>
-          <div style="margin-top:8px"><strong>Qu'est-ce qui te ferait plaisir aujourd'hui ?</strong></div>
-          <span class="chat-time">${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</span>
         </div>
       </div>`;
     return;
@@ -581,10 +581,10 @@ function renderCoachChat() {
 
   el.innerHTML = COACH_HISTORY.map(msg => {
     if (msg.role === "user") {
-      return `<div class="chat-msg chat-msg-user"><div class="chat-bubble">${escapeHtml(msg.content)}<span class="chat-time">${msg.time || ""}</span></div></div>`;
+      return `<div class="chat-msg chat-msg-user"><div class="chat-bubble user-bubble">${escapeHtml(msg.content)}<span class="chat-time" style="color:rgba(255,255,255,.55)">${msg.time || ""}</span></div></div>`;
     } else {
       // AI content is pre-sanitized HTML from our own rendering
-      return `<div class="chat-msg chat-msg-ai"><div class="chat-avatar">🤖</div><div class="chat-bubble">${sanitizeCoachHtml(msg.content)}<span class="chat-time">${msg.time || ""}</span></div></div>`;
+      return `<div class="chat-msg chat-msg-ai"><div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div><div class="chat-bubble ai-bubble">${sanitizeCoachHtml(msg.content)}<span class="chat-time">${msg.time || ""}</span></div></div>`;
     }
   }).join("");
 
@@ -619,7 +619,7 @@ async function sendCoachMsg(quickMsg) {
   if (btn) btn.disabled = true;
 
   if (chatEl) {
-    chatEl.insertAdjacentHTML("beforeend", '<div class="chat-msg chat-msg-ai" id="coach-thinking"><div class="chat-avatar">🤖</div><div class="chat-bubble"><div class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px"></div>Réflexion en cours…</div></div>');
+    chatEl.insertAdjacentHTML("beforeend", '<div class="chat-msg chat-msg-ai" id="coach-thinking"><div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div><div class="chat-bubble ai-bubble"><div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px;border-top-color:var(--blue)"></div><span style="font-size:.84rem;color:var(--muted)">Réflexion en cours…</span></div></div>');
     chatEl.scrollTop = chatEl.scrollHeight;
   }
 
@@ -629,7 +629,7 @@ async function sendCoachMsg(quickMsg) {
 
     const [goalRes, profileRes] = await Promise.all([
       SB.from("goals").select("type,level,constraints").eq("user_id", U.id).maybeSingle(),
-      SB.from("profiles").select("display_name,weight,height").eq("id", U.id).maybeSingle()
+      SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle()
     ]);
 
     const goalContext = goalRes?.data || {};
@@ -643,6 +643,7 @@ async function sendCoachMsg(quickMsg) {
       display_name: dbProfile.display_name || U.email?.split("@")[0] || "",
       weight: dbProfile.weight || null,
       height: dbProfile.height || null,
+      age: dbProfile.age || null,
       goal: goalContext.type || "",
       level: goalContext.level || "beginner",
       injuries: goalContext.constraints || "",
@@ -668,7 +669,7 @@ async function sendCoachMsg(quickMsg) {
 
     if (j.type === "shopping_list" && j.data) {
       const d = j.data;
-      let html = `<strong>🛒 ${escapeHtml(d.title || "Liste de courses")}</strong>`;
+      let html = `<div style="font-size:.88rem;font-weight:800;color:var(--text);margin-bottom:4px">${escapeHtml(d.title || "Liste de courses")}</div>`;
       if (d.context) html += `<div style="font-size:.82rem;margin:5px 0 8px;color:rgba(238,238,245,.7)">${escapeHtml(d.context)}</div>`;
       (d.categories || []).forEach(cat => {
         if (!cat.items?.length) return;
@@ -684,7 +685,7 @@ async function sendCoachMsg(quickMsg) {
       COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
     } else if (j.type === "meal_plan" && j.data) {
       const d = j.data;
-      let html = `<strong>🍽️ ${escapeHtml(d.title || "Journée alimentaire")}</strong>`;
+      let html = `<div style="font-size:.88rem;font-weight:800;color:var(--text);margin-bottom:4px">${escapeHtml(d.title || "Journée alimentaire")}</div>`;
       if (d.total_calories || d.total_protein) {
         const parts = [];
         if (d.total_calories) parts.push(`🔥 ${d.total_calories} kcal`);
