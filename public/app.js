@@ -759,9 +759,9 @@ async function sendCoachMsg(quickMsg) {
   } catch (e) {
     const thinkEl = document.getElementById("coach-thinking");
     if (thinkEl) thinkEl.remove();
-    const errorMsg = e.name === "AbortError" ? "Timeout — le coach met trop de temps. Réessayez." : (e.message || "Erreur coach");
+    const errorMsg = normalizeCoachError(e.name === "AbortError" ? "timeout" : (e.message || ""));
     const errTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-    COACH_HISTORY.push({ role: "ai", content: `⚠️ <strong>Le coach n'a pas répondu correctement.</strong><div style="margin-top:6px">${escapeHtml(errorMsg)}</div>`, time: errTime });
+    COACH_HISTORY.push({ role: "ai", content: `<strong>Le coach est temporairement indisponible.</strong><div style="margin-top:6px;font-size:.82rem;color:var(--muted)">${escapeHtml(errorMsg)}</div>`, time: errTime });
     saveCoachHistory();
     renderCoachChat();
     if (errorEl) {
@@ -1915,13 +1915,37 @@ async function safeResponseJson(res) {
   try { return JSON.parse(text); } catch { return { ok: false, error: text || "Réponse invalide" }; }
 }
 
+
+function normalizeCoachError(msg, code) {
+  const m = String(msg || "").toLowerCase();
+  if (code === "QUOTA" || m.includes("quota") || m.includes("429") || m.includes("rate limit") || m.includes("resource exhausted")) {
+    return "Le coach est momentanÃ©ment surchargÃ©. RÃ©essayez dans 30 secondes.";
+  }
+  if (m.includes("timeout") || m.includes("abort") || m.includes("trop de temps")) {
+    return "Le coach n'a pas rÃ©pondu Ã  temps. RÃ©essayez dans quelques secondes.";
+  }
+  if (m.includes("401") || m.includes("403") || m.includes("api key") || m.includes("auth")) {
+    return "ProblÃ¨me de configuration du coach. Contactez le support.";
+  }
+  if (m.includes("503") || m.includes("502") || m.includes("unavailable")) {
+    return "Le service coach est momentanÃ©ment indisponible.";
+  }
+  // Truncate any remaining long messages
+  const clean = String(msg || "Erreur inconnue").replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
+  return clean.length > 120 ? clean.slice(0, 117) + "..." : (clean || "Erreur inconnue");
+}
+
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });
     const json = await safeResponseJson(response);
-    if (!response.ok || !json.ok) throw new Error(json.error || `Erreur serveur (HTTP ${response.status})`);
+    if (!response.ok || !json.ok) {
+      const rawErr = json.error || `Erreur serveur (HTTP ${response.status})`;
+      const cleanErr = normalizeCoachError(rawErr, json.error_code);
+      throw new Error(cleanErr);
+    }
     return { response: json, status: response.status };
   } finally {
     clearTimeout(timer);
