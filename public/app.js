@@ -1537,57 +1537,73 @@ async function loadScans() {
         : parseScanFeedback(scan.ai_feedback || "");
       const hasStructure = parsed.strengths.length > 0 || parsed.improvements.length > 0;
 
-      return `<div class="scan-result-card">
-        <div class="scan-result-header">
-          <div>
-            <div class="scan-result-title">Analyse du ${date}</div>
-            ${physScore ? `<div class="scan-score-big" style="margin-top:8px">${physScore}<span class="scan-score-label">/100 Score Physique</span></div>` : ""}
+      // Zone analysis from extended data
+      const zones = ext.posture_analysis || ext.muscle_balance || null;
+      const zonesGrid = zones ? Object.entries(zones).slice(0, 3).map(([zone, desc]) => {
+        const icons = { upper: "💪", core: "🔥", lower: "🦵" };
+        const labels = { upper: "Haut du corps", core: "Core / Abdos", lower: "Bas du corps" };
+        const k = Object.keys(icons).find(k => zone.toLowerCase().includes(k)) || "upper";
+        return `<div class="scan-v2-zone-card"><div class="scan-v2-zone-ic">${icons[k]}</div><div class="scan-v2-zone-name">${labels[k]}</div><div class="scan-v2-zone-txt">${escapeHtml(String(desc || "").slice(0, 90))}</div></div>`;
+      }).join("") : "";
+
+      const scoreChips = [
+        scan.symmetry_score != null ? `<div style="text-align:center"><div style="font-size:1.05rem;font-weight:900;color:var(--blue)">${scan.symmetry_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:1px">Sym.</div></div>` : "",
+        extScores.muscle_definition != null ? `<div style="text-align:center"><div style="font-size:1.05rem;font-weight:900;color:var(--green)">${extScores.muscle_definition}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:1px">Défin.</div></div>` : "",
+        extScores.body_composition != null ? `<div style="text-align:center"><div style="font-size:1.05rem;font-weight:900;color:var(--cyan)">${extScores.body_composition}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:1px">Compo.</div></div>` : "",
+        scan.posture_score != null ? `<div style="text-align:center"><div style="font-size:1.05rem;font-weight:900;color:var(--teal)">${scan.posture_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:1px">Post.</div></div>` : "",
+        scan.bodyfat_proxy != null ? `<div style="text-align:center"><div style="font-size:1.05rem;font-weight:900;color:var(--orange)">${scan.bodyfat_proxy}%</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:1px">BF</div></div>` : "",
+      ].filter(Boolean).join("");
+
+      const reco = ext.personalized_recommendations || {};
+      const trainingRecos = (reco.training_focus || reco.training || []).slice(0, 2);
+      const nutritionRecos = (reco.nutrition || []).slice(0, 1);
+      const exerciseExs = (reco.exercise_examples || []).slice(0, 3).join(", ");
+      const freqSugg = reco.frequency_suggestion || "";
+
+      const compRows = [
+        ext.body_composition ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Composition</div><div class="scan-v2-comp-val">${escapeHtml(String(ext.body_composition).slice(0,120))}</div></div>` : "",
+        ext.muscle_definition_text ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Définition musculaire</div><div class="scan-v2-comp-val">${escapeHtml(String(ext.muscle_definition_text).slice(0,120))}</div></div>` : "",
+        ext.estimated_metrics?.bodyfat_range ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Bodyfat estimé</div><div class="scan-v2-comp-val">${escapeHtml(ext.estimated_metrics.bodyfat_range)}</div></div>` : "",
+        ext.estimated_metrics?.fitness_category ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Catégorie</div><div class="scan-v2-comp-val" style="text-transform:capitalize">${escapeHtml(ext.estimated_metrics.fitness_category)}</div></div>` : "",
+      ].filter(Boolean).join("");
+
+      return `<div class="scan-v2">
+        <div class="scan-v2-top">
+          <div class="scan-v2-photo">
+            ${scan.image_url ? `<img src="${scan.image_url}" alt="Scan" loading="lazy"/>` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">Photo non disponible</div>`}
+            <div class="scan-v2-photo-overlay">
+              <span class="scan-v2-pill">${date}</span>
+              ${physScore ? `<span class="scan-v2-pill">${physScore}/100</span>` : ""}
+            </div>
           </div>
-          <div style="text-align:right">
-            <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:8px">
-              <span class="badge bg-green" style="display:inline-flex">Analysé</span>
-              <button onclick="deleteBodyScan('${scan.id}')" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;border-radius:8px;line-height:1;transition:color .2s" title="Supprimer" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
-              </button>
+          <div class="scan-v2-right">
+            ${scoreChips ? `<div style="display:flex;gap:12px;flex-wrap:wrap;padding:2px 0">${scoreChips}</div>` : ""}
+            <div class="scan-v2-comp">
+              <div class="scan-v2-comp-hdr">Composition corporelle</div>
+              ${compRows || `<div class="scan-v2-comp-val" style="opacity:.6;font-size:.75rem">Score global: ${physScore || "—"}/100</div>`}
             </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-              ${scan.symmetry_score != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--purple)">${scan.symmetry_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Symétrie</div></div>` : ""}
-              ${scan.posture_score != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--teal)">${scan.posture_score}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Posture</div></div>` : ""}
-              ${scan.bodyfat_proxy != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--orange)">${scan.bodyfat_proxy}%</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Bodyfat</div></div>` : ""}
-              ${extScores.muscle_definition != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--green)">${extScores.muscle_definition}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Definition</div></div>` : ""}
-              ${extScores.body_composition != null ? `<div style="text-align:center;min-width:60px"><div style="font-size:1.1rem;font-weight:900;color:var(--cyan)">${extScores.body_composition}</div><div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase">Composition</div></div>` : ""}
-            </div>
+            ${hasStructure ? `<div class="scan-v2-2col">
+              <div class="scan-v2-strengths">
+                <div class="scan-v2-col-hdr scan-v2-str-hdr">Points forts</div>
+                ${parsed.strengths.slice(0, 3).map(s => `<div class="scan-v2-pt scan-v2-str-pt">${escapeHtml(s)}</div>`).join("")}
+              </div>
+              <div class="scan-v2-weaknesses">
+                <div class="scan-v2-col-hdr scan-v2-wk-hdr">À travailler</div>
+                ${parsed.improvements.slice(0, 3).map(s => `<div class="scan-v2-pt scan-v2-wk-pt">${escapeHtml(s)}</div>`).join("")}
+              </div>
+            </div>` : ""}
           </div>
         </div>
-        <div class="scan-result-body">
-          <div class="scan-metrics-col">
-            ${hasStructure ? `
-              ${parsed.strengths.length ? `
-                <div class="scan-section-hdr">✦ Points forts</div>
-                ${parsed.strengths.slice(0, 4).map(s => `<div class="scan-point-item strength">${escapeHtml(s)}</div>`).join("")}
-              ` : ""}
-              ${parsed.improvements.length ? `
-                <div class="scan-section-hdr" style="margin-top:14px">→ À travailler</div>
-                ${parsed.improvements.slice(0, 4).map(s => `<div class="scan-point-item weakness">${escapeHtml(s)}</div>`).join("")}
-              ` : ""}
-            ` : `
-              <div class="scan-section-hdr">Analyse</div>
-              <div class="scan-overview-text">${parsed.overview ? escapeHtml(parsed.overview.slice(0, 300)) : formatFeedback(scan.ai_feedback.slice(0, 300))}</div>
-            `}
-          </div>
-          <div class="scan-feedback-col">
-            ${parsed.recommendations.length ? `
-              <div class="scan-section-hdr">• Recommandations</div>
-              ${parsed.recommendations.slice(0, 5).map(r => `<div class="scan-point-item reco">${escapeHtml(r)}</div>`).join("")}
-            ` : ""}
-            ${hasStructure && parsed.overview ? `
-              <div class="scan-section-hdr" style="margin-top:14px">Résumé</div>
-              <div class="scan-overview-text">${escapeHtml(parsed.overview.slice(0, 400))}</div>
-            ` : !hasStructure ? `
-              <div class="scan-section-hdr">Feedback complet</div>
-              <div class="scan-overview-text">${formatFeedback(scan.ai_feedback || "")}</div>
-            ` : ""}
-          </div>
+        ${trainingRecos.length || nutritionRecos.length ? `<div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--border)">
+          ${trainingRecos.map((r, i) => `<div class="scan-v2-reco ${i===0?"scan-v2-reco-train":"scan-v2-reco-nutri"}"><div class="scan-v2-reco-top"><span class="scan-v2-reco-tag">${i===0?"Entraînement":"Focus"}</span><span class="scan-v2-reco-priority ${i===0?"scan-v2-pri-high":"scan-v2-pri-med"}">${i===0?"Prioritaire":"Moyen"}</span></div><div class="scan-v2-reco-title">${escapeHtml(String(r).slice(0,80))}</div>${exerciseExs&&i===0?`<div class="scan-v2-reco-desc">${escapeHtml(exerciseExs)}</div>`:""}</div>`).join("")}
+          ${nutritionRecos.map(r => `<div class="scan-v2-reco scan-v2-reco-nutri"><div class="scan-v2-reco-top"><span class="scan-v2-reco-tag">Nutrition</span><span class="scan-v2-reco-priority scan-v2-pri-med">Moyen</span></div><div class="scan-v2-reco-title">${escapeHtml(String(r).slice(0,80))}</div></div>`).join("")}
+        </div>` : freqSugg ? `<div style="padding:12px 16px;border-top:1px solid var(--border);font-size:.78rem;color:var(--text2)">${escapeHtml(freqSugg)}</div>` : ""}
+        ${zonesGrid ? `<div class="scan-v2-zones"><div class="scan-v2-zone-hdr">Analyse par zone</div><div class="scan-v2-zone-grid">${zonesGrid}</div></div>` : ""}
+        <div style="display:flex;justify-content:flex-end;padding:8px 14px 10px;border-top:1px solid var(--border)">
+          <button onclick="deleteBodyScan('${scan.id}')" style="display:flex;align-items:center;gap:5px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:.74rem;font-weight:600;padding:5px 8px;border-radius:8px;transition:color .2s" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+            Supprimer
+          </button>
         </div>
       </div>`;
     }).join('<div style="height:16px"></div>');
