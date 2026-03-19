@@ -10,7 +10,7 @@ const {
   callGeminiText,
   normalizeGeminiError
 } = require("./_gemini");
-const { assertEnv } = require("./_env");
+const { assertEnv, validateBody, RecipeBodySchema } = require("./_env");
 
 const GEMINI_TIMEOUT_MS = 22000;
 
@@ -140,12 +140,16 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 401, { ok: false, error: "INVALID_TOKEN", requestId });
   }
 
-  const body = parseBody(req);
-  const ingredients = String(body.ingredients || body.message || "").trim();
-  const goal       = String(body.goal || "equilibre").trim();
-  const targetKcal = Math.max(150, Math.min(2000,
-    parseInt(body.targetKcal || body.target_kcal || "500") || 500
-  ));
+  const rawBody = parseBody(req);
+  // Normalize body for Zod (handle legacy field names)
+  const normalizedBody = {
+    ingredients: String(rawBody.ingredients || rawBody.message || "").trim(),
+    goal: String(rawBody.goal || "equilibre").trim(),
+    targetKcal: Math.max(100, Math.min(5000, parseInt(rawBody.targetKcal || rawBody.target_kcal || "500") || 500))
+  };
+  const { ok: bodyOk, data: body } = validateBody(RecipeBodySchema, normalizedBody, res);
+  if (!bodyOk) return;
+  const { ingredients, goal, targetKcal } = body;
 
   if (!ingredients) {
     return sendJson(res, 400, {

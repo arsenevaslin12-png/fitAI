@@ -27,6 +27,56 @@ const GOAL_LABELS = {
   maintien: "⚖️ Maintien"
 };
 
+// ── DataCache — SWR-equivalent (stale-while-revalidate) ──────────────────────
+const DataCache = (() => {
+  const store = {};
+  return {
+    get(key) {
+      const item = store[key];
+      if (!item) return null;
+      if (Date.now() > item.expires) { delete store[key]; return null; }
+      return item.data;
+    },
+    set(key, data, ttlMs = 60000) {
+      store[key] = { data, expires: Date.now() + ttlMs };
+    },
+    del(key) { delete store[key]; },
+    bust(prefix) {
+      Object.keys(store).forEach(k => { if (k.startsWith(prefix)) delete store[k]; });
+    }
+  };
+})();
+
+// ── Lazy image loading via IntersectionObserver ───────────────────────────────
+const lazyObserver = typeof IntersectionObserver !== "undefined"
+  ? new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target;
+          if (img.dataset.src) {
+            img.src = img.dataset.src;
+            img.removeAttribute("data-src");
+            lazyObserver.unobserve(img);
+          }
+        }
+      });
+    }, { rootMargin: "200px" })
+  : null;
+
+function lazyImg(src, alt = "", cls = "", style = "") {
+  // Returns img HTML with data-src for lazy loading
+  return `<img data-src="${escapeAttr(src)}" alt="${escapeAttr(alt)}"${cls ? ` class="${cls}"` : ""}${style ? ` style="${style}"` : ""} loading="lazy" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"/>`;
+}
+
+function observeLazyImgs(container) {
+  if (!lazyObserver || !container) return;
+  container.querySelectorAll("img[data-src]").forEach(img => lazyObserver.observe(img));
+}
+
+function escapeAttr(str) {
+  return String(str || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // BOOT & INITIALISATION
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1715,7 +1765,7 @@ async function loadScans() {
       return `<div class="scan-v2">
         <div class="scan-v2-top">
           <div class="scan-v2-photo">
-            ${scan.image_url ? `<img src="${scan.image_url}" alt="Scan" loading="lazy"/>` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">Photo non disponible</div>`}
+            ${scan.image_url ? lazyImg(scan.image_url, "Scan", "", "width:100%;height:100%;object-fit:cover;opacity:.9") : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">Photo non disponible</div>`}
             <div class="scan-v2-photo-overlay">
               <span class="scan-v2-pill">${date}</span>
               ${physScore ? `<span class="scan-v2-pill" style="font-family:'Georgia',serif;font-size:1rem;font-weight:900">${physScore}/100</span>` : ""}
@@ -1752,6 +1802,7 @@ async function loadScans() {
         </div>
       </div>`;
     }).join('<div style="height:16px"></div>');
+    observeLazyImgs(el);
   } catch (e) {
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
@@ -1848,38 +1899,28 @@ async function saveProfile() {
 
 async function loadStats() {
   if (!U) return;
+  // Show stale data instantly while revalidating
+  const cached = DataCache.get(`stats:${U.id}`);
+  if (cached) applyStats(cached);
   try {
     const [sessions, scans, posts] = await Promise.all([
       SB.from("workout_sessions").select("id", { count: "exact", head: true }).eq("user_id", U.id),
       SB.from("body_scans").select("id", { count: "exact", head: true }).eq("user_id", U.id),
       SB.from("community_posts").select("id", { count: "exact", head: true }).eq("user_id", U.id)
     ]);
-    const sessCount = sessions.count ?? 0;
-    const scansCount = scans.count ?? 0;
-    const postsCount = posts.count ?? 0;
-
-    // Profile stats
-    const stSess = document.getElementById("st-sess");
-    const stScans = document.getElementById("st-scans");
-    const stPosts = document.getElementById("st-posts");
-    if (stSess) stSess.textContent = sessCount;
-    if (stScans) stScans.textContent = scansCount;
-    if (stPosts) stPosts.textContent = postsCount;
-
-    // Dashboard stats
-    const dbSess = document.getElementById("db-sess");
-    if (dbSess) dbSess.textContent = sessCount;
-    const dbScans = document.getElementById("db-scans");
-    if (dbScans) dbScans.textContent = scansCount;
-    const totalSess = document.getElementById("db-total-sessions");
-    if (totalSess) totalSess.textContent = sessCount;
-
-    // Coach stats
-    const csWeek = document.getElementById("cs-week");
-    if (csWeek) csWeek.textContent = sessCount;
+    const data = { sessCount: sessions.count ?? 0, scansCount: scans.count ?? 0, postsCount: posts.count ?? 0 };
+    DataCache.set(`stats:${U.id}`, data, 90000); // 90s TTL
+    applyStats(data);
   } catch (e) {
     console.error("[Stats] Load error:", e);
   }
+}
+
+function applyStats({ sessCount = 0, scansCount = 0, postsCount = 0 } = {}) {
+  const ids = { "st-sess": sessCount, "st-scans": scansCount, "st-posts": postsCount, "db-sess": sessCount, "cs-week": sessCount };
+  Object.entries(ids).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.textContent = val; });
+  const totalSess = document.getElementById("db-total-sessions");
+  if (totalSess) totalSess.textContent = sessCount;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

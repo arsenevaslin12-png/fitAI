@@ -12,6 +12,7 @@ const {
   extractJson,
   normalizeGeminiError
 } = require("./_gemini");
+const { validateBody, BodyscanBodySchema } = require("./_env");
 
 const BUCKET = process.env.BUCKET || "user_uploads";
 
@@ -319,10 +320,10 @@ module.exports = async function(req, res) {
   const token = getBearerToken(req);
   if (!token) return json(res, 401, { ok: false, error: "Bearer token requis", id: requestId });
 
-  const body = parseBody(req);
-  const user_id = String(body.user_id || "").trim();
-  const image_path = String(body.image_path || "").trim();
-  if (!user_id || !image_path) return json(res, 400, { ok: false, error: "user_id et image_path requis", id: requestId });
+  const rawBody = parseBody(req);
+  const { ok: bodyOk, data: body } = validateBody(BodyscanBodySchema, rawBody, res);
+  if (!bodyOk) return;
+  const { user_id, image_path } = body;
 
   const sb = createClient(SB_URL, SB_SRV, { auth: { persistSession: false } });
 
