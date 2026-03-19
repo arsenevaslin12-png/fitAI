@@ -549,6 +549,90 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   #btn-out{display:none}
   .coach-stats{grid-template-columns:repeat(2,1fr)}
 }
+/* ── LIGHT MODE — premium neutral ── */
+body.light{
+  --bg:#f0f4f8;
+  --surf:#ffffff;
+  --surf2:#f8fafc;
+  --surf3:#e2e8f0;
+  --border:rgba(15,23,42,.1);
+  --glass:rgba(15,23,42,.04);
+  --glass-border:rgba(15,23,42,.1);
+  --text:#0f172a;
+  --text2:#334155;
+  --muted:#64748b;
+  --shadow:0 1px 4px rgba(15,23,42,.09);
+  --shadow-lg:0 8px 30px rgba(15,23,42,.12);
+}
+/* Base */
+body.light,body.light #app,body.light .scroll{background:var(--bg)}
+body.light .app-main{background:var(--bg)}
+/* Cards */
+body.light .card{background:#fff;border-color:rgba(15,23,42,.1);box-shadow:0 2px 12px rgba(15,23,42,.07)}
+body.light .chart-card{background:#fff;border-color:rgba(15,23,42,.1);box-shadow:0 2px 12px rgba(15,23,42,.07)}
+body.light .progress-stat-card{background:#fff;border-color:rgba(15,23,42,.1)}
+/* Forms */
+body.light input,body.light select,body.light textarea{background:#fff;border-color:rgba(15,23,42,.16);color:#0f172a}
+body.light input::placeholder{color:#94a3b8}
+body.light input:focus,body.light select:focus,body.light textarea:focus{border-color:var(--accent);background:#fff}
+/* Text */
+body.light .meal-info{color:#64748b}
+body.light .card-title{color:#0f172a}
+body.light .page-title{color:#0f172a}
+body.light .page-sub{color:#64748b}
+/* Buttons */
+body.light .btn-g{background:#fff;border-color:rgba(15,23,42,.18);color:#1e293b}
+body.light .btn-g:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:#fff}
+body.light .btn-d{background:rgba(239,68,68,.08);color:var(--red);border-color:rgba(239,68,68,.2)}
+/* Coach */
+body.light .chat-bubble{background:#f1f5f9;border-color:rgba(15,23,42,.1);color:#1e293b}
+body.light .chat-bubble strong{color:#0f172a}
+body.light .chat-msg-user .chat-bubble{background:var(--grad);color:#fff}
+body.light .chat-chip{background:#fff;border-color:rgba(15,23,42,.14);color:#334155}
+body.light .chat-chip:hover{border-color:var(--accent);color:var(--accent);background:#eff6ff}
+body.light .plan-meta-pill{background:rgba(15,23,42,.07);color:#334155}
+body.light .ex-card{background:#f8fafc;border-color:rgba(15,23,42,.1)}
+body.light .ex-name{color:#0f172a}
+body.light .ex-desc{color:#64748b;border-left-color:rgba(15,23,42,.15)}
+/* Nutrition */
+body.light .macro-card{background:#f8fafc;border-color:rgba(15,23,42,.08)}
+body.light .meal-card{background:#fff;border-color:rgba(15,23,42,.1)}
+/* Body Scan */
+body.light .scan-result-card{background:#fff;border-color:rgba(15,23,42,.1);box-shadow:0 2px 16px rgba(15,23,42,.08)}
+body.light .scan-result-header{background:linear-gradient(135deg,rgba(147,51,234,.08),rgba(6,182,212,.05))}
+body.light .scan-metrics-col{border-right-color:rgba(15,23,42,.08)}
+body.light .scan-section-hdr::after{background:rgba(15,23,42,.1)}
+body.light .scan-point-item{color:#334155}
+body.light .scan-overview-text{color:#334155}
+body.light .scan-tips-panel{background:rgba(15,23,42,.03);border-color:rgba(15,23,42,.1)}
+body.light .scan-tip-title{color:#0f172a}
+body.light .drop-zone{border-color:rgba(15,23,42,.15);background:rgba(15,23,42,.02)}
+body.light .drop-zone:hover,.body.light .drop-zone.over{border-color:var(--accent);background:#eff6ff}
+/* Progress */
+body.light .progress-stat-val{color:#0f172a}
+body.light .progress-stat-label{color:#64748b}
+/* Profile */
+body.light .badge{background:rgba(15,23,42,.08);color:#334155}
+body.light .badge.bg-green{background:rgba(34,197,94,.12);color:#15803d}
+body.light .badge.bg-orange{background:rgba(249,115,22,.12);color:#c2410c}
+body.light .badge.bg-purple{background:rgba(147,51,234,.12);color:#7e22ce}
+body.light .friend-row{background:#f8fafc;border-color:rgba(15,23,42,.08)}
+/* Toast */
+body.light #toast{background:#fff;border-color:rgba(15,23,42,.1);color:#0f172a}
+/* Workout timer */
+body.light .workout-overlay{background:rgba(240,244,248,.97)}
+body.light .workout-timer-card{background:#fff;border-color:rgba(37,99,235,.3)}
+body.light .workout-ex-badge{background:rgba(15,23,42,.07);color:#334155}
+/* Community */
+body.light .post-card{background:#fff;border-color:rgba(15,23,42,.1)}
+body.light .post-author{color:var(--accent)}
+/* Sidebar stays dark in light mode — premium hybrid */
+body.light .sidebar{background:rgba(13,18,36,.97)!important;border-right-color:rgba(255,255,255,.06)!important}
+/* Auth stays dark */
+body.light #auth{background:#0f172a}
+body.light .auth-card{background:rgba(13,20,38,.95)}
+/* Defi */
+body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
 </style>
 </head>
 <body>
@@ -637,6 +721,11 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         <span class="nav-ic-wrap ic-accent">◐</span><span class="nav-label">Profil</span><span class="nav-dot"></span>
       </button>
     </nav>
+    <div style="padding:12px 10px;border-top:1px solid rgba(255,255,255,.07);margin-top:auto">
+      <button class="theme-toggle-btn" id="theme-toggle-btn" onclick="toggleTheme()" style="width:100%;display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px 14px;cursor:pointer;color:rgba(255,255,255,.8);font-size:.8rem;font-weight:700;transition:all .2s">
+        <span id="theme-icon">🌙</span><span id="theme-label">Mode sombre</span>
+      </button>
+    </div>
   </aside>
 
   <!-- MAIN CONTENT -->

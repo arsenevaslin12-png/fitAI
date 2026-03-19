@@ -274,6 +274,7 @@ function showApp() {
   const tu = document.getElementById("tu");
   if (tu) tu.textContent = U?.email || "Membre";
   ensureCriticalUI();
+  applyStoredTheme();
   gotoTab("dashboard");
 }
 
@@ -2579,4 +2580,30 @@ function buildDailyCalData(meals, days) {
 }
 
 window.loadProgress = loadProgress;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// THEME TOGGLE — Light / Dark
+// ══════════════════════════════════════════════════════════════════════════════
+
+function applyStoredTheme() {
+  var saved = localStorage.getItem("fitai_theme") || "dark";
+  applyTheme(saved);
+}
+
+function applyTheme(mode) {
+  var isLight = mode === "light";
+  document.body.classList.toggle("light", isLight);
+  var icon  = document.getElementById("theme-icon");
+  var label = document.getElementById("theme-label");
+  if (icon)  icon.textContent  = isLight ? "☀️" : "🌙";
+  if (label) label.textContent = isLight ? "Mode clair" : "Mode sombre";
+  localStorage.setItem("fitai_theme", mode);
+}
+
+function toggleTheme() {
+  var isLight = document.body.classList.contains("light");
+  applyTheme(isLight ? "dark" : "light");
+}
+
+window.toggleTheme = toggleTheme;
 document.addEventListener("DOMContentLoaded", boot);
