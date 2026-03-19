@@ -611,6 +611,18 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 /* ── QUICK ACTIONS SUBTLE ── */
 .coach-chip{padding:6px 13px;background:var(--surf2);border:1px solid var(--border);border-radius:999px;font-size:.78rem;font-weight:600;color:var(--text2);cursor:pointer;transition:all .18s;white-space:nowrap}
 .coach-chip:hover{background:rgba(37,99,235,.12);border-color:rgba(37,99,235,.3);color:var(--text)}
+/* Daily Challenges */
+.daily-challenge-card{background:var(--surf);border:1.5px solid var(--border);border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin-bottom:10px;transition:all .2s}
+.daily-challenge-card.done{opacity:.55;background:rgba(16,185,129,.06);border-color:rgba(16,185,129,.25)}
+.daily-ch-icon{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,rgba(37,99,235,.12),rgba(6,182,212,.08));display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
+.daily-ch-body{flex:1;min-width:0}
+.daily-ch-title{font-weight:800;font-size:.9rem;color:var(--text);margin-bottom:2px}
+.daily-ch-desc{font-size:.75rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.daily-ch-xp{font-size:.7rem;font-weight:700;color:var(--accent);margin-top:3px}
+.daily-ch-btn{width:34px;height:34px;border-radius:10px;border:2px solid var(--border);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);transition:all .2s;flex-shrink:0}
+.daily-ch-btn:hover{border-color:var(--accent);color:var(--accent)}
+.daily-ch-btn.done{background:rgba(16,185,129,.15);border-color:#10b981;color:#10b981}
+
 /* ── LIGHT MODE — premium neutral ── */
 body.light{
   --bg:#f0f4f8;
@@ -900,6 +912,9 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
             </div>
           </div>
         </div>
+
+        <!-- Daily Challenges -->
+        <div id="daily-challenges-container"></div>
       </div>
 
       <!-- GOAL (Express 15min) -->

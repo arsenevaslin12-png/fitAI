@@ -458,6 +458,7 @@ async function loadDashboard() {
       }
     }
     await Promise.all([loadGoal(), loadMeals(), loadStats(), loadNutritionTargets(), loadStreak()]);
+    if (typeof renderDailyChallengesSection === "function") renderDailyChallengesSection();
   } catch (e) {
     console.error("[Dashboard] Error:", e);
   }
@@ -2660,4 +2661,117 @@ function toggleTheme() {
 }
 
 window.toggleTheme = toggleTheme;
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DAILY CHALLENGES — reset each day, stored in localStorage
+// ══════════════════════════════════════════════════════════════════════════════
+
+const DAILY_POOL = [
+  { id: "pushups_100", title: "100 pompes", desc: "En autant de séries que nécessaire", icon: "💪", xp: 150, category: "Force" },
+  { id: "abs_100", title: "100 abdos", desc: "Crunchs, planche, bicycle — à toi de choisir", icon: "🔥", xp: 100, category: "Core" },
+  { id: "steps_10k", title: "10 000 pas", desc: "Marche, course, montées d'escaliers", icon: "🚶", xp: 120, category: "Cardio" },
+  { id: "water_2L", title: "2L d'eau aujourd'hui", desc: "Hydrate-toi tout au long de la journée", icon: "💧", xp: 80, category: "Lifestyle" },
+  { id: "squat_100", title: "100 squats", desc: "Poids du corps, pause en bas pour la qualité", icon: "🏋️", xp: 150, category: "Force" },
+  { id: "plank_5min", title: "5 min de planche cumulative", desc: "Tiens la planche, cumule les séries", icon: "⚡", xp: 130, category: "Core" },
+  { id: "run_5k", title: "Run 5km", desc: "En une seule sortie ou en plusieurs segments", icon: "🏃", xp: 200, category: "Cardio" },
+  { id: "stretch_15", title: "15 min d'étirements", desc: "Flexibilité et récupération active", icon: "🧘", xp: 90, category: "Récup" },
+  { id: "pullups_30", title: "30 tractions", desc: "En autant de séries que nécessaire", icon: "💪", xp: 180, category: "Force" },
+  { id: "burpees_50", title: "50 burpees", desc: "Full body, intensité maximale", icon: "🔥", xp: 200, category: "HIIT" },
+  { id: "lunges_100", title: "100 fentes", desc: "50 par jambe, alterner", icon: "🦵", xp: 140, category: "Force" },
+  { id: "no_sugar", title: "Zéro sucre ajouté", desc: "Pas de soda, bonbons, ou desserts sucrés aujourd'hui", icon: "🥗", xp: 100, category: "Nutrition" },
+  { id: "sleep_8h", title: "8h de sommeil", desc: "Couche-toi tôt, récupère vraiment", icon: "😴", xp: 80, category: "Récup" },
+  { id: "dips_50", title: "50 dips", desc: "Sur chaise, barre parallèle ou banc", icon: "💪", xp: 140, category: "Force" },
+  { id: "jump_200", title: "200 sauts à la corde", desc: "Ou 200 jumping jacks si pas de corde", icon: "⚡", xp: 110, category: "Cardio" },
+];
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getDailyChallenges() {
+  const today = getTodayKey();
+  const stored = (() => {
+    try { return JSON.parse(localStorage.getItem("fitai_daily") || "{}"); }
+    catch { return {}; }
+  })();
+
+  if (stored.date !== today) {
+    // New day — pick 3 random challenges
+    const shuffled = [...DAILY_POOL].sort(() => Math.random() - 0.5);
+    const picks = shuffled.slice(0, 3).map(c => c.id);
+    const fresh = { date: today, picks, done: [] };
+    try { localStorage.setItem("fitai_daily", JSON.stringify(fresh)); } catch {}
+    return fresh;
+  }
+  return stored;
+}
+
+function completeDailyChallenge(challengeId) {
+  const today = getTodayKey();
+  const data = getDailyChallenges();
+  if (data.done.includes(challengeId)) return;
+  data.done.push(challengeId);
+  try { localStorage.setItem("fitai_daily", JSON.stringify(data)); } catch {}
+
+  // XP feedback
+  const ch = DAILY_POOL.find(c => c.id === challengeId);
+  if (ch) toast(`+${ch.xp} XP — Défi accompli !`, "ok");
+
+  // Update streak bonus if all 3 done
+  if (data.done.length >= data.picks.length) {
+    toast("🔥 Tous les défis du jour accomplis ! Streak maintenu.", "ok");
+    updateDailyStreak();
+  }
+
+  // Re-render daily section
+  renderDailyChallengesSection();
+}
+
+function updateDailyStreak() {
+  if (!U) return;
+  SB.from("user_streaks").upsert({
+    user_id: U.id,
+    last_active: getTodayKey(),
+    updated_at: new Date().toISOString()
+  }, { onConflict: "user_id" }).catch(() => {});
+}
+
+function renderDailyChallengesSection() {
+  const el = document.getElementById("daily-challenges-container");
+  if (!el) return;
+
+  const data = getDailyChallenges();
+  const challenges = data.picks.map(id => DAILY_POOL.find(c => c.id === id)).filter(Boolean);
+  const allDone = data.done.length >= challenges.length;
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-weight:800;font-size:.92rem;color:var(--text)">Défis du jour</div>
+      <div style="font-size:.72rem;color:var(--muted);font-weight:700">${data.done.length}/${challenges.length} accomplis</div>
+    </div>
+    ${challenges.map(ch => {
+      const done = data.done.includes(ch.id);
+      return `<div style="display:flex;align-items:center;gap:12px;padding:11px 14px;background:${done ? "rgba(34,197,94,.07)" : "var(--surf2)"};border:1px solid ${done ? "rgba(34,197,94,.22)" : "var(--border)"};border-radius:12px;margin-bottom:8px;transition:all .2s">
+        <div style="font-size:1.2rem;min-width:28px;text-align:center">${ch.icon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.83rem;font-weight:700;color:${done ? "#4ade80" : "var(--text)"};text-decoration:${done ? "line-through" : "none"};opacity:${done ? ".7" : "1"}">${escapeHtml(ch.title)}</div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:1px">${escapeHtml(ch.desc)}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+          <span style="font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(245,158,11,.12);color:var(--yellow)">+${ch.xp} XP</span>
+          ${done
+            ? `<span style="font-size:.7rem;color:#4ade80;font-weight:700">✓ Fait</span>`
+            : `<button onclick="completeDailyChallenge('${ch.id}')" style="font-size:.72rem;font-weight:700;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:4px 10px;cursor:pointer;transition:opacity .2s" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">Marquer</button>`
+          }
+        </div>
+      </div>`;
+    }).join("")}
+    ${allDone ? `<div style="text-align:center;padding:10px;font-size:.8rem;font-weight:700;color:#4ade80;background:rgba(34,197,94,.06);border-radius:10px;border:1px solid rgba(34,197,94,.2)">🏆 Parfait ! Tous les défis accomplis aujourd'hui.</div>` : ""}
+  `;
+}
+
+window.completeDailyChallenge = completeDailyChallenge;
+window.renderDailyChallengesSection = renderDailyChallengesSection;
+
 document.addEventListener("DOMContentLoaded", boot);
