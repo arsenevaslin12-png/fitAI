@@ -603,11 +603,17 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 @keyframes fadeSlide{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .chat-bubble{border-radius:18px 18px 18px 4px;padding:12px 16px;font-size:.86rem;line-height:1.65;word-break:break-word}
 .chat-bubble.ai-bubble{background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:18px 18px 18px 4px;box-shadow:var(--shadow)}
-.chat-bubble.user-bubble{background:linear-gradient(135deg,#1d4ed8,#0891b2);color:#fff;border-radius:18px 18px 4px 18px;box-shadow:0 3px 12px rgba(37,99,235,.3);border:none}
+.chat-bubble.user-bubble{background:linear-gradient(135deg,#1e3a8a,#075985);color:#e0f2fe;border-radius:18px 18px 4px 18px;box-shadow:0 2px 8px rgba(30,58,138,.2);border:1px solid rgba(56,189,248,.1)}
 .chat-bubble ul,.chat-bubble ol{padding-left:18px;margin:6px 0}
 .chat-bubble li{margin:3px 0}
 .chat-bubble strong{color:var(--cyan)}
 .chat-bubble.user-bubble strong{color:rgba(255,255,255,.9)}
+/* ── TYPING INDICATOR (3 bouncing dots) ── */
+.typing-dots{display:flex;align-items:center;gap:5px;padding:3px 0}
+.typing-dots span{width:8px;height:8px;border-radius:50%;background:var(--muted);animation:typingBounce 1.2s infinite ease-in-out;flex-shrink:0}
+.typing-dots span:nth-child(2){animation-delay:.18s}
+.typing-dots span:nth-child(3){animation-delay:.36s}
+@keyframes typingBounce{0%,60%,100%{transform:translateY(0);opacity:.3}30%{transform:translateY(-7px);opacity:1}}
 /* ── QUICK ACTIONS SUBTLE ── */
 .coach-chip{padding:6px 13px;background:var(--surf2);border:1px solid var(--border);border-radius:999px;font-size:.78rem;font-weight:600;color:var(--text2);cursor:pointer;transition:all .18s;white-space:nowrap}
 .coach-chip:hover{background:rgba(37,99,235,.12);border-color:rgba(37,99,235,.3);color:var(--text)}
