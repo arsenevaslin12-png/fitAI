@@ -186,12 +186,14 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
   const weight = Number(profile.weight || 0);
   const height = Number(profile.height || 0);
   const age = Number(profile.age || 0);
+  const mood = normalizeText(profile.mood_today || "");
 
   return {
     goal,
     level,
     constraints,
     equipment,
+    mood: mood || null,
     sleep: sleep > 0 ? sleep : null,
     recovery: recovery > 0 ? recovery : null,
     weight: weight > 0 ? weight : null,
@@ -221,6 +223,7 @@ Profil:
 - Blessures / contraintes: ${p.constraints}
 - Poids: ${p.weight || "non renseigné"}
 - Taille: ${p.height || "non renseignée"}
+- Humeur du jour: ${p.mood || "non renseignée"}
 - Sommeil moyen: ${p.sleep || "non renseigné"} h
 - Récupération ressentie /10: ${p.recovery || "non renseignée"}
 
@@ -232,7 +235,10 @@ ${message}
 
 RÈGLES ABSOLUES:
 - Respecte les blessures et contraintes.
-- Adapte l'intensité si sommeil < 6h ou récupération <= 5/10.
+- Adapte l'intensité si sommeil < 6h ou récupération <= 5/10 ou humeur "Épuisé"/"Fatigué".
+- Si humeur "Épuisé": séance très légère, récupération active, mobilité seulement.
+- Si humeur "Fatigué": intensité réduite (-30%), durée courte, pas de HIIT.
+- Si humeur "En forme": propose une séance plus intense que d'habitude.
 - Niveau débutant = exercices simples et explications claires.
 - Commence toujours par l'échauffement, termine par le retour au calme.
 - Réponds en français.
@@ -292,6 +298,7 @@ Profil utilisateur:
 - Niveau: ${p.level}
 - Équipement: ${p.equipment}
 - Contraintes / blessures: ${p.constraints}
+- Humeur du jour: ${p.mood || "non renseignée"}
 - Sommeil moyen: ${p.sleep || "non renseigné"} h
 - Récupération: ${p.recovery || "non renseignée"}/10
 ${p.display_name ? `- Prénom: ${p.display_name}` : ""}
@@ -308,9 +315,6 @@ Instruction spécifique:
 - Tu peux utiliser des listes à puces si ça aide la lisibilité.
 - Sois humain : tu peux avoir de l'humour bienveillant si le contexte s'y prête.
 
-Message utilisateur:
-${message}`;
-}
 Message utilisateur:
 ${message}`;
 }

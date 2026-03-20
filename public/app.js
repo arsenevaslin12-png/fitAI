@@ -27,6 +27,56 @@ const GOAL_LABELS = {
   maintien: "⚖️ Maintien"
 };
 
+// ── DataCache — SWR-equivalent (stale-while-revalidate) ──────────────────────
+const DataCache = (() => {
+  const store = {};
+  return {
+    get(key) {
+      const item = store[key];
+      if (!item) return null;
+      if (Date.now() > item.expires) { delete store[key]; return null; }
+      return item.data;
+    },
+    set(key, data, ttlMs = 60000) {
+      store[key] = { data, expires: Date.now() + ttlMs };
+    },
+    del(key) { delete store[key]; },
+    bust(prefix) {
+      Object.keys(store).forEach(k => { if (k.startsWith(prefix)) delete store[k]; });
+    }
+  };
+})();
+
+// ── Lazy image loading via IntersectionObserver ───────────────────────────────
+const lazyObserver = typeof IntersectionObserver !== "undefined"
+  ? new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target;
+          if (img.dataset.src) {
+            img.src = img.dataset.src;
+            img.removeAttribute("data-src");
+            lazyObserver.unobserve(img);
+          }
+        }
+      });
+    }, { rootMargin: "200px" })
+  : null;
+
+function lazyImg(src, alt = "", cls = "", style = "") {
+  // Returns img HTML with data-src for lazy loading
+  return `<img data-src="${escapeAttr(src)}" alt="${escapeAttr(alt)}"${cls ? ` class="${cls}"` : ""}${style ? ` style="${style}"` : ""} loading="lazy" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"/>`;
+}
+
+function observeLazyImgs(container) {
+  if (!lazyObserver || !container) return;
+  container.querySelectorAll("img[data-src]").forEach(img => lazyObserver.observe(img));
+}
+
+function escapeAttr(str) {
+  return String(str || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // BOOT & INITIALISATION
 // ══════════════════════════════════════════════════════════════════════════════
@@ -468,28 +518,75 @@ async function loadDashboard() {
 }
 
 // ── V2 MOOD TRACKER ──────────────────────────────────────────────────────────
-function selectMood(btn, emoji) {
-  document.querySelectorAll(".mood-emoji-btn").forEach(b => b.classList.remove("selected"));
+const MOOD_LABELS = { 1: "Épuisé", 2: "Fatigué", 3: "Neutre", 4: "Bien", 5: "En forme" };
+const MOOD_COACH_MSGS = {
+  1: "Je suis épuisé aujourd'hui. Adapte ma séance : propose quelque chose de très léger ou de la récupération active.",
+  2: "Je me sens fatigué. Propose une séance courte et modérée, rien d'intense.",
+  3: "Je me sens neutre. Lance-moi une séance standard selon mes objectifs.",
+  4: "Je me sens bien ! Propose une séance normale à intense selon mon objectif.",
+  5: "Je suis en pleine forme aujourd'hui ! Pousse-moi avec une séance intense selon mon objectif."
+};
+
+function selectMood(btn, level) {
+  document.querySelectorAll(".mood-face").forEach(b => b.classList.remove("selected"));
   btn.classList.add("selected");
   const startBtn = document.getElementById("mood-start-btn");
   if (startBtn) startBtn.classList.add("active");
-  try { localStorage.setItem("fitai_mood", emoji); localStorage.setItem("fitai_mood_date", new Date().toDateString()); } catch {}
+  const label = MOOD_LABELS[level] || "";
+  try {
+    localStorage.setItem("fitai_mood", String(level));
+    localStorage.setItem("fitai_mood_label", label);
+    localStorage.setItem("fitai_mood_date", new Date().toDateString());
+  } catch {}
+  // Persist to Supabase daily_moods table
+  if (U) {
+    const today = new Date().toISOString().slice(0, 10);
+    SB.from("daily_moods")
+      .upsert({ user_id: U.id, mood_level: level, mood_label: label, date: today }, { onConflict: "user_id,date" })
+      .then(({ error }) => { if (error) console.warn("[mood] save failed:", error.message); });
+  }
+}
+
+function startWithMood() {
+  const level = parseInt(localStorage.getItem("fitai_mood") || "0");
+  gotoTab("coach");
+  if (level >= 1 && level <= 5 && localStorage.getItem("fitai_mood_date") === new Date().toDateString()) {
+    setTimeout(() => sendCoachMsg(MOOD_COACH_MSGS[level]), 300);
+  }
 }
 
 function restoreMoodSelection() {
+  // First restore from localStorage (instant)
   try {
     const saved = localStorage.getItem("fitai_mood");
     const savedDate = localStorage.getItem("fitai_mood_date");
     if (saved && savedDate === new Date().toDateString()) {
-      document.querySelectorAll(".mood-emoji-btn").forEach(b => {
-        if (b.title && b.getAttribute("onclick") && b.getAttribute("onclick").includes(`'${saved}'`)) {
-          b.classList.add("selected");
-        }
+      document.querySelectorAll(".mood-face").forEach(b => {
+        if (b.dataset.v === saved) b.classList.add("selected");
       });
       const startBtn = document.getElementById("mood-start-btn");
       if (startBtn) startBtn.classList.add("active");
     }
   } catch {}
+  // Then sync from Supabase (persistent across devices)
+  if (U) {
+    const today = new Date().toISOString().slice(0, 10);
+    SB.from("daily_moods").select("mood_level,mood_label").eq("user_id", U.id).eq("date", today).maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        document.querySelectorAll(".mood-face").forEach(b => b.classList.remove("selected"));
+        document.querySelectorAll(".mood-face").forEach(b => {
+          if (b.dataset.v === String(data.mood_level)) b.classList.add("selected");
+        });
+        const startBtn = document.getElementById("mood-start-btn");
+        if (startBtn) startBtn.classList.add("active");
+        try {
+          localStorage.setItem("fitai_mood", String(data.mood_level));
+          localStorage.setItem("fitai_mood_label", data.mood_label || "");
+          localStorage.setItem("fitai_mood_date", new Date().toDateString());
+        } catch {}
+      });
+  }
 }
 
 // ── V2 SCAN IA MINI TILE ─────────────────────────────────────────────────────
@@ -571,14 +668,18 @@ async function loadGoal() {
     const gLevel = document.getElementById("g-level");
     const gText = document.getElementById("g-text");
     const gConstraints = document.getElementById("g-constraints");
+    const gEquipment = document.getElementById("g-equipment");
     if (gType) gType.value = data.type || "";
     if (gLevel) gLevel.value = data.level || "";
     if (gText) gText.value = data.text || "";
     if (gConstraints) gConstraints.value = data.constraints || "";
+    if (gEquipment) gEquipment.value = data.equipment || "";
 
+    const equipLabels = { halteres:"Haltères", barre:"Barre + disques", salle:"Salle complète", kettlebell:"Kettlebell", elastiques:"Élastiques" };
     const lines = [
       ["Type", GOAL_LABELS[data.type] || data.type || "—"],
       ["Niveau", data.level || "—"],
+      ["Équipement", equipLabels[data.equipment] || "Poids du corps"],
       ["Objectif", data.text || "—"],
       ["Contraintes", data.constraints || "Aucune"]
     ];
@@ -609,6 +710,7 @@ async function saveGoal() {
     level: document.getElementById("g-level")?.value || "",
     text: (document.getElementById("g-text")?.value || "").trim(),
     constraints: (document.getElementById("g-constraints")?.value || "").trim(),
+    equipment: document.getElementById("g-equipment")?.value || "",
     updated_at: new Date().toISOString()
   };
 
@@ -647,31 +749,29 @@ function renderCoachChat() {
   const el = document.getElementById("chat-messages");
   if (!el) return;
 
+  const userInitial = (U?.email?.split("@")[0] || "U").slice(0, 1).toUpperCase();
+
   if (!COACH_HISTORY.length) {
-    const userName = U?.email?.split("@")[0] || "champion";
+    const userName = U?.email?.split("@")[0] || "toi";
     el.innerHTML = `
       <div class="chat-msg chat-msg-ai">
-        <div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
+        <div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>
         <div class="chat-bubble ai-bubble">
-          <div>Bonjour ${escapeHtml(userName)} 👋 Je suis ton coach IA personnel.</div>
-          <div style="margin-top:6px;color:var(--text2);font-size:.84rem">Pose-moi n'importe quelle question — entraînement, nutrition, recettes, courses, récupération.</div>
-          <div style="margin-top:8px;font-size:.82rem;color:var(--muted)">Quelques idées :</div>
-          <ul style="margin:4px 0 0 14px;list-style:disc;color:var(--text2);font-size:.81rem;line-height:1.6">
-            <li>Séance d'aujourd'hui</li>
-            <li>J'ai 4 potes ce soir, liste de courses burgers ?</li>
-            <li>Quoi manger après l'entraînement ?</li>
-          </ul>
+          <div style="font-weight:700;margin-bottom:5px">Salut ${escapeHtml(userName)} — je suis ton coach IA.</div>
+          <div style="color:var(--text2);font-size:.84rem;line-height:1.6">Séance du jour, nutrition, recette, liste de courses, récupération — pose ta question et je te réponds en moins de 10 secondes.</div>
+          <div style="margin-top:10px;font-size:.8rem;color:var(--muted)">Utilise les suggestions ci-dessous ou écris directement.</div>
         </div>
       </div>`;
     return;
   }
 
+  const aiAvatar = `<div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>`;
+
   el.innerHTML = COACH_HISTORY.map(msg => {
     if (msg.role === "user") {
-      return `<div class="chat-msg chat-msg-user"><div class="chat-bubble user-bubble">${escapeHtml(msg.content)}<span class="chat-time" style="color:rgba(255,255,255,.55)">${msg.time || ""}</span></div></div>`;
+      return `<div class="chat-msg chat-msg-user"><div class="chat-user-avatar">${userInitial}</div><div class="chat-bubble user-bubble">${escapeHtml(msg.content)}<span class="chat-time" style="color:rgba(255,255,255,.5)">${msg.time || ""}</span></div></div>`;
     } else {
-      // AI content is pre-sanitized HTML from our own rendering
-      return `<div class="chat-msg chat-msg-ai"><div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div><div class="chat-bubble ai-bubble">${sanitizeCoachHtml(msg.content)}<span class="chat-time">${msg.time || ""}</span></div></div>`;
+      return `<div class="chat-msg chat-msg-ai">${aiAvatar}<div class="chat-bubble ai-bubble">${sanitizeCoachHtml(msg.content)}<span class="chat-time">${msg.time || ""}</span></div></div>`;
     }
   }).join("");
 
@@ -714,17 +814,40 @@ async function sendCoachMsg(quickMsg) {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
-    const [goalRes, profileRes] = await Promise.all([
-      SB.from("goals").select("type,level,constraints").eq("user_id", U.id).maybeSingle(),
-      SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle()
+    const [goalRes, profileRes, streakRes] = await Promise.all([
+      SB.from("goals").select("type,level,constraints,equipment").eq("user_id", U.id).maybeSingle(),
+      SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle(),
+      SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle().catch(() => ({ data: null }))
     ]);
 
     const goalContext = goalRes?.data || {};
     const dbProfile = profileRes?.data || {};
+    const currentStreak = streakRes?.data?.current_streak || 0;
     const historyForApi = COACH_HISTORY.slice(-8, -1).map((m) => ({
       role: m.role,
       content: m.role === "ai" ? stripHtml(m.content).slice(0, 300) : m.content
     }));
+
+    // Update coach stats streak display
+    const csEnergy = document.getElementById("cs-energy");
+    if (csEnergy && currentStreak > 0) csEnergy.textContent = `${currentStreak}j`;
+
+    // Read today's mood from localStorage
+    let moodLabel = "";
+    try {
+      const savedMood = localStorage.getItem("fitai_mood");
+      const savedMoodDate = localStorage.getItem("fitai_mood_date");
+      if (savedMood && savedMoodDate === new Date().toDateString()) {
+        moodLabel = MOOD_LABELS[parseInt(savedMood)] || "";
+      }
+    } catch {}
+
+    // Update coach sub-line with goal + mood context
+    const coachSubLine = document.getElementById("coach-sub-line");
+    if (coachSubLine && goalContext.type) {
+      const goalLabel = { prise_de_masse: "Prise de masse", perte_de_poids: "Perte de poids", endurance: "Endurance", force: "Force", remise_en_forme: "Remise en forme", maintien: "Maintien" }[goalContext.type] || goalContext.type;
+      coachSubLine.textContent = moodLabel ? `${goalLabel} · Humeur: ${moodLabel}` : goalLabel;
+    }
 
     const coachProfile = {
       display_name: dbProfile.display_name || U.email?.split("@")[0] || "",
@@ -734,7 +857,8 @@ async function sendCoachMsg(quickMsg) {
       goal: goalContext.type || "",
       level: goalContext.level || "beginner",
       injuries: goalContext.constraints || "",
-      equipment: "poids du corps"
+      equipment: goalContext.equipment || "poids du corps",
+      mood_today: moodLabel || undefined
     };
 
     // Try SSE streaming first; fall back to standard JSON endpoint
@@ -909,17 +1033,22 @@ async function generateWorkout() {
 
 function renderExerciseCard(ex, idx) {
   const badges = [];
-  if (ex.sets && ex.sets > 0) badges.push(`<span class="ex-badge sets">🔁 ${ex.sets} séries</span>`);
-  if (ex.reps && ex.reps !== "0") badges.push(`<span class="ex-badge reps">✕ ${escapeHtml(String(ex.reps))} reps</span>`);
-  if (ex.duration && ex.duration > 0) badges.push(`<span class="ex-badge dur">⏱ ${ex.duration}s</span>`);
-  if (ex.rest && ex.rest > 0) badges.push(`<span class="ex-badge rest">💤 ${ex.rest}s repos</span>`);
-  if (ex.muscle) badges.push(`<span class="ex-badge muscle">💪 ${escapeHtml(ex.muscle)}</span>`);
+  if (ex.sets && ex.sets > 0) badges.push(`<span class="ex-badge sets">${ex.sets} séries</span>`);
+  if (ex.reps && ex.reps !== "0") badges.push(`<span class="ex-badge reps">${escapeHtml(String(ex.reps))} reps</span>`);
+  if (ex.duration && ex.duration > 0) badges.push(`<span class="ex-badge dur">${ex.duration}s</span>`);
+  if (ex.rest && ex.rest > 0) badges.push(`<span class="ex-badge rest">${ex.rest}s repos</span>`);
+  if (ex.muscle) badges.push(`<span class="ex-badge muscle">${escapeHtml(ex.muscle)}</span>`);
+
+  const diffClass = ex.difficulty === "facile" ? "facile" : ex.difficulty === "difficile" ? "difficile" : "moyen";
 
   return `
     <div class="ex-card">
       <div class="ex-num">${idx + 1}</div>
       <div class="ex-body">
-        <div class="ex-name">${escapeHtml(ex.name || "Exercice")}</div>
+        <div class="ex-name">
+          <span>${escapeHtml(ex.name || "Exercice")}</span>
+          <span class="ex-diff ${diffClass}" title="${escapeHtml(ex.difficulty || 'moyen')}"></span>
+        </div>
         <div class="ex-badges">${badges.join("")}</div>
         ${ex.description ? `<div class="ex-desc">${escapeHtml(ex.description)}</div>` : ""}
       </div>
@@ -934,58 +1063,99 @@ function renderPlan(plan) {
   const blocks = document.getElementById("plan-blocks");
 
   if (head) {
-    head.innerHTML = `
-      <div style="flex:1">
-        <div class="plan-title-text">${escapeHtml(plan.title || "Séance")}</div>
-      </div>
-    `;
+    head.innerHTML = `<div class="plan-title-text">${escapeHtml(plan.title || "Séance")}</div>`;
   }
-  // Meta pills row
+
   if (meta) {
     const pills = [];
-    if (plan.duration) pills.push(`<span class="plan-meta-pill">⏱ ${plan.duration} min</span>`);
+    if (plan.duration) pills.push(`<span class="plan-meta-pill">${plan.duration} min</span>`);
     const kcal = plan.calories_estimate || plan.calories;
-    if (kcal) pills.push(`<span class="plan-meta-pill">🔥 ${kcal} kcal</span>`);
-    const lvl = { beginner: "Débutant", debutant: "Débutant", intermediate: "Intermédiaire", intermediaire: "Intermédiaire", advanced: "Avancé", avance: "Avancé" }[plan.level] || plan.level || "";
-    if (lvl) pills.push(`<span class="plan-meta-pill">🎯 ${escapeHtml(lvl)}</span>`);
-    if (plan.exercises?.length) pills.push(`<span class="plan-meta-pill">💪 ${plan.exercises.length} exercices</span>`);
+    if (kcal) pills.push(`<span class="plan-meta-pill">~${kcal} kcal</span>`);
+    const lvlMap = { beginner:"Débutant", debutant:"Débutant", intermediate:"Intermédiaire", intermediaire:"Intermédiaire", advanced:"Avancé", avance:"Avancé" };
+    const lvl = lvlMap[plan.level] || plan.level || "";
+    if (lvl) pills.push(`<span class="plan-meta-pill">${escapeHtml(lvl)}</span>`);
+    if (plan.exercises?.length) pills.push(`<span class="plan-meta-pill">${plan.exercises.length} exercices</span>`);
     meta.innerHTML = pills.join("");
     meta.style.display = pills.length ? "flex" : "none";
   }
+
   if (notes) {
     notes.textContent = plan.notes || "";
     notes.style.display = plan.notes ? "block" : "none";
   }
 
   if (blocks) {
-    // Priority 1: exercises[] — new structured format
-    if (Array.isArray(plan.exercises) && plan.exercises.length > 0) {
-      blocks.innerHTML = `
-        <div class="plan-section-title">💪 ${plan.exercises.length} exercices</div>
-        ${plan.exercises.map((ex, i) => renderExerciseCard(ex, i)).join("")}
-      `;
-    }
-    // Priority 2: blocks[] — backward compat
-    else if (Array.isArray(plan.blocks) && plan.blocks.length > 0) {
-      blocks.innerHTML = plan.blocks.map((b) => `
-        <div class="block">
-          <div class="block-head">
-            <span class="block-name">${escapeHtml(b.title || "")}</span>
-            <span class="bdur">⏱ ${formatDuration(b.duration_sec)}</span>
+    // Priority 1: blocks[] with phase color-coding
+    if (Array.isArray(plan.blocks) && plan.blocks.length > 0) {
+      const phaseClasses = ["phase-warmup", "phase-main", "phase-cooldown"];
+      const phaseIcons = [
+        `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>`
+      ];
+      blocks.innerHTML = plan.blocks.map((b, bi) => {
+        const phaseClass = phaseClasses[Math.min(bi, phaseClasses.length - 1)];
+        const icon = phaseIcons[Math.min(bi, phaseIcons.length - 1)];
+        const dur = b.duration_sec ? `${formatDuration(b.duration_sec)}` : "";
+        const rpe = b.rpe ? `RPE ${b.rpe}` : "";
+        const hasExercises = Array.isArray(b.exercises) && b.exercises.length > 0;
+        const hasItems = Array.isArray(b.items) && b.items.length > 0;
+
+        return `
+          <div class="block ${phaseClass}" style="margin-bottom:4px">
+            <div class="block-head" style="margin-bottom:10px">
+              <span class="plan-phase-label">${icon} ${escapeHtml(b.title || "")}</span>
+              <div class="block-meta">
+                ${rpe ? `<span class="rpe">${escapeHtml(rpe)}</span>` : ""}
+                ${dur ? `<span class="bdur">${dur}</span>` : ""}
+              </div>
+            </div>
+            ${hasExercises
+              ? b.exercises.map((ex, i) => renderExerciseCard(ex, i)).join("")
+              : hasItems
+                ? `<ul class="block-items">${b.items.map(it => `<li>${escapeHtml(String(it))}</li>`).join("")}</ul>`
+                : ""
+            }
           </div>
-          ${Array.isArray(b.exercises) && b.exercises.length > 0
-            ? b.exercises.map((ex, i) => renderExerciseCard(ex, i)).join("")
-            : `<ul class="block-items">${(b.items || []).map((it) => `<li>${escapeHtml(it)}</li>`).join("")}</ul>`
-          }
-        </div>
-      `).join("");
+        `;
+      }).join("");
+    }
+    // Priority 2: exercises[] flat list — split into phases by position
+    else if (Array.isArray(plan.exercises) && plan.exercises.length > 0) {
+      const exs = plan.exercises;
+      const n = exs.length;
+      let warmupCount = 0, cooldownCount = 0;
+      if (n >= 7) { warmupCount = 2; cooldownCount = 2; }
+      else if (n >= 5) { warmupCount = 2; cooldownCount = 1; }
+      else if (n >= 3) { warmupCount = 1; cooldownCount = 1; }
+      const warmupExs = exs.slice(0, warmupCount);
+      const cooldownExs = n > cooldownCount ? exs.slice(n - cooldownCount) : [];
+      const mainExs = exs.slice(warmupCount, n - cooldownCount || n);
+      const phases = [];
+      if (warmupExs.length) phases.push({ title: "Échauffement", cls: "phase-warmup", rpe: "3-4", exs: warmupExs });
+      if (mainExs.length)   phases.push({ title: "Séance principale", cls: "phase-main", rpe: "7-8", exs: mainExs });
+      if (cooldownExs.length) phases.push({ title: "Récupération", cls: "phase-cooldown", rpe: "2-3", exs: cooldownExs });
+
+      blocks.innerHTML = phases.map((ph) => {
+        let idxOffset = ph.cls === "phase-main" ? warmupCount : ph.cls === "phase-cooldown" ? n - cooldownCount : 0;
+        return `
+          <div class="block ${ph.cls}" style="margin-bottom:4px">
+            <div class="block-head" style="margin-bottom:10px">
+              <span class="plan-phase-label">${escapeHtml(ph.title)}</span>
+              <span class="rpe">RPE ${ph.rpe}</span>
+            </div>
+            ${ph.exs.map((ex, i) => renderExerciseCard(ex, idxOffset + i)).join("")}
+          </div>
+        `;
+      }).join("");
     } else {
-      blocks.innerHTML = '<div class="empty"><span class="empty-ic">🏋️</span>Aucun exercice disponible</div>';
+      blocks.innerHTML = '<div class="empty"><span style="font-size:1.5rem;margin-bottom:6px;display:block">—</span>Aucun exercice disponible</div>';
     }
   }
 
   const planCard = document.getElementById("plan-card");
   if (planCard) planCard.style.display = "block";
+  if (planCard) setTimeout(() => planCard.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
 }
 
 async function saveSession() {
@@ -1010,20 +1180,44 @@ async function loadHistory() {
       .select("id,created_at,plan")
       .eq("user_id", U.id)
       .order("created_at", { ascending: false })
-      .limit(8);
+      .limit(10);
     if (error) throw error;
 
     if (!data?.length) {
-      el.innerHTML = '<div class="empty"><span class="empty-ic">📋</span>Aucune séance sauvegardée</div>';
+      el.innerHTML = '<div class="empty"><span style="font-size:1.4rem;display:block;margin-bottom:6px">—</span>Aucune séance sauvegardée</div>';
       return;
     }
     el.innerHTML = `<div class="sessions-list">${data.map((s) => {
-      const d = new Date(s.created_at).toLocaleDateString("fr-FR");
-      return `<div class="sess-row"><div><strong>${escapeHtml(s.plan?.title || "Séance")}</strong><div class="meal-info">${d}</div></div></div>`;
+      const d = new Date(s.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+      const exCount = s.plan?.exercises?.length || 0;
+      const dur = s.plan?.duration ? `${s.plan.duration} min` : "";
+      const metaParts = [d];
+      if (dur) metaParts.push(dur);
+      if (exCount) metaParts.push(`${exCount} exerc.`);
+      return `
+        <div class="sess-row" onclick="replaySession(${JSON.stringify(JSON.stringify(s.plan))})">
+          <div class="sess-row-left">
+            <div class="sess-row-title">${escapeHtml(s.plan?.title || "Séance")}</div>
+            <div class="sess-row-meta">${metaParts.map(p => `<span>${escapeHtml(p)}</span>`).join('<span style="opacity:.3">·</span>')}</div>
+          </div>
+          <div class="sess-row-right">
+            <button class="sess-replay-btn" onclick="event.stopPropagation();replaySession(${JSON.stringify(JSON.stringify(s.plan))})">Revoir</button>
+          </div>
+        </div>`;
     }).join("")}</div>`;
   } catch (e) {
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
+}
+
+function replaySession(planJson) {
+  try {
+    const plan = typeof planJson === "string" ? JSON.parse(planJson) : planJson;
+    if (!plan) return;
+    PLAN = plan;
+    renderPlan(PLAN);
+    toast("Séance rechargée", "ok");
+  } catch { toast("Impossible de recharger la séance.", "err"); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1126,7 +1320,7 @@ async function loadNutritionTargets() {
     const targetProt = document.getElementById("target-prot");
     const targetCarb = document.getElementById("target-carb");
     const targetFat = document.getElementById("target-fat");
-    if (targetKcal) targetKcal.textContent = String(target.calories);
+    if (targetKcal) targetKcal.innerHTML = `${target.calories} <span style="font-size:.7rem;font-weight:600;color:var(--muted)">kcal</span>`;
     if (targetProt) targetProt.textContent = `${target.protein}g`;
     if (targetCarb) targetCarb.textContent = `${target.carbs}g`;
     if (targetFat) targetFat.textContent = `${target.fats}g`;
@@ -1138,13 +1332,34 @@ async function loadNutritionTargets() {
 async function renderNutritionProgress(totals) {
   if (!U) return;
   try {
-    const { data } = await SB.from("nutrition_targets").select("calories").eq("user_id", U.id).maybeSingle();
+    const { data } = await SB.from("nutrition_targets").select("calories,protein,carbs,fats").eq("user_id", U.id).maybeSingle();
     const targetCalories = data?.calories || 2200;
-    const pct = Math.max(0, Math.min(100, Math.round((totals.kcal / targetCalories) * 100)));
+    const targetProt = data?.protein || 140;
+    const targetCarb = data?.carbs || 260;
+    const targetFat = data?.fats || 70;
+
+    // Calorie ring (SVG arc — circumference of r=46 is ≈ 289)
+    const pct = Math.max(0, Math.min(1, totals.kcal / targetCalories));
+    const arc = document.getElementById("kcal-ring-arc");
+    if (arc) {
+      const circ = 289;
+      arc.setAttribute("stroke-dasharray", `${(pct * circ).toFixed(1)} ${circ}`);
+      arc.setAttribute("stroke", pct > 0.95 ? "#f87171" : pct > 0.7 ? "#fbbf24" : "#4ade80");
+    }
+
+    // Linear bar compat (if still exists)
     const calFill = document.getElementById("cal-progress-fill");
     const calText = document.getElementById("cal-progress-text");
-    if (calFill) calFill.style.width = `${pct}%`;
+    if (calFill) calFill.style.width = `${Math.round(pct * 100)}%`;
     if (calText) calText.textContent = `${totals.kcal} / ${targetCalories} kcal`;
+
+    // Macro bars
+    const barProt = document.getElementById("bar-prot");
+    const barCarb = document.getElementById("bar-carb");
+    const barFat = document.getElementById("bar-fat");
+    if (barProt) barProt.style.width = `${Math.min(100, Math.round((totals.protein / targetProt) * 100))}%`;
+    if (barCarb) barCarb.style.width = `${Math.min(100, Math.round((totals.carbs / targetCarb) * 100))}%`;
+    if (barFat) barFat.style.width = `${Math.min(100, Math.round((totals.fat / targetFat) * 100))}%`;
   } catch (e) {
     console.error("[Nutrition] renderProgress error:", e);
   }
@@ -1715,7 +1930,7 @@ async function loadScans() {
       return `<div class="scan-v2">
         <div class="scan-v2-top">
           <div class="scan-v2-photo">
-            ${scan.image_url ? `<img src="${scan.image_url}" alt="Scan" loading="lazy"/>` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">Photo non disponible</div>`}
+            ${scan.image_url ? lazyImg(scan.image_url, "Scan", "", "width:100%;height:100%;object-fit:cover;opacity:.9") : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">Photo non disponible</div>`}
             <div class="scan-v2-photo-overlay">
               <span class="scan-v2-pill">${date}</span>
               ${physScore ? `<span class="scan-v2-pill" style="font-family:'Georgia',serif;font-size:1rem;font-weight:900">${physScore}/100</span>` : ""}
@@ -1752,6 +1967,7 @@ async function loadScans() {
         </div>
       </div>`;
     }).join('<div style="height:16px"></div>');
+    observeLazyImgs(el);
   } catch (e) {
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
@@ -1848,38 +2064,28 @@ async function saveProfile() {
 
 async function loadStats() {
   if (!U) return;
+  // Show stale data instantly while revalidating
+  const cached = DataCache.get(`stats:${U.id}`);
+  if (cached) applyStats(cached);
   try {
     const [sessions, scans, posts] = await Promise.all([
       SB.from("workout_sessions").select("id", { count: "exact", head: true }).eq("user_id", U.id),
       SB.from("body_scans").select("id", { count: "exact", head: true }).eq("user_id", U.id),
       SB.from("community_posts").select("id", { count: "exact", head: true }).eq("user_id", U.id)
     ]);
-    const sessCount = sessions.count ?? 0;
-    const scansCount = scans.count ?? 0;
-    const postsCount = posts.count ?? 0;
-
-    // Profile stats
-    const stSess = document.getElementById("st-sess");
-    const stScans = document.getElementById("st-scans");
-    const stPosts = document.getElementById("st-posts");
-    if (stSess) stSess.textContent = sessCount;
-    if (stScans) stScans.textContent = scansCount;
-    if (stPosts) stPosts.textContent = postsCount;
-
-    // Dashboard stats
-    const dbSess = document.getElementById("db-sess");
-    if (dbSess) dbSess.textContent = sessCount;
-    const dbScans = document.getElementById("db-scans");
-    if (dbScans) dbScans.textContent = scansCount;
-    const totalSess = document.getElementById("db-total-sessions");
-    if (totalSess) totalSess.textContent = sessCount;
-
-    // Coach stats
-    const csWeek = document.getElementById("cs-week");
-    if (csWeek) csWeek.textContent = sessCount;
+    const data = { sessCount: sessions.count ?? 0, scansCount: scans.count ?? 0, postsCount: posts.count ?? 0 };
+    DataCache.set(`stats:${U.id}`, data, 90000); // 90s TTL
+    applyStats(data);
   } catch (e) {
     console.error("[Stats] Load error:", e);
   }
+}
+
+function applyStats({ sessCount = 0, scansCount = 0, postsCount = 0 } = {}) {
+  const ids = { "st-sess": sessCount, "st-scans": scansCount, "st-posts": postsCount, "db-sess": sessCount, "cs-week": sessCount };
+  Object.entries(ids).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.textContent = val; });
+  const totalSess = document.getElementById("db-total-sessions");
+  if (totalSess) totalSess.textContent = sessCount;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2174,6 +2380,18 @@ function formatCoachText(text) {
 async function retryLastCoachMessage() {
   if (!LAST_COACH_PROMPT) return toast("Aucune demande récente à relancer.", "err");
   return sendCoachMsg(LAST_COACH_PROMPT);
+}
+
+function clearCoachChat() {
+  COACH_HISTORY = [];
+  LAST_COACH_PROMPT = "";
+  try { localStorage.removeItem("fp_coach_history"); } catch {}
+  renderCoachChat();
+  const quickEl = document.getElementById("chat-quick");
+  if (quickEl) quickEl.style.display = "";
+  const planCard = document.getElementById("plan-card");
+  if (planCard) planCard.style.display = "none";
+  PLAN = null;
 }
 
 async function toggleComments(postId) {
@@ -2504,6 +2722,8 @@ window.sendCoachMsg = sendCoachMsg;
 window.retryLastCoachMessage = retryLastCoachMessage;
 window.generateWorkout = generateWorkout;
 window.saveSession = saveSession;
+window.clearCoachChat = clearCoachChat;
+window.replaySession = replaySession;
 window.addMeal = addMeal;
 window.deleteMeal = deleteMeal;
 window.createPost = createPost;
@@ -2514,6 +2734,7 @@ window.handleFile = handleFile;
 window.handleDrop = handleDrop;
 window.doScan = doScan;
 window.selectMood = selectMood;
+window.startWithMood = startWithMood;
 window.saveProfile = saveProfile;
 window.deleteBodyScan = deleteBodyScan;
 window.generateRecipe    = generateRecipe;
@@ -2790,16 +3011,25 @@ function renderSvgChart(data, opts) {
 
 async function loadProgress() {
   if (!U) return;
+
+  // Build 30-day date range for mood
+  var moodSince = new Date();
+  moodSince.setDate(moodSince.getDate() - 29);
+
   var results = await Promise.allSettled([
     SB.from("workout_sessions").select("id,created_at,duration").eq("user_id", U.id).order("created_at", { ascending: true }).limit(80),
     SB.from("body_scans").select("created_at,physical_score").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
     SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(100),
-    SB.from("user_streaks").select("current_streak,best_streak").eq("user_id", U.id).maybeSingle()
+    SB.from("user_streaks").select("current_streak,best_streak").eq("user_id", U.id).maybeSingle(),
+    SB.from("daily_moods").select("mood_level,mood_label,date").eq("user_id", U.id)
+      .gte("date", moodSince.toISOString().slice(0, 10)).order("date", { ascending: true }).limit(30)
   ]);
+
   var sessions = results[0].status === "fulfilled" ? (results[0].value.data || []) : [];
   var scans    = results[1].status === "fulfilled" ? (results[1].value.data || []) : [];
   var meals    = results[2].status === "fulfilled" ? (results[2].value.data || []) : [];
   var streak   = results[3].status === "fulfilled" ? (results[3].value.data || {}) : {};
+  var moods    = results[4].status === "fulfilled" ? (results[4].value.data || []) : [];
 
   var elStreak = document.getElementById("prog-streak");
   var elSub    = document.getElementById("prog-streak-sub");
@@ -2810,6 +3040,13 @@ async function loadProgress() {
   if (elTotal)  elTotal.textContent  = sessions.length;
   var bestScore = scans.reduce(function(m, s) { return s.physical_score > m ? s.physical_score : m; }, 0);
   if (elBest)   elBest.textContent   = bestScore > 0 ? bestScore : "—";
+
+  // Mood stat in progress header
+  var elMoodStat = document.getElementById("prog-mood-stat");
+  if (elMoodStat && moods.length) {
+    var last = moods[moods.length - 1];
+    elMoodStat.textContent = last.mood_label || "—";
+  }
 
   var sessChart = buildWeeklySessionData(sessions, 8);
   var sessEl    = document.getElementById("chart-sessions-svg");
@@ -2835,6 +3072,59 @@ async function loadProgress() {
   if (calHead) {
     var avg = calData.length ? Math.round(calData.reduce(function(s, d) { return s + d.value; }, 0) / calData.length) : 0;
     calHead.textContent = avg > 0 ? "Moyenne: " + avg + " kcal / jour" : "Enregistrez vos repas pour voir l'evolution";
+  }
+
+  // Mood history dots
+  renderMoodDots(moods);
+}
+
+// ── Mood colours matching SVG faces ──────────────────────────────────────────
+var MOOD_COLORS = { 1: "#f87171", 2: "#fb923c", 3: "#fbbf24", 4: "#4ade80", 5: "#60a5fa" };
+
+function renderMoodDots(moods) {
+  var el = document.getElementById("chart-mood-dots");
+  var head = document.getElementById("chart-mood-headline");
+  if (!el) return;
+
+  if (!moods.length) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:.82rem">Sélectionnez votre humeur chaque jour pour voir l\'évolution ici.</div>';
+    if (head) head.textContent = "Pas encore de données";
+    return;
+  }
+
+  // Build 14-day grid (today = rightmost)
+  var today = new Date();
+  var days = 14;
+  var grid = [];
+  for (var i = days - 1; i >= 0; i--) {
+    var d = new Date(today);
+    d.setDate(today.getDate() - i);
+    var dateStr = d.toISOString().slice(0, 10);
+    var entry = moods.find(function(m) { return m.date === dateStr; });
+    grid.push({ date: d, dateStr: dateStr, entry: entry || null });
+  }
+
+  // Render as dot matrix row
+  var html = '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">';
+  grid.forEach(function(cell) {
+    var lvl = cell.entry ? cell.entry.mood_level : 0;
+    var color = lvl ? MOOD_COLORS[lvl] : "rgba(255,255,255,.07)";
+    var label = cell.entry ? cell.entry.mood_label : "Pas de donnée";
+    var dayLabel = cell.date.toLocaleDateString("fr-FR", { weekday: "short" }).slice(0, 1).toUpperCase();
+    html += '<div style="display:flex;flex-direction:column;align-items:center;gap:5px">';
+    html += '<div title="' + cell.dateStr + ' — ' + label + '" style="width:32px;height:32px;border-radius:50%;background:' + color + ';' + (lvl ? 'box-shadow:0 0 8px ' + color + '55' : 'border:2px solid rgba(255,255,255,.1)') + ';transition:transform .2s;cursor:default" onmouseenter="this.style.transform=\'scale(1.2)\'" onmouseleave="this.style.transform=\'scale(1)\'"></div>';
+    html += '<div style="font-size:.55rem;color:rgba(255,255,255,.3);font-weight:700">' + dayLabel + '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+
+  // Compute average mood
+  var filled = moods.filter(function(m) { return m.mood_level >= 1; });
+  if (head && filled.length) {
+    var avg = (filled.reduce(function(s, m) { return s + m.mood_level; }, 0) / filled.length).toFixed(1);
+    var avgLabel = MOOD_LABELS[Math.round(avg)] || avg + "/5";
+    head.textContent = filled.length + " jour(s) suivi(s) — humeur moy.: " + avgLabel;
   }
 }
 
