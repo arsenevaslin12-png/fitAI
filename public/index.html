@@ -269,22 +269,33 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .plan-section-title{
   font-size:.65rem;font-weight:800;text-transform:uppercase;
   letter-spacing:.1em;color:var(--muted);margin:14px 0 8px;
-  display:flex;align-items:center;gap:6px;
+  display:flex;align-items:center;gap:8px;
 }
 .plan-section-title::after{content:"";flex:1;height:1px;background:var(--border)}
+.plan-phase-label{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:20px;font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.phase-warmup .plan-phase-label{background:rgba(6,182,212,.12);color:#22d3ee}
+.phase-main .plan-phase-label{background:rgba(37,99,235,.14);color:#60a5fa}
+.phase-cooldown .plan-phase-label{background:rgba(34,197,94,.12);color:#4ade80}
+.phase-warmup .ex-card{border-left:3px solid rgba(6,182,212,.4)}
+.phase-main .ex-card{border-left:3px solid rgba(37,99,235,.4)}
+.phase-cooldown .ex-card{border-left:3px solid rgba(34,197,94,.4)}
 
-/* Exercise cards (Base44 style) */
+/* Exercise cards */
 .ex-card{display:flex;gap:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:16px;align-items:flex-start;transition:border-color .2s}
 .ex-card:hover{border-color:rgba(37,99,235,.35)}
-.ex-num{width:32px;height:32px;border-radius:10px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:800;color:#fff;flex-shrink:0}
+.ex-num{width:30px;height:30px;border-radius:9px;background:rgba(37,99,235,.18);border:1px solid rgba(37,99,235,.3);display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:900;color:#60a5fa;flex-shrink:0}
 .ex-body{flex:1;min-width:0}
-.ex-name{font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:6px}
-.ex-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
-.ex-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:700}
+.ex-name{font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.ex-diff{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.ex-diff.facile{background:#4ade80}
+.ex-diff.moyen{background:#fb923c}
+.ex-diff.difficile{background:#f87171}
+.ex-badges{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+.ex-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:.7rem;font-weight:700}
 .ex-badge.sets{background:rgba(37,99,235,.12);color:#60a5fa}
 .ex-badge.reps{background:rgba(8,145,178,.12);color:#22d3ee}
 .ex-badge.dur{background:rgba(147,51,234,.12);color:var(--purple)}
-.ex-badge.rest{background:rgba(156,163,175,.12);color:var(--muted)}
+.ex-badge.rest{background:rgba(156,163,175,.1);color:var(--muted)}
 .ex-badge.muscle{background:rgba(34,197,94,.1);color:var(--green)}
 .ex-desc{font-size:.82rem;color:var(--text2);line-height:1.55;border-left:3px solid var(--glass-border);padding-left:10px;margin-top:4px}
 
@@ -299,9 +310,37 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .block-items li{font-size:.84rem;color:var(--text2)}
 .block-items li::before{content:"\2192 ";color:var(--blue)}
 .plan-notes-text{font-size:.82rem;color:var(--muted);font-style:italic}
+
+/* History session rows */
 .sessions-list{display:flex;flex-direction:column;gap:0}
-.sess-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--glass-border)}
+.sess-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--glass-border);cursor:pointer;transition:opacity .15s}
 .sess-row:last-child{border-bottom:none}
+.sess-row:hover{opacity:.78}
+.sess-row-left{display:flex;flex-direction:column;gap:2px}
+.sess-row-title{font-size:.88rem;font-weight:700;color:var(--text)}
+.sess-row-meta{font-size:.75rem;color:var(--muted);display:flex;gap:8px}
+.sess-row-right{display:flex;align-items:center;gap:8px}
+.sess-replay-btn{padding:4px 12px;border-radius:20px;background:rgba(37,99,235,.12);border:1px solid rgba(37,99,235,.2);color:#60a5fa;font-size:.72rem;font-weight:700;cursor:pointer;transition:all .15s}
+.sess-replay-btn:hover{background:rgba(37,99,235,.22);border-color:rgba(37,99,235,.4)}
+
+/* Coach header SVG icon */
+.coach-icon-wrap{width:44px;height:44px;border-radius:14px;background:var(--grad);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.coach-online-dot{width:9px;height:9px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 2px rgba(74,222,128,.25);animation:onlinePulse 2s ease-in-out infinite}
+@keyframes onlinePulse{0%,100%{box-shadow:0 0 0 2px rgba(74,222,128,.25)}50%{box-shadow:0 0 0 5px rgba(74,222,128,.1)}}
+
+/* Clear chat button */
+.coach-clear-btn{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;flex-shrink:0;color:var(--muted)}
+.coach-clear-btn:hover{background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.3);color:#f87171}
+
+/* Chat user bubble with initial */
+.chat-user-avatar{width:28px;height:28px;border-radius:9px;background:linear-gradient(135deg,#1e3a8a,#075985);display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800;color:#e0f2fe;flex-shrink:0}
+
+/* Quick chips categories */
+.chat-quick-cat{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:5px;margin-top:4px}
+.chat-chips-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:2px}
+
+/* Coach stat SVG icons */
+.coach-stat-svg{width:20px;height:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 4px}
 
 /* ── NUTRITION ── */
 .macro-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
@@ -794,8 +833,12 @@ body.light .chat-chip{background:#fff;border-color:rgba(15,23,42,.14);color:#334
 body.light .chat-chip:hover{border-color:var(--accent);color:var(--accent);background:#eff6ff}
 body.light .plan-meta-pill{background:rgba(15,23,42,.07);color:#334155}
 body.light .ex-card{background:#f8fafc;border-color:rgba(15,23,42,.1)}
+body.light .ex-num{background:rgba(37,99,235,.1);border-color:rgba(37,99,235,.2);color:#1d4ed8}
 body.light .ex-name{color:#0f172a}
 body.light .ex-desc{color:#64748b;border-left-color:rgba(15,23,42,.15)}
+body.light .coach-clear-btn{background:rgba(15,23,42,.05);border-color:rgba(15,23,42,.12);color:#94a3b8}
+body.light .sess-replay-btn{background:rgba(37,99,235,.08);border-color:rgba(37,99,235,.15);color:#1d4ed8}
+body.light .chat-quick-cat{color:#94a3b8}
 /* Nutrition */
 body.light .macro-card{background:#f8fafc;border-color:rgba(15,23,42,.08)}
 body.light .meal-card{background:#fff;border-color:rgba(15,23,42,.1)}
@@ -1219,10 +1262,20 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
             <div class="field"><div class="lbl">Description de votre objectif</div>
               <textarea id="g-text" placeholder="Ex: Perdre 5kg en 3 mois, 3 séances/semaine…"></textarea>
             </div>
+            <div class="field"><div class="lbl">Équipement disponible</div>
+              <select id="g-equipment">
+                <option value="">Poids du corps uniquement</option>
+                <option value="halteres">Haltères</option>
+                <option value="barre">Barre + disques</option>
+                <option value="salle">Salle de sport complète</option>
+                <option value="kettlebell">Kettlebell</option>
+                <option value="elastiques">Élastiques</option>
+              </select>
+            </div>
             <div class="field"><div class="lbl">Contraintes / blessures (optionnel)</div>
               <textarea id="g-constraints" placeholder="Ex: Genou fragile, pas de course…" style="min-height:56px"></textarea>
             </div>
-            <button class="btn btn-p btn-full" id="btn-save-goal" onclick="saveGoal()">💾 Enregistrer l'objectif</button>
+            <button class="btn btn-p btn-full" id="btn-save-goal" onclick="saveGoal()">Enregistrer l'objectif</button>
           </div>
         </div>
       </div>
@@ -1232,35 +1285,72 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
 
         <div class="card coach-hero">
           <div class="coach-header">
-            <div class="coach-header-icon">🤖</div>
+            <div class="coach-icon-wrap">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            </div>
             <div class="coach-header-text">
               <div class="coach-header-title">Coach IA Expert</div>
-              <div class="coach-header-sub">Personnalisé à votre profil et objectifs</div>
+              <div class="coach-header-sub" id="coach-sub-line">Personnalisé à votre profil</div>
             </div>
-            <div class="coach-status">🟢 En ligne</div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--muted);font-weight:600">
+              <div class="coach-online-dot"></div>En ligne
+            </div>
           </div>
           <div class="coach-stats">
-            <div class="coach-stat"><span class="coach-stat-icon">⚡</span><div class="coach-stat-val" id="cs-week">0</div><div class="coach-stat-lbl">Séances</div></div>
-            <div class="coach-stat"><span class="coach-stat-icon">🎯</span><div class="coach-stat-val" id="cs-level">—</div><div class="coach-stat-lbl">Niveau</div></div>
-            <div class="coach-stat"><span class="coach-stat-icon">🔥</span><div class="coach-stat-val" id="cs-kcal">0.0k</div><div class="coach-stat-lbl">Calories</div></div>
-            <div class="coach-stat"><span class="coach-stat-icon">📊</span><div class="coach-stat-val" id="cs-energy">—</div><div class="coach-stat-lbl">Énergie</div></div>
+            <div class="coach-stat">
+              <div class="coach-stat-svg"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+              <div class="coach-stat-val" id="cs-week">0</div><div class="coach-stat-lbl">Séances</div>
+            </div>
+            <div class="coach-stat">
+              <div class="coach-stat-svg"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg></div>
+              <div class="coach-stat-val" id="cs-level">—</div><div class="coach-stat-lbl">Niveau</div>
+            </div>
+            <div class="coach-stat">
+              <div class="coach-stat-svg"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 01-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 2.5z"/></svg></div>
+              <div class="coach-stat-val" id="cs-kcal">0</div><div class="coach-stat-lbl">Kcal / sem.</div>
+            </div>
+            <div class="coach-stat">
+              <div class="coach-stat-svg"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+              <div class="coach-stat-val" id="cs-energy">—</div><div class="coach-stat-lbl">Streak</div>
+            </div>
           </div>
         </div>
 
         <div class="card" style="padding:18px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div style="font-size:.78rem;font-weight:700;color:var(--muted)">Conversation</div>
+            <button class="coach-clear-btn" onclick="clearCoachChat()" title="Effacer la conversation">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+            </button>
+          </div>
           <div class="chat-messages" id="chat-messages">
             <!-- Messages will be rendered by JS -->
           </div>
-          <div class="chat-quick" id="chat-quick">
-            <button class="coach-chip" onclick="sendCoachMsg('Séance full body 30min')">Séance 30min</button>
-            <button class="coach-chip" onclick="sendCoachMsg('Séance HIIT 20min intense')">HIIT 20min</button>
-            <button class="coach-chip" onclick="sendCoachMsg('Journée alimentaire selon mes objectifs')">Journée alim.</button>
-            <button class="coach-chip" onclick="sendCoachMsg('Liste de courses pour la semaine')">Liste courses</button>
-            <button class="coach-chip" onclick="sendCoachMsg('Quoi manger après entraînement ?')">Post-workout</button>
-            <button class="coach-chip" onclick="sendCoachMsg('Mal dormi, adapte ma séance')">Récupération</button>
-            <button class="coach-chip" onclick="sendCoachMsg('Combien de protéines par jour ?')">Macros</button>
-            <button class="coach-chip" onclick="sendCoachMsg('Recette riche en protéines rapide')">Recette</button>
-            <button class="coach-chip" onclick="sendCoachMsg('On fait des burgers ce soir avec des potes, liste de courses ?')">Soirée burgers</button>
+          <div id="chat-quick" style="margin-bottom:12px">
+            <div class="chat-quick-cat">Séances</div>
+            <div class="chat-chips-row">
+              <button class="coach-chip" onclick="sendCoachMsg('Séance full body 45min')">Full body 45min</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Séance HIIT 20min intense')">HIIT 20min</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Séance upper body avec haltères')">Upper body</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Séance jambes et fessiers')">Jambes / fessiers</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Programme 8 semaines pour mon objectif')">Programme 8 sem.</button>
+            </div>
+            <div class="chat-quick-cat" style="margin-top:10px">Nutrition</div>
+            <div class="chat-chips-row">
+              <button class="coach-chip" onclick="sendCoachMsg('Journée alimentaire selon mes objectifs')">Journée alim.</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Quoi manger après entraînement ?')">Post-workout</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Combien de protéines par jour ?')">Mes macros</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Recette riche en protéines rapide')">Recette protéinée</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Liste de courses pour la semaine')">Liste courses</button>
+              <button class="coach-chip" onclick="sendCoachMsg('On fait des burgers ce soir avec des potes, liste de courses ?')">Soirée burgers</button>
+            </div>
+            <div class="chat-quick-cat" style="margin-top:10px">Récupération</div>
+            <div class="chat-chips-row">
+              <button class="coach-chip" onclick="sendCoachMsg('Mal dormi, adapte ma séance')">Mal dormi</button>
+              <button class="coach-chip" onclick="sendCoachMsg('J\'ai des courbatures, que faire ?')">Courbatures</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Routine mobilité et étirements 15min')">Mobilité 15min</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Je stagne, que faire pour progresser ?')">Je stagne</button>
+            </div>
           </div>
           <div class="chat-input-row">
             <input type="text" id="coach-input" placeholder="Pose ta question au coach…" onkeydown="if(event.key==='Enter')sendCoachMsg()"/>

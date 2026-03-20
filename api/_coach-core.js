@@ -318,9 +318,6 @@ Instruction spécifique:
 Message utilisateur:
 ${message}`;
 }
-Message utilisateur:
-${message}`;
-}
 
 function buildShoppingListPrompt(message, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
