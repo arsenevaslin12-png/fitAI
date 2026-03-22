@@ -1194,7 +1194,8 @@ async function saveSession() {
     const { error } = await SB.from("workout_sessions").insert({ user_id: U.id, plan: PLAN });
     if (error) throw error;
     toast("Séance sauvegardée ✓", "ok");
-    await loadHistory();
+    await updateDailyStreak({ incrementWorkouts: true });
+    await Promise.all([loadHistory(), loadStreak()]);
   }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
 }
 
@@ -3413,13 +3414,44 @@ function completeDailyChallenge(challengeId) {
   renderDailyChallengesSection();
 }
 
-function updateDailyStreak() {
+async function updateDailyStreak({ incrementWorkouts = false } = {}) {
   if (!U) return;
-  SB.from("user_streaks").upsert({
-    user_id: U.id,
-    last_active: getTodayKey(),
-    updated_at: new Date().toISOString()
-  }, { onConflict: "user_id" }).catch(() => {});
+  try {
+    const today = getTodayKey();
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+    const { data } = await SB.from("user_streaks")
+      .select("current_streak,longest_streak,last_active,total_workouts")
+      .eq("user_id", U.id)
+      .maybeSingle();
+
+    const prev = data || { current_streak: 0, longest_streak: 0, last_active: null, total_workouts: 0 };
+
+    let newStreak = Number(prev.current_streak) || 0;
+    if (prev.last_active === today) {
+      // Déjà actif aujourd'hui — pas de changement de streak
+    } else if (prev.last_active === yesterday) {
+      // Jour consécutif
+      newStreak += 1;
+    } else {
+      // Rupture ou premier jour
+      newStreak = 1;
+    }
+
+    const newLongest = Math.max(newStreak, Number(prev.longest_streak) || 0);
+    const newTotal = incrementWorkouts ? (Number(prev.total_workouts) || 0) + 1 : (Number(prev.total_workouts) || 0);
+
+    await SB.from("user_streaks").upsert({
+      user_id: U.id,
+      current_streak: newStreak,
+      longest_streak: newLongest,
+      total_workouts: newTotal,
+      last_active: today,
+      updated_at: new Date().toISOString()
+    }, { onConflict: "user_id" });
+  } catch (err) {
+    console.warn("[streak] update failed:", err);
+  }
 }
 
 function renderDailyChallengesSection() {
