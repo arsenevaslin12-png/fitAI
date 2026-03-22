@@ -359,20 +359,20 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .macro-card:nth-child(4) .macro-val{color:#fbbf24}
 
 /* ── V2 RECIPE CARD ── */
-.recipe-v2{position:relative;overflow:hidden;background:linear-gradient(150deg,#080f1e,#0d1c38);border:1px solid rgba(255,255,255,.1);border-radius:2rem;padding:24px}
+.recipe-v2{position:relative;overflow:hidden;background:linear-gradient(150deg,#080f1e,#0d1c38);border:1px solid rgba(255,255,255,.1);border-radius:2rem;padding:26px}
 .recipe-v2-art{position:absolute;right:-6px;top:-6px;font-size:4.5rem;line-height:1;opacity:.18;transform:rotate(-12deg);pointer-events:none;user-select:none;filter:saturate(0)}
-.recipe-v2-tag{font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#a78bfa;margin-bottom:5px}
-.recipe-v2-name{font-size:1.18rem;font-weight:900;color:#fff;letter-spacing:-.02em;line-height:1.2;margin-bottom:16px}
+.recipe-v2-tag{font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#a78bfa;margin-bottom:6px}
+.recipe-v2-name{font-size:1.28rem;font-weight:900;color:#fff;letter-spacing:-.02em;line-height:1.2;margin-bottom:16px}
 .recipe-pills{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px}
-.macro-pill{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:999px;font-size:.76rem;font-weight:800;letter-spacing:.01em}
+.macro-pill{display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border-radius:999px;font-size:.79rem;font-weight:800;letter-spacing:.01em}
 .mp-kcal{background:rgba(251,191,36,.12);color:#fde047;border:1px solid rgba(251,191,36,.2)}
 .mp-prot{background:rgba(236,72,153,.13);color:#f472b6;border:1px solid rgba(236,72,153,.22)}
 .mp-carb{background:rgba(132,204,22,.12);color:#a3e635;border:1px solid rgba(132,204,22,.22)}
 .mp-fat{background:rgba(249,115,22,.12);color:#fb923c;border:1px solid rgba(249,115,22,.2)}
 .recipe-v2-steps{list-style:none;display:flex;flex-direction:column;gap:7px;margin-bottom:16px}
-.recipe-v2-step{display:flex;gap:10px;align-items:flex-start;font-size:.83rem;line-height:1.6;color:rgba(255,255,255,.72)}
+.recipe-v2-step{display:flex;gap:10px;align-items:flex-start;font-size:.88rem;line-height:1.65;color:rgba(255,255,255,.78)}
 .recipe-v2-step-n{min-width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:.64rem;font-weight:800;color:rgba(255,255,255,.45);flex-shrink:0;margin-top:2px}
-.recipe-v2-tip{padding:10px 14px;background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.18);border-radius:12px;font-size:.79rem;color:#a5b4fc;line-height:1.5;margin-bottom:14px}
+.recipe-v2-tip{padding:12px 14px;background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.18);border-radius:12px;font-size:.83rem;color:#a5b4fc;line-height:1.55;margin-bottom:14px}
 
 /* ── V2 CHARACTER ILLUSTRATIONS ── */
 .char-svg{width:36px;height:40px;display:block;margin:0 auto 4px}
@@ -671,6 +671,24 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 }
 .gen-nutrition-card::before{content:"✦";position:absolute;right:20px;top:14px;font-size:3rem;opacity:.06;pointer-events:none}
 .gen-nutrition-selects{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.nutri-plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.nutri-meal-card{padding:15px;border:1px solid rgba(255,255,255,.06);background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.02));border-radius:18px}
+.nutri-meal-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+.nutri-meal-name{font-weight:900;font-size:.95rem;color:var(--text)}
+.nutri-meal-meta{font-size:.77rem;color:var(--muted);margin-top:3px}
+.nutri-meal-side{text-align:right;font-size:.8rem;color:var(--text2);display:flex;flex-direction:column;gap:4px;white-space:nowrap}
+.nutri-items{display:flex;flex-direction:column;gap:6px;font-size:.84rem;color:rgba(238,238,245,.9)}
+.nutri-item{line-height:1.55}
+.nutri-note-box{margin-top:10px;padding:11px 12px;border-radius:13px;background:rgba(255,255,255,.035);font-size:.78rem;color:var(--text2);border:1px solid rgba(255,255,255,.05)}
+.nutri-coach-tip{margin-top:9px;font-size:.79rem;color:var(--text2);line-height:1.6}
+.nutri-notes-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.nutri-note-panel{padding:13px 14px;border-radius:15px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)}
+.nutri-note-hdr{font-size:.74rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:7px}
+.nutri-note-txt{font-size:.83rem;line-height:1.7;color:var(--text2)}
+.nutri-note-sub{margin-top:8px;font-size:.78rem;line-height:1.55;color:var(--muted)}
+.nutri-note-list{display:flex;flex-direction:column;gap:6px;font-size:.81rem;color:var(--text2);line-height:1.55}
+.nutri-fallback-msg{grid-column:1/-1;font-size:.77rem;color:var(--muted);padding:0 2px}
+@media(max-width:850px){.nutri-plan-grid,.nutri-notes-grid{grid-template-columns:1fr}}
 @media(max-width:500px){.gen-nutrition-selects{grid-template-columns:1fr}}
 
 /* ── RESPONSIVE: mobile bottom nav ── */

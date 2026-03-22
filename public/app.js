@@ -1322,7 +1322,7 @@ async function sendCoachMsg(quickMsg) {
     const [goalRes, profileRes, streakRes] = await Promise.all([
       SB.from("goals").select("type,level,constraints,equipment").eq("user_id", U.id).maybeSingle(),
       SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle(),
-      SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle().catch(() => ({ data: null }))
+      Promise.resolve(SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle()).catch(() => ({ data: null }))
     ]);
 
     goalContext = goalRes?.data || {};
@@ -3048,40 +3048,41 @@ function renderNutritionGeneratedPlan(payload) {
 
   const meals = Array.isArray(plan?.meals) ? plan.meals : [];
   mealsEl.innerHTML = meals.length
-    ? meals.map((meal) => `
-      <div class="meal-card" style="padding:14px;border:1px solid rgba(255,255,255,.06)">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px">
+    ? `<div class="nutri-plan-grid">${meals.map((meal) => `
+      <div class="meal-card nutri-meal-card">
+        <div class="nutri-meal-top">
           <div>
-            <div style="font-weight:800;font-size:.88rem">${escapeHtml(meal.name || 'Repas')}</div>
-            <div style="font-size:.75rem;color:var(--muted)">${escapeHtml(meal.time || '')}${meal.focus ? ` · ${escapeHtml(meal.focus)}` : ''}</div>
+            <div class="nutri-meal-name">${escapeHtml(meal.name || 'Repas')}</div>
+            <div class="nutri-meal-meta">${escapeHtml(meal.time || '')}${meal.focus ? ` · ${escapeHtml(meal.focus)}` : ''}</div>
           </div>
-          <div style="text-align:right;font-size:.77rem;color:var(--text2)">
+          <div class="nutri-meal-side">
             <div>${meal.calories ? `🔥 ${escapeHtml(String(meal.calories))} kcal` : ''}</div>
             <div>${meal.protein ? `💪 ${escapeHtml(String(meal.protein))}g prot.` : ''}</div>
           </div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:5px;font-size:.8rem;color:rgba(238,238,245,.84)">
-          ${(Array.isArray(meal.items) ? meal.items : []).map((item) => `<div>• ${escapeHtml(String(item))}</div>`).join('')}
+        <div class="nutri-items">
+          ${(Array.isArray(meal.items) ? meal.items : []).map((item) => `<div class="nutri-item">• ${escapeHtml(String(item))}</div>`).join('')}
         </div>
-        ${Array.isArray(meal.swap_options) && meal.swap_options.length ? `<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03);font-size:.76rem;color:var(--text2)"><strong style="color:var(--text)">Options simples</strong><div style="margin-top:4px;display:flex;flex-direction:column;gap:3px">${meal.swap_options.map((opt) => `<div>↔ ${escapeHtml(String(opt))}</div>`).join('')}</div></div>` : ''}
-        ${meal.coach_tip ? `<div style="margin-top:8px;font-size:.76rem;color:var(--text2);line-height:1.55">💬 ${escapeHtml(String(meal.coach_tip))}</div>` : ''}
-      </div>`).join("")
+        ${Array.isArray(meal.swap_options) && meal.swap_options.length ? `<div class="nutri-note-box"><strong style="color:var(--text)">Substitutions rapides</strong><div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">${meal.swap_options.map((opt) => `<div>↔ ${escapeHtml(String(opt))}</div>`).join('')}</div></div>` : ''}
+        ${meal.coach_tip ? `<div class="nutri-coach-tip">💬 ${escapeHtml(String(meal.coach_tip))}</div>` : ''}
+      </div>`).join("")}</div>`
     : '<div class="empty"><span class="empty-ic">🍽️</span>Le plan du jour sera affiché ici après génération.</div>';
 
   const tips = Array.isArray(plan?.tips) ? plan.tips : [];
   const substitutions = Array.isArray(plan?.substitutions) ? plan.substitutions : [];
   notesEl.innerHTML = `
-    <div style="display:grid;gap:12px">
-      <div style="padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)">
-        <div style="font-size:.74rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:6px">Résumé coach</div>
-        <div style="font-size:.81rem;line-height:1.65;color:var(--text2)">${escapeHtml(plan?.notes || nutrition.notes || "Plan généré pour rester simple, cohérent et facile à suivre aujourd'hui.")}</div>
-        ${plan?.training_note ? `<div style="margin-top:8px;font-size:.77rem;line-height:1.55;color:var(--muted)">🏋️ ${escapeHtml(plan.training_note)}</div>` : ''}
+    <div class="nutri-notes-grid">
+      <div class="nutri-note-panel">
+        <div class="nutri-note-hdr">Résumé coach</div>
+        <div class="nutri-note-txt">${escapeHtml(plan?.notes || nutrition.notes || "Plan généré pour rester simple, cohérent et facile à suivre aujourd'hui.")}</div>
+        ${plan?.training_note ? `<div class="nutri-note-sub">🏋️ ${escapeHtml(plan.training_note)}</div>` : ''}
       </div>
-      ${tips.length ? `<div style="padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)"><div style="font-size:.74rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:6px">Conseils pratiques</div><div style="display:flex;flex-direction:column;gap:5px;font-size:.79rem;color:var(--text2)">${tips.map((tip) => `<div>• ${escapeHtml(String(tip))}</div>`).join('')}</div></div>` : ''}
-      ${substitutions.length ? `<div style="padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)"><div style="font-size:.74rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:6px">Substitutions utiles</div><div style="display:flex;flex-direction:column;gap:5px;font-size:.79rem;color:var(--text2)">${substitutions.map((item) => `<div>↔ ${escapeHtml(String(item))}</div>`).join('')}</div></div>` : ''}
-      ${payload?.fallback ? '<div style="font-size:.75rem;color:var(--muted)">Mode de secours premium activé: le plan reste cohérent et utilisable normalement.</div>' : ''}
+      ${tips.length ? `<div class="nutri-note-panel"><div class="nutri-note-hdr">Conseils pratiques</div><div class="nutri-note-list">${tips.map((tip) => `<div>• ${escapeHtml(String(tip))}</div>`).join('')}</div></div>` : ''}
+      ${substitutions.length ? `<div class="nutri-note-panel"><div class="nutri-note-hdr">Substitutions utiles</div><div class="nutri-note-list">${substitutions.map((item) => `<div>↔ ${escapeHtml(String(item))}</div>`).join('')}</div></div>` : ''}
+      ${payload?.fallback ? '<div class="nutri-fallback-msg">Plan prêt en mode rapide : le contenu reste cohérent et utilisable normalement.</div>' : ''}
     </div>`;
   card.style.display = "block";
+  if (typeof card.scrollIntoView === "function") card.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function generateNutrition() {
@@ -3121,7 +3122,7 @@ async function generateNutrition() {
     saveNutritionPlanState(payload);
 
     if (j.fallback) {
-      toast("Plan nutrition de secours appliqué", "err");
+      toast("Plan nutrition prêt (mode rapide)", "ok");
     } else {
       toast("Plan nutrition généré ✓", "ok");
     }
@@ -3130,6 +3131,7 @@ async function generateNutrition() {
     if (errEl) { errEl.textContent = `Erreur: ${msg}`; errEl.style.display = "block"; }
     const payload = {
       goal: goalEl?.value || "maintenance",
+      day_type: (actEl?.value || "moderate") === "low" ? "rest" : "training",
       nutrition: { calories: 2200, protein: 140, carbs: 260, fats: 70, notes: "Plan local de secours affiché côté application." },
       fallback: true
     };
@@ -3555,6 +3557,57 @@ function renderSvgChart(data, opts) {
     + "</svg>";
 }
 
+function buildWeeklySessionData(rows, weeks) {
+  var count = Math.max(2, Number(weeks) || 8);
+  var now = new Date();
+  var start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - ((count - 1) * 7));
+  var buckets = Array.from({ length: count }, function(_, idx) {
+    var d = new Date(start);
+    d.setDate(start.getDate() + (idx * 7));
+    return { start: d, end: new Date(d.getTime() + 7 * 24 * 60 * 60 * 1000), label: d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }), value: 0 };
+  });
+  (rows || []).forEach(function(row) {
+    var dt = new Date(row.created_at);
+    if (Number.isNaN(dt.getTime())) return;
+    for (var i = 0; i < buckets.length; i += 1) {
+      if (dt >= buckets[i].start && dt < buckets[i].end) { buckets[i].value += 1; break; }
+    }
+  });
+  return buckets.map(function(bucket) { return { label: bucket.label, value: bucket.value }; });
+}
+
+function buildDailyCalData(rows, days) {
+  var count = Math.max(2, Number(days) || 14);
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var buckets = Array.from({ length: count }, function(_, idx) {
+    var d = new Date(today);
+    d.setDate(today.getDate() - (count - 1 - idx));
+    return { key: d.toISOString().slice(0, 10), label: d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }), value: 0 };
+  });
+  var map = Object.create(null);
+  buckets.forEach(function(bucket) { map[bucket.key] = bucket; });
+  (rows || []).forEach(function(row) {
+    var dt = new Date(row.created_at);
+    if (Number.isNaN(dt.getTime())) return;
+    var key = dt.toISOString().slice(0, 10);
+    if (map[key]) map[key].value += Math.max(0, Number(row.calories) || 0);
+  });
+  return buckets.map(function(bucket) { return { label: bucket.label, value: Math.round(bucket.value) }; });
+}
+
+function setProgressErrorState(message) {
+  var msg = escapeHtml(message || "Données indisponibles pour le moment");
+  [["chart-sessions-svg", "Impossible de charger les séances"], ["chart-scan-svg", "Impossible de charger les scans"], ["chart-calories-svg", "Impossible de charger les calories"]].forEach(function(entry) {
+    var el = document.getElementById(entry[0]);
+    if (el) el.innerHTML = '<div class="chart-empty">' + entry[1] + '</div>';
+  });
+  var moodDotsEl = document.getElementById("chart-mood-dots");
+  if (moodDotsEl) moodDotsEl.innerHTML = '<div class="chart-empty">' + msg + '</div>';
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // PROGRESS TAB
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3562,92 +3615,94 @@ function renderSvgChart(data, opts) {
 async function loadProgress() {
   if (!U) return;
 
-  var moodSince = new Date();
-  moodSince.setDate(moodSince.getDate() - 29);
+  try {
+    var moodSince = new Date();
+    moodSince.setDate(moodSince.getDate() - 29);
 
-  var results = await Promise.allSettled([
-    SB.from("workout_sessions").select("id,created_at,plan").eq("user_id", U.id).order("created_at", { ascending: true }).limit(120),
-    SB.from("body_scans").select("created_at,physical_score,extended_analysis").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
-    SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(100),
-    SB.from("daily_moods").select("mood_level,mood_label,date").eq("user_id", U.id)
-      .gte("date", moodSince.toISOString().slice(0, 10)).order("date", { ascending: true }).limit(30)
-  ]);
+    var results = await Promise.allSettled([
+      SB.from("workout_sessions").select("id,created_at,plan").eq("user_id", U.id).order("created_at", { ascending: true }).limit(120),
+      SB.from("body_scans").select("created_at,physical_score,extended_analysis").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
+      SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(100),
+      SB.from("daily_moods").select("mood_level,mood_label,date").eq("user_id", U.id)
+        .gte("date", moodSince.toISOString().slice(0, 10)).order("date", { ascending: true }).limit(30)
+    ]);
 
-  var sessions = results[0].status === "fulfilled" ? (results[0].value.data || []) : [];
-  var scansRaw = results[1].status === "fulfilled" ? (results[1].value.data || []) : [];
-  var meals = results[2].status === "fulfilled" ? (results[2].value.data || []) : [];
-  var moods = results[3].status === "fulfilled" ? (results[3].value.data || []) : [];
-  var metrics = computeWorkoutMetrics((sessions || []).slice().sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); }));
+    var sessions = results[0].status === "fulfilled" ? (results[0].value.data || []) : [];
+    var scansRaw = results[1].status === "fulfilled" ? (results[1].value.data || []) : [];
+    var meals = results[2].status === "fulfilled" ? (results[2].value.data || []) : [];
+    var moods = results[3].status === "fulfilled" ? (results[3].value.data || []) : [];
+    var metrics = computeWorkoutMetrics((sessions || []).slice().sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); }));
 
-  var scans = scansRaw.map(function(s) {
-    var score = s.physical_score;
-    if (score == null && s.extended_analysis && s.extended_analysis.score_breakdown) {
-      var bd = s.extended_analysis.score_breakdown;
-      var vals = [bd.symmetry, bd.posture, bd.muscle_definition, bd.body_composition].filter(function(v) { return typeof v === "number"; });
-      if (vals.length) score = Math.round(vals.reduce(function(acc, v) { return acc + v; }, 0) / vals.length);
+    var scans = scansRaw.map(function(s) {
+      var score = s.physical_score;
+      if (score == null && s.extended_analysis && s.extended_analysis.score_breakdown) {
+        var bd = s.extended_analysis.score_breakdown;
+        var vals = [bd.symmetry, bd.posture, bd.muscle_definition, bd.body_composition].filter(function(v) { return typeof v === "number"; });
+        if (vals.length) score = Math.round(vals.reduce(function(acc, v) { return acc + v; }, 0) / vals.length);
+      }
+      return { created_at: s.created_at, physical_score: score || 0 };
+    });
+
+    var elStreak = document.getElementById("prog-streak");
+    var elSub = document.getElementById("prog-streak-sub");
+    var elTotal = document.getElementById("prog-sessions-total");
+    var elBest = document.getElementById("prog-best-score");
+    if (elStreak) elStreak.textContent = String(metrics.currentStreak || 0);
+    if (elSub) elSub.textContent = "jours consécutifs";
+    if (elTotal) elTotal.textContent = String(metrics.totalSessions || 0);
+    var bestScore = scans.reduce(function(m, s) { return s.physical_score > m ? s.physical_score : m; }, 0);
+    if (elBest) elBest.textContent = bestScore > 0 ? String(bestScore) : "—";
+
+    var elMoodStat = document.getElementById("prog-mood-stat");
+    if (elMoodStat) {
+      var lastMood = moods.length ? moods[moods.length - 1] : null;
+      elMoodStat.textContent = lastMood ? (lastMood.mood_label || "—") : "—";
     }
-    return { created_at: s.created_at, physical_score: score || 0 };
-  });
 
-  var elStreak = document.getElementById("prog-streak");
-  var elSub = document.getElementById("prog-streak-sub");
-  var elTotal = document.getElementById("prog-sessions-total");
-  var elBest = document.getElementById("prog-best-score");
-  if (elStreak) elStreak.textContent = String(metrics.currentStreak || 0);
-  if (elSub) elSub.textContent = "jours consécutifs";
-  if (elTotal) elTotal.textContent = String(metrics.totalSessions || 0);
-  var bestScore = scans.reduce(function(m, s) { return s.physical_score > m ? s.physical_score : m; }, 0);
-  if (elBest) elBest.textContent = bestScore > 0 ? String(bestScore) : "—";
+    var sessChart = buildWeeklySessionData(sessions, 8);
+    var sessEl = document.getElementById("chart-sessions-svg");
+    var sessHead = document.getElementById("chart-sessions-headline");
+    if (sessEl) sessEl.innerHTML = renderSvgChart(sessChart, { color: "#2563eb" });
+    if (sessHead) sessHead.textContent = (metrics.totalSessions || 0) + " séances total";
 
-  var elMoodStat = document.getElementById("prog-mood-stat");
-  if (elMoodStat) {
-    var lastMood = moods.length ? moods[moods.length - 1] : null;
-    elMoodStat.textContent = lastMood ? (lastMood.mood_label || "—") : "—";
-  }
+    var scanData = scans.filter(function(s) { return s.physical_score > 0; }).map(function(s) {
+      return { value: s.physical_score, label: new Date(s.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) };
+    });
+    var scanEl = document.getElementById("chart-scan-svg");
+    var scanHead = document.getElementById("chart-scan-headline");
+    if (scanEl) scanEl.innerHTML = renderSvgChart(scanData, { color: "#9333ea", unit: "/100" });
+    if (scanHead) {
+      var ls = scans[scans.length - 1];
+      scanHead.textContent = ls && ls.physical_score ? "Dernier score: " + ls.physical_score + "/100" : scans.length + " scan(s) effectué(s)";
+    }
 
-  var sessChart = buildWeeklySessionData(sessions, 8);
-  var sessEl = document.getElementById("chart-sessions-svg");
-  var sessHead = document.getElementById("chart-sessions-headline");
-  if (sessEl) sessEl.innerHTML = renderSvgChart(sessChart, { color: "#2563eb" });
-  if (sessHead) sessHead.textContent = (metrics.totalSessions || 0) + " séances total";
+    var calData = buildDailyCalData(meals, 14);
+    var calEl = document.getElementById("chart-calories-svg");
+    var calHead = document.getElementById("chart-calories-headline");
+    if (calEl) calEl.innerHTML = renderSvgChart(calData, { color: "#f97316", unit: " kcal", H: 110 });
+    if (calHead) {
+      var avg = calData.length ? Math.round(calData.reduce(function(acc, d) { return acc + d.value; }, 0) / calData.length) : 0;
+      calHead.textContent = avg > 0 ? "Moyenne: " + avg + " kcal / jour" : "Enregistrez vos repas pour voir l'évolution";
+    }
 
-  var scanData = scans.filter(function(s) { return s.physical_score > 0; }).map(function(s) {
-    return { value: s.physical_score, label: new Date(s.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) };
-  });
-  var scanEl = document.getElementById("chart-scan-svg");
-  var scanHead = document.getElementById("chart-scan-headline");
-  if (scanEl) scanEl.innerHTML = renderSvgChart(scanData, { color: "#9333ea", unit: "/100" });
-  if (scanHead) {
-    var ls = scans[scans.length - 1];
-    scanHead.textContent = ls && ls.physical_score ? "Dernier score: " + ls.physical_score + "/100" : scans.length + " scan(s) effectué(s)";
-  }
-
-  var calData = buildDailyCalData(meals, 14);
-  var calEl = document.getElementById("chart-calories-svg");
-  var calHead = document.getElementById("chart-calories-headline");
-  if (calEl) calEl.innerHTML = renderSvgChart(calData, { color: "#f97316", unit: " kcal", H: 110 });
-  if (calHead) {
-    var avg = calData.length ? Math.round(calData.reduce(function(acc, d) { return acc + d.value; }, 0) / calData.length) : 0;
-    calHead.textContent = avg > 0 ? "Moyenne: " + avg + " kcal / jour" : "Enregistrez vos repas pour voir l'évolution";
-  }
-
-  var moodDotsEl = document.getElementById("chart-mood-dots");
-  var moodHead = document.getElementById("chart-mood-headline");
-  if (moodDotsEl) {
-    if (!moods.length) {
-      moodDotsEl.innerHTML = '<div class="chart-empty">Pas encore de données</div>';
-    } else {
-      moodDotsEl.innerHTML = moods.map(function(m) {
+    var moodDotsEl = document.getElementById("chart-mood-dots");
+    var moodHead = document.getElementById("chart-mood-headline");
+    if (moodDotsEl) {
+      if (!moods.length) moodDotsEl.innerHTML = '<div class="chart-empty">Pas encore de données</div>';
+      else moodDotsEl.innerHTML = moods.map(function(m) {
         return `<div class="mood-dot mood-${m.mood_level}" title="${escapeAttr(m.date)} · ${escapeAttr(m.mood_label || '')}"></div>`;
       }).join("");
     }
-  }
-  if (moodHead) {
-    if (!moods.length) moodHead.textContent = "Pas encore de données";
-    else {
-      var avg = (moods.reduce(function(sum, item) { return sum + (Number(item.mood_level) || 0); }, 0) / moods.length).toFixed(1);
-      moodHead.textContent = moods.length + " jour(s) suivi(s) — humeur moy.: " + avg + "/5";
+    if (moodHead) {
+      if (!moods.length) moodHead.textContent = "Pas encore de données";
+      else {
+        var avg = (moods.reduce(function(sum, item) { return sum + (Number(item.mood_level) || 0); }, 0) / moods.length).toFixed(1);
+        moodHead.textContent = moods.length + " jour(s) suivi(s) — humeur moy.: " + avg + "/5";
+      }
     }
+  } catch (e) {
+    console.error("[Progress]", e);
+    setProgressErrorState(e.message || "Impossible de charger les progrès");
   }
 }
 
