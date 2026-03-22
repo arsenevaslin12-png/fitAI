@@ -603,6 +603,10 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .progress-wrap{margin-top:12px;background:var(--surf2);border:1px solid var(--border);border-radius:14px;padding:12px}
 .progress-track{height:8px;background:var(--surf3);border-radius:999px;overflow:hidden}
 .progress-fill{height:100%;width:0;background:var(--grad);transition:width .3s;border-radius:999px}
+.water-btn{width:34px;height:34px;border-radius:50%;background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.25);color:#38bdf8;font-size:1.2rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s}
+.water-btn:hover{background:rgba(56,189,248,.22)}
+.water-glass{width:20px;height:20px;border-radius:5px;border:1.5px solid rgba(56,189,248,.35);display:flex;align-items:center;justify-content:center;font-size:.8rem;transition:all .2s;cursor:default}
+.water-glass.filled{background:rgba(56,189,248,.2);border-color:#38bdf8}
 .progress-text{margin-top:6px;font-size:.78rem;color:var(--muted);font-weight:700;text-align:right}
 
 /* ── SCROLLBAR ── */
@@ -1234,6 +1238,28 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
           </div>
 
         </div><!-- /bento -->
+
+        <!-- Water counter -->
+        <div class="card" id="water-card" style="margin-bottom:4px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="font-weight:800;font-size:.92rem">💧 Hydratation du jour</div>
+            <div style="font-size:.7rem;color:var(--muted);font-weight:700" id="water-pct-label">0%</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <button onclick="adjustWater(-1)" class="water-btn">−</button>
+            <div id="water-glasses" style="display:flex;gap:5px;flex:1;flex-wrap:wrap;justify-content:center"></div>
+            <button onclick="adjustWater(1)" class="water-btn">+</button>
+          </div>
+          <div style="margin-top:10px">
+            <div class="progress-track" style="height:6px">
+              <div class="progress-fill" id="water-bar" style="width:0%;background:linear-gradient(90deg,#38bdf8,#0ea5e9)"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:5px">
+              <span style="font-size:.72rem;color:var(--muted)" id="water-summary">0 / 8 verres</span>
+              <span style="font-size:.72rem;color:#38bdf8;font-weight:700" id="water-liters">0 L / 2 L</span>
+            </div>
+          </div>
+        </div>
 
         <!-- Daily Challenges -->
         <div id="daily-challenges-container"></div>

@@ -510,6 +510,7 @@ async function loadDashboard() {
     }
     await Promise.all([loadGoal(), loadMeals(), loadStats(), loadNutritionTargets(), loadStreak()]);
     if (typeof renderDailyChallengesSection === "function") renderDailyChallengesSection();
+    renderWater();
     loadScanMiniTile();
     restoreMoodSelection();
   } catch (e) {
@@ -2126,37 +2127,68 @@ function applyStats({ sessCount = 0, scansCount = 0, postsCount = 0 } = {}) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const DEFIS_LIST = [
-  { id: "7days", icon: "🔥", title: "7 jours consécutifs", desc: "Entraîne-toi 7 jours de suite sans interruption", difficulty: "Moyen", xp: 500, color: "#f97316", target: 7, unit: "jours", metric: "streak" },
-  { id: "10kcal", icon: "⚡", title: "10 000 calories brûlées", desc: "Cumule 10 000 calories brûlées sur l'ensemble de tes séances", difficulty: "Difficile", xp: 1000, color: "#eab308", target: 10000, unit: "kcal", metric: "calories" },
-  { id: "30sess", icon: "🏋️", title: "30 séances d'entraînement", desc: "Complète 30 séances au total pour débloquer ce défi", difficulty: "Difficile", xp: 1500, color: "#ef4444", target: 30, unit: "séances", metric: "sessions" },
-  { id: "5h_week", icon: "⏱️", title: "5h d'entraînement en 1 semaine", desc: "Totalise 5 heures de sport sur une même semaine", difficulty: "Moyen", xp: 600, color: "#8b5cf6", target: 300, unit: "minutes", metric: "weekly_time" },
-  { id: "variety", icon: "🌈", title: "Polyvalence totale", desc: "Effectue au moins 3 types d'entraînement différents en une semaine", difficulty: "Moyen", xp: 400, color: "#f97316", target: 3, unit: "types", metric: "variety" },
-  { id: "early", icon: "🌅", title: "Lève-tôt champion", desc: "Entraîne-toi 5 fois avant 8h du matin", difficulty: "Difficile", xp: 800, color: "#ec4899", target: 5, unit: "matins", metric: "early" },
-  { id: "perfect_week", icon: "💎", title: "Semaine parfaite", desc: "Entraîne-toi ET suis ta nutrition toute une semaine (7/7)", difficulty: "Expert", xp: 2000, color: "#3b82f6", target: 7, unit: "jours", metric: "perfect" }
+  // ── Séances ──
+  { id: "sessions_5",   icon: "🏃", title: "5 séances complétées",      desc: "Sauvegarde 5 séances d'entraînement",                      difficulty: "Facile",   xp: 250,  color: "#22c55e", target: 5,     unit: "séances",  metric: "sessions" },
+  { id: "sessions_10",  icon: "💪", title: "10 séances complétées",     desc: "Sauvegarde 10 séances — une vraie routine se forme",       difficulty: "Moyen",    xp: 500,  color: "#f97316", target: 10,    unit: "séances",  metric: "sessions" },
+  { id: "30sess",       icon: "🏋️", title: "30 séances d'entraînement", desc: "Complète 30 séances au total — athlète confirmé",          difficulty: "Difficile",xp: 1500, color: "#ef4444", target: 30,    unit: "séances",  metric: "sessions" },
+  // ── Streaks ──
+  { id: "streak_3",     icon: "⚡", title: "Streak 3 jours",            desc: "3 jours consécutifs d'entraînement",                       difficulty: "Facile",   xp: 150,  color: "#38bdf8", target: 3,     unit: "jours",    metric: "streak" },
+  { id: "7days",        icon: "🔥", title: "Streak 7 jours",            desc: "Entraîne-toi 7 jours de suite sans interruption",          difficulty: "Moyen",    xp: 500,  color: "#f97316", target: 7,     unit: "jours",    metric: "streak" },
+  { id: "streak_14",    icon: "🌟", title: "Streak 14 jours",           desc: "Deux semaines sans manquer un seul jour",                  difficulty: "Difficile",xp: 900,  color: "#a855f7", target: 14,    unit: "jours",    metric: "streak" },
+  { id: "streak_30",    icon: "👑", title: "Streak 30 jours",           desc: "Un mois entier de régularité absolue",                    difficulty: "Expert",   xp: 2500, color: "#eab308", target: 30,    unit: "jours",    metric: "streak" },
+  // ── Bodyscan ──
+  { id: "scans_1",      icon: "📸", title: "Premier bodyscan IA",       desc: "Réalise ton premier scan corporel avec l'IA",              difficulty: "Facile",   xp: 200,  color: "#0ea5e9", target: 1,     unit: "scans",    metric: "scans" },
+  { id: "scans_5",      icon: "🔬", title: "5 bodyscans réalisés",      desc: "Suis l'évolution de ton physique sur la durée",            difficulty: "Moyen",    xp: 600,  color: "#06b6d4", target: 5,     unit: "scans",    metric: "scans" },
+  // ── Communauté ──
+  { id: "social_1",     icon: "📣", title: "Premier post communautaire",desc: "Partage ta première photo ou message dans la communauté",  difficulty: "Facile",   xp: 150,  color: "#ec4899", target: 1,     unit: "posts",    metric: "posts" },
+  { id: "social_5",     icon: "🤝", title: "5 posts publiés",           desc: "Inspire la communauté avec 5 publications",               difficulty: "Moyen",    xp: 400,  color: "#f43f5e", target: 5,     unit: "posts",    metric: "posts" },
+  // ── Défis quotidiens ──
+  { id: "daily_7",      icon: "🎯", title: "7 journées de défis",       desc: "Accomplis tous les défis du jour à 7 reprises",            difficulty: "Moyen",    xp: 700,  color: "#84cc16", target: 7,     unit: "journées", metric: "daily_completions" },
+  { id: "daily_30",     icon: "🏅", title: "30 journées de défis",      desc: "Maîtrise quotidienne pendant un mois entier",             difficulty: "Expert",   xp: 2000, color: "#65a30d", target: 30,    unit: "journées", metric: "daily_completions" },
+  // ── Long terme ──
+  { id: "10kcal",       icon: "🔥", title: "10 000 calories brûlées",   desc: "Cumule 10 000 calories brûlées en séances sauvegardées",  difficulty: "Difficile",xp: 1000, color: "#eab308", target: 10000, unit: "kcal",     metric: "calories" },
+  { id: "5h_week",      icon: "⏱️", title: "5h d'entraînement/semaine", desc: "Totalise 5 heures de sport sur une même semaine",         difficulty: "Moyen",    xp: 600,  color: "#8b5cf6", target: 300,   unit: "minutes",  metric: "weekly_time" },
+  { id: "variety",      icon: "🌈", title: "Polyvalence totale",        desc: "3 types d'entraînement différents en une semaine",        difficulty: "Moyen",    xp: 400,  color: "#f97316", target: 3,     unit: "types",    metric: "variety" },
+  { id: "perfect_week", icon: "💎", title: "Semaine parfaite",          desc: "Entraînement + nutrition suivis 7/7 sur une semaine",     difficulty: "Expert",   xp: 2000, color: "#3b82f6", target: 7,     unit: "jours",    metric: "perfect" },
 ];
+
+function getDailyCompletionCount() {
+  try { return Number(localStorage.getItem("fitai_daily_completions") || "0"); }
+  catch { return 0; }
+}
 
 async function loadDefis() {
   if (!U) return;
   const el = document.getElementById("defis-list");
   if (!el) return;
 
-  // Load user stats for progress
-  let totalSessions = 0, currentStreak = 0;
+  // Load all trackable metrics
+  let totalSessions = 0, currentStreak = 0, longestStreak = 0, totalScans = 0, totalPosts = 0;
   try {
-    const [sessRes, streakRes] = await Promise.all([
+    const [sessRes, streakRes, scansRes, postsRes] = await Promise.all([
       SB.from("workout_sessions").select("id", { count: "exact", head: true }).eq("user_id", U.id),
-      SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle()
+      SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle(),
+      SB.from("body_scans").select("id", { count: "exact", head: true }).eq("user_id", U.id),
+      SB.from("community_posts").select("id", { count: "exact", head: true }).eq("user_id", U.id)
     ]);
-    totalSessions = sessRes.count || 0;
-    currentStreak = streakRes.data?.current_streak || 0;
+    totalSessions   = sessRes.count   || 0;
+    currentStreak   = streakRes.data?.current_streak  || 0;
+    longestStreak   = streakRes.data?.longest_streak  || 0;
+    totalScans      = scansRes.count  || 0;
+    totalPosts      = postsRes.count  || 0;
   } catch (e) { console.error("[Defis] Stats error:", e); }
+
+  const dailyCompletions = getDailyCompletionCount();
 
   // Calculate progress for each defi
   const defisProgress = DEFIS_LIST.map(d => {
     let current = 0;
-    if (d.metric === "sessions") current = totalSessions;
-    else if (d.metric === "streak") current = currentStreak;
-    else current = 0;
+    if      (d.metric === "sessions")          current = totalSessions;
+    else if (d.metric === "streak")            current = Math.max(currentStreak, longestStreak);
+    else if (d.metric === "scans")             current = totalScans;
+    else if (d.metric === "posts")             current = totalPosts;
+    else if (d.metric === "daily_completions") current = dailyCompletions;
+    else current = 0; // calories, weekly_time, variety, perfect — non encore tracké
     const pct = Math.min(100, Math.round((current / d.target) * 100));
     const completed = current >= d.target;
     return { ...d, current, pct, completed };
@@ -2185,24 +2217,31 @@ async function loadDefis() {
   const diffColors = { "Moyen": "var(--yellow)", "Difficile": "var(--red)", "Expert": "var(--accent)" };
 
   el.innerHTML = defisProgress.map(d => `
-    <div class="defi-card" style="border-top:3px solid ${d.color}">
+    <div class="defi-card" style="border-top:3px solid ${d.color};${d.completed ? "opacity:.92;box-shadow:0 0 0 1px " + d.color + "44" : ""}">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
         <span style="font-size:1.5rem">${d.icon}</span>
-        <div style="flex:1">
-          <div style="font-weight:800;font-size:.95rem">${escapeHtml(d.title)}</div>
-          <div class="meal-info">${escapeHtml(d.desc)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:800;font-size:.92rem;display:flex;align-items:center;gap:6px">
+            ${escapeHtml(d.title)}
+            ${d.completed ? `<span style="font-size:.7rem;background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3);border-radius:999px;padding:1px 7px;font-weight:700">✓ Complété</span>` : ""}
+          </div>
+          <div class="meal-info" style="margin-top:2px">${escapeHtml(d.desc)}</div>
         </div>
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap">
         <span class="badge" style="background:rgba(255,255,255,.06);color:${diffColors[d.difficulty] || "var(--muted)"}">${d.difficulty}</span>
         <span class="badge" style="background:rgba(234,179,8,.1);color:var(--yellow)">+${d.xp} XP</span>
+        ${d.metric === "calories" || d.metric === "weekly_time" || d.metric === "variety" || d.metric === "perfect"
+          ? `<span class="badge" style="background:rgba(255,255,255,.04);color:var(--muted);font-size:.65rem" title="Suivi manuel">📋 Manuel</span>` : ""}
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;font-size:.78rem;margin-bottom:6px">
         <span style="color:var(--muted)">Progression</span>
-        <span style="font-weight:700">${d.current} / ${d.target} ${d.unit}</span>
+        <span style="font-weight:700;color:${d.completed ? "#4ade80" : "var(--text)"}">${d.current} / ${d.target} ${d.unit}</span>
       </div>
-      <div class="progress-track" style="height:6px"><div class="progress-fill" style="width:${d.pct}%;background:${d.color}"></div></div>
-      <div style="font-size:.72rem;color:var(--muted);margin-top:4px">${d.pct}% accompli</div>
+      <div class="progress-track" style="height:6px">
+        <div class="progress-fill" style="width:${d.pct}%;background:${d.completed ? "#22c55e" : d.color}"></div>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);margin-top:4px">${d.completed ? "🏆 Défi accompli !" : d.pct + "% accompli"}</div>
     </div>
   `).join("");
 }
@@ -3446,6 +3485,61 @@ window.toggleTheme = toggleTheme;
 // DAILY CHALLENGES — reset each day, stored in localStorage
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════════════════
+// EAU — COMPTEUR JOURNALIER
+// ══════════════════════════════════════════════════════════════════════════════
+
+const WATER_TARGET = 8; // verres de 250ml = 2L
+const WATER_KEY    = "fitai_water";
+
+function getWaterData() {
+  const today = getTodayKey();
+  try {
+    const d = JSON.parse(localStorage.getItem(WATER_KEY) || "{}");
+    if (d.date === today) return d;
+  } catch {}
+  const fresh = { date: getTodayKey(), count: 0 };
+  try { localStorage.setItem(WATER_KEY, JSON.stringify(fresh)); } catch {}
+  return fresh;
+}
+
+function adjustWater(delta) {
+  const d = getWaterData();
+  d.count = Math.max(0, Math.min(WATER_TARGET + 4, d.count + delta)); // allow going slightly over
+  try { localStorage.setItem(WATER_KEY, JSON.stringify(d)); } catch {}
+  renderWater();
+  if (d.count === WATER_TARGET) toast("💧 Objectif hydratation atteint ! 2L bu.", "ok");
+}
+
+function renderWater() {
+  const d = getWaterData();
+  const count = d.count;
+  const target = WATER_TARGET;
+
+  const glassesEl = document.getElementById("water-glasses");
+  const barEl     = document.getElementById("water-bar");
+  const summEl    = document.getElementById("water-summary");
+  const litersEl  = document.getElementById("water-liters");
+  const pctEl     = document.getElementById("water-pct-label");
+
+  if (!glassesEl) return;
+
+  // Render glass icons (show target slots + any overflow)
+  const slots = Math.max(target, count);
+  glassesEl.innerHTML = Array.from({ length: slots }, (_, i) => {
+    const filled = i < count;
+    return `<div class="water-glass${filled ? " filled" : ""}">${filled ? "💧" : ""}</div>`;
+  }).join("");
+
+  const pct = Math.min(100, Math.round((count / target) * 100));
+  if (barEl)    barEl.style.width = `${pct}%`;
+  if (summEl)   summEl.textContent = `${count} / ${target} verres`;
+  if (litersEl) litersEl.textContent = `${(count * 0.25).toFixed(2).replace(/\.?0+$/, "")} L / 2 L`;
+  if (pctEl)    pctEl.textContent = `${pct}%`;
+}
+
+window.adjustWater = adjustWater;
+
 const DAILY_POOL = [
   { id: "pushups_100", title: "100 pompes", desc: "En autant de séries que nécessaire", icon: "💪", xp: 150, category: "Force" },
   { id: "abs_100", title: "100 abdos", desc: "Crunchs, planche, bicycle — à toi de choisir", icon: "🔥", xp: 100, category: "Core" },
@@ -3461,7 +3555,18 @@ const DAILY_POOL = [
   { id: "no_sugar", title: "Zéro sucre ajouté", desc: "Pas de soda, bonbons, ou desserts sucrés aujourd'hui", icon: "🥗", xp: 100, category: "Nutrition" },
   { id: "sleep_8h", title: "8h de sommeil", desc: "Couche-toi tôt, récupère vraiment", icon: "😴", xp: 80, category: "Récup" },
   { id: "dips_50", title: "50 dips", desc: "Sur chaise, barre parallèle ou banc", icon: "💪", xp: 140, category: "Force" },
-  { id: "jump_200", title: "200 sauts à la corde", desc: "Ou 200 jumping jacks si pas de corde", icon: "⚡", xp: 110, category: "Cardio" },
+  { id: "jump_200",      title: "200 sauts à la corde",        desc: "Ou 200 jumping jacks si pas de corde",               icon: "⚡", xp: 110, category: "Cardio" },
+  // ── 10 nouveaux ──
+  { id: "gainage_10",   title: "10 min de gainage",           desc: "Planches, gainage latéral, bird-dog — core béton",   icon: "🧱", xp: 120, category: "Core" },
+  { id: "diamond_50",   title: "50 pompes diamant",           desc: "Mains rapprochées pour cibler les triceps",          icon: "💎", xp: 160, category: "Force" },
+  { id: "walk_1h",      title: "1h de marche active",         desc: "Pas de course, allure soutenue, dos droit",          icon: "🚶", xp: 130, category: "Cardio" },
+  { id: "meditation",   title: "10 min de méditation",        desc: "Respiration, pleine conscience, récupération mentale",icon: "🧘", xp: 90,  category: "Mental" },
+  { id: "veggies_day",  title: "Légumes à chaque repas",      desc: "Au moins une portion de légumes par repas",          icon: "🥦", xp: 95,  category: "Nutrition" },
+  { id: "no_screen",    title: "Pas d'écran 1h avant de dormir",desc: "Favorise un meilleur sommeil et la récupération",   icon: "📵", xp: 80,  category: "Lifestyle" },
+  { id: "dips_3x20",    title: "3 × 20 dips",                 desc: "Sur chaise, barre parallèle ou barre de traction",   icon: "💪", xp: 155, category: "Force" },
+  { id: "run_3k_fast",  title: "3km en moins de 20 minutes",  desc: "Allure soutenue, bon échauffement",                  icon: "🏃", xp: 190, category: "Cardio" },
+  { id: "mountain_3x50",title: "3 × 50 mountain climbers",   desc: "Gainage + cardio combinés, enchaîner sans pause",    icon: "🔥", xp: 165, category: "HIIT" },
+  { id: "mobility_20",  title: "20 min de mobilité",          desc: "Hanches, épaules, chevilles — travail articulaire",  icon: "🤸", xp: 100, category: "Récup" },
 ];
 
 function getTodayKey() {
@@ -3501,6 +3606,12 @@ function completeDailyChallenge(challengeId) {
   if (data.done.length >= data.picks.length) {
     toast("🔥 Tous les défis du jour accomplis ! Streak maintenu.", "ok");
     updateDailyStreak();
+    // Increment global daily completion counter (for "daily_completions" défi)
+    try {
+      const prev = Number(localStorage.getItem("fitai_daily_completions") || "0");
+      localStorage.setItem("fitai_daily_completions", String(prev + 1));
+    } catch {}
+    checkAndAwardAchievements().catch(() => {});
   }
 
   // Re-render daily section
