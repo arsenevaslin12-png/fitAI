@@ -814,23 +814,41 @@ async function sendCoachMsg(quickMsg) {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
-    const [goalRes, profileRes, streakRes] = await Promise.all([
+    const today = new Date().toISOString().slice(0, 10);
+
+    const [goalRes, profileRes, streakRes, recentSessionsRes, lastScanRes, todayMealsRes] = await Promise.all([
       SB.from("goals").select("type,level,constraints,equipment").eq("user_id", U.id).maybeSingle(),
       SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle(),
-      SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle().catch(() => ({ data: null }))
+      SB.from("user_streaks").select("current_streak,total_workouts").eq("user_id", U.id).maybeSingle().catch(() => ({ data: null })),
+      SB.from("workout_sessions").select("plan,created_at").eq("user_id", U.id).order("created_at", { ascending: false }).limit(3).catch(() => ({ data: [] })),
+      SB.from("body_scans").select("physical_score,created_at").eq("user_id", U.id).order("created_at", { ascending: false }).limit(1).catch(() => ({ data: [] })),
+      SB.from("meals").select("name,calories,protein").eq("user_id", U.id).eq("date", today).catch(() => ({ data: [] }))
     ]);
 
     const goalContext = goalRes?.data || {};
     const dbProfile = profileRes?.data || {};
     const currentStreak = streakRes?.data?.current_streak || 0;
-    const historyForApi = COACH_HISTORY.slice(-8, -1).map((m) => ({
+    const totalWorkouts = streakRes?.data?.total_workouts || 0;
+    const historyForApi = COACH_HISTORY.slice(-15, -1).map((m) => ({
       role: m.role,
-      content: m.role === "ai" ? stripHtml(m.content).slice(0, 300) : m.content
+      content: m.role === "ai" ? stripHtml(m.content).slice(0, 400) : m.content
     }));
 
-    // Update coach stats streak display
+    // Build recent workout context
+    const recentSessions = (recentSessionsRes?.data || []);
+    const recentWorkoutNames = recentSessions.map(s => s.plan?.title || "Séance").slice(0, 3);
+    const lastScanScore = lastScanRes?.data?.[0]?.physical_score || null;
+
+    // Today nutrition summary
+    const todayMeals = todayMealsRes?.data || [];
+    const todayKcal = todayMeals.reduce((s, m) => s + (m.calories || 0), 0);
+    const todayProtein = todayMeals.reduce((s, m) => s + (m.protein || 0), 0);
+
+    // Update coach stats
     const csEnergy = document.getElementById("cs-energy");
-    if (csEnergy && currentStreak > 0) csEnergy.textContent = `${currentStreak}j`;
+    if (csEnergy) csEnergy.textContent = currentStreak > 0 ? `${currentStreak}j` : "0j";
+    const csWeek = document.getElementById("cs-week");
+    if (csWeek) csWeek.textContent = totalWorkouts || "0";
 
     // Read today's mood from localStorage
     let moodLabel = "";
@@ -842,11 +860,14 @@ async function sendCoachMsg(quickMsg) {
       }
     } catch {}
 
-    // Update coach sub-line with goal + mood context
+    // Update coach sub-line
     const coachSubLine = document.getElementById("coach-sub-line");
     if (coachSubLine && goalContext.type) {
       const goalLabel = { prise_de_masse: "Prise de masse", perte_de_poids: "Perte de poids", endurance: "Endurance", force: "Force", remise_en_forme: "Remise en forme", maintien: "Maintien" }[goalContext.type] || goalContext.type;
-      coachSubLine.textContent = moodLabel ? `${goalLabel} · Humeur: ${moodLabel}` : goalLabel;
+      const parts = [goalLabel];
+      if (moodLabel) parts.push(moodLabel);
+      if (currentStreak > 0) parts.push(`${currentStreak}j streak`);
+      coachSubLine.textContent = parts.join(" · ");
     }
 
     const coachProfile = {
@@ -858,7 +879,13 @@ async function sendCoachMsg(quickMsg) {
       level: goalContext.level || "beginner",
       injuries: goalContext.constraints || "",
       equipment: goalContext.equipment || "poids du corps",
-      mood_today: moodLabel || undefined
+      mood_today: moodLabel || undefined,
+      streak: currentStreak || undefined,
+      total_workouts: totalWorkouts || undefined,
+      recent_workouts: recentWorkoutNames.length ? recentWorkoutNames : undefined,
+      last_scan_score: lastScanScore || undefined,
+      today_kcal: todayKcal > 0 ? todayKcal : undefined,
+      today_protein: todayProtein > 0 ? todayProtein : undefined
     };
 
     // Try SSE streaming first; fall back to standard JSON endpoint
@@ -2369,12 +2396,77 @@ function stripHtml(html) {
   return String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function formatCoachText(text) {
-  return escapeHtml(text)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n\n/g, '</p><p style="margin-top:8px">')
-    .replace(/\n/g, '<br>')
-    .replace(/^/, '<p>').replace(/$/, '</p>');
+function formatCoachText(raw) {
+  if (!raw) return "";
+
+  // Split into lines for processing
+  const lines = String(raw).split("\n");
+  const out = [];
+  let inUl = false, inOl = false;
+
+  const closeList = () => {
+    if (inUl) { out.push("</ul>"); inUl = false; }
+    if (inOl) { out.push("</ol>"); inOl = false; }
+  };
+
+  const inlineFormat = (str) => {
+    return escapeHtml(str)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>")
+      .replace(/_(.+?)_/g, "<em>$1</em>");
+  };
+
+  for (const raw_line of lines) {
+    const line = raw_line.trimEnd();
+
+    // H3
+    if (/^###\s+/.test(line)) {
+      closeList();
+      out.push(`<div class="coach-h3">${inlineFormat(line.replace(/^###\s+/, ""))}</div>`);
+      continue;
+    }
+    // H2
+    if (/^##\s+/.test(line)) {
+      closeList();
+      out.push(`<div class="coach-h2">${inlineFormat(line.replace(/^##\s+/, ""))}</div>`);
+      continue;
+    }
+    // H1 (━━ style separators too)
+    if (/^#\s+/.test(line) || /^━{2,}/.test(line)) {
+      closeList();
+      const t = line.replace(/^#\s+/, "").replace(/^━+\s*/, "").replace(/\s*━+$/, "").trim();
+      if (t) out.push(`<div class="coach-h2">${inlineFormat(t)}</div>`);
+      continue;
+    }
+    // Unordered list item: starts with - or • or –
+    if (/^[-•–]\s+/.test(line)) {
+      if (inOl) { out.push("</ol>"); inOl = false; }
+      if (!inUl) { out.push('<ul class="coach-list">'); inUl = true; }
+      out.push(`<li>${inlineFormat(line.replace(/^[-•–]\s+/, ""))}</li>`);
+      continue;
+    }
+    // Ordered list item: starts with digit.
+    if (/^\d+\.\s+/.test(line)) {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      if (!inOl) { out.push('<ol class="coach-list">'); inOl = true; }
+      out.push(`<li>${inlineFormat(line.replace(/^\d+\.\s+/, ""))}</li>`);
+      continue;
+    }
+
+    // Empty line → paragraph break
+    if (line.trim() === "") {
+      closeList();
+      out.push('<div class="coach-gap"></div>');
+      continue;
+    }
+
+    // Normal text
+    closeList();
+    out.push(`<p class="coach-p">${inlineFormat(line)}</p>`);
+  }
+
+  closeList();
+  return out.join("");
 }
 
 async function retryLastCoachMessage() {
@@ -2496,9 +2588,51 @@ async function loadStreak() {
       else if (streak.total_workouts >= 5) csLevel.textContent = "Inter.";
       else csLevel.textContent = "Début.";
     }
+
+    // Update coach suggestion card
+    updateCoachCard(streak.current_streak, streak.total_workouts);
   } catch (e) {
     console.warn("[Streak] Load error (table may not exist):", e.message);
   }
+}
+
+function updateCoachCard(streak, totalWorkouts) {
+  const titleEl = document.getElementById("db-coach-title");
+  const subEl   = document.getElementById("db-coach-sub");
+  const btnEl   = document.getElementById("db-coach-btn");
+  if (!titleEl || !subEl) return;
+
+  let title, sub, btnLabel;
+
+  if (streak >= 7) {
+    title = `${streak} jours de streak`;
+    sub   = "Impressionnant ! Maintenez le rythme — demandez au coach votre séance du jour.";
+    btnLabel = "Continuer le streak";
+  } else if (streak >= 3) {
+    title = `Streak de ${streak} jours`;
+    sub   = "Vous êtes lancé — ne cassez pas la dynamique maintenant.";
+    btnLabel = "Séance du jour";
+  } else if (streak === 2) {
+    title = "2 jours d'affilée";
+    sub   = "Bonne lancée ! Une séance de plus et le streak commence à compter.";
+    btnLabel = "Continuer";
+  } else if (totalWorkouts === 0) {
+    title = "Première séance ?";
+    sub   = "Le coach IA génère un programme sur-mesure en quelques secondes.";
+    btnLabel = "Démarrer maintenant";
+  } else if (streak === 0 && totalWorkouts > 0) {
+    title = "Reprenez l'entraînement";
+    sub   = `${totalWorkouts} séance${totalWorkouts > 1 ? "s" : ""} au compteur — il est temps de reprendre.`;
+    btnLabel = "Relancer une séance";
+  } else {
+    title = "Séance du jour";
+    sub   = "Demandez au coach une séance adaptée à votre humeur et vos objectifs.";
+    btnLabel = "Démarrer";
+  }
+
+  titleEl.textContent = title;
+  subEl.textContent   = sub;
+  if (btnEl) btnEl.textContent = "▶ " + btnLabel;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2508,7 +2642,9 @@ async function loadStreak() {
 function sanitizeCoachHtml(html) {
   if (!html) return "";
   const ALLOWED_TAGS = new Set(["STRONG","EM","DIV","SPAN","UL","OL","LI","BR","P","B","I"]);
-  const ALLOWED_ATTRS = new Set(["style"]);
+  const ALLOWED_ATTRS = new Set(["style","class"]);
+  // Only allow safe class names (coach-* prefix only)
+  const SAFE_CLASS = /^[\w\s-]*$/;
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div>${html}</div>`, "text/html");
   function clean(node) {
@@ -2524,10 +2660,12 @@ function sanitizeCoachHtml(html) {
         }
         // Remove disallowed attributes
         Array.from(child.attributes).forEach(attr => {
-          if (!ALLOWED_ATTRS.has(attr.name)) child.removeAttribute(attr.name);
-          // Check style for javascript
+          if (!ALLOWED_ATTRS.has(attr.name)) { child.removeAttribute(attr.name); return; }
           if (attr.name === "style" && /expression|javascript|url\s*\(/i.test(attr.value)) {
             child.removeAttribute("style");
+          }
+          if (attr.name === "class" && !SAFE_CLASS.test(attr.value)) {
+            child.removeAttribute("class");
           }
         });
         clean(child);
@@ -2615,6 +2753,12 @@ async function generateRecipe() {
   };
 
   const btn = document.getElementById("btn-recipe");
+  // Clear previous result immediately so there's no ambiguous stale state during generation
+  if (resultEl) {
+    resultEl.style.display = "none";
+    resultEl.innerHTML = "";
+  }
+  if (errEl) errEl.style.display = "none";
   await withButton(btn, "Génération…", async () => {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");

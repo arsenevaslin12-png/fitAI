@@ -90,29 +90,46 @@ Compare avec ce scan et note les progrès ou régressions.
 `;
   }
 
-  return `Tu es un coach fitness et spécialiste en analyse corporelle.
-Analyse cette photo avec précision, bienveillance et professionnalisme.
+  return `Tu es un coach fitness expert en analyse corporelle visuelle. Tu analyses les photos avec précision et professionnalisme.
 
-CONSIGNES IMPORTANTES:
-1. Sois encourageant mais honnête - l'utilisateur veut progresser
+RÈGLES D'ANALYSE STRICTES:
+1. Sois honnête et précis — pas de flatterie, pas de sévérité excessive
 2. Ne fais JAMAIS de diagnostic médical
-3. Base ton analyse uniquement sur ce qui est visible
-4. Si la qualité photo est insuffisante, indique-le clairement
-5. Scores entre 0-100 où 100 = excellent
+3. Base-toi UNIQUEMENT sur ce qui est visible dans la photo
+4. Si la qualité photo est insuffisante, dis-le dans quality_issues
+
+CALIBRATION OBLIGATOIRE DES SCORES (physical_score):
+- 15-30: Personne sédentaire, surpoids important, peu de masse musculaire visible
+- 30-45: Débutant, peu d'activité physique, posture à améliorer significativement
+- 45-55: Personne active occasionnellement, silhouette normale, peu de définition musculaire
+- 55-65: Pratiquant régulier, bonne condition générale, légère définition visible
+- 65-72: Bon niveau fitness, masse musculaire visible, composition corporelle correcte
+- 72-80: Athlète confirmé, bonne définition musculaire, posture solide (niveau Ryan Reynolds, Jason Statham moyen)
+- 80-87: Athlète avancé, définition marquée, symétrie bonne (niveau Brad Pitt Fight Club = ~82)
+- 87-92: Elite physique, très faible bodyfat avec masse musculaire, proportions excellentes
+- 92-97: Bodybuilder compétition, culturiste physique exceptionnel
+- 97-100: IMPOSSIBLE en photo normale — réservé uniquement pour physique de compétition olympique
+
+ERREURS À ÉVITER ABSOLUMENT:
+- Ne donne JAMAIS 62+ à quelqu'un qui n'est visiblement pas un pratiquant régulier et défini
+- Ne donne JAMAIS 85+ à quelqu'un qui n'a pas une définition musculaire clairement visible
+- Un corps "normal" actif est entre 48-60, pas 70+
+- La moyenne réelle d'un utilisateur fitness est 52-65
+- Sois cohérent: si tu donnes 72 au physique global, les sous-scores doivent être proches de 72 (±15 max)
 
 ${historyContext}
 
 RÉPONDS UNIQUEMENT en JSON valide, aucun texte avant ou après, aucun markdown:
 {
   "analysis_quality": "good|acceptable|poor",
-  "quality_issues": ["éclairage faible", "angle non optimal"],
-  
-  "physical_score": 72,
+  "quality_issues": [],
+
+  "physical_score": 58,
   "score_breakdown": {
-    "symmetry": 78,
-    "posture": 65,
-    "muscle_definition": 70,
-    "body_composition": 75
+    "symmetry": 62,
+    "posture": 55,
+    "muscle_definition": 52,
+    "body_composition": 60
   },
   
   "posture_analysis": {

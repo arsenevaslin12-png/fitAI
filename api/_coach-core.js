@@ -204,11 +204,11 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
 }
 
 function historyBlock(history = []) {
-  const items = Array.isArray(history) ? history.slice(-6) : [];
+  const items = Array.isArray(history) ? history.slice(-14) : [];
   if (!items.length) return "";
   return items.map((item) => {
     const role = normalizeRole(item.role) === "assistant" ? "Coach" : "Utilisateur";
-    return `${role}: ${sanitizeInput(String(item.content || ""), 280)}`;
+    return `${role}: ${sanitizeInput(String(item.content || ""), 350)}`;
   }).join("\n");
 }
 
@@ -274,48 +274,58 @@ STRUCTURE exercises[] requise:
 
 function buildConversationPrompt(intent, message, history, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
-  const intentGuide = {
-    greeting: "réponds avec chaleur et naturel, propose 2-3 options d'aide concrète (séance, nutrition, recette, liste de courses, organisation)",
-    nutrition_question: "réponds comme un coach nutrition simple et actionnable — macros, timing, aliments conseillés. Sois précis et concret.",
-    recovery_question: "réponds comme un coach récupération expert — sommeil, stress, mobilité, courbatures. Donne des conseils actionnables aujourd'hui.",
-    motivation_question: "réponds comme un coach mental bienveillant et direct. Parle vrai, sois humain, propose une action immédiate.",
-    progress_question: "analyse la situation, interprète les signaux, propose la prochaine étape concrète.",
-    general_fitness: "tu es un assistant personnel polyvalent — fitness, nutrition, lifestyle, organisation, recettes, courses. Sois utile, concret, humain. Réponds à la vraie question posée.",
-    shopping_list: "aide l'utilisateur à préparer sa liste de courses adaptée à ses objectifs nutritionnels",
-    meal_plan: "aide l'utilisateur à structurer ses repas pour la journée ou la semaine selon ses objectifs"
-  }[intent] || "réponds comme un assistant personnel fitness et lifestyle, concret et humain";
 
-  const lengthGuide = ["shopping_list", "meal_plan"].includes(intent)
-    ? "5 à 12 lignes organisées"
-    : intent === "greeting"
-    ? "3 à 5 phrases max"
-    : "2 à 7 phrases";
+  const intentGuides = {
+    greeting:           "Accueille chaleureusement, cite le prénom si dispo, propose 3 options d'aide concrètes selon le profil (séance, nutrition, récup).",
+    nutrition_question: "Coach nutrition précis: donne des chiffres réels (grammes, portions), timing des repas, exemples d'aliments. Pas de généralités.",
+    recovery_question:  "Coach récupération expert: mobilité, sommeil, gestion des courbatures. Protocole actionnable pour aujourd'hui.",
+    motivation_question:"Coach mental direct et honnête. Parle vrai, identifie le vrai blocage, propose une action concrète dans la prochaine heure.",
+    progress_question:  "Analyse les signaux de progression, identifie les leviers d'amélioration, propose la prochaine étape concrète et mesurable.",
+    shopping_list:      "Aide à préparer une liste de courses complète et adaptée à l'objectif nutritionnel.",
+    meal_plan:          "Structure des repas complets pour la journée ou la semaine avec horaires, portions et macros estimées.",
+    advice:             "Conseil pratique direct, immédiatement applicable. Pas de blabla théorique.",
+    general_chat:       "Réponds naturellement comme un coach expert qui connaît bien son client. Sois humain et concret."
+  };
 
-  return `Tu es un assistant coach fitness et lifestyle, expert, concret et bienveillant. Réponds en français.
+  const lengthGuides = {
+    greeting: "3 à 5 phrases, ton chaleureux",
+    shopping_list: "liste bien organisée par catégories",
+    meal_plan: "plan détaillé avec heures et portions",
+    nutrition_question: "4 à 8 phrases avec chiffres concrets",
+    recovery_question: "liste de 3 à 5 actions pour aujourd'hui",
+    motivation_question: "court et percutant, 3 à 5 phrases max"
+  };
 
-Profil utilisateur:
-- Objectif: ${p.goal}
-- Niveau: ${p.level}
-- Équipement: ${p.equipment}
-- Contraintes / blessures: ${p.constraints}
-- Humeur du jour: ${p.mood || "non renseignée"}
-- Sommeil moyen: ${p.sleep || "non renseigné"} h
-- Récupération: ${p.recovery || "non renseignée"}/10
+  const intentGuide = intentGuides[intent] || intentGuides.general_chat;
+  const lengthGuide = lengthGuides[intent] || "2 à 8 phrases ou liste selon le contexte";
+
+  let moodRule = "";
+  if (p.mood === "Épuisé")   moodRule = "\nIMPORTANT: Utilisateur épuisé — récupération active uniquement, aucun conseil d'entraînement intense.";
+  else if (p.mood === "Fatigué") moodRule = "\nIMPORTANT: Utilisateur fatigué — intensité réduite, pas de HIIT.";
+  else if (p.mood === "En forme") moodRule = "\nL'utilisateur est en forme — tu peux proposer un peu plus d'intensité.";
+
+  return `Tu es un coach fitness et nutrition IA expert. Tu parles en français, directement, comme un vrai coach humain qui connaît bien son client. Pas de formules génériques.
+
+PROFIL CLIENT:
+- Objectif: ${p.goal} (${getGoalDescription(p.goal)})
+- Niveau: ${p.level} (${getLevelDescription(p.level)})
+- Équipement: ${p.equipment || "poids du corps"}
+- Contraintes / blessures: ${p.constraints || "aucune"}
+- Humeur du jour: ${p.mood || "non renseignée"}${moodRule}
 ${p.display_name ? `- Prénom: ${p.display_name}` : ""}
 
-Historique récent:
-${historyBlock(history) || "Aucun."}
+HISTORIQUE CONVERSATION:
+${historyBlock(history) || "— Début de la conversation —"}
 
-Instruction spécifique:
+CONSIGNE:
 - ${intentGuide}
-- Longueur idéale: ${lengthGuide}.
-- Si pertinent, termine par une action simple à faire aujourd'hui.
-- N'écris PAS de JSON brut.
-- N'écris PAS de programme complet d'exercices sauf si explicitement demandé.
-- Tu peux utiliser des listes à puces si ça aide la lisibilité.
-- Sois humain : tu peux avoir de l'humour bienveillant si le contexte s'y prête.
+- Longueur: ${lengthGuide}.
+- Tu te souviens de tout l'historique. Si le message est un suivi ("et pour les jambes?", "rend-la plus intense"), tu répondras en référence à ce qui précède.
+- Utilise **gras** pour les termes importants, "- " pour les listes.
+- N'écris pas de JSON. Pas d'emoji.
+- Termine si pertinent par une action concrète pour aujourd'hui.
 
-Message utilisateur:
+MESSAGE:
 ${message}`;
 }
 
@@ -803,7 +813,7 @@ async function generateWorkoutPlan({ apiKey, message, history, profile, goalCont
 async function generateConversationReply({ apiKey, intent, message, history, profile, goalContext }) {
   const prompt = buildConversationPrompt(intent, message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.6, maxOutputTokens: 650, timeoutMs: 8000, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.68, maxOutputTokens: 1000, timeoutMs: 12000, retries: 0 });
     const text = String(result.text || "").replace(/^```[\w-]*\s*/g, "").replace(/```$/g, "").trim();
     if (!text) throw new Error("EMPTY_CONVERSATION");
     return { ok: true, message: text, model: result.model, fallback: false };
@@ -840,6 +850,8 @@ module.exports = {
   detectIntent,
   makeProfileSummary,
   historyBlock,
+  getGoalDescription,
+  getLevelDescription,
   normalizeWorkoutOutput,
   generateWorkoutPlan,
   generateConversationReply,
