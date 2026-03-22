@@ -42,7 +42,23 @@ Copiez-collez le contenu de `migration_v3_social.sql` dans l'éditeur SQL et ex�
 
 ---
 
-## Étape 3 — Migration humeur quotidienne V6 (OBLIGATOIRE pour mood tracker)
+## Étape 3 — Migration streak V7 (OBLIGATOIRE pour les installations existantes)
+
+Copiez-collez `migration_v7_streak_lastactive.sql` dans SQL Editor.
+
+### Ce que fait cette migration :
+| # | Action | Pourquoi |
+|---|--------|----------|
+| 1 | `ADD COLUMN IF NOT EXISTS last_active DATE` | Le JS utilise `last_active`, migration_v3 avait `last_workout_date` |
+| 2 | Backfill `last_active` depuis `last_workout_date` | Préserve les données existantes |
+| 3 | `ADD COLUMN IF NOT EXISTS longest_streak` | Migration_v4 n'avait que `best_streak` |
+| 4 | `ADD COLUMN IF NOT EXISTS total_workouts` | Cohérence avec le schéma complet |
+
+> Inutile si vous repartez d'une base vierge avec `schema.sql` — cette migration est pour les instances déjà en production.
+
+---
+
+## Étape 4 — Migration humeur quotidienne V6 (OBLIGATOIRE pour mood tracker)
 
 Copiez-collez le contenu de `migration_v6_daily_moods.sql` dans l'éditeur SQL et exécutez.
 

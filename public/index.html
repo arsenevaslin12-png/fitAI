@@ -592,6 +592,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .stat{text-align:center}
 .stat-v{font-size:1.6rem;font-weight:900;color:var(--accent)}
 .stat-l{font-size:.7rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
+.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:5px 12px;font-size:.82rem;font-weight:600;transition:opacity .2s}
+.badge.locked{opacity:.28;filter:grayscale(1)}
+.badge-icon{font-size:1.1rem;line-height:1}
 
 /* ── ERR MSG ── */
 .err-box{color:var(--red);font-size:.8rem;padding:10px 14px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);border-radius:12px;display:none}
@@ -1777,6 +1780,13 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
               </div>
             </div>
             <button class="btn btn-p btn-full" id="btn-save-profile" onclick="saveProfile()" style="margin-top:4px">Enregistrer le profil</button>
+          </div>
+        </div>
+
+        <div class="card" id="achievements-card">
+          <div class="card-title">Succès</div>
+          <div id="achievements-list" style="display:flex;flex-wrap:wrap;gap:10px;min-height:40px">
+            <span style="color:var(--muted);font-size:.85rem">Chargement…</span>
           </div>
         </div>
 

@@ -457,6 +457,7 @@ function gotoTab(name) {
   if (name === "profile") {
     loadProfile();
     loadStats();
+    loadAchievements();
   }
 }
 
@@ -586,7 +587,7 @@ function restoreMoodSelection() {
           localStorage.setItem("fitai_mood_label", data.mood_label || "");
           localStorage.setItem("fitai_mood_date", new Date().toDateString());
         } catch {}
-      });
+      }).catch((err) => console.warn("[mood] restore failed:", err));
   }
 }
 
@@ -1196,6 +1197,7 @@ async function saveSession() {
     toast("Séance sauvegardée ✓", "ok");
     await updateDailyStreak({ incrementWorkouts: true });
     await Promise.all([loadHistory(), loadStreak()]);
+    checkAndAwardAchievements().catch(() => {});
   }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
 }
 
@@ -1442,6 +1444,7 @@ async function createPost() {
     if (image_url) payload.image_url = image_url;
     const { error } = await SB.from("community_posts").insert(payload);
     if (error) throw error;
+    checkAndAwardAchievements().catch(() => {});
     if (postInput) postInput.value = "";
     POST_PHOTO = null;
     const nameEl = document.getElementById("post-photo-name");
@@ -1834,6 +1837,7 @@ async function doScan() {
     if (scanLoading) scanLoading.style.display = "none";
     toast("Analyse terminée ✓", "ok");
     await loadScans();
+    checkAndAwardAchievements().catch(() => {});
   }).catch((e) => {
     if (scanLoading) scanLoading.style.display = "none";
     if (errEl) {
@@ -2598,6 +2602,93 @@ async function loadStreak() {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ACHIEVEMENTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+const ACHIEVEMENT_DEFS = [
+  { code: "first_workout", icon: "🏋️", title: "Première séance",   condition: (s) => s.total_workouts >= 1 },
+  { code: "workout_5",     icon: "🔥", title: "5 séances",          condition: (s) => s.total_workouts >= 5 },
+  { code: "workout_20",    icon: "💪", title: "20 séances",         condition: (s) => s.total_workouts >= 20 },
+  { code: "workout_50",    icon: "🏆", title: "50 séances",         condition: (s) => s.total_workouts >= 50 },
+  { code: "streak_3",      icon: "⚡", title: "Streak 3 jours",     condition: (s) => s.current_streak >= 3 },
+  { code: "streak_7",      icon: "🌟", title: "Streak 7 jours",     condition: (s) => s.current_streak >= 7 },
+  { code: "streak_30",     icon: "👑", title: "Streak 30 jours",    condition: (s) => s.current_streak >= 30 },
+  { code: "first_scan",    icon: "📸", title: "Premier bodyscan",   condition: (s) => s.scans >= 1 },
+  { code: "first_post",    icon: "📣", title: "Premier post",       condition: (s) => s.posts >= 1 },
+  { code: "first_recipe",  icon: "🍽️", title: "Première recette",   condition: (s) => s.recipes >= 1 },
+];
+
+async function checkAndAwardAchievements(context = {}) {
+  if (!U) return;
+  try {
+    // Build stats snapshot
+    const { data: streakData } = await SB.from("user_streaks")
+      .select("current_streak,longest_streak,total_workouts")
+      .eq("user_id", U.id).maybeSingle();
+    const { count: scansCount } = await SB.from("body_scans")
+      .select("id", { count: "exact", head: true }).eq("user_id", U.id);
+    const { count: postsCount } = await SB.from("community_posts")
+      .select("id", { count: "exact", head: true }).eq("user_id", U.id);
+
+    const stats = {
+      total_workouts: streakData?.total_workouts || 0,
+      current_streak: streakData?.current_streak || 0,
+      scans: scansCount || 0,
+      posts: postsCount || 0,
+      recipes: context.recipes || 0,
+      ...context
+    };
+
+    // Load already-earned codes
+    const { data: earned } = await SB.from("achievements")
+      .select("code").eq("user_id", U.id);
+    const earnedCodes = new Set((earned || []).map((r) => r.code));
+
+    // Award newly unlocked achievements
+    const toInsert = ACHIEVEMENT_DEFS
+      .filter((def) => !earnedCodes.has(def.code) && def.condition(stats))
+      .map((def) => ({ user_id: U.id, code: def.code, title: def.title }));
+
+    if (toInsert.length > 0) {
+      await SB.from("achievements").insert(toInsert);
+      toInsert.forEach((a) => {
+        const def = ACHIEVEMENT_DEFS.find((d) => d.code === a.code);
+        toast(`${def?.icon || "🏅"} Succès débloqué : ${a.title}`, "ok");
+      });
+      await loadAchievements();
+    }
+  } catch (err) {
+    console.warn("[achievements] check failed:", err);
+  }
+}
+
+async function loadAchievements() {
+  if (!U) return;
+  const el = document.getElementById("achievements-list");
+  if (!el) return;
+  try {
+    const { data, error } = await SB.from("achievements")
+      .select("code,title").eq("user_id", U.id);
+    if (error) throw error;
+    renderAchievements(data || []);
+  } catch (err) {
+    console.warn("[achievements] load failed:", err);
+  }
+}
+
+function renderAchievements(earned) {
+  const el = document.getElementById("achievements-list");
+  if (!el) return;
+  const earnedCodes = new Set(earned.map((r) => r.code));
+  el.innerHTML = ACHIEVEMENT_DEFS.map((def) => {
+    const unlocked = earnedCodes.has(def.code);
+    return `<span class="badge${unlocked ? "" : " locked"}" title="${def.title}">
+      <span class="badge-icon">${def.icon}</span>${def.title}
+    </span>`;
+  }).join("");
+}
+
 function updateCoachCard(streak, totalWorkouts) {
   const titleEl = document.getElementById("db-coach-title");
   const subEl   = document.getElementById("db-coach-sub");
@@ -2782,6 +2873,8 @@ async function generateRecipe() {
     if (j.recipe && typeof j.recipe === "object" && j.recipe.name) recipe = j.recipe;
     else if (j.data && typeof j.data === "object" && j.data.name) recipe = j.data;
     else if (j.type === "recipe" && j.data) recipe = j.data;
+
+    checkAndAwardAchievements({ recipes: 1 }).catch(() => {});
 
     if (!recipe) {
       // Fallback: show raw response
