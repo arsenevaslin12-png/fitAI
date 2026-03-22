@@ -70,6 +70,34 @@ function clampScore(value) {
   return Math.min(100, Math.max(0, Math.round(value)));
 }
 
+function scoreCapByProfile({ fitnessCategory, muscleMassLevel, bodyfatProxy, analysisQuality }) {
+  const category = String(fitnessCategory || "").toLowerCase();
+  const muscle = String(muscleMassLevel || "").toLowerCase();
+  let cap = 72;
+  if (category === "sedentary") cap = 50;
+  else if (category === "recreational") cap = 66;
+  else if (category === "athletic") cap = 80;
+  else if (category === "competitive") cap = 88;
+
+  if (muscle === "beginner") cap = Math.min(cap, 58);
+  else if (muscle === "intermediate") cap = Math.min(cap, 70);
+  else if (muscle === "advanced") cap = Math.max(cap, 82);
+  else if (muscle === "elite") cap = Math.max(cap, 90);
+
+  if (typeof bodyfatProxy === "number") {
+    if (bodyfatProxy >= 25) cap = Math.min(cap, 50);
+    else if (bodyfatProxy >= 21) cap = Math.min(cap, 58);
+    else if (bodyfatProxy >= 18) cap = Math.min(cap, 64);
+    else if (bodyfatProxy >= 15) cap = Math.min(cap, 72);
+    else if (bodyfatProxy <= 11) cap = Math.max(cap, 86);
+  }
+
+  const quality = String(analysisQuality || "");
+  if (quality === "poor") cap = Math.min(cap, 56);
+  else if (quality === "acceptable") cap = Math.min(cap, 72);
+  return cap;
+}
+
 function toArray(input, fallback = []) {
   return Array.isArray(input) ? input.filter(Boolean).map((x) => String(x).trim()).filter(Boolean) : fallback;
 }
@@ -276,15 +304,24 @@ Compare avec ce scan et note les progrès ou régressions.
 `;
   }
 
-  return `Tu es un coach fitness et spécialiste en analyse corporelle.
-Analyse cette photo avec précision, bienveillance et professionnalisme.
+  return `Tu es un coach fitness premium spécialisé en analyse corporelle visuelle.
+Analyse cette photo avec franchise, précision et standards élevés.
 
 CONSIGNES IMPORTANTES:
-1. Sois encourageant mais franc: n'adoucis pas artificiellement les défauts visibles
+1. Sois encourageant mais strict: n'adoucis jamais artificiellement les défauts visibles
 2. Ne fais JAMAIS de diagnostic médical
-3. Base ton analyse uniquement sur ce qui est visible
-4. Si la qualité photo est insuffisante, indique-le clairement
-5. Scores entre 0-100 où 100 = excellent et 50-65 = base encore moyenne
+3. Base ton analyse uniquement sur ce qui est visible sur la photo
+4. Si la qualité photo est insuffisante, indique-le clairement et pénalise les scores
+5. Utilise une calibration sévère et réaliste:
+   - 40-55 = base faible ou peu athlétique
+   - 56-68 = niveau récréatif correct mais ordinaire visuellement
+   - 69-79 = bon niveau, propre, déjà sérieux
+   - 80-88 = physique athlétique, sec ou très au-dessus de la moyenne
+   - 89+ = exceptionnel, rare, à réserver aux physiques vraiment marquants
+6. Un physique simplement propre ne doit presque jamais dépasser 68-72
+7. Une posture faible, peu de définition, ou un bodyfat élevé doivent faire baisser franchement la note
+8. Si la personne paraît très sèche avec bonne définition, taille fine et vraie présence athlétique, la note doit monter nettement
+9. Évite les mêmes conseils génériques: sois spécifique au visuel observé
 
 ${historyContext}
 
@@ -321,6 +358,8 @@ RÉPONDS UNIQUEMENT en JSON valide, aucun texte avant ou après, aucun markdown:
     "muscle_mass_level": "beginner|intermediate|advanced|elite",
     "fitness_category": "sedentary|recreational|athletic|competitive"
   },
+  "body_composition": "Phrase courte et franche sur le niveau de sécheresse / masse grasse visible",
+  "muscle_definition_text": "Phrase courte et franche sur le relief musculaire visible",
   "personalized_recommendations": {
     "training_focus": ["Type d'exercice 1", "Type d'exercice 2"],
     "exercise_examples": ["Exercice spécifique 1", "Exercice spécifique 2"],
@@ -347,7 +386,7 @@ async function analyzeImage({ apiKey, b64, mime, previousAnalysis = null }) {
   return { text: result.text, model: result.model };
 }
 
-function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = null) {
+function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = null, metaSeed = "") {
   const p = parsed || {};
   const rawScores = {
     physical_score: clampScore(p.physical_score),
@@ -368,26 +407,38 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
   const postureAnalysis = p.posture_analysis || null;
   const muscleBalance = p.muscle_balance || null;
   const qualityIssues = uniqStrings(toArray(p.quality_issues), 4);
-  const seed = makeSeed(JSON.stringify(rawScores), bodyfatProxy, JSON.stringify(qualityIssues), previousAnalysis?.physical_score || "");
+  const seed = makeSeed(JSON.stringify(rawScores), bodyfatProxy, JSON.stringify(qualityIssues), previousAnalysis?.physical_score || "", metaSeed, p.body_composition || "", p.muscle_definition_text || "", postureAnalysis?.overall || "", muscleBalance?.upper_lower_ratio || "");
 
   const penalties =
-    (p.analysis_quality === "poor" ? 10 : p.analysis_quality === "acceptable" ? 4 : 0)
-    + ((rawScores.posture || 72) < 68 ? 6 : (rawScores.posture || 72) < 74 ? 2 : 0)
-    + ((rawScores.symmetry || 72) < 68 ? 6 : (rawScores.symmetry || 72) < 74 ? 2 : 0)
-    + ((rawScores.muscle_definition || 70) < 66 ? 5 : (rawScores.muscle_definition || 70) < 72 ? 2 : 0)
-    + ((rawScores.body_composition || 70) < 66 ? 5 : (rawScores.body_composition || 70) < 72 ? 2 : 0)
-    + (qualityIssues.length >= 2 ? 3 : 0)
-    + (typeof bodyfatProxy === "number" && bodyfatProxy >= 20 ? 3 : 0);
+    (p.analysis_quality === "poor" ? 18 : p.analysis_quality === "acceptable" ? 8 : 0)
+    + ((rawScores.posture || 70) < 62 ? 12 : (rawScores.posture || 70) < 68 ? 7 : (rawScores.posture || 70) < 74 ? 3 : 0)
+    + ((rawScores.symmetry || 70) < 62 ? 10 : (rawScores.symmetry || 70) < 68 ? 6 : (rawScores.symmetry || 70) < 74 ? 3 : 0)
+    + ((rawScores.muscle_definition || 66) < 56 ? 14 : (rawScores.muscle_definition || 66) < 64 ? 8 : (rawScores.muscle_definition || 66) < 72 ? 4 : 0)
+    + ((rawScores.body_composition || 66) < 56 ? 13 : (rawScores.body_composition || 66) < 64 ? 8 : (rawScores.body_composition || 66) < 72 ? 4 : 0)
+    + (qualityIssues.length >= 2 ? 6 : qualityIssues.length === 1 ? 3 : 0)
+    + (typeof bodyfatProxy === "number" && bodyfatProxy >= 24 ? 14 : typeof bodyfatProxy === "number" && bodyfatProxy >= 20 ? 10 : typeof bodyfatProxy === "number" && bodyfatProxy >= 17 ? 6 : 0);
 
   const derivedScores = {
-    symmetry: clampScore(rawScores.symmetry ?? 62),
-    posture: clampScore(rawScores.posture ?? 60),
-    muscle_definition: clampScore(rawScores.muscle_definition ?? 58),
-    body_composition: clampScore(rawScores.body_composition ?? (typeof bodyfatProxy === "number" ? Math.max(42, 100 - (bodyfatProxy * 2)) : 57))
+    symmetry: clampScore(rawScores.symmetry ?? 58),
+    posture: clampScore(rawScores.posture ?? 56),
+    muscle_definition: clampScore(rawScores.muscle_definition ?? 52),
+    body_composition: clampScore(rawScores.body_composition ?? (typeof bodyfatProxy === "number" ? Math.max(36, 96 - (bodyfatProxy * 2.6)) : 52))
   };
 
-  const basePhysical = rawScores.physical_score ?? avgScore ?? 60;
-  const calibratedPhysical = clampScore(Math.round(basePhysical - penalties * 0.55)) ?? 58;
+  const basePhysical = rawScores.physical_score ?? avgScore ?? 54;
+  const weightedBase = Math.round(((derivedScores.symmetry * 0.18) + (derivedScores.posture * 0.17) + (derivedScores.muscle_definition * 0.34) + (derivedScores.body_composition * 0.31)));
+  const cap = scoreCapByProfile({
+    fitnessCategory: p.estimated_metrics?.fitness_category,
+    muscleMassLevel: p.estimated_metrics?.muscle_mass_level,
+    bodyfatProxy,
+    analysisQuality: p.analysis_quality
+  });
+  const qualityPenalty = qualityIssues.length ? 2 : 0;
+  let calibratedPhysical = clampScore(Math.round(((basePhysical * 0.35) + (weightedBase * 0.65)) - (penalties * 0.82) - qualityPenalty)) ?? 52;
+  calibratedPhysical = Math.min(calibratedPhysical, cap);
+  if ((p.estimated_metrics?.fitness_category === "athletic" || p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 11 && (derivedScores.muscle_definition || 0) >= 84 && (derivedScores.body_composition || 0) >= 82) {
+    calibratedPhysical = Math.max(calibratedPhysical, 84);
+  }
 
   const strengths = uniqStrings([
     ...toArray(p.strengths),
@@ -408,9 +459,9 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
 
   const feedbackParts = [];
   if (p.analysis_quality === "poor") feedbackParts.push("⚠️ Qualité photo limitée. Les constats restent prudents: refais un scan avec lumière frontale, corps entier visible et angle stable.");
-  feedbackParts.push(`Score honnête: ${calibratedPhysical}/100. ${derivedReco.rationale}`);
-  if (strengths.length) feedbackParts.push(`✅ Points forts visibles: ${strengths.join(", ")}.`);
-  if (improvements.length) feedbackParts.push(`🎯 Priorités réelles: ${improvements.join(", ")}.`);
+  feedbackParts.push(`Score honnête et calibré: ${calibratedPhysical}/100. ${derivedReco.rationale}`);
+  if (strengths.length) feedbackParts.push(`✅ Ce qui ressort vraiment: ${strengths.join(", ")}.`);
+  if (improvements.length) feedbackParts.push(`🎯 Ce qui limite réellement le score: ${improvements.join(", ")}.`);
   if (trainingFocus.length) feedbackParts.push(`🏋️ Focus entraînement: ${trainingFocus.join(", ")}.`);
   if (nutritionFocus.length) feedbackParts.push(`🥗 Ajustements utiles: ${nutritionFocus.join(", ")}.`);
   if (exerciseExamples.length) feedbackParts.push(`📌 Exemples concrets: ${exerciseExamples.join(", ")}.`);
@@ -486,25 +537,25 @@ function buildDegradedAnalysis(reason, previousAnalysis = null) {
   return {
     ai_feedback: [
       "⚠️ L'analyse visuelle détaillée n'a pas pu être générée cette fois.",
-      `Score de prudence temporaire: 52/100. ${improvements[0]}.`,
+      `Score de prudence temporaire: 48/100. ${improvements[0]}.`,
       `Focus immédiat: ${training.join(", ")}.`,
       `Nutrition utile: ${nutrition.join(", ")}.`,
       `Raison technique: ${message}.`
     ].join("\n\n"),
     ai_version: `degraded:${MODEL}`,
-    physical_score: 52,
-    symmetry_score: 53,
-    posture_score: 51,
+    physical_score: 48,
+    symmetry_score: 49,
+    posture_score: 47,
     bodyfat_proxy: null,
     extended_analysis: {
       degraded: true,
       analysis_quality: "poor",
       quality_issues: ["analyse IA indisponible"],
       score_breakdown: {
-        symmetry: 53,
-        posture: 51,
-        muscle_definition: 50,
-        body_composition: 52
+        symmetry: 49,
+        posture: 47,
+        muscle_definition: 46,
+        body_composition: 48
       },
       posture_analysis: null,
       muscle_balance: null,
@@ -635,7 +686,7 @@ module.exports = async function(req, res) {
         previousAnalysis
       });
       const parsed = safeJsonExtract(analyzed.text) || extractJson(analyzed.text) || {};
-      normalized = normalizeAnalysisOutput(parsed, analyzed.model, previousAnalysis);
+      normalized = normalizeAnalysisOutput(parsed, analyzed.model, previousAnalysis, image_path);
     } catch (analysisError) {
       const info = normalizeGeminiError(analysisError);
       fallback = true;

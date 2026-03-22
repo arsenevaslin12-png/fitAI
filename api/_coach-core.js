@@ -393,16 +393,28 @@ FORMAT JSON OBLIGATOIRE (aucun texte avant ni après):
 }
 
 function fallbackShoppingList(message) {
+  const text = String(message || "").toLowerCase();
+  const burgerMode = /burger|soirée|soiree|potes|amis|bbq|barbecue/.test(text);
+  const bulkMode = /prise de masse|masse|bulk/.test(text);
   return {
-    title: "Liste de courses équilibrée",
-    context: "Liste générée en mode secours, adaptez selon vos besoins.",
-    categories: [
-      { name: "Protéines", items: [{ name: "Poulet", qty: "1 kg" }, { name: "Œufs", qty: "12" }, { name: "Thon en boîte", qty: "3 boîtes" }] },
-      { name: "Légumes", items: [{ name: "Brocoli", qty: "500 g" }, { name: "Épinards", qty: "300 g" }, { name: "Tomates", qty: "6" }] },
-      { name: "Féculents", items: [{ name: "Riz complet", qty: "1 kg" }, { name: "Patate douce", qty: "4" }] },
-      { name: "Fruits", items: [{ name: "Bananes", qty: "8" }, { name: "Pommes", qty: "6" }] }
+    title: burgerMode ? "Courses pour soirée burgers" : bulkMode ? "Courses prise de masse sur 4 jours" : "Courses simples pour la semaine",
+    context: burgerMode
+      ? "Liste courte, conviviale et facile à préparer sans exploser les calories."
+      : bulkMode
+        ? "Base pratique pour tenir plusieurs jours avec plus d'énergie et des protéines hautes."
+        : "Base réaliste pour cuisiner simple, riche en protéines et facile à répéter.",
+    categories: burgerMode ? [
+      { name: "Protéines", items: [{ name: "Steaks hachés 5%", qty: "6 à 8" }, { name: "Poulet mariné", qty: "600 g", note: "option plus légère" }, { name: "Tranches de cheddar", qty: "1 paquet" }] },
+      { name: "Pains / féculents", items: [{ name: "Pains burger", qty: "8" }, { name: "Pommes de terre", qty: "2 kg" }] },
+      { name: "Garnitures", items: [{ name: "Tomates", qty: "4" }, { name: "Salade", qty: "1" }, { name: "Oignons", qty: "2" }, { name: "Cornichons", qty: "1 bocal" }] },
+      { name: "Sauces / extras", items: [{ name: "Sauce burger", qty: "1 flacon" }, { name: "Moutarde", qty: "1" }, { name: "Eau gazeuse / soft zéro", qty: "1 pack" }] }
+    ] : [
+      { name: "Protéines", items: bulkMode ? [{ name: "Poulet", qty: "1,5 kg" }, { name: "Boeuf 5%", qty: "700 g" }, { name: "Œufs", qty: "18" }, { name: "Skyr / yaourt grec", qty: "8 pots" }] : [{ name: "Poulet", qty: "1,2 kg" }, { name: "Œufs", qty: "12" }, { name: "Thon / saumon", qty: "3 portions" }, { name: "Skyr / fromage blanc", qty: "6 pots" }] },
+      { name: "Féculents", items: bulkMode ? [{ name: "Riz basmati", qty: "1,5 kg" }, { name: "Pâtes", qty: "1 kg" }, { name: "Flocons d'avoine", qty: "750 g" }] : [{ name: "Riz basmati", qty: "1 kg" }, { name: "Pommes de terre", qty: "2 kg" }, { name: "Flocons d'avoine", qty: "500 g" }] },
+      { name: "Légumes / fruits", items: [{ name: "Brocoli / haricots verts", qty: "4 sachets" }, { name: "Tomates", qty: "6" }, { name: "Bananes", qty: "7" }, { name: "Pommes / fruits rouges", qty: "1 à 2 barquettes" }] },
+      { name: "Extras utiles", items: [{ name: "Huile d'olive", qty: "1 bouteille" }, { name: "Amandes / noix", qty: "1 sachet" }, { name: "Épices", qty: "paprika, ail, herbes" }] }
     ],
-    tips: "Préparez vos repas à l'avance pour tenir votre nutrition toute la semaine."
+    tips: burgerMode ? "Prévois une plaque de pommes de terre au four et une salade pour garder la soirée plus légère sans perdre le côté plaisir." : "Cuis deux protéines et un gros féculent en batch pour sécuriser la semaine sans passer ta vie en cuisine."
   };
 }
 

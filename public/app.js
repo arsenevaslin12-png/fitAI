@@ -73,6 +73,27 @@ function observeLazyImgs(container) {
   container.querySelectorAll("img[data-src]").forEach(img => lazyObserver.observe(img));
 }
 
+async function safeMaybeSingle(run, fallbackData = null) {
+  try {
+    const res = await run();
+    return res && typeof res === "object" ? res : { data: fallbackData, error: null };
+  } catch (error) {
+    return { data: fallbackData, error };
+  }
+}
+
+function isMissingTableError(error, tableName) {
+  const msg = String(error?.message || error?.error_description || error || "").toLowerCase();
+  const code = String(error?.code || "");
+  const table = String(tableName || "").toLowerCase();
+  return code === "42P01"
+    || (msg.includes("schema cache") && msg.includes(table))
+    || (msg.includes("relation") && msg.includes(table) && msg.includes("does not exist"))
+    || (msg.includes("could not find the table") && msg.includes(table));
+}
+
+let DAILY_MOODS_AVAILABLE = true;
+
 function escapeAttr(str) {
   return String(str || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -687,12 +708,25 @@ function selectMood(btn, level) {
     localStorage.setItem("fitai_mood_label", label);
     localStorage.setItem("fitai_mood_date", new Date().toDateString());
   } catch {}
-  // Persist to Supabase daily_moods table
-  if (U) {
+  // Persist to Supabase daily_moods table when available
+  if (U && DAILY_MOODS_AVAILABLE) {
     const today = new Date().toISOString().slice(0, 10);
     SB.from("daily_moods")
       .upsert({ user_id: U.id, mood_level: level, mood_label: label, date: today }, { onConflict: "user_id,date" })
-      .then(({ error }) => { if (error) console.warn("[mood] save failed:", error.message); });
+      .then(({ error }) => {
+        if (!error) return;
+        if (isMissingTableError(error, "daily_moods")) {
+          DAILY_MOODS_AVAILABLE = false;
+          return;
+        }
+        console.warn("[mood] save failed:", error.message);
+      })
+      .catch((error) => {
+        if (isMissingTableError(error, "daily_moods")) {
+          DAILY_MOODS_AVAILABLE = false;
+          return;
+        }
+      });
   }
 }
 
@@ -718,10 +752,14 @@ function restoreMoodSelection() {
     }
   } catch {}
   // Then sync from Supabase (persistent across devices)
-  if (U) {
+  if (U && DAILY_MOODS_AVAILABLE) {
     const today = new Date().toISOString().slice(0, 10);
     SB.from("daily_moods").select("mood_level,mood_label").eq("user_id", U.id).eq("date", today).maybeSingle()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          if (isMissingTableError(error, "daily_moods")) DAILY_MOODS_AVAILABLE = false;
+          return;
+        }
         if (!data) return;
         document.querySelectorAll(".mood-face").forEach(b => b.classList.remove("selected"));
         document.querySelectorAll(".mood-face").forEach(b => {
@@ -734,6 +772,9 @@ function restoreMoodSelection() {
           localStorage.setItem("fitai_mood_label", data.mood_label || "");
           localStorage.setItem("fitai_mood_date", new Date().toDateString());
         } catch {}
+      })
+      .catch((error) => {
+        if (isMissingTableError(error, "daily_moods")) DAILY_MOODS_AVAILABLE = false;
       });
   }
 }
@@ -1320,9 +1361,9 @@ async function sendCoachMsg(quickMsg) {
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
     const [goalRes, profileRes, streakRes] = await Promise.all([
-      SB.from("goals").select("type,level,constraints,equipment").eq("user_id", U.id).maybeSingle(),
-      SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle(),
-      Promise.resolve(SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle()).catch(() => ({ data: null }))
+      safeMaybeSingle(() => SB.from("goals").select("type,level,constraints,equipment").eq("user_id", U.id).maybeSingle(), null),
+      safeMaybeSingle(() => SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle(), null),
+      safeMaybeSingle(() => SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle(), null)
     ]);
 
     goalContext = goalRes?.data || {};
@@ -2332,7 +2373,9 @@ async function loadScans() {
       const exerciseExs = (reco.exercise_examples || []).slice(0, 3).join(", ");
       const freqSugg = reco.frequency_suggestion || "";
 
+      const scoreBand = physScore >= 88 ? "Athlétique avancé" : physScore >= 80 ? "Athlétique" : physScore >= 70 ? "Bon niveau" : physScore >= 58 ? "Base correcte" : "Base à construire";
       const compRows = [
+        physScore ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Niveau estimé</div><div class="scan-v2-comp-val">${escapeHtml(scoreBand)}</div></div>` : "",
         ext.body_composition ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Composition</div><div class="scan-v2-comp-val">${escapeHtml(String(ext.body_composition).slice(0,120))}</div></div>` : "",
         ext.muscle_definition_text ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Définition musculaire</div><div class="scan-v2-comp-val">${escapeHtml(String(ext.muscle_definition_text).slice(0,120))}</div></div>` : "",
         ext.estimated_metrics?.bodyfat_range ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Bodyfat estimé</div><div class="scan-v2-comp-val">${escapeHtml(ext.estimated_metrics.bodyfat_range)}</div></div>` : "",
@@ -3018,71 +3061,99 @@ function renderNutritionGeneratedPlan(payload) {
     return;
   }
 
-  const goalLabel = ({ perte_de_poids: "Sèche", maintenance: "Maintien", prise_de_masse: "Prise de masse" })[payload?.goal] || "Objectif";
+  const goalLabel = ({ perte_de_poids: "Sèche", maintenance: "Maintien", prise_de_masse: "Prise de masse", cut: "Sèche" })[payload?.goal] || "Objectif";
   const dayTypeLabel = String(plan?.day_type || payload?.day_type || "training").toLowerCase() === "rest" ? "Jour de repos" : "Jour d'entraînement";
-  const pills = [
+  const macroPills = [
     `🔥 ${nutrition.calories || 0} kcal`,
     `💪 ${nutrition.protein || 0}g prot.`,
     `🌾 ${nutrition.carbs || 0}g gluc.`,
     `🥑 ${nutrition.fats || 0}g lip.`
   ];
-  const summaryBits = [];
-  if (goalLabel) summaryBits.push(`<span class="macro-pill" style="background:rgba(22,163,74,.12);border:1px solid rgba(22,163,74,.18);color:#86efac">🎯 ${escapeHtml(goalLabel)}</span>`);
-  if (dayTypeLabel) summaryBits.push(`<span class="macro-pill" style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.18)">🏃 ${escapeHtml(dayTypeLabel)}</span>`);
-  summaryEl.innerHTML = `${summaryBits.join("")} ${pills.map((pill) => `<span class="macro-pill" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)">${escapeHtml(pill)}</span>`).join("")}`;
-
-  const hydration = Number(plan?.hydration_liters || payload?.hydration_liters || 0);
-  const waterGlasses = Math.max(4, Math.min(8, Math.round((hydration || 2.3) / 0.33)));
-  hydrationEl.innerHTML = `
-    <div style="padding:14px;border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.06)">
-      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
-        <div>
-          <div style="font-weight:800;font-size:.84rem">Hydratation recommandée</div>
-          <div style="font-size:.78rem;color:var(--muted)">${escapeHtml(plan?.summary || nutrition.notes || "Base du jour")}</div>
-        </div>
-        <div style="font-size:1.15rem;font-weight:900;color:var(--teal)">${hydration > 0 ? `${hydration.toFixed(1).replace('.', ',')} L` : "2,3 L"}</div>
-      </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${Array.from({ length: waterGlasses }).map((_, idx) => `<span style="font-size:1.35rem;opacity:${idx < waterGlasses - 1 ? 1 : 0.72}">🥛</span>`).join("")}</div>
-      ${plan?.coach_note ? `<div style="margin-top:10px;font-size:.78rem;color:var(--text2);line-height:1.55">💡 ${escapeHtml(plan.coach_note)}</div>` : ""}
-    </div>`;
+  summaryEl.innerHTML = [
+    `<span class="macro-pill nutri-pill-goal">🎯 ${escapeHtml(goalLabel)}</span>`,
+    `<span class="macro-pill nutri-pill-day">🏃 ${escapeHtml(dayTypeLabel)}</span>`,
+    ...macroPills.map((pill) => `<span class="macro-pill nutri-pill-macro">${escapeHtml(pill)}</span>`)
+  ].join("");
 
   const meals = Array.isArray(plan?.meals) ? plan.meals : [];
-  mealsEl.innerHTML = meals.length
-    ? `<div class="nutri-plan-grid">${meals.map((meal) => `
-      <div class="meal-card nutri-meal-card">
-        <div class="nutri-meal-top">
+  const leadMeal = meals[0] || null;
+  const hydration = Number(plan?.hydration_liters || payload?.hydration_liters || 0) || 2.3;
+  hydrationEl.innerHTML = `
+    <div class="nutri-hero-compact">
+      <div class="nutri-hero-copy">
+        <div class="nutri-hero-title">${escapeHtml(plan?.title || 'Plan nutrition du jour')}</div>
+        <div class="nutri-hero-summary">${escapeHtml(plan?.summary || nutrition.notes || 'Plan rapide, cohérent et simple à tenir aujourd’hui.')}</div>
+        ${plan?.coach_note ? `<div class="nutri-hero-note">💡 ${escapeHtml(plan.coach_note)}</div>` : ''}
+      </div>
+      <div class="nutri-hero-metric">
+        <div class="nutri-hero-metric-val">${hydration.toFixed(1).replace('.', ',')} L</div>
+        <div class="nutri-hero-metric-lbl">Hydratation</div>
+      </div>
+    </div>`;
+
+  mealsEl.innerHTML = leadMeal
+    ? `
+      <div class="nutri-lead-card">
+        <div class="nutri-lead-top">
           <div>
-            <div class="nutri-meal-name">${escapeHtml(meal.name || 'Repas')}</div>
-            <div class="nutri-meal-meta">${escapeHtml(meal.time || '')}${meal.focus ? ` · ${escapeHtml(meal.focus)}` : ''}</div>
+            <div class="nutri-lead-title">${escapeHtml(leadMeal.name || 'Premier repas')}</div>
+            <div class="nutri-lead-meta">${escapeHtml(leadMeal.time || '')}${leadMeal.focus ? ` · ${escapeHtml(leadMeal.focus)}` : ''}</div>
           </div>
-          <div class="nutri-meal-side">
-            <div>${meal.calories ? `🔥 ${escapeHtml(String(meal.calories))} kcal` : ''}</div>
-            <div>${meal.protein ? `💪 ${escapeHtml(String(meal.protein))}g prot.` : ''}</div>
+          <div class="nutri-lead-stats">
+            <span>${leadMeal.calories ? `🔥 ${escapeHtml(String(leadMeal.calories))} kcal` : ''}</span>
+            <span>${leadMeal.protein ? `💪 ${escapeHtml(String(leadMeal.protein))}g` : ''}</span>
           </div>
         </div>
-        <div class="nutri-items">
-          ${(Array.isArray(meal.items) ? meal.items : []).map((item) => `<div class="nutri-item">• ${escapeHtml(String(item))}</div>`).join('')}
+        <div class="nutri-items">${(Array.isArray(leadMeal.items) ? leadMeal.items : []).slice(0, 3).map((item) => `<div class="nutri-item">• ${escapeHtml(String(item))}</div>`).join('')}</div>
+      </div>
+      <details class="nutri-expand-panel">
+        <summary>
+          <span>Ouvrir le plan complet</span>
+          <span class="nutri-expand-meta">${meals.length} repas${payload?.fallback ? ' · mode rapide' : ''}</span>
+        </summary>
+        <div class="nutri-expand-body">
+          <div class="nutri-plan-grid">${meals.map((meal) => `
+            <div class="meal-card nutri-meal-card">
+              <div class="nutri-meal-top">
+                <div>
+                  <div class="nutri-meal-name">${escapeHtml(meal.name || 'Repas')}</div>
+                  <div class="nutri-meal-meta">${escapeHtml(meal.time || '')}${meal.focus ? ` · ${escapeHtml(meal.focus)}` : ''}</div>
+                </div>
+                <div class="nutri-meal-side">
+                  <div>${meal.calories ? `🔥 ${escapeHtml(String(meal.calories))} kcal` : ''}</div>
+                  <div>${meal.protein ? `💪 ${escapeHtml(String(meal.protein))}g prot.` : ''}</div>
+                </div>
+              </div>
+              <div class="nutri-items">${(Array.isArray(meal.items) ? meal.items : []).map((item) => `<div class="nutri-item">• ${escapeHtml(String(item))}</div>`).join('')}</div>
+              ${Array.isArray(meal.swap_options) && meal.swap_options.length ? `<div class="nutri-note-box"><strong style="color:var(--text)">Substitutions rapides</strong><div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">${meal.swap_options.map((opt) => `<div>↔ ${escapeHtml(String(opt))}</div>`).join('')}</div></div>` : ''}
+              ${meal.coach_tip ? `<div class="nutri-coach-tip">💬 ${escapeHtml(String(meal.coach_tip))}</div>` : ''}
+            </div>`).join("")}</div>
         </div>
-        ${Array.isArray(meal.swap_options) && meal.swap_options.length ? `<div class="nutri-note-box"><strong style="color:var(--text)">Substitutions rapides</strong><div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">${meal.swap_options.map((opt) => `<div>↔ ${escapeHtml(String(opt))}</div>`).join('')}</div></div>` : ''}
-        ${meal.coach_tip ? `<div class="nutri-coach-tip">💬 ${escapeHtml(String(meal.coach_tip))}</div>` : ''}
-      </div>`).join("")}</div>`
+      </details>`
     : '<div class="empty"><span class="empty-ic">🍽️</span>Le plan du jour sera affiché ici après génération.</div>';
 
   const tips = Array.isArray(plan?.tips) ? plan.tips : [];
   const substitutions = Array.isArray(plan?.substitutions) ? plan.substitutions : [];
   notesEl.innerHTML = `
-    <div class="nutri-notes-grid">
-      <div class="nutri-note-panel">
-        <div class="nutri-note-hdr">Résumé coach</div>
-        <div class="nutri-note-txt">${escapeHtml(plan?.notes || nutrition.notes || "Plan généré pour rester simple, cohérent et facile à suivre aujourd'hui.")}</div>
-        ${plan?.training_note ? `<div class="nutri-note-sub">🏋️ ${escapeHtml(plan.training_note)}</div>` : ''}
+    <details class="nutri-expand-panel nutri-notes-expand">
+      <summary>
+        <span>Conseils et substitutions</span>
+        <span class="nutri-expand-meta">${tips.length} conseil(s)${substitutions.length ? ` · ${substitutions.length} substitutions` : ''}</span>
+      </summary>
+      <div class="nutri-expand-body">
+        <div class="nutri-notes-grid">
+          <div class="nutri-note-panel">
+            <div class="nutri-note-hdr">Résumé coach</div>
+            <div class="nutri-note-txt">${escapeHtml(plan?.notes || nutrition.notes || "Plan généré pour rester simple, cohérent et facile à suivre aujourd’hui.")}</div>
+            ${plan?.training_note ? `<div class="nutri-note-sub">🏋️ ${escapeHtml(plan.training_note)}</div>` : ''}
+          </div>
+          ${tips.length ? `<div class="nutri-note-panel"><div class="nutri-note-hdr">Conseils pratiques</div><div class="nutri-note-list">${tips.map((tip) => `<div>• ${escapeHtml(String(tip))}</div>`).join('')}</div></div>` : ''}
+          ${substitutions.length ? `<div class="nutri-note-panel"><div class="nutri-note-hdr">Substitutions utiles</div><div class="nutri-note-list">${substitutions.map((item) => `<div>↔ ${escapeHtml(String(item))}</div>`).join('')}</div></div>` : ''}
+          ${payload?.fallback ? '<div class="nutri-fallback-msg">Plan disponible en mode rapide, avec macros et repas utilisables immédiatement.</div>' : ''}
+        </div>
       </div>
-      ${tips.length ? `<div class="nutri-note-panel"><div class="nutri-note-hdr">Conseils pratiques</div><div class="nutri-note-list">${tips.map((tip) => `<div>• ${escapeHtml(String(tip))}</div>`).join('')}</div></div>` : ''}
-      ${substitutions.length ? `<div class="nutri-note-panel"><div class="nutri-note-hdr">Substitutions utiles</div><div class="nutri-note-list">${substitutions.map((item) => `<div>↔ ${escapeHtml(String(item))}</div>`).join('')}</div></div>` : ''}
-      ${payload?.fallback ? '<div class="nutri-fallback-msg">Plan prêt en mode rapide : le contenu reste cohérent et utilisable normalement.</div>' : ''}
-    </div>`;
+    </details>`;
   card.style.display = "block";
-  if (typeof card.scrollIntoView === "function") card.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function generateNutrition() {
@@ -3619,18 +3690,24 @@ async function loadProgress() {
     var moodSince = new Date();
     moodSince.setDate(moodSince.getDate() - 29);
 
+    var moodPromise = DAILY_MOODS_AVAILABLE
+      ? SB.from("daily_moods").select("mood_level,mood_label,date").eq("user_id", U.id)
+          .gte("date", moodSince.toISOString().slice(0, 10)).order("date", { ascending: true }).limit(30)
+      : Promise.resolve({ data: [] });
+
     var results = await Promise.allSettled([
       SB.from("workout_sessions").select("id,created_at,plan").eq("user_id", U.id).order("created_at", { ascending: true }).limit(120),
       SB.from("body_scans").select("created_at,physical_score,extended_analysis").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
       SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(100),
-      SB.from("daily_moods").select("mood_level,mood_label,date").eq("user_id", U.id)
-        .gte("date", moodSince.toISOString().slice(0, 10)).order("date", { ascending: true }).limit(30)
+      moodPromise
     ]);
 
     var sessions = results[0].status === "fulfilled" ? (results[0].value.data || []) : [];
     var scansRaw = results[1].status === "fulfilled" ? (results[1].value.data || []) : [];
     var meals = results[2].status === "fulfilled" ? (results[2].value.data || []) : [];
-    var moods = results[3].status === "fulfilled" ? (results[3].value.data || []) : [];
+    var moodResult = results[3].status === "fulfilled" ? results[3].value : null;
+    if (moodResult?.error && isMissingTableError(moodResult.error, "daily_moods")) DAILY_MOODS_AVAILABLE = false;
+    var moods = moodResult && !moodResult.error ? (moodResult.data || []) : [];
     var metrics = computeWorkoutMetrics((sessions || []).slice().sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); }));
 
     var scans = scansRaw.map(function(s) {

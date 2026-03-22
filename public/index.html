@@ -672,7 +672,34 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .gen-nutrition-card::before{content:"✦";position:absolute;right:20px;top:14px;font-size:3rem;opacity:.06;pointer-events:none}
 .gen-nutrition-selects{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
 .nutri-plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.nutri-plan-grid-compact{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.nutri-compact-plan{display:flex;flex-direction:column;gap:10px}
+.nutri-hero-compact{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:13px 14px;border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.06)}
+.nutri-hero-copy{display:flex;flex-direction:column;gap:5px;min-width:0}
+.nutri-hero-title{font-size:.9rem;font-weight:900;color:var(--text)}
+.nutri-hero-summary{font-size:.78rem;line-height:1.5;color:var(--text2)}
+.nutri-hero-note{font-size:.76rem;line-height:1.5;color:var(--muted)}
+.nutri-hero-metric{text-align:right;min-width:88px}
+.nutri-hero-metric-val{font-size:1rem;font-weight:900;color:var(--teal)}
+.nutri-hero-metric-lbl{font-size:.72rem;color:var(--muted)}
+.nutri-lead-card{padding:13px 14px;border:1px solid rgba(255,255,255,.06);background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.02));border-radius:16px}
+.nutri-lead-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
+.nutri-lead-title{font-size:.9rem;font-weight:900;color:var(--text)}
+.nutri-lead-meta{font-size:.76rem;color:var(--muted);margin-top:2px}
+.nutri-lead-stats{display:flex;flex-direction:column;gap:4px;text-align:right;font-size:.76rem;color:var(--text2);white-space:nowrap}
+.nutri-pill-goal{background:rgba(22,163,74,.12)!important;border:1px solid rgba(22,163,74,.18)!important;color:#86efac!important}
+.nutri-pill-day{background:rgba(59,130,246,.12)!important;border:1px solid rgba(59,130,246,.18)!important}
+.nutri-pill-macro{background:rgba(255,255,255,.06)!important;border:1px solid rgba(255,255,255,.08)!important}
 .nutri-meal-card{padding:15px;border:1px solid rgba(255,255,255,.06);background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.02));border-radius:18px}
+.nutri-meal-card-compact{padding:12px 13px;border-radius:16px}
+.nutri-expand-panel{border:1px solid rgba(255,255,255,.06);border-radius:16px;background:rgba(255,255,255,.025);overflow:hidden}
+.nutri-expand-panel summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;cursor:pointer;font-size:.82rem;font-weight:800;color:var(--text)}
+.nutri-expand-panel summary::-webkit-details-marker{display:none}
+.nutri-expand-panel summary::after{content:"▾";margin-left:auto;color:var(--blue);font-size:.9rem;transition:transform .2s ease}
+.nutri-expand-panel[open] summary::after{transform:rotate(180deg)}
+.nutri-expand-meta{font-size:.72rem;color:var(--muted);font-weight:700;margin-right:8px}
+.nutri-expand-body{padding:0 14px 14px}
+.nutri-notes-expand .nutri-expand-body{padding-top:2px}
 .nutri-meal-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
 .nutri-meal-name{font-weight:900;font-size:.95rem;color:var(--text)}
 .nutri-meal-meta{font-size:.77rem;color:var(--muted);margin-top:3px}
@@ -688,7 +715,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .nutri-note-sub{margin-top:8px;font-size:.78rem;line-height:1.55;color:var(--muted)}
 .nutri-note-list{display:flex;flex-direction:column;gap:6px;font-size:.81rem;color:var(--text2);line-height:1.55}
 .nutri-fallback-msg{grid-column:1/-1;font-size:.77rem;color:var(--muted);padding:0 2px}
-@media(max-width:850px){.nutri-plan-grid,.nutri-notes-grid{grid-template-columns:1fr}}
+@media(max-width:850px){.nutri-plan-grid,.nutri-plan-grid-compact,.nutri-notes-grid{grid-template-columns:1fr}}
 @media(max-width:500px){.gen-nutrition-selects{grid-template-columns:1fr}}
 
 /* ── RESPONSIVE: mobile bottom nav ── */

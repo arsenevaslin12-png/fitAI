@@ -70,3 +70,10 @@
 - rendu frontend enrichi avec badges visuels par type de réponse
 - meilleur rendu des plans nutrition, recettes, listes de courses et séances dans le chat
 - stream fallback premium plus utile en cas de lenteur / timeout
+
+
+## 2026-03-22 hotfix body scan + nutrition compact
+- Body scan recalibrated with stricter score caps and more variation between scans.
+- Nutrition AI result compact by default with expandable details.
+- daily_moods table errors no longer spam console or break progress/mood UX when table is missing.
+- Coach streak/profile fetch hardened with safeMaybeSingle wrapper.
