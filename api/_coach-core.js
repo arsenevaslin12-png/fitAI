@@ -199,8 +199,25 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
     weight: weight > 0 ? weight : null,
     height: height > 0 ? height : null,
     age: age > 0 ? age : null,
-    display_name: normalizeText(profile.display_name || "")
+    display_name: normalizeText(profile.display_name || ""),
+    current_streak: Number(profile.current_streak || 0) || null,
+    recent_sessions_7d: Number(profile.recent_sessions_7d || 0) || null,
+    best_scan_score: Number(profile.best_scan_score || 0) || null,
+    last_scan_summary: normalizeText(profile.last_scan_summary || ""),
+    nutrition_summary: normalizeText(profile.nutrition_summary || ""),
+    recent_meal_pattern: normalizeText(profile.recent_meal_pattern || "")
   };
+}
+
+function buildContextSnapshot(p) {
+  const lines = [];
+  if (p.current_streak != null) lines.push(`- Streak actif: ${p.current_streak} jour(s)`);
+  if (p.recent_sessions_7d != null) lines.push(`- Séances sur 7 jours: ${p.recent_sessions_7d}`);
+  if (p.best_scan_score != null) lines.push(`- Meilleur score de scan récent: ${p.best_scan_score}/100`);
+  if (p.last_scan_summary) lines.push(`- Dernier scan: ${p.last_scan_summary}`);
+  if (p.nutrition_summary) lines.push(`- Nutrition cible: ${p.nutrition_summary}`);
+  if (p.recent_meal_pattern) lines.push(`- Repas récents: ${p.recent_meal_pattern}`);
+  return lines.length ? lines.join("\n") : "- Contexte avancé indisponible";
 }
 
 function historyBlock(history = []) {
@@ -307,11 +324,18 @@ ${p.display_name ? `- Prénom: ${p.display_name}` : ""}
 Historique récent:
 ${historyBlock(history) || "Aucun."}
 
+Contexte avancé disponible:
+${buildContextSnapshot(p)}
+
 Consignes absolues:
 - ${intentGuide}.
 - Longueur idéale: ${lengthGuide}.
 - Ne sois jamais vague ni générique.
-- Donne d'abord la réponse utile, ensuite une explication courte si nécessaire, puis une action simple à faire ensuite.
+- Utilise le contexte dispo pour personnaliser: objectif, niveau, humeur, récupération, scans, nutrition, rythme récent.
+- Si l'utilisateur parle de flemme, fatigue ou démotivation: normalise l'état, réduis la friction et propose une mini-action réaliste immédiatement faisable.
+- Si le contexte montre une bonne régularité ou un streak en cours, protège cet élan au lieu de proposer de tout sauter.
+- Si le dernier scan ou la nutrition donnent un axe clair, relie explicitement ton conseil à cet axe.
+- Donne d'abord la réponse utile, ensuite une analyse courte si nécessaire, puis une action simple à faire ensuite.
 - Quand la question est simple: réponse courte.
 - Quand la question est plus complexe: structure avec ces libellés exacts si utile:
   Réponse directe: ...
@@ -636,18 +660,20 @@ Pourquoi: C'est le trio qui protège ta progression sans casser le rythme.
 Action du jour: Fais 5 à 10 minutes de mobilité ce soir et garde la séance lourde seulement si les courbatures baissent nettement demain.`;
   }
   if (intent === "motivation_question") {
-    return `Réponse directe: N'attends pas de te sentir ultra motivé pour agir.
-Pourquoi: La motivation varie, alors que l'action courte remet presque toujours la machine en route.
-Action du jour: Lance une version mini de 10 minutes maintenant. Si tu te sens mieux ensuite, tu prolonges. Sinon, tu as quand même gagné ta journée.`;
+    const streakNote = p.current_streak ? `Tu as déjà ${p.current_streak} jour(s) de régularité en jeu.` : "Tu n'as pas besoin d'une énorme séance pour rester dans le rythme.";
+    const scanNote = p.last_scan_summary ? `Ton dernier scan rappelle déjà l'axe prioritaire: ${p.last_scan_summary}.` : "";
+    return `Réponse directe: Avoir la flemme est normal — le vrai sujet, c'est de ne pas casser l'élan pour autant.
+Pourquoi: ${streakNote} ${scanNote}`.trim() + `
+Action du jour: Réduis la friction au maximum: mets une tenue, lance 8 minutes de marche active ou 2 exercices très simples. Si l'énergie revient, tu continues. Sinon, tu as quand même protégé ta discipline.`;
   }
   if (intent === "progress_question") {
     return `Réponse directe: Regarde d'abord régularité, qualité technique et charge ou reps sur tes mouvements clés.
 Pourquoi: Si un seul de ces marqueurs monte proprement, tu avances déjà.
 Action du jour: Choisis un mini-objectif mesurable pour la prochaine séance: +1 rep, meilleure exécution ou tempo plus propre.`;
   }
-  return `Réponse directe: Pour ton objectif ${p.goal.replaceAll("_", " ")}, garde un plan simple et mesurable.
-Pourquoi: Les bons résultats viennent plus d'une base répétable que d'un plan parfait mais irrégulier.
-Action du jour: Donne-moi ton contexte exact — temps dispo, matériel, niveau de fatigue — et je te répondrai de façon beaucoup plus précise.`;
+  return `Réponse directe: Pour ton objectif ${p.goal.replaceAll("_", " ")}, on va chercher l'action la plus rentable aujourd'hui, pas la réponse la plus théorique.
+Pourquoi: Tu progresses surtout quand tes choix collent à ton niveau réel, à ton énergie et à ce que tu tiens dans la durée.${p.best_scan_score ? ` Ton meilleur repère récent est ${p.best_scan_score}/100, donc on ajuste sans perdre le fil.` : ""}
+Action du jour: Donne-moi ton contexte exact — temps dispo, matériel, fatigue du jour — et je te répondrai avec une action courte, précise et applicable maintenant.`;
 }
 
 function fallbackRecipe(message, profile = {}, goalContext = {}) {

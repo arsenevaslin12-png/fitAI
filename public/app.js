@@ -93,6 +93,7 @@ function isMissingTableError(error, tableName) {
 }
 
 let DAILY_MOODS_AVAILABLE = true;
+let NUTRITION_REQ_SEQ = 0;
 
 function escapeAttr(str) {
   return String(str || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -980,7 +981,7 @@ function detectCoachIntentClient(message) {
   if (has("recette", "cuisine", "prépare-moi", "prepare moi", "fais-moi un plat", "comment cuisiner", "comment préparer", "burger", "pancake protéiné", "pancake proteine")) return "recipe_request";
   if (has("programme", "entraînement", "entrainement", "séance", "seance", "workout", "hiit", "full body", "upper body", "lower body", "routine", "split", "cardio", "musculation", "jambes", "abdos")) return "workout_request";
   if (has("macro", "nutrition", "combien de protéines", "combien de proteines", "post-workout", "pre-workout", "après l'entraînement", "apres l'entrainement", "que manger", "quoi manger")) return "nutrition_question";
-  if (has("motivation", "discipline", "stagne", "plateau", "mental", "mindset")) return "motivation_question";
+  if (has("motivation", "discipline", "stagne", "plateau", "mental", "mindset", "flemme", "pas envie", "j'ai la flemme", "j ai la flemme", "motivé", "motiver", "lemme")) return "motivation_question";
   if (has("progression", "streak", "résultat", "resultat", "niveau", "stats")) return "progress_question";
   return "general_chat";
 }
@@ -1201,6 +1202,41 @@ Action du jour: Fais 20 minutes aujourd'hui, même à intensité moyenne, juste 
   return { ok: true, type: "conversation", message: msg, fallback: true };
 }
 
+
+function buildCoachContextSummary(ctx) {
+  if (!ctx || typeof ctx !== "object") return "";
+  var lines = [];
+  if (ctx.current_streak) lines.push(`Streak actif: ${ctx.current_streak} jour(s).`);
+  if (ctx.recent_sessions_7d != null) lines.push(`Séances sur 7 jours: ${ctx.recent_sessions_7d}.`);
+  if (ctx.best_scan_score) lines.push(`Meilleur score de scan récent: ${ctx.best_scan_score}/100.`);
+  if (ctx.last_scan_summary) lines.push(`Dernier scan: ${ctx.last_scan_summary}`);
+  if (ctx.nutrition_summary) lines.push(`Nutrition: ${ctx.nutrition_summary}`);
+  if (ctx.recent_meal_pattern) lines.push(`Habitudes récentes: ${ctx.recent_meal_pattern}`);
+  return lines.join(" ");
+}
+
+function buildCoachSubline(goalContext, moodLabel, contextSummary) {
+  var goalLabel = { prise_de_masse: "Prise de masse", perte_de_poids: "Perte de poids", endurance: "Endurance", force: "Force", remise_en_forme: "Remise en forme", maintien: "Maintien" }[goalContext.type] || goalContext.type || "Coach IA";
+  var parts = [goalLabel];
+  if (moodLabel) parts.push(`Humeur: ${moodLabel}`);
+  if (contextSummary) parts.push(contextSummary);
+  return parts.filter(Boolean).join(" · ");
+}
+
+function resetNutritionRenderState(message) {
+  var card = document.getElementById("nutrition-ai-result");
+  var summaryEl = document.getElementById("nutrition-ai-summary");
+  var hydrationEl = document.getElementById("nutrition-ai-hydration");
+  var mealsEl = document.getElementById("nutrition-ai-meals");
+  var notesEl = document.getElementById("nutrition-ai-notes");
+  if (!card) return;
+  card.style.display = "block";
+  if (summaryEl) summaryEl.innerHTML = '<span class="pill">⏳ Génération…</span>';
+  if (hydrationEl) hydrationEl.innerHTML = '';
+  if (mealsEl) mealsEl.innerHTML = `<div class="chart-empty" style="padding:18px 8px;text-align:left">${escapeHtml(message || "Préparation du plan nutrition…")}</div>`;
+  if (notesEl) notesEl.innerHTML = '';
+}
+
 function renderCoachApiResponse(j, aiTime) {
   if (!j || typeof j !== "object") {
     COACH_HISTORY.push({ role: "ai", content: formatCoachText(`Réponse directe: Je n'ai pas pu formuler une réponse utile.
@@ -1360,15 +1396,23 @@ async function sendCoachMsg(quickMsg) {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
-    const [goalRes, profileRes, streakRes] = await Promise.all([
+    const [goalRes, profileRes, streakRes, scanRes, targetsRes, sessionsRes, mealsRes] = await Promise.all([
       safeMaybeSingle(() => SB.from("goals").select("type,level,constraints,equipment").eq("user_id", U.id).maybeSingle(), null),
       safeMaybeSingle(() => SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle(), null),
-      safeMaybeSingle(() => SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle(), null)
+      safeMaybeSingle(() => SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle(), null),
+      safeMaybeSingle(() => SB.from("body_scans").select("physical_score,extended_analysis,created_at").eq("user_id", U.id).order("created_at", { ascending: false }).limit(1).maybeSingle(), null),
+      safeMaybeSingle(() => SB.from("nutrition_targets").select("calories,protein,carbs,fats,notes").eq("user_id", U.id).maybeSingle(), null),
+      safeMaybeSingle(() => SB.from("workout_sessions").select("title,created_at,duration").eq("user_id", U.id).order("created_at", { ascending: false }).limit(6), { data: [] }),
+      safeMaybeSingle(() => SB.from("meals").select("name,calories,created_at").eq("user_id", U.id).order("created_at", { ascending: false }).limit(5), { data: [] })
     ]);
 
     goalContext = goalRes?.data || {};
     const dbProfile = profileRes?.data || {};
     const currentStreak = streakRes?.data?.current_streak || 0;
+    const latestScan = scanRes?.data || null;
+    const targets = targetsRes?.data || null;
+    const recentSessions = Array.isArray(sessionsRes?.data) ? sessionsRes.data : [];
+    const recentMeals = Array.isArray(mealsRes?.data) ? mealsRes.data : [];
     const historyForApi = COACH_HISTORY.slice(-8, -1).map((m) => ({
       role: m.role,
       content: m.role === "ai" ? stripHtml(m.content).slice(0, 300) : m.content
@@ -1386,11 +1430,26 @@ async function sendCoachMsg(quickMsg) {
       }
     } catch {}
 
+    const lastScanScore = latestScan?.physical_score ? Number(latestScan.physical_score) : null;
+    const lastScanAreas = latestScan?.extended_analysis?.areas_for_improvement || [];
+    const lastScanSummary = lastScanScore ? `${lastScanScore}/100${lastScanAreas.length ? ` · points à travailler: ${String(lastScanAreas[0]).slice(0, 70)}` : ""}` : "";
+    const recentSessions7d = recentSessions.filter(function(row) {
+      var dt = new Date(row.created_at);
+      return !Number.isNaN(dt.getTime()) && (Date.now() - dt.getTime()) < 7 * 24 * 60 * 60 * 1000;
+    }).length;
+    const nutritionSummary = targets ? `${targets.calories || 0} kcal · ${targets.protein || 0}g prot.` : "";
+    const recentMealPattern = recentMeals.length ? recentMeals.slice(0, 3).map(function(row) { return row.name; }).filter(Boolean).join(", ") : "";
+    const coachContextSummary = buildCoachContextSummary({
+      current_streak: currentStreak,
+      recent_sessions_7d: recentSessions7d,
+      best_scan_score: lastScanScore,
+      last_scan_summary: lastScanSummary,
+      nutrition_summary: nutritionSummary,
+      recent_meal_pattern: recentMealPattern
+    });
+
     const coachSubLine = document.getElementById("coach-sub-line");
-    if (coachSubLine && goalContext.type) {
-      const goalLabel = { prise_de_masse: "Prise de masse", perte_de_poids: "Perte de poids", endurance: "Endurance", force: "Force", remise_en_forme: "Remise en forme", maintien: "Maintien" }[goalContext.type] || goalContext.type;
-      coachSubLine.textContent = moodLabel ? `${goalLabel} · Humeur: ${moodLabel}` : goalLabel;
-    }
+    if (coachSubLine) coachSubLine.textContent = buildCoachSubline(goalContext, moodLabel, coachContextSummary);
 
     coachProfile = {
       display_name: dbProfile.display_name || U.email?.split("@")[0] || "",
@@ -1401,7 +1460,13 @@ async function sendCoachMsg(quickMsg) {
       level: goalContext.level || "beginner",
       injuries: goalContext.constraints || "",
       equipment: goalContext.equipment || "poids du corps",
-      mood_today: moodLabel || undefined
+      mood_today: moodLabel || undefined,
+      current_streak: currentStreak,
+      recent_sessions_7d: recentSessions7d,
+      best_scan_score: lastScanScore,
+      last_scan_summary: lastScanSummary,
+      nutrition_summary: nutritionSummary,
+      recent_meal_pattern: recentMealPattern
     };
 
     const aiTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -3163,7 +3228,9 @@ async function generateNutrition() {
   const actEl      = document.getElementById("nutr-gen-activity");
   const btn        = document.getElementById("btn-gen-nutrition");
   const errEl      = document.getElementById("nutrition-gen-err");
+  const reqId = ++NUTRITION_REQ_SEQ;
   if (errEl) { errEl.textContent = ""; errEl.style.display = "none"; }
+  resetNutritionRenderState("Analyse de tes objectifs et préparation d'un plan compact…");
 
   await withButton(btn, "Génération…", async () => {
     const token = await getToken();
@@ -3178,8 +3245,9 @@ async function generateNutrition() {
         Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({ goal, activity_level: activity })
-    }, 9000);
+    }, 7000);
 
+    if (reqId !== NUTRITION_REQ_SEQ) return;
     await loadNutritionTargets();
     const payload = {
       goal,
@@ -3192,23 +3260,21 @@ async function generateNutrition() {
     renderNutritionGeneratedPlan(payload);
     saveNutritionPlanState(payload);
 
-    if (j.fallback) {
-      toast("Plan nutrition prêt (mode rapide)", "ok");
-    } else {
-      toast("Plan nutrition généré ✓", "ok");
-    }
+    if (j.fallback) toast("Plan nutrition prêt (mode rapide)", "ok");
+    else toast("Plan nutrition généré ✓", "ok");
   }).catch((e) => {
-    const msg = e.message || "Erreur génération";
-    if (errEl) { errEl.textContent = `Erreur: ${msg}`; errEl.style.display = "block"; }
+    if (reqId !== NUTRITION_REQ_SEQ) return;
     const payload = {
       goal: goalEl?.value || "maintenance",
       day_type: (actEl?.value || "moderate") === "low" ? "rest" : "training",
-      nutrition: { calories: 2200, protein: 140, carbs: 260, fats: 70, notes: "Plan local de secours affiché côté application." },
+      nutrition: { calories: 2200, protein: 140, carbs: 260, fats: 70, notes: "Plan rapide affiché après un délai serveur. Tu peux déjà l'utiliser." },
+      plan: null,
       fallback: true
     };
     renderNutritionGeneratedPlan(payload);
     saveNutritionPlanState(payload);
-    toast(`Erreur: ${msg}`, "err");
+    if (errEl) { errEl.style.display = "none"; errEl.textContent = ""; }
+    toast("Le serveur a été trop lent : plan rapide affiché.", "err");
   });
 }
 
@@ -3578,54 +3644,51 @@ function renderSvgChart(data, opts) {
   opts = opts || {};
   var color = opts.color || "#2563eb";
   var unit  = opts.unit  || "";
-  var H     = opts.H     || 130;
+  var H     = opts.H     || 132;
   if (!data || data.length < 2) {
-    return "<div class=\"chart-empty\">Pas encore assez de donnees - continuez a utiliser l'app !</div>";
+    return '<div class="chart-empty">Pas encore assez de données pour tracer une vraie tendance.</div>';
   }
-  var vals  = data.map(function(d) { return d.value; });
-  var minV  = Math.min.apply(null, vals);
-  var maxV  = Math.max.apply(null, vals);
-  var range = maxV - minV || 1;
-  var W = 340, padT = 24, padR = 16, padB = 28, padL = 38;
+  var vals = data.map(function(d) { return Number(d.value) || 0; });
+  var minV = Math.min.apply(null, vals);
+  var maxV = Math.max.apply(null, vals);
+  var paddedMin = Math.max(0, minV - Math.max(2, Math.round((maxV - minV) * 0.08)));
+  var paddedMax = maxV + Math.max(2, Math.round((maxV - minV || 10) * 0.12));
+  var range = paddedMax - paddedMin || 1;
+  var W = 360, padT = 20, padR = 18, padB = 28, padL = 34;
   var cw = W - padL - padR, ch = H - padT - padB;
   var pts = data.map(function(d, i) {
-    return {
-      x: padL + (data.length < 2 ? cw / 2 : (i / (data.length - 1)) * cw),
-      y: padT + ch - ((d.value - minV) / range) * ch,
-      d: d
-    };
+    return { x: padL + (data.length < 2 ? cw / 2 : (i / (data.length - 1)) * cw), y: padT + ch - (((Number(d.value) || 0) - paddedMin) / range) * ch, d: d };
   });
-  var linePath = pts.reduce(function(acc, p, i) {
+  var path = pts.reduce(function(acc, p, i) {
     if (i === 0) return "M" + p.x.toFixed(1) + "," + p.y.toFixed(1);
     var prev = pts[i - 1];
-    var cpx  = (prev.x + p.x) / 2;
-    return acc + " C" + cpx.toFixed(1) + "," + prev.y.toFixed(1) + " " + cpx.toFixed(1) + "," + p.y.toFixed(1) + " " + p.x.toFixed(1) + "," + p.y.toFixed(1);
+    var cpx1 = prev.x + (p.x - prev.x) * 0.42;
+    var cpx2 = prev.x + (p.x - prev.x) * 0.58;
+    return acc + " C" + cpx1.toFixed(1) + "," + prev.y.toFixed(1) + " " + cpx2.toFixed(1) + "," + p.y.toFixed(1) + " " + p.x.toFixed(1) + "," + p.y.toFixed(1);
   }, "");
   var baseline = padT + ch;
-  var firstSeg = linePath.indexOf(" ");
-  var areaPath = "M" + padL + "," + baseline + " L" + pts[0].x.toFixed(1) + "," + pts[0].y.toFixed(1)
-    + (firstSeg >= 0 ? linePath.slice(firstSeg) : "") + " L" + pts[pts.length - 1].x.toFixed(1) + "," + baseline + " Z";
-  var yTicks = [minV, (minV + maxV) / 2, maxV].map(function(v) {
-    var y = padT + ch - ((v - minV) / range) * ch;
-    return "<text x=\"" + (padL - 6) + "\" y=\"" + y.toFixed(1) + "\" text-anchor=\"end\" dominant-baseline=\"middle\" fill=\"currentColor\" opacity=\".4\" font-size=\"9\">" + Math.round(v) + unit + "</text>"
-      + "<line x1=\"" + padL + "\" y1=\"" + y.toFixed(1) + "\" x2=\"" + (padL + cw).toFixed(1) + "\" y2=\"" + y.toFixed(1) + "\" stroke=\"currentColor\" opacity=\".06\" stroke-width=\"1\"/>";
+  var area = path + " L" + pts[pts.length - 1].x.toFixed(1) + "," + baseline + " L" + pts[0].x.toFixed(1) + "," + baseline + " Z";
+  var gradId = "cg" + Math.random().toString(36).slice(2, 8);
+  var gridVals = [paddedMin, paddedMin + range / 2, paddedMax];
+  var grid = gridVals.map(function(v) {
+    var y = padT + ch - ((v - paddedMin) / range) * ch;
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${(padL + cw).toFixed(1)}" y2="${y.toFixed(1)}" stroke="currentColor" opacity=".07" stroke-width="1" stroke-dasharray="3 4"/>`;
   }).join("");
-  var xIdxs  = [0, Math.floor((data.length - 1) / 2), data.length - 1].filter(function(v, i, a) { return a.indexOf(v) === i; });
-  var xTicks = xIdxs.map(function(i) {
-    var p = pts[i];
-    return "<text x=\"" + p.x.toFixed(1) + "\" y=\"" + (baseline + 14).toFixed(1) + "\" text-anchor=\"middle\" fill=\"currentColor\" opacity=\".4\" font-size=\"9\">" + escapeHtml(String(data[i].label || "")) + "</text>";
-  }).join("");
-  var last    = pts[pts.length - 1];
-  var lastVal = data[data.length - 1].value;
-  var gradId  = "cg" + Math.random().toString(36).slice(2, 8);
-  return "<svg viewBox=\"0 0 " + W + " " + H + "\" xmlns=\"http://www.w3.org/2000/svg\" style=\"width:100%;display:block;color:var(--muted);overflow:visible\">"
-    + "<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0%\" stop-color=\"" + color + "\" stop-opacity=\"0.25\"/><stop offset=\"100%\" stop-color=\"" + color + "\" stop-opacity=\"0\"/></linearGradient></defs>"
-    + "<path d=\"" + areaPath + "\" fill=\"url(#" + gradId + ")\"/>"
-    + "<path d=\"" + linePath + "\" fill=\"none\" stroke=\"" + color + "\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
-    + yTicks + xTicks
-    + "<circle cx=\"" + last.x.toFixed(1) + "\" cy=\"" + last.y.toFixed(1) + "\" r=\"5\" fill=\"" + color + "\" stroke=\"var(--surf)\" stroke-width=\"2.5\"/>"
-    + "<text x=\"" + last.x.toFixed(1) + "\" y=\"" + (last.y - 11).toFixed(1) + "\" text-anchor=\"middle\" fill=\"" + color + "\" font-size=\"11\" font-weight=\"800\">" + lastVal + unit + "</text>"
-    + "</svg>";
+  var xIdxs = [0, Math.floor((data.length - 1) / 2), data.length - 1].filter(function(v, i, a) { return a.indexOf(v) === i; });
+  var xTicks = xIdxs.map(function(i) { var p = pts[i]; return `<text x="${p.x.toFixed(1)}" y="${(baseline + 16).toFixed(1)}" text-anchor="middle" fill="currentColor" opacity=".46" font-size="9">${escapeHtml(String(data[i].label || ""))}</text>`; }).join("");
+  var yTicks = gridVals.map(function(v) { var y = padT + ch - ((v - paddedMin) / range) * ch; return `<text x="${padL - 8}" y="${y.toFixed(1)}" text-anchor="end" dominant-baseline="middle" fill="currentColor" opacity=".44" font-size="9">${Math.round(v)}${unit}</text>`; }).join("");
+  var points = pts.map(function(p, i) { return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${i === pts.length - 1 ? 4.2 : 2.6}" fill="${color}" opacity="${i === pts.length - 1 ? 1 : .72}"/>`; }).join("");
+  var last = pts[pts.length - 1];
+  var lastVal = Number(data[data.length - 1].value) || 0;
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;color:var(--muted);overflow:visible">
+    <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity="0.32"/><stop offset="100%" stop-color="${color}" stop-opacity="0.02"/></linearGradient></defs>
+    ${grid}${yTicks}${xTicks}
+    <path d="${area}" fill="url(#${gradId})"/>
+    <path d="${path}" fill="none" stroke="${color}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    ${points}
+    <circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="5.2" fill="${color}" stroke="var(--surf)" stroke-width="2.6"/>
+    <text x="${last.x.toFixed(1)}" y="${(last.y - 12).toFixed(1)}" text-anchor="middle" fill="${color}" font-size="11" font-weight="800">${lastVal}${unit}</text>
+  </svg>`;
 }
 
 function buildWeeklySessionData(rows, weeks) {

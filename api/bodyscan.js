@@ -73,28 +73,29 @@ function clampScore(value) {
 function scoreCapByProfile({ fitnessCategory, muscleMassLevel, bodyfatProxy, analysisQuality }) {
   const category = String(fitnessCategory || "").toLowerCase();
   const muscle = String(muscleMassLevel || "").toLowerCase();
-  let cap = 72;
-  if (category === "sedentary") cap = 50;
-  else if (category === "recreational") cap = 66;
-  else if (category === "athletic") cap = 80;
-  else if (category === "competitive") cap = 88;
+  let cap = 74;
+  if (category === "sedentary") cap = 48;
+  else if (category === "recreational") cap = 68;
+  else if (category === "athletic") cap = 86;
+  else if (category === "competitive") cap = 92;
 
-  if (muscle === "beginner") cap = Math.min(cap, 58);
+  if (muscle === "beginner") cap = Math.min(cap, 56);
   else if (muscle === "intermediate") cap = Math.min(cap, 70);
   else if (muscle === "advanced") cap = Math.max(cap, 82);
   else if (muscle === "elite") cap = Math.max(cap, 90);
 
   if (typeof bodyfatProxy === "number") {
-    if (bodyfatProxy >= 25) cap = Math.min(cap, 50);
-    else if (bodyfatProxy >= 21) cap = Math.min(cap, 58);
-    else if (bodyfatProxy >= 18) cap = Math.min(cap, 64);
-    else if (bodyfatProxy >= 15) cap = Math.min(cap, 72);
-    else if (bodyfatProxy <= 11) cap = Math.max(cap, 86);
+    if (bodyfatProxy >= 25) cap = Math.min(cap, 48);
+    else if (bodyfatProxy >= 21) cap = Math.min(cap, 57);
+    else if (bodyfatProxy >= 18) cap = Math.min(cap, 65);
+    else if (bodyfatProxy >= 15) cap = Math.min(cap, 74);
+    else if (bodyfatProxy <= 13) cap = Math.max(cap, 84);
+    else if (bodyfatProxy <= 10) cap = Math.max(cap, 89);
   }
 
   const quality = String(analysisQuality || "");
-  if (quality === "poor") cap = Math.min(cap, 56);
-  else if (quality === "acceptable") cap = Math.min(cap, 72);
+  if (quality === "poor") cap = Math.min(cap, 55);
+  else if (quality === "acceptable") cap = Math.min(cap, Math.max(cap, 76));
   return cap;
 }
 
@@ -418,6 +419,13 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
     + (qualityIssues.length >= 2 ? 6 : qualityIssues.length === 1 ? 3 : 0)
     + (typeof bodyfatProxy === "number" && bodyfatProxy >= 24 ? 14 : typeof bodyfatProxy === "number" && bodyfatProxy >= 20 ? 10 : typeof bodyfatProxy === "number" && bodyfatProxy >= 17 ? 6 : 0);
 
+  const bonuses =
+    ((rawScores.posture || 0) >= 76 ? 4 : (rawScores.posture || 0) >= 70 ? 2 : 0)
+    + ((rawScores.symmetry || 0) >= 78 ? 5 : (rawScores.symmetry || 0) >= 72 ? 2 : 0)
+    + ((rawScores.muscle_definition || 0) >= 80 ? 9 : (rawScores.muscle_definition || 0) >= 72 ? 4 : 0)
+    + ((rawScores.body_composition || 0) >= 82 ? 8 : (rawScores.body_composition || 0) >= 74 ? 3 : 0)
+    + (typeof bodyfatProxy === "number" && bodyfatProxy <= 12 ? 6 : typeof bodyfatProxy === "number" && bodyfatProxy <= 15 ? 2 : 0);
+
   const derivedScores = {
     symmetry: clampScore(rawScores.symmetry ?? 58),
     posture: clampScore(rawScores.posture ?? 56),
@@ -425,8 +433,8 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
     body_composition: clampScore(rawScores.body_composition ?? (typeof bodyfatProxy === "number" ? Math.max(36, 96 - (bodyfatProxy * 2.6)) : 52))
   };
 
-  const basePhysical = rawScores.physical_score ?? avgScore ?? 54;
-  const weightedBase = Math.round(((derivedScores.symmetry * 0.18) + (derivedScores.posture * 0.17) + (derivedScores.muscle_definition * 0.34) + (derivedScores.body_composition * 0.31)));
+  const basePhysical = rawScores.physical_score ?? avgScore ?? 56;
+  const weightedBase = Math.round(((derivedScores.symmetry * 0.17) + (derivedScores.posture * 0.16) + (derivedScores.muscle_definition * 0.35) + (derivedScores.body_composition * 0.32)));
   const cap = scoreCapByProfile({
     fitnessCategory: p.estimated_metrics?.fitness_category,
     muscleMassLevel: p.estimated_metrics?.muscle_mass_level,
@@ -434,10 +442,13 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
     analysisQuality: p.analysis_quality
   });
   const qualityPenalty = qualityIssues.length ? 2 : 0;
-  let calibratedPhysical = clampScore(Math.round(((basePhysical * 0.35) + (weightedBase * 0.65)) - (penalties * 0.82) - qualityPenalty)) ?? 52;
+  let calibratedPhysical = clampScore(Math.round(((basePhysical * 0.22) + (weightedBase * 0.78)) - (penalties * 0.78) - qualityPenalty + bonuses)) ?? 54;
   calibratedPhysical = Math.min(calibratedPhysical, cap);
+  if ((p.estimated_metrics?.fitness_category === "athletic" || p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 14 && (derivedScores.muscle_definition || 0) >= 72 && (derivedScores.body_composition || 0) >= 74) {
+    calibratedPhysical = Math.max(calibratedPhysical, 76);
+  }
   if ((p.estimated_metrics?.fitness_category === "athletic" || p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 11 && (derivedScores.muscle_definition || 0) >= 84 && (derivedScores.body_composition || 0) >= 82) {
-    calibratedPhysical = Math.max(calibratedPhysical, 84);
+    calibratedPhysical = Math.max(calibratedPhysical, 86);
   }
 
   const strengths = uniqStrings([
