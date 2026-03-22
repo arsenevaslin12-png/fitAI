@@ -543,7 +543,8 @@ function selectMood(btn, level) {
     const today = new Date().toISOString().slice(0, 10);
     SB.from("daily_moods")
       .upsert({ user_id: U.id, mood_level: level, mood_label: label, date: today }, { onConflict: "user_id,date" })
-      .then(({ error }) => { if (error) console.warn("[mood] save failed:", error.message); });
+      .then(({ error }) => { if (error) console.warn("[mood] save failed:", error.message); })
+      .catch((err) => console.warn("[mood] promise rejected:", err));
   }
 }
 
@@ -2693,7 +2694,7 @@ async function generateNutrition() {
   if (errEl) { errEl.textContent = ""; errEl.style.display = "none"; }
 
   // Grey out current values so user knows it's not the new plan yet
-  const nutrTargetsEl = document.getElementById("nutr-targets-block") || document.querySelector(".nutr-targets, .nutr-plan-card, #nutrition-targets");
+  const nutrTargetsEl = document.getElementById("nutr-targets-card");
   if (nutrTargetsEl) nutrTargetsEl.style.opacity = "0.35";
 
   await withButton(btn, "Génération en cours…", async () => {

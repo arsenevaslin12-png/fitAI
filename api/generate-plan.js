@@ -3,7 +3,7 @@
 // Fixed: profiles PK is "id" not "user_id", timeout, model fallback
 
 const TIMEOUT = 25000;
-const MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"];
+const MODELS = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
 
 let _AI = null;
 function getAI() {
