@@ -1,14 +1,14 @@
 "use strict";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// api/_env.js — Zod-based environment validation for FitAI
-//
-// Runs at cold-start (module load) AND per-request via assertEnv(res).
-// If any critical variable is missing/invalid → HTTP 503 + clear error message.
-// Build WILL log loudly so the issue is visible in Vercel logs immediately.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const { z } = require("zod");
+
+function isJwtKey(value) {
+  return /^eyJ[a-zA-Z0-9_-]+\./.test(String(value || "")) && String(value || "").length > 80;
+}
+
+function isPublishableKey(value) {
+  return /^sb_publishable_[a-zA-Z0-9._-]+$/.test(String(value || ""));
+}
 
 const EnvSchema = z.object({
   SUPABASE_URL: z
@@ -16,17 +16,12 @@ const EnvSchema = z.object({
     .regex(/^https:\/\/[a-z0-9-]+\.supabase\.co$/i, {
       message: "SUPABASE_URL invalide — format attendu: https://xxxxxx.supabase.co"
     }),
-
-  SUPABASE_ANON_KEY: z
-    .string({ required_error: "SUPABASE_ANON_KEY manquante" })
-    .min(30, "SUPABASE_ANON_KEY trop courte (< 30 chars) — vérifiez la clé anon/public"),
-
-  GEMINI_API_KEY: z
-    .string({ required_error: "GEMINI_API_KEY manquante" })
-    .min(10, "GEMINI_API_KEY trop courte — vérifiez votre clé Google AI Studio")
+  SUPABASE_PUBLIC_KEY: z.string({ required_error: "SUPABASE public key manquante" }).refine(
+    (value) => isJwtKey(value) || isPublishableKey(value),
+    "Clé Supabase invalide — formats acceptés: JWT legacy (eyJ...) ou publishable key (sb_publishable_...)"
+  ),
+  GEMINI_API_KEY: z.string().optional().default("")
 });
-
-// ── Body schema validators (reusable in API routes) ──────────────────────────
 
 const RecipeBodySchema = z.object({
   ingredients: z.string().min(2, "ingredients requis").max(2000),
@@ -46,21 +41,25 @@ const CoachBodySchema = z.object({
   goalContext: z.record(z.unknown()).optional()
 });
 
-// ── Read env (with multi-key support for SUPABASE_ANON_KEY) ──────────────────
+function pickSupabasePublicKey() {
+  const key = (
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    ""
+  ).trim();
+  return key;
+}
+
 function readEnv() {
   return {
     SUPABASE_URL: (process.env.SUPABASE_URL || "").trim().replace(/\/+$/, ""),
-    SUPABASE_ANON_KEY: (
-      process.env.SUPABASE_ANON_KEY ||
-      process.env.SUPABASE_PUBLISHABLE_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ""
-    ).trim(),
+    SUPABASE_PUBLIC_KEY: pickSupabasePublicKey(),
     GEMINI_API_KEY: (process.env.GEMINI_API_KEY || "").trim()
   };
 }
 
-// ── Module-level validation (runs once at cold-start) ────────────────────────
 const _envResult = EnvSchema.safeParse(readEnv());
 const MISSING_ERRORS = _envResult.success ? [] : _envResult.error.errors;
 
@@ -71,22 +70,30 @@ if (MISSING_ERRORS.length > 0) {
     "║  ❌  FITAI — CONFIGURATION INVALIDE — REQUÊTES REFUSÉES (503)  ║",
     "╚══════════════════════════════════════════════════════════════════╝",
     "",
-    `${MISSING_ERRORS.length} erreur(s) de configuration détectée(s) par Zod :`,
+    `${MISSING_ERRORS.length} erreur(s) de configuration détectée(s) :`,
     "",
     ...MISSING_ERRORS.map((e) => `  ❌  [${e.path.join(".")}] ${e.message}`),
     "",
     "ACTION REQUISE:",
-    "  → Vercel Dashboard → votre projet → Settings → Environment Variables",
-    "  → Ajoutez ou corrigez les variables listées ci-dessus",
-    "  → Cliquez sur 'Redeploy' pour relancer",
+    "  → Vercel Dashboard → Settings → Environment Variables",
+    "  → Ajoutez ou corrigez SUPABASE_URL + la clé publique Supabase",
+    "  → GEMINI_API_KEY reste optionnelle sur les routes avec fallback",
     ""
   ];
   process.stderr.write(lines.join("\n") + "\n");
 }
 
-// ── Per-request guard ─────────────────────────────────────────────────────────
-function assertEnv(res) {
-  if (MISSING_ERRORS.length === 0) return false;
+function assertEnv(res, options = {}) {
+  const requireGemini = !!options.requireGemini;
+  const runtime = readEnv();
+  const runtimeErrors = [];
+
+  if (MISSING_ERRORS.length > 0) runtimeErrors.push(...MISSING_ERRORS);
+  if (requireGemini && !runtime.GEMINI_API_KEY) {
+    runtimeErrors.push({ path: ["GEMINI_API_KEY"], message: "GEMINI_API_KEY manquante" });
+  }
+
+  if (runtimeErrors.length === 0) return false;
 
   if (res && !res.writableEnded) {
     res.statusCode = 503;
@@ -96,15 +103,14 @@ function assertEnv(res) {
     res.end(JSON.stringify({
       ok: false,
       error: "SERVER_MISCONFIGURED",
-      message: `Serveur mal configuré. ${MISSING_ERRORS.length} variable(s) invalide(s).`,
-      errors: MISSING_ERRORS.map((e) => ({ field: e.path.join("."), message: e.message })),
+      message: `Serveur mal configuré. ${runtimeErrors.length} variable(s) invalide(s).`,
+      errors: runtimeErrors.map((e) => ({ field: e.path.join("."), message: e.message })),
       fix: "Vercel Dashboard → Settings → Environment Variables → corrigez les variables → Redeploy."
     }));
   }
   return true;
 }
 
-// ── Schema validators for route bodies ───────────────────────────────────────
 function validateBody(schema, body, res) {
   const result = schema.safeParse(body);
   if (result.success) return { ok: true, data: result.data };
@@ -130,5 +136,8 @@ module.exports = {
   MISSING_ERRORS,
   RecipeBodySchema,
   BodyscanBodySchema,
-  CoachBodySchema
+  CoachBodySchema,
+  pickSupabasePublicKey,
+  isJwtKey,
+  isPublishableKey
 };

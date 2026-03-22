@@ -2692,7 +2692,11 @@ async function generateNutrition() {
   const errEl      = document.getElementById("nutrition-gen-err");
   if (errEl) { errEl.textContent = ""; errEl.style.display = "none"; }
 
-  await withButton(btn, "Génération…", async () => {
+  // Grey out current values so user knows it's not the new plan yet
+  const nutrTargetsEl = document.getElementById("nutr-targets-block") || document.querySelector(".nutr-targets, .nutr-plan-card, #nutrition-targets");
+  if (nutrTargetsEl) nutrTargetsEl.style.opacity = "0.35";
+
+  await withButton(btn, "Génération en cours…", async () => {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
@@ -2716,7 +2720,7 @@ async function generateNutrition() {
 
     await loadNutritionTargets();
     if (j.fallback) {
-      toast("Plan de secours appliqué (Gemini indisponible)", "err");
+      toast("Plan de secours appliqué (Gemini indisponible)", "warn");
     } else {
       toast("Plan nutrition généré ✓", "ok");
     }
@@ -2724,6 +2728,8 @@ async function generateNutrition() {
     const msg = e.message || "Erreur génération";
     if (errEl) { errEl.textContent = `Erreur: ${msg}`; errEl.style.display = "block"; }
     toast(`Erreur: ${msg}`, "err");
+  }).finally(() => {
+    if (nutrTargetsEl) nutrTargetsEl.style.opacity = "";
   });
 }
 
@@ -3097,21 +3103,23 @@ function woNav(dir) {
 
 function renderSvgChart(data, opts) {
   opts = opts || {};
-  var color = opts.color || "#2563eb";
-  var unit  = opts.unit  || "";
-  var H     = opts.H     || 130;
+  var color    = opts.color    || "#2563eb";
+  var unit     = opts.unit     || "";
+  var H        = opts.H        || 130;
+  var zeroBase = !!opts.zeroBase; // force baseline at 0
   if (!data || data.length < 2) {
-    return "<div class=\"chart-empty\">Pas encore assez de donnees - continuez a utiliser l'app !</div>";
+    return "<div class=\"chart-empty\">Continuez a utiliser l'app pour voir votre evolution ici.</div>";
   }
   var vals  = data.map(function(d) { return d.value; });
-  var minV  = Math.min.apply(null, vals);
+  var minV  = zeroBase ? 0 : Math.max(0, Math.min.apply(null, vals) * 0.85);
   var maxV  = Math.max.apply(null, vals);
-  var range = maxV - minV || 1;
-  var W = 340, padT = 24, padR = 16, padB = 28, padL = 38;
+  if (maxV === minV) maxV = minV + 1;
+  var range = maxV - minV;
+  var W = 340, padT = 22, padR = 16, padB = 30, padL = 40;
   var cw = W - padL - padR, ch = H - padT - padB;
   var pts = data.map(function(d, i) {
     return {
-      x: padL + (data.length < 2 ? cw / 2 : (i / (data.length - 1)) * cw),
+      x: padL + (i / (data.length - 1)) * cw,
       y: padT + ch - ((d.value - minV) / range) * ch,
       d: d
     };
@@ -3126,26 +3134,33 @@ function renderSvgChart(data, opts) {
   var firstSeg = linePath.indexOf(" ");
   var areaPath = "M" + padL + "," + baseline + " L" + pts[0].x.toFixed(1) + "," + pts[0].y.toFixed(1)
     + (firstSeg >= 0 ? linePath.slice(firstSeg) : "") + " L" + pts[pts.length - 1].x.toFixed(1) + "," + baseline + " Z";
-  var yTicks = [minV, (minV + maxV) / 2, maxV].map(function(v) {
+  // Y axis: 3 ticks
+  var yTickVals = [minV, (minV + maxV) / 2, maxV];
+  var yTicks = yTickVals.map(function(v) {
     var y = padT + ch - ((v - minV) / range) * ch;
-    return "<text x=\"" + (padL - 6) + "\" y=\"" + y.toFixed(1) + "\" text-anchor=\"end\" dominant-baseline=\"middle\" fill=\"currentColor\" opacity=\".4\" font-size=\"9\">" + Math.round(v) + unit + "</text>"
-      + "<line x1=\"" + padL + "\" y1=\"" + y.toFixed(1) + "\" x2=\"" + (padL + cw).toFixed(1) + "\" y2=\"" + y.toFixed(1) + "\" stroke=\"currentColor\" opacity=\".06\" stroke-width=\"1\"/>";
+    var label = v >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v) + unit;
+    return "<text x=\"" + (padL - 7) + "\" y=\"" + y.toFixed(1) + "\" text-anchor=\"end\" dominant-baseline=\"middle\" fill=\"currentColor\" opacity=\".38\" font-size=\"8.5\">" + label + "</text>"
+      + "<line x1=\"" + padL + "\" y1=\"" + y.toFixed(1) + "\" x2=\"" + (padL + cw).toFixed(1) + "\" y2=\"" + y.toFixed(1) + "\" stroke=\"currentColor\" opacity=\".07\" stroke-width=\"1\"/>";
   }).join("");
-  var xIdxs  = [0, Math.floor((data.length - 1) / 2), data.length - 1].filter(function(v, i, a) { return a.indexOf(v) === i; });
+  // X axis: up to 5 evenly-spaced labels
+  var xCount  = Math.min(5, data.length);
+  var xIdxs   = Array.from({ length: xCount }, function(_, k) { return Math.round(k * (data.length - 1) / (xCount - 1 || 1)); });
+  xIdxs = xIdxs.filter(function(v, i, a) { return a.indexOf(v) === i; });
   var xTicks = xIdxs.map(function(i) {
     var p = pts[i];
-    return "<text x=\"" + p.x.toFixed(1) + "\" y=\"" + (baseline + 14).toFixed(1) + "\" text-anchor=\"middle\" fill=\"currentColor\" opacity=\".4\" font-size=\"9\">" + escapeHtml(String(data[i].label || "")) + "</text>";
+    return "<text x=\"" + p.x.toFixed(1) + "\" y=\"" + (baseline + 14).toFixed(1) + "\" text-anchor=\"middle\" fill=\"currentColor\" opacity=\".38\" font-size=\"8.5\">" + escapeHtml(String(data[i].label || "")) + "</text>";
   }).join("");
   var last    = pts[pts.length - 1];
   var lastVal = data[data.length - 1].value;
+  var lastLabel = lastVal >= 1000 ? (lastVal / 1000).toFixed(1) + "k" + unit : lastVal + unit;
   var gradId  = "cg" + Math.random().toString(36).slice(2, 8);
   return "<svg viewBox=\"0 0 " + W + " " + H + "\" xmlns=\"http://www.w3.org/2000/svg\" style=\"width:100%;display:block;color:var(--muted);overflow:visible\">"
-    + "<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0%\" stop-color=\"" + color + "\" stop-opacity=\"0.25\"/><stop offset=\"100%\" stop-color=\"" + color + "\" stop-opacity=\"0\"/></linearGradient></defs>"
+    + "<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0%\" stop-color=\"" + color + "\" stop-opacity=\"0.28\"/><stop offset=\"80%\" stop-color=\"" + color + "\" stop-opacity=\"0.04\"/><stop offset=\"100%\" stop-color=\"" + color + "\" stop-opacity=\"0\"/></linearGradient></defs>"
     + "<path d=\"" + areaPath + "\" fill=\"url(#" + gradId + ")\"/>"
-    + "<path d=\"" + linePath + "\" fill=\"none\" stroke=\"" + color + "\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+    + "<path d=\"" + linePath + "\" fill=\"none\" stroke=\"" + color + "\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
     + yTicks + xTicks
     + "<circle cx=\"" + last.x.toFixed(1) + "\" cy=\"" + last.y.toFixed(1) + "\" r=\"5\" fill=\"" + color + "\" stroke=\"var(--surf)\" stroke-width=\"2.5\"/>"
-    + "<text x=\"" + last.x.toFixed(1) + "\" y=\"" + (last.y - 11).toFixed(1) + "\" text-anchor=\"middle\" fill=\"" + color + "\" font-size=\"11\" font-weight=\"800\">" + lastVal + unit + "</text>"
+    + "<text x=\"" + last.x.toFixed(1) + "\" y=\"" + (last.y - 12).toFixed(1) + "\" text-anchor=\"middle\" fill=\"" + color + "\" font-size=\"11\" font-weight=\"800\">" + lastLabel + "</text>"
     + "</svg>";
 }
 

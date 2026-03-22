@@ -20,13 +20,11 @@ const {
   FALLBACK_MODEL,
   normalizeGeminiError
 } = require("./_gemini");
-const { assertEnv } = require("./_env");
 
 // Global handler — always returns valid JSON, never crashes Vercel
 module.exports = async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
-  if (assertEnv(res)) return;
 
   try {
     await handleCoach(req, res);
@@ -70,16 +68,6 @@ async function handleCoach(req, res) {
 
   const body = parseBody(req);
   const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
-
-  if (!apiKey) {
-    console.error("[coach] GEMINI_API_KEY missing");
-    return sendJson(res, 200, {
-      ok: true, type: "conversation",
-      message: "Le coach est en cours de configuration. Revenez dans quelques minutes.",
-      fallback: true
-    });
-  }
-
   const responseMode = sanitizeInput(body.responseMode || "", 40);
   const message = sanitizeInput(body.message || "", 1400);
   if (!message) return sendJson(res, 400, { ok: false, error: "Le champ 'message' est requis" });
@@ -112,6 +100,35 @@ async function handleCoach(req, res) {
   } : {};
 
   const intent = detectIntent(message, responseMode);
+
+  if (!apiKey) {
+    if (responseMode === "recipe_json" || intent === "recipe_request") {
+      const recipe = await generateRecipeJson({ apiKey, message, profile, goalContext });
+      return sendJson(res, 200, { ok: true, type: "recipe", data: recipe.data, message: null, fallback: true, meta: { note: "fallback:no_api_key" }, model_default: DEFAULT_MODEL, model_fallback: FALLBACK_MODEL });
+    }
+    if (intent === "workout_request") {
+      const plan = await generateWorkoutPlan({ apiKey, message, history, profile, goalContext });
+      return sendJson(res, 200, { ok: true, type: "workout", data: plan.data, message: null, fallback: true, meta: { note: "fallback:no_api_key" }, model_default: DEFAULT_MODEL, model_fallback: FALLBACK_MODEL });
+    }
+    if (intent === "shopping_list") {
+      const result = await generateShoppingList({ apiKey, message, profile, goalContext });
+      return sendJson(res, 200, { ok: true, type: "shopping_list", data: result.data, message: null, fallback: true, meta: { note: "fallback:no_api_key" }, model_default: DEFAULT_MODEL, model_fallback: FALLBACK_MODEL });
+    }
+    if (intent === "meal_plan") {
+      const result = await generateMealPlan({ apiKey, message, profile, goalContext });
+      return sendJson(res, 200, { ok: true, type: "meal_plan", data: result.data, message: null, fallback: true, meta: { note: "fallback:no_api_key" }, model_default: DEFAULT_MODEL, model_fallback: FALLBACK_MODEL });
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      type: "conversation",
+      message: fallbackConversation(intent, message, profile, goalContext),
+      data: null,
+      fallback: true,
+      meta: { note: "fallback:no_api_key" },
+      model_default: DEFAULT_MODEL,
+      model_fallback: FALLBACK_MODEL
+    });
+  }
 
   try {
     if (responseMode === "recipe_json" || intent === "recipe_request") {
@@ -168,7 +185,51 @@ async function handleCoach(req, res) {
     if (info.status === 401 || info.status === 403 || info.status === 429) {
       return sendJson(res, info.status, { ok: false, error: info.message, error_code: info.code });
     }
-    // Timeout/generation error → graceful fallback, not a crash
+
+    try {
+      if (responseMode === "recipe_json" || intent === "recipe_request") {
+        const recipe = await generateRecipeJson({ apiKey: "", message, profile, goalContext });
+        return sendJson(res, 200, {
+          ok: true, type: "recipe",
+          data: recipe.data, message: null, fallback: true,
+          meta: { note: `Reponse de secours (${info.code})` },
+          model_default: DEFAULT_MODEL, model_fallback: FALLBACK_MODEL
+        });
+      }
+
+      if (intent === "workout_request") {
+        const plan = await generateWorkoutPlan({ apiKey: "", message, history, profile, goalContext });
+        return sendJson(res, 200, {
+          ok: true, type: "workout",
+          data: plan.data, message: null, fallback: true,
+          meta: { note: `Reponse de secours (${info.code})` },
+          model_default: DEFAULT_MODEL, model_fallback: FALLBACK_MODEL
+        });
+      }
+
+      if (intent === "shopping_list") {
+        const result = await generateShoppingList({ apiKey: "", message, profile, goalContext });
+        return sendJson(res, 200, {
+          ok: true, type: "shopping_list",
+          data: result.data, message: null, fallback: true,
+          meta: { note: `Reponse de secours (${info.code})` },
+          model_default: DEFAULT_MODEL, model_fallback: FALLBACK_MODEL
+        });
+      }
+
+      if (intent === "meal_plan") {
+        const result = await generateMealPlan({ apiKey: "", message, profile, goalContext });
+        return sendJson(res, 200, {
+          ok: true, type: "meal_plan",
+          data: result.data, message: null, fallback: true,
+          meta: { note: `Reponse de secours (${info.code})` },
+          model_default: DEFAULT_MODEL, model_fallback: FALLBACK_MODEL
+        });
+      }
+    } catch (fallbackError) {
+      console.error("[coach][structured-fallback]", String(fallbackError?.message || fallbackError).slice(0, 160));
+    }
+
     const fallbackMsg = fallbackConversation(intent, message, profile, goalContext);
     return sendJson(res, 200, {
       ok: true, type: "conversation",
