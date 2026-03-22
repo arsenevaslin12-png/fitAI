@@ -276,5 +276,46 @@ CREATE TRIGGER on_auth_user_created
 
 
 -- ============================================================
+-- 10. USER_STREAKS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.user_streaks (
+  user_id        UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  current_streak INTEGER     DEFAULT 0,
+  longest_streak INTEGER     DEFAULT 0,
+  total_workouts INTEGER     DEFAULT 0,
+  last_active    DATE,
+  updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.user_streaks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "streaks_own" ON public.user_streaks;
+CREATE POLICY "streaks_own" ON public.user_streaks FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- ============================================================
+-- 11. DAILY_MOODS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.daily_moods (
+  id          UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id     UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  mood_level  INT         NOT NULL CHECK (mood_level BETWEEN 1 AND 5),
+  mood_label  TEXT        NOT NULL DEFAULT '',
+  date        DATE        NOT NULL DEFAULT CURRENT_DATE,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_moods_user_date ON public.daily_moods (user_id, date DESC);
+
+ALTER TABLE public.daily_moods ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "moods_own" ON public.daily_moods;
+CREATE POLICY "moods_own" ON public.daily_moods FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- ============================================================
 -- DONE. All tables, indexes, RLS, storage, and triggers created.
 -- ============================================================

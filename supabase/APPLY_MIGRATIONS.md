@@ -12,6 +12,8 @@ Copiez-collez le contenu de `schema.sql` dans l'éditeur SQL et exécutez.
 
 Ce fichier est **idempotent** (`CREATE TABLE IF NOT EXISTS`, `DROP POLICY IF EXISTS`).
 
+> **Mis à jour** : `schema.sql` inclut maintenant `user_streaks` et `daily_moods`. Pour une installation fraîche, ce fichier seul suffit (sans les migrations v3/v6 pour ces deux tables).
+
 ---
 
 ## Étape 2 — Migration sociale V3 (OBLIGATOIRE)
