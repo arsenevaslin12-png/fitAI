@@ -3181,7 +3181,7 @@ async function loadProgress() {
     SB.from("workout_sessions").select("id,created_at,duration").eq("user_id", U.id).order("created_at", { ascending: true }).limit(80),
     SB.from("body_scans").select("created_at,physical_score").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
     SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(100),
-    SB.from("user_streaks").select("current_streak,best_streak").eq("user_id", U.id).maybeSingle(),
+    SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle(),
     SB.from("daily_moods").select("mood_level,mood_label,date").eq("user_id", U.id)
       .gte("date", moodSince.toISOString().slice(0, 10)).order("date", { ascending: true }).limit(30)
   ]);
