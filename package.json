@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vercel dev",
     "build": "echo 'Static build - no compilation needed'",
-    "lint": "echo 'No linter configured'"
+    "lint": "npm run verify",
+    "verify": "node --check public/app.js && node --check api/workout.js && node --check api/coach.js && node --check api/coach-stream.js && node --check api/bodyscan.js && node --check api/generate-recipe.js && node --check api/generate-nutrition.js && node --check api/config.js && node --check api/_coach-core.js && node --check api/_env.js && node --check api/_gemini.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

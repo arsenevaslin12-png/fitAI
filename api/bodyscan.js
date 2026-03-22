@@ -1,10 +1,8 @@
 "use strict";
-// api/bodyscan.js — FitAI Pro v2.0 — Enhanced Body Scan Analysis
 
-const TIMEOUT_GEMINI_MS = 6500;
-const TIMEOUT_STORAGE_MS = 12000;
+const TIMEOUT_GEMINI_MS = 3000;
+const TIMEOUT_STORAGE_MS = 2500;
 
-const { createClient } = require("@supabase/supabase-js");
 const {
   DEFAULT_MODEL: MODEL,
   FALLBACK_MODEL,
@@ -15,10 +13,6 @@ const {
 const { validateBody, BodyscanBodySchema } = require("./_env");
 
 const BUCKET = process.env.BUCKET || "user_uploads";
-
-// ══════════════════════════════════════════════════════════════════════════════
-// HELPERS
-// ══════════════════════════════════════════════════════════════════════════════
 
 function json(res, status, body) {
   if (res.writableEnded) return;
@@ -37,7 +31,9 @@ function cors(res) {
 function parseBody(req) {
   const b = req.body;
   if (!b) return {};
-  if (typeof b === "string") { try { return JSON.parse(b); } catch { return {}; } }
+  if (typeof b === "string") {
+    try { return JSON.parse(b); } catch { return {}; }
+  }
   return b || {};
 }
 
@@ -70,13 +66,13 @@ function withTimeout(p, ms, label) {
 }
 
 function clampScore(value) {
-  if (typeof value !== "number" || isNaN(value)) return null;
+  if (typeof value !== "number" || Number.isNaN(value)) return null;
   return Math.min(100, Math.max(0, Math.round(value)));
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// PROMPT BUILDING
-// ══════════════════════════════════════════════════════════════════════════════
+function toArray(input, fallback = []) {
+  return Array.isArray(input) ? input.filter(Boolean).map((x) => String(x).trim()).filter(Boolean) : fallback;
+}
 
 function buildBodyScanPrompt(previousAnalysis = null) {
   let historyContext = "";
@@ -106,7 +102,6 @@ RÉPONDS UNIQUEMENT en JSON valide, aucun texte avant ou après, aucun markdown:
 {
   "analysis_quality": "good|acceptable|poor",
   "quality_issues": ["éclairage faible", "angle non optimal"],
-  
   "physical_score": 72,
   "score_breakdown": {
     "symmetry": 78,
@@ -114,7 +109,6 @@ RÉPONDS UNIQUEMENT en JSON valide, aucun texte avant ou après, aucun markdown:
     "muscle_definition": 70,
     "body_composition": 75
   },
-  
   "posture_analysis": {
     "overall": "good|moderate|needs_work",
     "head_position": "forward_head|neutral|good",
@@ -123,7 +117,6 @@ RÉPONDS UNIQUEMENT en JSON valide, aucun texte avant ou après, aucun markdown:
     "hip_alignment": "anterior_tilt|posterior_tilt|neutral",
     "recommendations": ["Conseil 1", "Conseil 2"]
   },
-  
   "muscle_balance": {
     "upper_lower_ratio": "balanced|upper_dominant|lower_dominant",
     "left_right_symmetry": "good|slight_imbalance|noticeable_imbalance",
@@ -131,40 +124,22 @@ RÉPONDS UNIQUEMENT en JSON valide, aucun texte avant ou après, aucun markdown:
     "weak_points": ["muscle1", "muscle2"],
     "strong_points": ["muscle1", "muscle2"]
   },
-  
-  "strengths": [
-    "Point fort visible 1",
-    "Point fort visible 2",
-    "Point fort visible 3"
-  ],
-  
-  "areas_for_improvement": [
-    "Axe d'amélioration 1",
-    "Axe d'amélioration 2",
-    "Axe d'amélioration 3"
-  ],
-  
+  "strengths": ["Point fort visible 1", "Point fort visible 2", "Point fort visible 3"],
+  "areas_for_improvement": ["Axe d'amélioration 1", "Axe d'amélioration 2", "Axe d'amélioration 3"],
   "estimated_metrics": {
     "bodyfat_range": "15-18%",
     "muscle_mass_level": "beginner|intermediate|advanced|elite",
     "fitness_category": "sedentary|recreational|athletic|competitive"
   },
-  
   "personalized_recommendations": {
     "training_focus": ["Type d'exercice 1", "Type d'exercice 2"],
     "exercise_examples": ["Exercice spécifique 1", "Exercice spécifique 2"],
     "frequency_suggestion": "Recommandation de fréquence"
   },
-  
   "motivational_feedback": "Message motivant et personnalisé de 2-3 phrases maximum. Sois encourageant! 💪",
-  
   "follow_up_in_weeks": 6
 }`;
 }
-
-// ══════════════════════════════════════════════════════════════════════════════
-// IMAGE ANALYSIS
-// ══════════════════════════════════════════════════════════════════════════════
 
 async function analyzeImage({ apiKey, b64, mime, previousAnalysis = null }) {
   const prompt = buildBodyScanPrompt(previousAnalysis);
@@ -182,92 +157,82 @@ async function analyzeImage({ apiKey, b64, mime, previousAnalysis = null }) {
   return { text: result.text, model: result.model };
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// NORMALIZE OUTPUT
-// ══════════════════════════════════════════════════════════════════════════════
-
 function normalizeAnalysisOutput(parsed, modelName = MODEL) {
   const p = parsed || {};
 
-  // Extract and validate scores
   const physicalScore = clampScore(p.physical_score);
   const symmetryScore = clampScore(p.score_breakdown?.symmetry);
   const postureScore = clampScore(p.score_breakdown?.posture);
   const muscleDefScore = clampScore(p.score_breakdown?.muscle_definition);
   const bodyCompScore = clampScore(p.score_breakdown?.body_composition);
-  const hasUsefulScores = [physicalScore, symmetryScore, postureScore].some((v) => typeof v === "number");
+  const hasUsefulScores = [physicalScore, symmetryScore, postureScore, muscleDefScore, bodyCompScore].some((v) => typeof v === "number");
 
-  // Estimate bodyfat proxy from range
   let bodyfatProxy = null;
   if (p.estimated_metrics?.bodyfat_range) {
-    const match = p.estimated_metrics.bodyfat_range.match(/(\d+)/);
-    if (match) bodyfatProxy = parseInt(match[1]);
+    const match = String(p.estimated_metrics.bodyfat_range).match(/(\d+)/);
+    if (match) bodyfatProxy = parseInt(match[1], 10);
   }
 
-  // Build feedback text
+  const strengths = toArray(p.strengths, toArray(p.muscle_balance?.strong_points));
+  const improvements = toArray(p.areas_for_improvement, toArray(p.muscle_balance?.weak_points));
+  const reco = p.personalized_recommendations || {};
+  const trainingFocus = toArray(reco.training_focus);
+  const exerciseExamples = toArray(reco.exercise_examples);
+  const qualityIssues = toArray(p.quality_issues);
+
   const feedbackParts = [];
-
   if (p.analysis_quality === "poor") {
-    feedbackParts.push("⚠️ Qualité photo limitée. Pour une meilleure analyse, utilisez un bon éclairage et un angle de face ou de profil.");
+    feedbackParts.push("⚠️ Qualité photo limitée. Pour une meilleure analyse, utilisez un bon éclairage, le corps entier visible et un angle stable.");
   }
-
-  if (p.motivational_feedback) {
-    feedbackParts.push(p.motivational_feedback);
-  }
-
-  if (Array.isArray(p.strengths) && p.strengths.length > 0) {
-    feedbackParts.push(`✅ Points forts: ${p.strengths.slice(0, 3).join(", ")}.`);
-  }
-
-  if (Array.isArray(p.areas_for_improvement) && p.areas_for_improvement.length > 0) {
-    feedbackParts.push(`🎯 À travailler: ${p.areas_for_improvement.slice(0, 3).join(", ")}.`);
-  }
-
-  if (p.personalized_recommendations?.frequency_suggestion) {
-    feedbackParts.push(`📅 ${p.personalized_recommendations.frequency_suggestion}`);
-  }
-
-  const feedback = feedbackParts.join("\n\n") || "Analyse terminée.";
+  if (p.motivational_feedback) feedbackParts.push(String(p.motivational_feedback).trim());
+  if (strengths.length) feedbackParts.push(`✅ Points forts: ${strengths.slice(0, 3).join(", ")}.`);
+  if (improvements.length) feedbackParts.push(`🎯 À travailler: ${improvements.slice(0, 3).join(", ")}.`);
+  if (trainingFocus.length) feedbackParts.push(`🏋️ Focus entraînement: ${trainingFocus.slice(0, 2).join(", ")}.`);
+  if (exerciseExamples.length) feedbackParts.push(`📌 Exercices utiles: ${exerciseExamples.slice(0, 3).join(", ")}.`);
+  if (reco.frequency_suggestion) feedbackParts.push(`📅 ${String(reco.frequency_suggestion).trim()}`);
+  if (!feedbackParts.length && qualityIssues.length) feedbackParts.push(`⚠️ Points à corriger sur la photo: ${qualityIssues.join(", ")}.`);
+  if (!feedbackParts.length) feedbackParts.push("Analyse effectuée. Continuez avec un entraînement régulier, une bonne posture et un nouveau scan dans quelques semaines pour comparer vos progrès.");
 
   return {
-    // Core scores for DB
-    ai_feedback: feedback,
+    ai_feedback: feedbackParts.join("\n\n"),
     ai_version: modelName,
-    physical_score: hasUsefulScores ? physicalScore : 58,
-    symmetry_score: hasUsefulScores ? symmetryScore : 56,
-    posture_score: hasUsefulScores ? postureScore : 57,
+    physical_score: hasUsefulScores ? (physicalScore ?? 58) : 58,
+    symmetry_score: hasUsefulScores ? (symmetryScore ?? 56) : 56,
+    posture_score: hasUsefulScores ? (postureScore ?? 57) : 57,
     bodyfat_proxy: bodyfatProxy,
-
-    // Extended data as JSONB
     extended_analysis: {
       analysis_quality: p.analysis_quality || "acceptable",
-      quality_issues: p.quality_issues || [],
+      quality_issues: qualityIssues,
       score_breakdown: {
-        symmetry: hasUsefulScores ? symmetryScore : 56,
-        posture: hasUsefulScores ? postureScore : 57,
+        symmetry: hasUsefulScores ? (symmetryScore ?? 56) : 56,
+        posture: hasUsefulScores ? (postureScore ?? 57) : 57,
         muscle_definition: muscleDefScore ?? 55,
         body_composition: bodyCompScore ?? 55
       },
       posture_analysis: p.posture_analysis || null,
       muscle_balance: p.muscle_balance || null,
-      strengths: p.strengths || [],
-      areas_for_improvement: p.areas_for_improvement || [],
+      strengths,
+      areas_for_improvement: improvements,
       estimated_metrics: p.estimated_metrics || null,
-      personalized_recommendations: p.personalized_recommendations || null,
+      personalized_recommendations: {
+        training_focus: trainingFocus,
+        exercise_examples: exerciseExamples,
+        frequency_suggestion: reco.frequency_suggestion || "Refaites un scan dans 4 à 6 semaines pour mesurer la progression."
+      },
       follow_up_in_weeks: p.follow_up_in_weeks || 6
     }
   };
 }
 
-
-function buildDegradedAnalysis(reason) {
+function buildDegradedAnalysis(reason, previousAnalysis = null) {
   const message = String(reason || "Analyse IA indisponible");
   return {
     ai_feedback: [
-      "⚠️ Analyse visuelle détaillée indisponible pour le moment.",
-      "Aucune donnée biométrique fiable n'a été produite automatiquement.",
-      `Raison: ${message}.`,
-      "Vous pouvez réessayer plus tard avec une photo bien éclairée et un angle stable."
+      "⚠️ L'analyse visuelle détaillée n'a pas pu être générée cette fois.",
+      "Ce scan a tout de même été enregistré correctement.",
+      "Conseil utile: reprenez une photo de face, corps entier visible, lumière frontale et fond simple.",
+      `Raison technique: ${message}.`,
+      "Réessayez plus tard pour obtenir un feedback plus précis."
     ].join("\n\n"),
     ai_version: `degraded:${MODEL}`,
     physical_score: 55,
@@ -286,8 +251,8 @@ function buildDegradedAnalysis(reason) {
       },
       posture_analysis: null,
       muscle_balance: null,
-      strengths: [],
-      areas_for_improvement: [],
+      strengths: ["Photo bien enregistrée pour un futur comparatif"],
+      areas_for_improvement: ["Refaire le scan avec un angle plus propre", "Améliorer l'éclairage"],
       estimated_metrics: null,
       personalized_recommendations: {
         training_focus: ["Travail full body technique", "Sommeil et récupération", "Progression sur mouvements de base"],
@@ -300,9 +265,59 @@ function buildDegradedAnalysis(reason) {
   };
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// HANDLER
-// ══════════════════════════════════════════════════════════════════════════════
+async function resolvePreviousAnalysis(sb, userId) {
+  try {
+    const { data: prevScans } = await sb.from("body_scans")
+      .select("physical_score, extended_analysis")
+      .eq("user_id", userId)
+      .not("physical_score", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (!prevScans?.length) return null;
+    const prev = prevScans[0];
+    return {
+      physical_score: prev.physical_score,
+      weak_points: prev.extended_analysis?.areas_for_improvement || prev.extended_analysis?.muscle_balance?.weak_points,
+      strong_points: prev.extended_analysis?.strengths || prev.extended_analysis?.muscle_balance?.strong_points
+    };
+  } catch (e) {
+    console.warn("[bodyscan] previous analysis unavailable:", e.message);
+    return null;
+  }
+}
+
+async function saveBodyScanResult(sb, { user_id, image_path, normalized }) {
+  const payload = {
+    user_id,
+    image_path,
+    ai_feedback: normalized.ai_feedback,
+    ai_version: normalized.ai_version,
+    physical_score: normalized.physical_score,
+    symmetry_score: normalized.symmetry_score,
+    posture_score: normalized.posture_score,
+    bodyfat_proxy: normalized.bodyfat_proxy,
+    extended_analysis: normalized.extended_analysis
+  };
+
+  const findByImagePath = await sb.from("body_scans").select("id").eq("user_id", user_id).eq("image_path", image_path).limit(1);
+  if (!findByImagePath.error && findByImagePath.data?.[0]?.id) {
+    const { error } = await sb.from("body_scans").update(payload).eq("id", findByImagePath.data[0].id);
+    if (!error) return { ok: true, mode: "update:image_path" };
+  }
+
+  const findByAll = await sb.from("body_scans").select("id").eq("user_id", user_id).order("created_at", { ascending: false }).limit(5);
+  if (!findByAll.error && Array.isArray(findByAll.data)) {
+    const row = findByAll.data.find((x) => x.id);
+    if (row) {
+      const { error } = await sb.from("body_scans").update(payload).eq("id", row.id);
+      if (!error) return { ok: true, mode: "update:last-row" };
+    }
+  }
+
+  const { error: insertError } = await sb.from("body_scans").insert(payload);
+  if (insertError) return { ok: false, error: insertError };
+  return { ok: true, mode: "insert" };
+}
 
 module.exports = async function(req, res) {
   cors(res);
@@ -315,10 +330,19 @@ module.exports = async function(req, res) {
   const SB_SRV = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-  if (!SB_URL || !SB_SRV) return json(res, 500, { ok: false, error: "SUPABASE_URL/SERVICE_ROLE_KEY manquants", id: requestId });
+  if (!SB_URL || !SB_SRV) {
+    return json(res, 500, { ok: false, error: "SUPABASE_URL/SERVICE_ROLE_KEY manquants", id: requestId });
+  }
 
   const token = getBearerToken(req);
   if (!token) return json(res, 401, { ok: false, error: "Bearer token requis", id: requestId });
+
+  let createClient;
+  try {
+    ({ createClient } = require("@supabase/supabase-js"));
+  } catch {
+    return json(res, 500, { ok: false, error: "SUPABASE_CLIENT_MISSING", id: requestId });
+  }
 
   const rawBody = parseBody(req);
   const { ok: bodyOk, data: body } = validateBody(BodyscanBodySchema, rawBody, res);
@@ -326,42 +350,19 @@ module.exports = async function(req, res) {
   const { user_id, image_path } = body;
 
   const sb = createClient(SB_URL, SB_SRV, { auth: { persistSession: false } });
-
-  // Validate token and user
   const { data: ud, error: ue } = await sb.auth.getUser(token);
   if (ue || !ud?.user?.id) return json(res, 401, { ok: false, error: "Token invalide", id: requestId });
   if (ud.user.id !== user_id) return json(res, 403, { ok: false, error: "Accès refusé", id: requestId });
   if (!image_path.startsWith(`${user_id}/`)) return json(res, 403, { ok: false, error: "Chemin image invalide", id: requestId });
 
   try {
-    // Download image
     const dl = await withTimeout(sb.storage.from(BUCKET).download(image_path), TIMEOUT_STORAGE_MS, "Timeout storage");
     if (dl.error || !dl.data) return json(res, 404, { ok: false, error: "Image introuvable", detail: dl.error?.message, id: requestId });
 
     const ab = await dl.data.arrayBuffer();
     if (ab.byteLength > 6 * 1024 * 1024) return json(res, 413, { ok: false, error: "Image trop grande (max 6MB)", id: requestId });
 
-    // Get previous analysis for comparison (optional)
-    let previousAnalysis = null;
-    try {
-      const { data: prevScans } = await sb.from("body_scans")
-        .select("physical_score, extended_analysis")
-        .eq("user_id", user_id)
-        .not("physical_score", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (prevScans?.length > 0) {
-        const prev = prevScans[0];
-        previousAnalysis = {
-          physical_score: prev.physical_score,
-          weak_points: prev.extended_analysis?.muscle_balance?.weak_points,
-          strong_points: prev.extended_analysis?.muscle_balance?.strong_points
-        };
-      }
-    } catch (e) {
-      console.warn("[bodyscan] Could not load previous analysis:", e.message);
-    }
+    const previousAnalysis = await resolvePreviousAnalysis(sb, user_id);
 
     let normalized;
     let fallback = false;
@@ -380,24 +381,29 @@ module.exports = async function(req, res) {
       const info = normalizeGeminiError(analysisError);
       fallback = true;
       fallbackReason = info.message;
-      normalized = buildDegradedAnalysis(info.message);
+      normalized = buildDegradedAnalysis(info.message, previousAnalysis);
       console.warn("[bodyscan] degraded mode:", info.code, info.message);
     }
 
-    // Update database
-    const { error: dbErr } = await sb.from("body_scans").update({
-      ai_feedback: normalized.ai_feedback,
-      ai_version: normalized.ai_version,
-      physical_score: normalized.physical_score,
-      symmetry_score: normalized.symmetry_score,
-      posture_score: normalized.posture_score,
-      bodyfat_proxy: normalized.bodyfat_proxy,
-      extended_analysis: normalized.extended_analysis
-    }).eq("user_id", user_id).eq("image_path", image_path);
-
-    if (dbErr) {
-      console.error("[bodyscan] DB update failed:", dbErr);
-      return json(res, 500, { ok: false, error: "Erreur sauvegarde DB", detail: dbErr.message, id: requestId });
+    const saved = await saveBodyScanResult(sb, { user_id, image_path, normalized });
+    if (!saved.ok) {
+      console.error("[bodyscan] DB save failed:", saved.error);
+      return json(res, 200, {
+        ok: true,
+        id: requestId,
+        fallback: true,
+        fallback_reason: saved.error?.message || "db_save_failed",
+        model_default: MODEL,
+        model_fallback: FALLBACK_MODEL,
+        db_saved: false,
+        analysis: {
+          physical_score: normalized.physical_score,
+          posture_score: normalized.posture_score,
+          symmetry_score: normalized.symmetry_score,
+          feedback_preview: normalized.ai_feedback.slice(0, 200),
+          degraded_reason: fallback ? fallbackReason : null
+        }
+      });
     }
 
     return json(res, 200, {
@@ -406,6 +412,7 @@ module.exports = async function(req, res) {
       fallback,
       model_default: MODEL,
       model_fallback: FALLBACK_MODEL,
+      db_saved: true,
       analysis: {
         physical_score: normalized.physical_score,
         posture_score: normalized.posture_score,
@@ -414,7 +421,6 @@ module.exports = async function(req, res) {
         degraded_reason: fallback ? fallbackReason : null
       }
     });
-
   } catch (e) {
     const code = e?.code || "";
     const msg = String(e?.message || "");

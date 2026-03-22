@@ -77,6 +77,153 @@ function escapeAttr(str) {
   return String(str || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+const SCAN_IMAGE_CACHE = new Map();
+
+function toDateKey(value) {
+  const d = value ? new Date(value) : new Date();
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+function diffDays(a, b) {
+  const da = new Date(a + "T00:00:00Z");
+  const db = new Date(b + "T00:00:00Z");
+  return Math.round((da - db) / 86400000);
+}
+
+function computeWorkoutMetrics(rows) {
+  const sessions = Array.isArray(rows) ? rows : [];
+  const totalSessions = sessions.length;
+  const dayKeys = [...new Set(sessions.map((s) => toDateKey(s.created_at)).filter(Boolean))].sort();
+  let longestStreak = 0;
+  let rolling = 0;
+  let prev = null;
+  dayKeys.forEach((day) => {
+    if (!prev || diffDays(day, prev) === 1) rolling += 1;
+    else rolling = 1;
+    prev = day;
+    if (rolling > longestStreak) longestStreak = rolling;
+  });
+
+  let currentStreak = 0;
+  const todayKey = toDateKey(new Date());
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yKey = toDateKey(yesterday);
+  if (dayKeys.length) {
+    let idx = dayKeys.length - 1;
+    if (dayKeys[idx] === todayKey || dayKeys[idx] === yKey) {
+      currentStreak = 1;
+      while (idx > 0 && diffDays(dayKeys[idx], dayKeys[idx - 1]) === 1) {
+        currentStreak += 1;
+        idx -= 1;
+      }
+    }
+  }
+
+  const latest = sessions[0] || null;
+  const latestPlan = latest && latest.plan && typeof latest.plan === "object" ? latest.plan : null;
+  return {
+    totalSessions,
+    currentStreak,
+    longestStreak,
+    latestPlan,
+    latestSessionDate: latest ? latest.created_at : null,
+    activeDays: dayKeys.length
+  };
+}
+
+async function fetchWorkoutMetrics(force) {
+  if (!U || !SB) return { totalSessions: 0, currentStreak: 0, longestStreak: 0, latestPlan: null, latestSessionDate: null, activeDays: 0 };
+  const key = `workout-metrics:${U.id}`;
+  if (!force) {
+    const cached = DataCache.get(key);
+    if (cached) return cached;
+  }
+  try {
+    const { data, error } = await SB.from("workout_sessions")
+      .select("id,created_at,plan")
+      .eq("user_id", U.id)
+      .order("created_at", { ascending: false })
+      .limit(120);
+    if (error) throw error;
+    const metrics = computeWorkoutMetrics(data || []);
+    DataCache.set(key, metrics, 45000);
+    return metrics;
+  } catch (e) {
+    console.warn("[WorkoutMetrics] load error:", e.message || e);
+    return { totalSessions: 0, currentStreak: 0, longestStreak: 0, latestPlan: null, latestSessionDate: null, activeDays: 0 };
+  }
+}
+
+function describeWorkoutPlan(plan) {
+  if (!plan || typeof plan !== "object") {
+    return {
+      title: "Entraînement du jour",
+      meta: "Aucune séance détectée cette semaine. Commencez par 15 min express.",
+      cta: "▶ Commencer"
+    };
+  }
+  const title = String(plan.title || "Séance personnalisée");
+  const exCount = Array.isArray(plan.exercises) ? plan.exercises.length : 0;
+  const duration = Math.max(10, Number(plan.duration) || 30);
+  const kcal = Math.max(0, Math.round(Number(plan.calories_estimate || plan.calories) || 0));
+  const parts = [];
+  if (exCount > 0) parts.push(`🏋️ ${exCount} exercices`);
+  parts.push(`⏱️ ${duration} min`);
+  if (kcal > 0) parts.push(`🔥 ~${kcal} kcal estimées`);
+  return {
+    title: title.split("\n").join("<br>"),
+    meta: parts.join(" · "),
+    cta: exCount > 0 ? "▶ Revoir" : "▶ Commencer"
+  };
+}
+
+async function populateDashboardWorkoutCard() {
+  const titleEl = document.getElementById("db-workout-title");
+  const metaEl = document.getElementById("db-workout-meta");
+  const btnEl = document.getElementById("db-workout-btn");
+  if (!titleEl || !metaEl) return;
+  const metrics = await fetchWorkoutMetrics(false);
+  const ui = describeWorkoutPlan(metrics.latestPlan);
+  titleEl.innerHTML = escapeHtml(ui.title).replace(/&lt;br&gt;/g, "<br>");
+  metaEl.textContent = ui.meta;
+  if (btnEl) btnEl.textContent = ui.cta;
+}
+
+async function resolveScanImageUrls(scans) {
+  const out = {};
+  const now = Date.now();
+  const tasks = [];
+  for (const scan of scans || []) {
+    const ref = String(scan.image_url || scan.image_path || "").trim();
+    if (!ref) continue;
+    if (/^https?:\/\//i.test(ref)) {
+      out[scan.id] = ref;
+      continue;
+    }
+    const cached = SCAN_IMAGE_CACHE.get(ref);
+    if (cached && cached.expiresAt > now) {
+      out[scan.id] = cached.url;
+      continue;
+    }
+    tasks.push({ id: scan.id, path: ref });
+  }
+  await Promise.all(tasks.map(async ({ id, path }) => {
+    try {
+      const { data, error } = await SB.storage.from("user_uploads").createSignedUrl(path, 60 * 60);
+      if (error) throw error;
+      if (data?.signedUrl) {
+        SCAN_IMAGE_CACHE.set(path, { url: data.signedUrl, expiresAt: now + 55 * 60 * 1000 });
+        out[id] = data.signedUrl;
+      }
+    } catch (e) {
+      console.warn("[Scan] Signed URL failed:", path, e?.message || e);
+    }
+  }));
+  return out;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // BOOT & INITIALISATION
 // ══════════════════════════════════════════════════════════════════════════════
@@ -438,6 +585,8 @@ async function doLogout() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function gotoTab(name) {
+  if (name === "scan") name = "bodyscan";
+  if (!document.getElementById(`t-${name}`)) name = "dashboard";
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.remove("on"));
   document.querySelectorAll(".bnav-btn").forEach((btn) => btn.classList.remove("on"));
   document.getElementById(`t-${name}`)?.classList.add("on");
@@ -448,7 +597,7 @@ function gotoTab(name) {
   if (name === "dashboard") loadDashboard();
   if (name === "goal") loadGoal();
   if (name === "coach") { loadCoachHistory(); loadHistory(); }
-  if (name === "nutrition") loadMeals();
+  if (name === "nutrition") { loadMeals(); loadStoredNutritionPlan(); }
   if (name === "community") loadFeed();
   if (name === "friends") { loadFriends(); loadFriendRequests(); }
   if (name === "bodyscan") loadScans();
@@ -507,7 +656,7 @@ async function loadDashboard() {
         if (sidebarName) sidebarName.textContent = name;
       }
     }
-    await Promise.all([loadGoal(), loadMeals(), loadStats(), loadNutritionTargets(), loadStreak()]);
+    await Promise.all([loadGoal(), loadMeals(), loadStats(), loadNutritionTargets(), loadStreak(), populateDashboardWorkoutCard()]);
     if (typeof renderDailyChallengesSection === "function") renderDailyChallengesSection();
     loadScanMiniTile();
     restoreMoodSelection();
@@ -778,6 +927,358 @@ function renderCoachChat() {
   el.scrollTop = el.scrollHeight;
 }
 
+
+function detectCoachIntentClient(message) {
+  const text = String(message || "").toLowerCase();
+  const has = (...keywords) => keywords.some((k) => text.includes(k));
+  if (!text.trim()) return "general_chat";
+  if (has("salut", "bonjour", "hello", "yo", "coucou", "cc")) return "greeting";
+  if (has("mal dormi", "pas bien dormi", "courbature", "blessure", "fatigue", "epuis", "épuis", "récup", "recup", "repos", "mobilite", "mobilité", "stretch", "etirement", "étirement")) return "recovery_question";
+  if (has("liste de course", "liste d'achat", "faire les courses", "courses pour", "acheter pour", "supermarch", "marché", "potes", "amis", "soirée", "soiree", "barbecue", "bbq")) return "shopping_list";
+  if (has("journée alimentaire", "journee alimentaire", "planning repas", "planning alimentaire", "menu semaine", "semaine alimentaire", "quoi manger ce soir", "que manger ce soir", "manger demain", "programme repas", "organisation repas")) return "meal_plan";
+  if (has("recette", "cuisine", "prépare-moi", "prepare moi", "fais-moi un plat", "comment cuisiner", "comment préparer", "burger", "pancake protéiné", "pancake proteine")) return "recipe_request";
+  if (has("programme", "entraînement", "entrainement", "séance", "seance", "workout", "hiit", "full body", "upper body", "lower body", "routine", "split", "cardio", "musculation", "jambes", "abdos")) return "workout_request";
+  if (has("macro", "nutrition", "combien de protéines", "combien de proteines", "post-workout", "pre-workout", "après l'entraînement", "apres l'entrainement", "que manger", "quoi manger")) return "nutrition_question";
+  if (has("motivation", "discipline", "stagne", "plateau", "mental", "mindset")) return "motivation_question";
+  if (has("progression", "streak", "résultat", "resultat", "niveau", "stats")) return "progress_question";
+  return "general_chat";
+}
+
+function shouldUseCoachStream(intent) {
+  return ["greeting", "general_chat", "nutrition_question", "recovery_question", "motivation_question", "progress_question"].includes(intent);
+}
+
+function buildClientFallbackWorkoutPlan(message, profile = {}, goalContext = {}) {
+  const text = String(message || "").toLowerCase();
+  const level = String(profile.level || goalContext.level || "beginner").toLowerCase();
+  const equipment = String(profile.equipment || goalContext.equipment || "poids du corps").toLowerCase();
+  const mood = String(profile.mood_today || "").toLowerCase();
+  const isTired = /fatigu|épuis|epuis|courbature|mal dormi/.test(text) || /fatigu|épuis|epuis/.test(mood);
+  const isHiit = /hiit|intense|cardio/.test(text);
+  const isUpper = /upper|haut du corps|pectoraux|dos|bras/.test(text);
+  const isLower = /lower|jambes|fessiers|quadriceps|ischios/.test(text);
+  const isMobility = /mobilit|stretch|étirement|etirement|récup|recup/.test(text);
+  const matchMin = text.match(/(\d{2})\s*min/);
+  let duration = matchMin ? Math.max(15, Math.min(75, Number(matchMin[1]))) : 45;
+  if (isTired) duration = Math.min(duration, 30);
+  if (isMobility) duration = Math.min(duration, 20);
+
+  const bodyweightMain = [
+    { name: "Squats contrôlés", sets: 3, reps: 15, rest: 60, muscle: "Jambes", description: "Descente lente, pousse fort dans les talons." },
+    { name: "Pompes inclinées", sets: 3, reps: 10, rest: 60, muscle: "Pectoraux", description: "Gardez le tronc gainé sur toute la série." },
+    { name: "Fentes arrière", sets: 3, reps: 10, rest: 60, muscle: "Jambes", description: "Alternez jambe droite et gauche." },
+    { name: "Gainage planche", sets: 3, reps: "35s", duration: 35, rest: 40, muscle: "Core", description: "Bassin neutre, respiration calme." },
+    { name: "Mountain climbers", sets: 3, reps: 20, rest: 45, muscle: "Cardio", description: "Montez les genoux rapidement sans creuser le dos." },
+    { name: "Pont fessier", sets: 3, reps: 15, rest: 45, muscle: "Fessiers", description: "Bloquez 1 seconde en haut." }
+  ];
+  const dumbbellUpper = [
+    { name: "Développé épaules haltères", sets: 4, reps: 10, rest: 75, muscle: "Épaules", description: "Amplitude complète, contrôle en descente." },
+    { name: "Rowing un bras", sets: 4, reps: 12, rest: 60, muscle: "Dos", description: "Coude proche du corps, omoplate serrée." },
+    { name: "Développé couché au sol", sets: 4, reps: 10, rest: 75, muscle: "Pectoraux", description: "Paumes vers l'avant, tempo régulier." },
+    { name: "Curl biceps", sets: 3, reps: 12, rest: 45, muscle: "Bras", description: "Évitez d'élancer le buste." },
+    { name: "Extension triceps au-dessus de la tête", sets: 3, reps: 12, rest: 45, muscle: "Bras", description: "Coudes serrés, gainage actif." },
+    { name: "Planche latérale", sets: 2, reps: "30s/côté", duration: 30, rest: 30, muscle: "Core", description: "Hanches hautes et alignées." }
+  ];
+  const lowerBody = [
+    { name: "Goblet squat", sets: 4, reps: 12, rest: 75, muscle: "Quadriceps", description: "Poitrine haute, talons au sol." },
+    { name: "Soulevé de terre jambes semi-tendues", sets: 4, reps: 10, rest: 75, muscle: "Ischios", description: "Hanches vers l'arrière, dos neutre." },
+    { name: "Fentes marchées", sets: 3, reps: 12, rest: 60, muscle: "Jambes", description: "Faites des pas stables et contrôlés." },
+    { name: "Hip thrust", sets: 3, reps: 12, rest: 60, muscle: "Fessiers", description: "Marquez une pause en fin d'amplitude." },
+    { name: "Mollets debout", sets: 3, reps: 18, rest: 40, muscle: "Mollets", description: "Montez haut, redescendez lentement." },
+    { name: "Dead bug", sets: 3, reps: 10, rest: 30, muscle: "Core", description: "Gardez les lombaires collées au sol." }
+  ];
+  const hiit = [
+    { name: "Jumping jacks", sets: 4, reps: "40s", duration: 40, rest: 20, muscle: "Cardio", description: "Rythme soutenu dès le départ." },
+    { name: "Burpees adaptés", sets: 4, reps: 10, rest: 25, muscle: "Full body", description: "Version sans pompe si besoin." },
+    { name: "Squat jumps", sets: 4, reps: 12, rest: 25, muscle: "Jambes", description: "Atterrissage souple et gainé." },
+    { name: "Pompes rapides", sets: 4, reps: 12, rest: 25, muscle: "Pectoraux", description: "Conservez une belle ligne de corps." },
+    { name: "High knees", sets: 4, reps: "30s", duration: 30, rest: 20, muscle: "Cardio", description: "Montez les genoux à hauteur de hanches." }
+  ];
+  const mobility = [
+    { name: "Respiration diaphragmatique", sets: 2, reps: "60s", duration: 60, rest: 20, muscle: "Récupération", description: "Allonge l'expiration et relâche les épaules." },
+    { name: "Mobilité hanches / chevilles", sets: 2, reps: "45s", duration: 45, rest: 20, muscle: "Mobilité", description: "Cercles lents, amplitude progressive." },
+    { name: "Bird-dog", sets: 2, reps: 10, rest: 20, muscle: "Core", description: "Stabilité avant vitesse." },
+    { name: "Étirements ischios et fessiers", sets: 2, reps: "45s", duration: 45, rest: 15, muscle: "Récupération", description: "Respire profondément dans chaque posture." },
+    { name: "Marche active", sets: 1, reps: "8 min", duration: 480, rest: 0, muscle: "Cardio doux", description: "Reste en aisance respiratoire." }
+  ];
+
+  let exercises = bodyweightMain;
+  if (isMobility || isTired) exercises = mobility;
+  else if (isHiit) exercises = hiit;
+  else if (isLower) exercises = lowerBody;
+  else if (isUpper && /(halt|dumbbell|barre|salle|kettlebell)/.test(equipment)) exercises = dumbbellUpper;
+  else if (isUpper) exercises = bodyweightMain.slice(1);
+  else if (/(halt|dumbbell|barre|salle|kettlebell)/.test(equipment)) exercises = [
+    dumbbellUpper[0], lowerBody[0], dumbbellUpper[1], lowerBody[1], bodyweightMain[3], bodyweightMain[5]
+  ];
+
+  if (level.includes("advanced") || level.includes("avance")) {
+    exercises = exercises.map((ex) => ({ ...ex, sets: Math.min(5, Number(ex.sets || 3) + (isMobility ? 0 : 1)) }));
+  }
+
+  const calories_estimate = Math.max(110, Math.round(duration * (isHiit ? 9.5 : isMobility ? 4 : 7.2)));
+  const goal = String(profile.goal || goalContext.type || "remise_en_forme");
+  return {
+    title: isMobility ? "Récupération guidée" : isHiit ? "HIIT express du jour" : isUpper ? "Upper body du jour" : isLower ? "Bas du corps du jour" : "Workout du jour",
+    duration,
+    calories_estimate,
+    level: level || "beginner",
+    notes: isTired ? "Séance allégée pour garder le rythme sans trop fatiguer ton système nerveux." : `Séance adaptée à ton objectif: ${goal}. Concentre-toi sur une exécution propre et un effort maîtrisé.`,
+    exercises
+  };
+}
+
+function buildClientFallbackMealPlan(profile = {}, goalContext = {}) {
+  const goal = String(profile.goal || goalContext.type || "maintenance").toLowerCase();
+  const isCut = goal.includes("perte") || goal.includes("cut") || goal.includes("seche");
+  const isBulk = goal.includes("prise") || goal.includes("masse");
+  const totalCalories = isCut ? 2100 : isBulk ? 2725 : 2350;
+  const totalProtein = isCut ? 170 : isBulk ? 180 : 155;
+  return {
+    title: "Journée alimentaire premium",
+    total_calories: totalCalories,
+    total_protein: totalProtein,
+    coach_note: isCut
+      ? "Base du jour: protéines hautes, gros volume sur légumes et glucides surtout là où ils servent."
+      : isBulk
+        ? "Base du jour: plus d'énergie autour de l'entraînement, sans rendre le plan lourd à digérer."
+        : "Base du jour: équilibre simple, portions stables et aliments faciles à répéter dans la semaine.",
+    tips: [
+      "Prépare une base protéine + féculent pour 2 repas d'avance.",
+      isBulk ? "Ajoute la collation même si l'appétit est moyen: c'est souvent elle qui sécurise le surplus." : "Commence le repas par protéines + légumes pour mieux gérer la faim.",
+      "Hydrate-toi régulièrement au lieu de tout boire le soir."
+    ],
+    substitutions: [
+      "Poulet ↔ dinde, thon ou tofu.",
+      "Riz ↔ pommes de terre, semoule ou pâtes complètes.",
+      "Skyr ↔ yaourt grec ou fromage blanc."
+    ],
+    notes: isCut ? "Garde des protéines élevées, des fibres à chaque repas et une bonne hydratation." : isBulk ? "Répartis les calories sur 4 repas, vise des glucides autour de l'entraînement." : "Cherche l'équilibre: protéines régulières, glucides utiles, lipides modérés.",
+    meals: [
+      { name: "Petit déjeuner", time: "08:00", calories: isBulk ? 650 : 500, protein: 35, items: ["Skyr ou fromage blanc", "Flocons d'avoine", "Banane ou fruits rouges", "Quelques amandes"], swap_options: ["Avoine ↔ pain complet", "Skyr ↔ yaourt grec"], coach_tip: "Un petit déjeuner simple et répétable vaut mieux qu'une option parfaite que tu ne tiens pas." },
+      { name: "Déjeuner", time: "12:30", calories: isBulk ? 850 : 700, protein: 45, items: ["Poulet, dinde ou tofu", "Riz ou pommes de terre", "Légumes verts", "Huile d'olive"], swap_options: ["Poulet ↔ steak 5% ou tofu", "Riz ↔ pommes de terre"], coach_tip: "Si tu t'entraînes l'après-midi, garde ici la portion de glucides la plus confortable." },
+      { name: "Collation", time: "16:30", calories: isBulk ? 450 : 300, protein: 25, items: ["Yaourt grec / whey", "Fruit", "Galettes de riz ou pain complet"], swap_options: ["Whey ↔ skyr", "Galettes ↔ granola simple"], coach_tip: "Pense pratique: la meilleure collation est celle que tu peux vraiment emporter avec toi." },
+      { name: "Dîner", time: "20:00", calories: isBulk ? 750 : 600, protein: 40, items: ["Saumon, œufs ou steak 5%", "Légumes cuits", "Féculent modéré", "Yaourt nature si faim"], swap_options: ["Saumon ↔ oeufs ou tofu", "Féculent ↔ légumineuses"], coach_tip: "Le soir, vise récupération et digestion facile: inutile de compliquer le repas." }
+    ]
+  };
+}
+
+function buildClientFallbackShoppingList(message) {
+  const text = String(message || "").toLowerCase();
+  const burgerMode = /burger|soirée|soiree|potes|amis/.test(text);
+  return {
+    title: burgerMode ? "Liste de courses pour la soirée" : "Liste de courses de la semaine",
+    context: burgerMode ? "Base simple pour une soirée burgers équilibrée et facile à préparer." : "Essentiel pour tenir 4 à 5 jours avec des repas riches en protéines.",
+    categories: [
+      { name: "Protéines", items: burgerMode ? [
+        { name: "Steaks hachés 5%", qty: "6 à 8 pièces" },
+        { name: "Tranches de cheddar", qty: "1 paquet" },
+        { name: "Œufs", qty: "6" }
+      ] : [
+        { name: "Blanc de poulet", qty: "1,2 kg" },
+        { name: "Skyr / fromage blanc", qty: "6 pots" },
+        { name: "Œufs", qty: "12" },
+        { name: "Thon ou saumon", qty: "3 portions" }
+      ] },
+      { name: "Féculents", items: burgerMode ? [
+        { name: "Pains burger", qty: "8" },
+        { name: "Pommes de terre", qty: "2 kg" }
+      ] : [
+        { name: "Riz basmati", qty: "1 kg" },
+        { name: "Flocons d'avoine", qty: "500 g" },
+        { name: "Pommes de terre", qty: "2 kg" }
+      ] },
+      { name: "Légumes / extras", items: burgerMode ? [
+        { name: "Tomates", qty: "4" },
+        { name: "Salade", qty: "1" },
+        { name: "Cornichons", qty: "1 bocal" },
+        { name: "Oignons", qty: "2" }
+      ] : [
+        { name: "Brocoli / haricots verts", qty: "4 sachets" },
+        { name: "Fruits", qty: "7 à 10 pièces" },
+        { name: "Huile d'olive", qty: "1 bouteille" }
+      ] }
+    ],
+    tips: burgerMode ? "Prévoyez une option plus légère: salade + pommes de terre au four au lieu de frites." : "Cuisez en batch 2 sources de protéines et 1 gros féculent pour gagner du temps."
+  };
+}
+
+function buildClientFallbackRecipe(message, profile = {}, goalContext = {}) {
+  const goal = String(profile.goal || goalContext.type || "equilibre").toLowerCase();
+  const isBulk = goal.includes("masse");
+  const isCut = goal.includes("perte") || goal.includes("cut") || goal.includes("seche");
+  return {
+    name: isCut ? "Bowl poulet riz légumes" : isBulk ? "Pâtes protéinées au poulet" : "Omelette complète et salade",
+    prep_time: "15-20 min",
+    calories: isCut ? 520 : isBulk ? 760 : 610,
+    protein: isCut ? 42 : isBulk ? 48 : 38,
+    carbs: isCut ? 48 : isBulk ? 85 : 36,
+    fat: isCut ? 14 : isBulk ? 18 : 26,
+    steps: isCut ? [
+      "Cuire 120 à 150 g de poulet assaisonné.",
+      "Préparer 80 g de riz cru et des légumes vapeur.",
+      "Assembler avec une cuillère d'huile d'olive et des herbes."
+    ] : isBulk ? [
+      "Cuire des pâtes complètes et saisir du poulet en morceaux.",
+      "Ajouter une sauce tomate simple et un peu de parmesan.",
+      "Servir avec un fruit en dessert pour compléter l'apport calorique."
+    ] : [
+      "Cuire une omelette avec 3 œufs et des légumes.",
+      "Ajouter un accompagnement type pommes de terre ou pain complet.",
+      "Compléter avec un yaourt nature ou du skyr."
+    ],
+    tips: "Ajuste la portion de glucides selon ton objectif et ton entraînement du jour."
+  };
+}
+
+function buildClientFallbackCoachPayload(intent, message, profile = {}, goalContext = {}) {
+  if (intent === "workout_request") {
+    return { ok: true, type: "workout", data: buildClientFallbackWorkoutPlan(message, profile, goalContext), fallback: true };
+  }
+  if (intent === "meal_plan") {
+    return { ok: true, type: "meal_plan", data: buildClientFallbackMealPlan(profile, goalContext), fallback: true };
+  }
+  if (intent === "shopping_list") {
+    return { ok: true, type: "shopping_list", data: buildClientFallbackShoppingList(message), fallback: true };
+  }
+  if (intent === "recipe_request") {
+    return { ok: true, type: "recipe", data: buildClientFallbackRecipe(message, profile, goalContext), fallback: true };
+  }
+  const mood = String(profile.mood_today || "").toLowerCase();
+  let msg = `Réponse directe: On repart simple aujourd'hui.
+Pourquoi: Le plus utile n'est pas de tout refaire, mais de remettre une action claire dans ta journée.
+Action du jour: Choisis soit une séance courte, soit une marche active, puis un repas riche en protéines.`;
+  if (intent === "nutrition_question") msg = `Réponse directe: Base simple et efficace: 25 à 40 g de protéines par repas, un fruit ou légume à chaque prise, et une hydratation régulière.
+Pourquoi: C'est le socle qui améliore presque tout sans te compliquer la vie.
+Action du jour: Sécurise déjà ton prochain repas avec 1 vraie protéine + 1 glucide utile + 1 végétal.`;
+  if (intent === "recovery_question" || /fatigu|épuis|epuis|courbature/.test(mood)) msg = `Réponse directe: Aujourd'hui, privilégie récupération active.
+Pourquoi: Quand la fatigue est haute, forcer plus fort coûte souvent plus qu'il ne rapporte.
+Action du jour: Fais 10 à 15 min de mobilité, une marche légère et vise un meilleur coucher ce soir.`;
+  if (intent === "motivation_question") msg = `Réponse directe: N'attends pas l'envie parfaite.
+Pourquoi: L'action courte relance souvent la motivation plus vite que l'inverse.
+Action du jour: Fais 20 minutes aujourd'hui, même à intensité moyenne, juste pour remettre l'élan.`;
+  return { ok: true, type: "conversation", message: msg, fallback: true };
+}
+
+function renderCoachApiResponse(j, aiTime) {
+  if (!j || typeof j !== "object") {
+    COACH_HISTORY.push({ role: "ai", content: formatCoachText(`Réponse directe: Je n'ai pas pu formuler une réponse utile.
+Action du jour: Reformule ta demande en une phrase courte et je repars proprement.`), time: aiTime });
+    return;
+  }
+
+  const fallbackBadge = j.fallback ? '<div style="margin-top:8px;font-size:.78rem;opacity:.72">⚠️ Mode secours intelligent utilisé.</div>' : '';
+  const typeBadge = (label, tone = 'var(--teal)') => `<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:${tone};margin-bottom:8px">${label}</div>`;
+
+  if (j.type === "shopping_list" && j.data) {
+    const d = j.data;
+    let html = `${typeBadge('Liste de courses')}<div style="font-size:.9rem;font-weight:800;color:var(--text);margin-bottom:4px">${escapeHtml(d.title || "Liste de courses")}</div>`;
+    if (d.context) html += `<div style="font-size:.82rem;margin:5px 0 8px;color:rgba(238,238,245,.7)">${escapeHtml(d.context)}</div>`;
+    (d.categories || []).forEach(cat => {
+      if (!cat.items?.length) return;
+      html += `<div style="margin-top:10px;font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--teal)">${escapeHtml(cat.name)}</div>`;
+      html += '<ul style="margin:4px 0 0 0;list-style:none;display:flex;flex-direction:column;gap:2px">';
+      cat.items.forEach(item => {
+        html += `<li style="font-size:.82rem;display:flex;gap:6px"><span style="color:var(--muted)">•</span><span><strong>${escapeHtml(item.name)}</strong>${item.qty ? ` <span style="opacity:.6">— ${escapeHtml(item.qty)}</span>` : ""}${item.note ? ` <span style="opacity:.5;font-style:italic">(${escapeHtml(item.note)})</span>` : ""}</span></li>`;
+      });
+      html += '</ul>';
+    });
+    if (d.tips) html += `<div style="margin-top:10px;font-size:.78rem;font-style:italic;opacity:.7;border-top:1px solid rgba(255,255,255,.08);padding-top:8px">💡 ${escapeHtml(d.tips)}</div>`;
+    html += fallbackBadge;
+    COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
+    return;
+  }
+
+  if (j.type === "meal_plan" && j.data) {
+    const d = j.data;
+    let html = `${typeBadge('Plan nutrition')}<div style="font-size:.9rem;font-weight:800;color:var(--text);margin-bottom:4px">${escapeHtml(d.title || "Journée alimentaire")}</div>`;
+    if (d.total_calories || d.total_protein) {
+      const parts = [];
+      if (d.total_calories) parts.push(`🔥 ${d.total_calories} kcal`);
+      if (d.total_protein) parts.push(`💪 ${d.total_protein}g protéines`);
+      html += `<div style="font-size:.8rem;margin:5px 0 8px;opacity:.7">${parts.join(" · ")}</div>`;
+    }
+    if (d.coach_note) html += `<div style="margin:8px 0 10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03);font-size:.8rem;color:var(--text2);line-height:1.55">💬 ${escapeHtml(d.coach_note)}</div>`;
+    (d.meals || []).forEach(meal => {
+      html += `<div style="margin-top:10px;border-left:2px solid var(--teal);padding-left:12px">`;
+      html += `<div style="font-size:.85rem;font-weight:800;color:var(--text)">${escapeHtml(meal.name)}`;
+      if (meal.time) html += ` <span style="opacity:.5;font-weight:500;font-size:.78rem">${escapeHtml(meal.time)}</span>`;
+      html += `</div>`;
+      if (meal.calories || meal.protein) {
+        const parts = [];
+        if (meal.calories) parts.push(`🔥 ${meal.calories} kcal`);
+        if (meal.protein) parts.push(`💪 ${meal.protein}g`);
+        html += `<div style="font-size:.74rem;opacity:.6;margin:2px 0 4px">${parts.join(" · ")}</div>`;
+      }
+      if (meal.items?.length) {
+        html += '<ul style="margin:0;list-style:none;font-size:.8rem;color:rgba(238,238,245,.8);display:flex;flex-direction:column;gap:1px">';
+        meal.items.forEach(item => { html += `<li>• ${escapeHtml(item)}</li>`; });
+        html += '</ul>';
+      }
+      if (Array.isArray(meal.swap_options) && meal.swap_options.length) {
+        html += `<div style="margin-top:6px;font-size:.76rem;color:var(--text2)">↔ ${meal.swap_options.map((item) => escapeHtml(String(item))).join(' · ')}</div>`;
+      }
+      if (meal.coach_tip) {
+        html += `<div style="margin-top:5px;font-size:.75rem;color:var(--muted)">💡 ${escapeHtml(meal.coach_tip)}</div>`;
+      }
+      html += `</div>`;
+    });
+    if (Array.isArray(d.tips) && d.tips.length) html += `<div style="margin-top:10px;font-size:.78rem;opacity:.7;border-top:1px solid rgba(255,255,255,.08);padding-top:8px">${d.tips.map((tip) => `• ${escapeHtml(String(tip))}`).join('<br>')}</div>`;
+    if (Array.isArray(d.substitutions) && d.substitutions.length) html += `<div style="margin-top:8px;font-size:.76rem;color:var(--muted)">↔ ${d.substitutions.map((item) => escapeHtml(String(item))).join(' · ')}</div>`;
+    if (d.notes) html += `<div style="margin-top:10px;font-size:.78rem;font-style:italic;opacity:.65;border-top:1px solid rgba(255,255,255,.08);padding-top:8px">💡 ${escapeHtml(d.notes)}</div>`;
+    html += fallbackBadge;
+    COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
+    return;
+  }
+
+  if (j.type === "recipe" && j.data) {
+    const recipe = j.data;
+    const steps = Array.isArray(recipe.steps) ? recipe.steps.slice(0, 6).map((s, i) => `<li style="margin-bottom:4px">${i + 1}. ${escapeHtml(s)}</li>`).join("") : "";
+    let html = `${typeBadge('Recette', '#f59e0b')}<div style="font-size:.9rem;font-weight:800;color:var(--text);margin-bottom:4px">${escapeHtml(recipe.name || "Recette rapide")}</div>`;
+    const pills = [];
+    if (recipe.calories) pills.push(`🔥 ${recipe.calories} kcal`);
+    if (recipe.protein) pills.push(`💪 ${recipe.protein}g protéines`);
+    if (recipe.carbs) pills.push(`🌾 ${recipe.carbs}g glucides`);
+    if (recipe.fat) pills.push(`🥑 ${recipe.fat}g lipides`);
+    if (recipe.prep_time) pills.push(`⏱ ${recipe.prep_time}`);
+    if (pills.length) html += `<div style="font-size:.8rem;margin:5px 0 8px;opacity:.7">${pills.join(" · ")}</div>`;
+    if (steps) html += `<ol style="margin:0;padding-left:18px;font-size:.82rem;color:rgba(238,238,245,.85)">${steps}</ol>`;
+    if (recipe.tips) html += `<div style="margin-top:8px;font-size:.78rem;opacity:.7">💡 ${escapeHtml(recipe.tips)}</div>`;
+    html += fallbackBadge;
+    COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
+    window._lastRecipe = recipe;
+    return;
+  }
+
+  if (j.type === "workout" && j.data) {
+    PLAN = j.data;
+    let aiResponse = `${typeBadge('Séance', '#60a5fa')}<strong>${escapeHtml(PLAN.title || "Séance générée")}</strong>`;
+    const metaParts = [];
+    if (PLAN.duration) metaParts.push(`⏱ ${PLAN.duration} min`);
+    if (PLAN.calories_estimate || PLAN.calories) metaParts.push(`🔥 ~${PLAN.calories_estimate || PLAN.calories} kcal`);
+    if (PLAN.exercises?.length) metaParts.push(`💪 ${PLAN.exercises.length} exercices`);
+    if (metaParts.length) aiResponse += `<div style="margin-top:5px;font-size:.8rem;opacity:.7">${metaParts.join(" · ")}</div>`;
+    if (Array.isArray(PLAN.exercises) && PLAN.exercises.length > 0) {
+      aiResponse += '<ul style="margin:8px 0 0 14px;list-style:none;display:flex;flex-direction:column;gap:3px">';
+      PLAN.exercises.slice(0, 5).forEach((ex, i) => {
+        const badge = ex.sets > 1 ? `${ex.sets}×${ex.reps}` : (ex.duration > 0 ? `${ex.duration}s` : ex.reps);
+        aiResponse += `<li style="font-size:.82rem;color:rgba(238,238,245,.8)"><span style="opacity:.5">${i + 1}.</span> <strong>${escapeHtml(ex.name)}</strong> <span style="opacity:.55">${escapeHtml(String(badge || ''))}</span></li>`;
+      });
+      if (PLAN.exercises.length > 5) aiResponse += `<li style="font-size:.78rem;opacity:.5">+${PLAN.exercises.length - 5} autres exercices…</li>`;
+      aiResponse += '</ul>';
+    }
+    if (PLAN.notes) aiResponse += `<div style="margin-top:6px;font-size:.8rem;font-style:italic;opacity:.65">${escapeHtml(String(PLAN.notes).slice(0, 160))}</div>`;
+    aiResponse += '<div style="margin-top:10px;font-size:.78rem;opacity:.6">👇 Séance complète ci-dessous — tu peux la sauvegarder.</div>' + fallbackBadge;
+    COACH_HISTORY.push({ role: "ai", content: aiResponse, time: aiTime });
+    renderPlan(PLAN);
+    return;
+  }
+
+  const textHtml = formatCoachText(j.message || `Réponse directe: Je n'ai pas pu formuler une réponse utile.
+Action du jour: Reformule ta demande en une phrase claire.`) + fallbackBadge;
+  COACH_HISTORY.push({ role: "ai", content: `${typeBadge('Coach IA')} ${textHtml}`, time: aiTime });
+}
+
 async function sendCoachMsg(quickMsg) {
   if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
   const coachInput = document.getElementById("coach-input");
@@ -810,6 +1311,10 @@ async function sendCoachMsg(quickMsg) {
     chatEl.scrollTop = chatEl.scrollHeight;
   }
 
+  let coachProfile = {};
+  let goalContext = {};
+  const intentGuess = detectCoachIntentClient(prompt);
+
   try {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
@@ -820,7 +1325,7 @@ async function sendCoachMsg(quickMsg) {
       SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle().catch(() => ({ data: null }))
     ]);
 
-    const goalContext = goalRes?.data || {};
+    goalContext = goalRes?.data || {};
     const dbProfile = profileRes?.data || {};
     const currentStreak = streakRes?.data?.current_streak || 0;
     const historyForApi = COACH_HISTORY.slice(-8, -1).map((m) => ({
@@ -828,11 +1333,9 @@ async function sendCoachMsg(quickMsg) {
       content: m.role === "ai" ? stripHtml(m.content).slice(0, 300) : m.content
     }));
 
-    // Update coach stats streak display
     const csEnergy = document.getElementById("cs-energy");
     if (csEnergy && currentStreak > 0) csEnergy.textContent = `${currentStreak}j`;
 
-    // Read today's mood from localStorage
     let moodLabel = "";
     try {
       const savedMood = localStorage.getItem("fitai_mood");
@@ -842,14 +1345,13 @@ async function sendCoachMsg(quickMsg) {
       }
     } catch {}
 
-    // Update coach sub-line with goal + mood context
     const coachSubLine = document.getElementById("coach-sub-line");
     if (coachSubLine && goalContext.type) {
       const goalLabel = { prise_de_masse: "Prise de masse", perte_de_poids: "Perte de poids", endurance: "Endurance", force: "Force", remise_en_forme: "Remise en forme", maintien: "Maintien" }[goalContext.type] || goalContext.type;
       coachSubLine.textContent = moodLabel ? `${goalLabel} · Humeur: ${moodLabel}` : goalLabel;
     }
 
-    const coachProfile = {
+    coachProfile = {
       display_name: dbProfile.display_name || U.email?.split("@")[0] || "",
       weight: dbProfile.weight || null,
       height: dbProfile.height || null,
@@ -861,153 +1363,60 @@ async function sendCoachMsg(quickMsg) {
       mood_today: moodLabel || undefined
     };
 
-    // Try SSE streaming first; fall back to standard JSON endpoint
-    let j = null;
-    const streamCtrl = new AbortController();
     const aiTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    let j = null;
 
-    const thinkElPre = document.getElementById("coach-thinking");
-    let streamBubble = null;
-
-    try {
-      // Insert a live-updating bubble for streaming
-      if (thinkElPre) {
-        thinkElPre.querySelector(".chat-bubble").innerHTML = '<span id="stream-cursor" style="display:inline-block;width:2px;height:1em;background:currentColor;opacity:.7;animation:blink .8s step-end infinite;vertical-align:text-bottom"></span>';
-        streamBubble = thinkElPre.querySelector(".chat-bubble");
-      }
-
-      const streamedText = await fetchCoachStream({
-        url: "/api/coach-stream",
-        body: { message: prompt, history: historyForApi, profile: coachProfile, goalContext },
-        token,
-        signal: streamCtrl.signal,
-        onChunk: (accumulated) => {
-          if (streamBubble) {
-            streamBubble.innerHTML = formatCoachText(accumulated) + '<span id="stream-cursor" style="display:inline-block;width:2px;height:1em;background:currentColor;opacity:.7;animation:blink .8s step-end infinite;vertical-align:text-bottom"></span>';
-            if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
-          }
+    if (shouldUseCoachStream(intentGuess)) {
+      const thinkElPre = document.getElementById("coach-thinking");
+      let streamBubble = null;
+      const streamCtrl = new AbortController();
+      const streamTimer = setTimeout(() => streamCtrl.abort(), 6500);
+      try {
+        if (thinkElPre) {
+          thinkElPre.querySelector(".chat-bubble").innerHTML = '<span id="stream-cursor" style="display:inline-block;width:2px;height:1em;background:currentColor;opacity:.7;animation:blink .8s step-end infinite;vertical-align:text-bottom"></span>';
+          streamBubble = thinkElPre.querySelector(".chat-bubble");
         }
-      });
 
-      const thinkEl = document.getElementById("coach-thinking");
-      if (thinkEl) thinkEl.remove();
+        const streamedText = await fetchCoachStream({
+          url: "/api/coach-stream",
+          body: { message: prompt, history: historyForApi, profile: coachProfile, goalContext },
+          token,
+          signal: streamCtrl.signal,
+          onChunk: (accumulated) => {
+            if (streamBubble) {
+              streamBubble.innerHTML = formatCoachText(accumulated) + '<span id="stream-cursor" style="display:inline-block;width:2px;height:1em;background:currentColor;opacity:.7;animation:blink .8s step-end infinite;vertical-align:text-bottom"></span>';
+              if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+            }
+          }
+        });
+        clearTimeout(streamTimer);
 
-      const textHtml = formatCoachText(streamedText || "Je n'ai pas pu formuler une réponse.");
-      COACH_HISTORY.push({ role: "ai", content: textHtml, time: aiTime });
-      saveCoachHistory();
-      renderCoachChat();
-      if (chatEl) setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50);
-
-    } catch (streamErr) {
-      // Streaming failed — fall back to standard JSON endpoint silently
-      const thinkEl = document.getElementById("coach-thinking");
-      if (thinkEl) thinkEl.querySelector(".chat-bubble").innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
-
-      const { response: jsonResp } = await fetchJsonWithTimeout("/api/coach", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ message: prompt, history: historyForApi, profile: coachProfile, goalContext })
-      }, 30000);
-      j = jsonResp;
+        if (streamedText && streamedText.trim().length >= 12) {
+          const thinkEl = document.getElementById("coach-thinking");
+          if (thinkEl) thinkEl.remove();
+          COACH_HISTORY.push({ role: "ai", content: formatCoachText(streamedText), time: aiTime });
+          saveCoachHistory();
+          renderCoachChat();
+          if (chatEl) setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50);
+          return;
+        }
+      } catch (streamErr) {
+        clearTimeout(streamTimer);
+        const thinkEl = document.getElementById("coach-thinking");
+        if (thinkEl) thinkEl.querySelector(".chat-bubble").innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+      }
     }
 
-    if (!j) {
-      // Already handled by streaming path above
-      if (btn) btn.disabled = false;
-      ASYNC_LOCKS.delete("coach-msg");
-      return;
-    }
+    const { response: jsonResp } = await fetchJsonWithTimeout("/api/coach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ message: prompt, history: historyForApi, profile: coachProfile, goalContext })
+    }, 9000);
+    j = jsonResp;
 
     const thinkEl = document.getElementById("coach-thinking");
     if (thinkEl) thinkEl.remove();
-
-    const fallbackBadge = j.fallback ? '<div style="margin-top:8px;font-size:.78rem;opacity:.72">⚠️ Mode secours intelligent utilisé.</div>' : "";
-
-    if (j.type === "shopping_list" && j.data) {
-      const d = j.data;
-      let html = `<div style="font-size:.88rem;font-weight:800;color:var(--text);margin-bottom:4px">${escapeHtml(d.title || "Liste de courses")}</div>`;
-      if (d.context) html += `<div style="font-size:.82rem;margin:5px 0 8px;color:rgba(238,238,245,.7)">${escapeHtml(d.context)}</div>`;
-      (d.categories || []).forEach(cat => {
-        if (!cat.items?.length) return;
-        html += `<div style="margin-top:10px;font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--teal)">${escapeHtml(cat.name)}</div>`;
-        html += '<ul style="margin:4px 0 0 0;list-style:none;display:flex;flex-direction:column;gap:2px">';
-        cat.items.forEach(item => {
-          html += `<li style="font-size:.82rem;display:flex;gap:6px"><span style="color:var(--muted)">•</span><span><strong>${escapeHtml(item.name)}</strong>${item.qty ? ` <span style="opacity:.6">— ${escapeHtml(item.qty)}</span>` : ""}${item.note ? ` <span style="opacity:.5;font-style:italic">(${escapeHtml(item.note)})</span>` : ""}</span></li>`;
-        });
-        html += '</ul>';
-      });
-      if (d.tips) html += `<div style="margin-top:10px;font-size:.78rem;font-style:italic;opacity:.6;border-top:1px solid rgba(255,255,255,.08);padding-top:8px">💡 ${escapeHtml(d.tips)}</div>`;
-      html += fallbackBadge;
-      COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
-    } else if (j.type === "meal_plan" && j.data) {
-      const d = j.data;
-      let html = `<div style="font-size:.88rem;font-weight:800;color:var(--text);margin-bottom:4px">${escapeHtml(d.title || "Journée alimentaire")}</div>`;
-      if (d.total_calories || d.total_protein) {
-        const parts = [];
-        if (d.total_calories) parts.push(`🔥 ${d.total_calories} kcal`);
-        if (d.total_protein) parts.push(`💪 ${d.total_protein}g protéines`);
-        html += `<div style="font-size:.8rem;margin:5px 0 8px;opacity:.7">${parts.join(" · ")}</div>`;
-      }
-      (d.meals || []).forEach(meal => {
-        html += `<div style="margin-top:10px;border-left:2px solid var(--teal);padding-left:12px">`;
-        html += `<div style="font-size:.85rem;font-weight:800;color:var(--text)">${escapeHtml(meal.name)}`;
-        if (meal.time) html += ` <span style="opacity:.5;font-weight:500;font-size:.78rem">${escapeHtml(meal.time)}</span>`;
-        html += `</div>`;
-        if (meal.calories || meal.protein) {
-          const parts = [];
-          if (meal.calories) parts.push(`🔥 ${meal.calories} kcal`);
-          if (meal.protein) parts.push(`💪 ${meal.protein}g`);
-          html += `<div style="font-size:.74rem;opacity:.6;margin:2px 0 4px">${parts.join(" · ")}</div>`;
-        }
-        if (meal.items?.length) {
-          html += '<ul style="margin:0;list-style:none;font-size:.8rem;color:rgba(238,238,245,.8);display:flex;flex-direction:column;gap:1px">';
-          meal.items.forEach(item => { html += `<li>• ${escapeHtml(item)}</li>`; });
-          html += '</ul>';
-        }
-        html += '</div>';
-      });
-      if (d.notes) html += `<div style="margin-top:10px;font-size:.78rem;font-style:italic;opacity:.6;border-top:1px solid rgba(255,255,255,.08);padding-top:8px">💡 ${escapeHtml(d.notes)}</div>`;
-      html += fallbackBadge;
-      COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
-    } else if (j.type === "workout" && j.data) {
-      PLAN = j.data;
-      let aiResponse = `<strong>${escapeHtml(PLAN.title || "Séance générée")}</strong>`;
-      // Meta summary line
-      const metaParts = [];
-      if (PLAN.duration) metaParts.push(`⏱ ${PLAN.duration} min`);
-      if (PLAN.calories_estimate) metaParts.push(`🔥 ~${PLAN.calories_estimate} kcal`);
-      if (PLAN.exercises?.length) metaParts.push(`💪 ${PLAN.exercises.length} exercices`);
-      if (metaParts.length) aiResponse += `<div style="margin-top:5px;font-size:.8rem;opacity:.7">${metaParts.join(" · ")}</div>`;
-      // Exercise list preview (first 5)
-      if (Array.isArray(PLAN.exercises) && PLAN.exercises.length > 0) {
-        aiResponse += '<ul style="margin:8px 0 0 14px;list-style:none;display:flex;flex-direction:column;gap:3px">';
-        PLAN.exercises.slice(0, 5).forEach((ex, i) => {
-          const badge = ex.sets > 1 ? `${ex.sets}×${ex.reps}` : (ex.duration > 0 ? `${ex.duration}s` : ex.reps);
-          aiResponse += `<li style="font-size:.82rem;color:rgba(238,238,245,.8)"><span style="opacity:.5">${i + 1}.</span> <strong>${escapeHtml(ex.name)}</strong> <span style="opacity:.55">${escapeHtml(badge)}</span></li>`;
-        });
-        if (PLAN.exercises.length > 5) aiResponse += `<li style="font-size:.78rem;opacity:.5">+${PLAN.exercises.length - 5} autres exercices…</li>`;
-        aiResponse += '</ul>';
-      } else if (PLAN.blocks?.length) {
-        aiResponse += '<div style="margin-top:8px">';
-        PLAN.blocks.slice(0, 3).forEach((b) => {
-          aiResponse += `<div style="margin-top:5px;font-size:.82rem"><strong>${escapeHtml(b.title)}</strong></div>`;
-          if (b.items?.length) {
-            aiResponse += '<ul style="margin:3px 0 0 14px;list-style:disc;font-size:.8rem;color:rgba(238,238,245,.7)">';
-            b.items.slice(0, 3).forEach((it) => { aiResponse += `<li>${escapeHtml(it)}</li>`; });
-            aiResponse += '</ul>';
-          }
-        });
-        aiResponse += '</div>';
-      }
-      if (PLAN.notes) aiResponse += `<div style="margin-top:6px;font-size:.8rem;font-style:italic;opacity:.65">${escapeHtml(PLAN.notes.slice(0, 140))}</div>`;
-      aiResponse += '<div style="margin-top:10px;font-size:.78rem;opacity:.6">👇 Séance complète ci-dessous — tu peux la sauvegarder.</div>' + fallbackBadge;
-      COACH_HISTORY.push({ role: "ai", content: aiResponse, time: aiTime });
-      renderPlan(PLAN);
-    } else {
-      const textHtml = formatCoachText(j.message || "Je n'ai pas pu formuler une réponse.") + fallbackBadge;
-      COACH_HISTORY.push({ role: "ai", content: textHtml, time: aiTime });
-    }
-
+    renderCoachApiResponse(j, aiTime);
     saveCoachHistory();
     renderCoachChat();
     if (chatEl) setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50);
@@ -1016,9 +1425,11 @@ async function sendCoachMsg(quickMsg) {
     if (thinkEl) thinkEl.remove();
     const errorMsg = normalizeCoachError(e.name === "AbortError" ? "timeout" : (e.message || ""));
     const errTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-    COACH_HISTORY.push({ role: "ai", content: `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:1.1rem">🥵</span><strong>Le coach a eu un coup de chaud.</strong></div><div style="font-size:.83rem;color:var(--muted);line-height:1.5">Réessaie dans un instant — il sera de retour très vite.</div><div style="margin-top:10px"><button class="coach-chip" onclick="retryLastCoachMessage()" style="cursor:pointer;font-size:.8rem">↩ Réessayer</button></div>`, time: errTime });
+    const fallbackPayload = buildClientFallbackCoachPayload(intentGuess, prompt, coachProfile, goalContext);
+    renderCoachApiResponse(fallbackPayload, errTime);
     saveCoachHistory();
     renderCoachChat();
+    toast(errorMsg, "err");
     if (errorEl) { errorEl.style.display = "none"; errorEl.innerHTML = ""; }
   } finally {
     if (btn) btn.disabled = false;
@@ -1165,8 +1576,9 @@ async function saveSession() {
   await guarded("save-session", async () => {
     const { error } = await SB.from("workout_sessions").insert({ user_id: U.id, plan: PLAN });
     if (error) throw error;
+    DataCache.bust(`workout-metrics:${U.id}`);
     toast("Séance sauvegardée ✓", "ok");
-    await loadHistory();
+    await Promise.allSettled([loadHistory(), loadStats(), loadStreak(), populateDashboardWorkoutCard()]);
   }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
 }
 
@@ -1787,13 +2199,11 @@ async function doScan() {
     const ins = await SB.from("body_scans").insert({ user_id: U.id, image_path: path });
     if (ins.error) throw ins.error;
 
-    const r = await fetch("/api/bodyscan", {
+    const { response: j } = await fetchJsonWithTimeout("/api/bodyscan", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ user_id: U.id, image_path: path })
-    });
-    const j = await safeResponseJson(r);
-    if (!r.ok || !j.ok) throw new Error(j.error || `Erreur serveur (HTTP ${r.status})`);
+    }, 9000);
 
     if (scanProgressFill) scanProgressFill.style.width = "100%";
 
@@ -1803,7 +2213,8 @@ async function doScan() {
     if (fileInput) fileInput.value = "";
     if (scanPreview) scanPreview.style.display = "none";
     if (scanLoading) scanLoading.style.display = "none";
-    toast("Analyse terminée ✓", "ok");
+    if (j.fallback) toast("Analyse enregistrée avec feedback de secours ✓", "ok");
+    else toast("Analyse terminée ✓", "ok");
     await loadScans();
   }).catch((e) => {
     if (scanLoading) scanLoading.style.display = "none";
@@ -1843,6 +2254,7 @@ async function loadScans() {
   try {
     const { data, error } = await SB.from("body_scans").select("*").eq("user_id", U.id).order("created_at", { ascending: false }).limit(10);
     if (error) throw error;
+    const scanUrls = await resolveScanImageUrls(data || []);
 
     if (!data?.length) {
       el.innerHTML = '<div class="empty" style="padding:40px 16px"><span class="empty-ic">🔬</span>Aucune analyse — uploadez une photo ci-dessus</div>';
@@ -1930,7 +2342,7 @@ async function loadScans() {
       return `<div class="scan-v2">
         <div class="scan-v2-top">
           <div class="scan-v2-photo">
-            ${scan.image_url ? lazyImg(scan.image_url, "Scan", "", "width:100%;height:100%;object-fit:cover;opacity:.9") : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">Photo non disponible</div>`}
+            ${scanUrls[scan.id] ? lazyImg(scanUrls[scan.id], "Scan", "", "width:100%;height:100%;object-fit:cover;opacity:.9") : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">Photo non disponible</div>`}
             <div class="scan-v2-photo-overlay">
               <span class="scan-v2-pill">${date}</span>
               ${physScore ? `<span class="scan-v2-pill" style="font-family:'Georgia',serif;font-size:1rem;font-weight:900">${physScore}/100</span>` : ""}
@@ -2064,28 +2476,32 @@ async function saveProfile() {
 
 async function loadStats() {
   if (!U) return;
-  // Show stale data instantly while revalidating
   const cached = DataCache.get(`stats:${U.id}`);
   if (cached) applyStats(cached);
   try {
-    const [sessions, scans, posts] = await Promise.all([
-      SB.from("workout_sessions").select("id", { count: "exact", head: true }).eq("user_id", U.id),
+    const [metrics, scans, posts] = await Promise.all([
+      fetchWorkoutMetrics(false),
       SB.from("body_scans").select("id", { count: "exact", head: true }).eq("user_id", U.id),
       SB.from("community_posts").select("id", { count: "exact", head: true }).eq("user_id", U.id)
     ]);
-    const data = { sessCount: sessions.count ?? 0, scansCount: scans.count ?? 0, postsCount: posts.count ?? 0 };
-    DataCache.set(`stats:${U.id}`, data, 90000); // 90s TTL
+    const data = {
+      sessCount: metrics.totalSessions || 0,
+      scansCount: scans.count ?? 0,
+      postsCount: posts.count ?? 0,
+      streakCount: metrics.currentStreak || 0
+    };
+    DataCache.set(`stats:${U.id}`, data, 90000);
     applyStats(data);
   } catch (e) {
     console.error("[Stats] Load error:", e);
   }
 }
 
-function applyStats({ sessCount = 0, scansCount = 0, postsCount = 0 } = {}) {
-  const ids = { "st-sess": sessCount, "st-scans": scansCount, "st-posts": postsCount, "db-sess": sessCount, "cs-week": sessCount };
-  Object.entries(ids).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.textContent = val; });
+function applyStats({ sessCount = 0, scansCount = 0, postsCount = 0, streakCount = 0 } = {}) {
+  const ids = { "st-sess": sessCount, "st-scans": scansCount, "st-posts": postsCount, "db-sess": sessCount, "cs-week": sessCount, "db-streak": streakCount };
+  Object.entries(ids).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.textContent = String(val); });
   const totalSess = document.getElementById("db-total-sessions");
-  if (totalSess) totalSess.textContent = sessCount;
+  if (totalSess) totalSess.textContent = String(sessCount);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2107,18 +2523,15 @@ async function loadDefis() {
   const el = document.getElementById("defis-list");
   if (!el) return;
 
-  // Load user stats for progress
   let totalSessions = 0, currentStreak = 0;
   try {
-    const [sessRes, streakRes] = await Promise.all([
-      SB.from("workout_sessions").select("id", { count: "exact", head: true }).eq("user_id", U.id),
-      SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle()
-    ]);
-    totalSessions = sessRes.count || 0;
-    currentStreak = streakRes.data?.current_streak || 0;
-  } catch (e) { console.error("[Defis] Stats error:", e); }
+    const metrics = await fetchWorkoutMetrics(false);
+    totalSessions = metrics.totalSessions || 0;
+    currentStreak = metrics.currentStreak || 0;
+  } catch (e) {
+    console.error("[Defis] Metrics error:", e);
+  }
 
-  // Calculate progress for each defi
   const defisProgress = DEFIS_LIST.map(d => {
     let current = 0;
     if (d.metric === "sessions") current = totalSessions;
@@ -2129,22 +2542,20 @@ async function loadDefis() {
     return { ...d, current, pct, completed };
   });
 
-  // Save XP locally
   const completedCount = defisProgress.filter(d => d.completed).length;
   const totalXP = defisProgress.filter(d => d.completed).reduce((a, d) => a + d.xp, 0);
   const level = Math.floor(totalXP / 1000) + 1;
   const xpInLevel = totalXP % 1000;
 
-  // Update header stats
   const elLevel = document.getElementById("defi-level");
   const elXP = document.getElementById("defi-xp");
   const elCompleted = document.getElementById("defi-completed");
   const elProgress = document.getElementById("defi-progress-fill");
   const elProgressText = document.getElementById("defi-progress-text");
-  if (elLevel) elLevel.textContent = level;
+  if (elLevel) elLevel.textContent = String(level);
   const elLevelText = document.getElementById("defi-level-text");
-  if (elLevelText) elLevelText.textContent = level;
-  if (elXP) elXP.textContent = totalXP;
+  if (elLevelText) elLevelText.textContent = String(level);
+  if (elXP) elXP.textContent = String(totalXP);
   if (elCompleted) elCompleted.textContent = `${completedCount}/${DEFIS_LIST.length}`;
   if (elProgress) elProgress.style.width = `${(xpInLevel / 1000) * 100}%`;
   if (elProgressText) elProgressText.textContent = `${xpInLevel} / 1000 XP pour atteindre le niveau ${level + 1}`;
@@ -2260,8 +2671,15 @@ async function guarded(key, fn) {
 }
 
 async function safeResponseJson(res) {
-  const text = await res.text();
-  try { return JSON.parse(text); } catch { return { ok: false, error: text || "Réponse invalide" }; }
+  const raw = await res.text();
+  const text = String(raw || "").trim();
+  try { return JSON.parse(text); } catch {}
+  const isHtml = /^<!doctype html>|^<html/i.test(text);
+  return {
+    ok: false,
+    error: isHtml ? `Le serveur a renvoyé du HTML au lieu de JSON (HTTP ${res.status})` : (text || "Réponse invalide"),
+    error_code: isHtml ? "HTML_INSTEAD_OF_JSON" : "INVALID_JSON"
+  };
 }
 
 
@@ -2291,14 +2709,13 @@ function normalizeCoachError(msg, code) {
   return clean.length > 80 ? "Le coach est momentanément indisponible. Réessaie dans un instant." : (clean || "Le coach est momentanément indisponible.");
 }
 
-async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 9000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    // Auto-retry once on 5xx
     let response = await fetch(url, { ...options, signal: controller.signal });
     if (response.status >= 500) {
-      await new Promise(r => setTimeout(r, 1200));
+      await new Promise(r => setTimeout(r, 350));
       response = await fetch(url, { ...options, signal: controller.signal });
     }
     const json = await safeResponseJson(response);
@@ -2308,6 +2725,11 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
       throw new Error(cleanErr);
     }
     return { response: json, status: response.status };
+  } catch (error) {
+    if (error && (error.name === "AbortError" || /aborted|timed out|timeout/i.test(String(error.message || "")))) {
+      throw new Error("Le serveur a pris trop de temps à répondre. Réessayez dans quelques secondes.");
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -2478,26 +2900,23 @@ async function deleteComment(commentId, postId) {
 async function loadStreak() {
   if (!U) return;
   try {
-    const { data, error } = await SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle();
-    if (error) { console.warn("[Streak] Table may not exist:", error.message); return; }
-    const streak = data || { current_streak: 0, longest_streak: 0, total_workouts: 0 };
-
+    const metrics = await fetchWorkoutMetrics(false);
     const dbStreak = document.getElementById("db-streak");
-    if (dbStreak) dbStreak.textContent = streak.current_streak;
+    if (dbStreak) dbStreak.textContent = String(metrics.currentStreak || 0);
 
     const longestEl = document.getElementById("st-longest");
-    if (longestEl) longestEl.textContent = streak.longest_streak;
+    if (longestEl) longestEl.textContent = String(metrics.longestStreak || 0);
 
-    // Coach stats
     const csLevel = document.getElementById("cs-level");
     if (csLevel) {
-      if (streak.total_workouts >= 50) csLevel.textContent = "Expert";
-      else if (streak.total_workouts >= 20) csLevel.textContent = "Avancé";
-      else if (streak.total_workouts >= 5) csLevel.textContent = "Inter.";
+      const total = metrics.totalSessions || 0;
+      if (total >= 50) csLevel.textContent = "Expert";
+      else if (total >= 20) csLevel.textContent = "Avancé";
+      else if (total >= 5) csLevel.textContent = "Inter.";
       else csLevel.textContent = "Début.";
     }
   } catch (e) {
-    console.warn("[Streak] Load error (table may not exist):", e.message);
+    console.warn("[Streak] Load error:", e.message || e);
   }
 }
 
@@ -2545,6 +2964,126 @@ function sanitizeCoachHtml(html) {
 // GÉNÉRATION PLAN NUTRITION IA
 // ══════════════════════════════════════════════════════════════════════════════
 
+
+function buildNutritionPlanFallbackFromPayload(payload) {
+  const nutrition = payload && payload.nutrition ? payload.nutrition : null;
+  if (!nutrition) return null;
+  const goal = String(payload.goal || "maintenance").toLowerCase();
+  const dayType = String(payload.day_type || "training").toLowerCase();
+  const isCut = goal.includes("perte") || goal.includes("cut") || goal.includes("seche");
+  const isBulk = goal.includes("prise") || goal.includes("masse");
+  return {
+    title: "Plan nutrition du jour",
+    day_type: dayType,
+    summary: isCut ? "Déficit maîtrisé avec priorité à la satiété et aux protéines." : isBulk ? "Énergie mieux répartie pour performer et récupérer." : "Équilibre simple entre protéines, glucides utiles et lipides maîtrisés.",
+    hydration_liters: isBulk ? 2.8 : 2.3,
+    coach_note: isCut ? "Commence par protéines + légumes, puis ajuste les glucides selon ta faim réelle." : isBulk ? "Ne saute pas la collation: elle aide à sécuriser le surplus sans t'alourdir." : "Cherche surtout des repas réguliers et répétables dans ta semaine.",
+    tips: ["Prépare une base de protéines d'avance.", "Hydrate-toi régulièrement sur la journée.", "Garde 1 ou 2 repas faciles à répéter pour rester constant."],
+    substitutions: ["Poulet ↔ dinde, thon ou tofu.", "Riz ↔ pommes de terre ou semoule.", "Skyr ↔ yaourt grec ou fromage blanc."],
+    notes: nutrition.notes || "Répartition simple et efficace pour aujourd'hui.",
+    meals: [
+      { name: "Petit déjeuner", time: "08:00", calories: Math.round(nutrition.calories * 0.24), protein: Math.round(nutrition.protein * 0.24), items: ["Source de protéines", "Glucides lents", "Fruit"], swap_options: ["Avoine ↔ pain complet"], coach_tip: "Repas d'ouverture simple et stable." },
+      { name: "Déjeuner", time: "12:30", calories: Math.round(nutrition.calories * 0.33), protein: Math.round(nutrition.protein * 0.31), items: ["Protéine maigre", "Féculent", "Légumes", "Bon gras"], swap_options: ["Riz ↔ pommes de terre"], coach_tip: "Fais-en le repas pivot si tu t'entraînes l'après-midi." },
+      { name: "Collation", time: "16:30", calories: Math.round(nutrition.calories * (isBulk ? 0.18 : 0.13)), protein: Math.round(nutrition.protein * 0.16), items: ["Yaourt grec / skyr", "Fruit", "Option: whey"], swap_options: ["Skyr ↔ whey + lait"], coach_tip: "Pense pratique: la meilleure collation est celle que tu peux emmener." },
+      { name: "Dîner", time: "20:00", calories: Math.round(nutrition.calories * (isBulk ? 0.25 : 0.30)), protein: Math.round(nutrition.protein * 0.29), items: ["Protéines", "Légumes", isCut ? "Féculent modéré" : "Féculent" ], swap_options: ["Poisson ↔ oeufs ou tofu"], coach_tip: "Le soir, vise surtout récupération et digestion facile." }
+    ]
+  };
+}
+
+function saveNutritionPlanState(payload) {
+  try { localStorage.setItem("fitai_last_nutrition_plan", JSON.stringify(payload || null)); } catch {}
+}
+
+function loadStoredNutritionPlan() {
+  try {
+    const raw = localStorage.getItem("fitai_last_nutrition_plan");
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed) renderNutritionGeneratedPlan(parsed);
+  } catch {}
+}
+
+function renderNutritionGeneratedPlan(payload) {
+  const card = document.getElementById("nutrition-ai-result");
+  const summaryEl = document.getElementById("nutrition-ai-summary");
+  const mealsEl = document.getElementById("nutrition-ai-meals");
+  const notesEl = document.getElementById("nutrition-ai-notes");
+  const hydrationEl = document.getElementById("nutrition-ai-hydration");
+  if (!card || !summaryEl || !mealsEl || !notesEl || !hydrationEl) return;
+
+  const nutrition = payload?.nutrition && typeof payload.nutrition === "object" ? payload.nutrition : null;
+  const plan = payload?.plan && typeof payload.plan === "object" ? payload.plan : buildNutritionPlanFallbackFromPayload(payload);
+  if (!nutrition) {
+    card.style.display = "none";
+    return;
+  }
+
+  const goalLabel = ({ perte_de_poids: "Sèche", maintenance: "Maintien", prise_de_masse: "Prise de masse" })[payload?.goal] || "Objectif";
+  const dayTypeLabel = String(plan?.day_type || payload?.day_type || "training").toLowerCase() === "rest" ? "Jour de repos" : "Jour d'entraînement";
+  const pills = [
+    `🔥 ${nutrition.calories || 0} kcal`,
+    `💪 ${nutrition.protein || 0}g prot.`,
+    `🌾 ${nutrition.carbs || 0}g gluc.`,
+    `🥑 ${nutrition.fats || 0}g lip.`
+  ];
+  const summaryBits = [];
+  if (goalLabel) summaryBits.push(`<span class="macro-pill" style="background:rgba(22,163,74,.12);border:1px solid rgba(22,163,74,.18);color:#86efac">🎯 ${escapeHtml(goalLabel)}</span>`);
+  if (dayTypeLabel) summaryBits.push(`<span class="macro-pill" style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.18)">🏃 ${escapeHtml(dayTypeLabel)}</span>`);
+  summaryEl.innerHTML = `${summaryBits.join("")} ${pills.map((pill) => `<span class="macro-pill" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)">${escapeHtml(pill)}</span>`).join("")}`;
+
+  const hydration = Number(plan?.hydration_liters || payload?.hydration_liters || 0);
+  const waterGlasses = Math.max(4, Math.min(8, Math.round((hydration || 2.3) / 0.33)));
+  hydrationEl.innerHTML = `
+    <div style="padding:14px;border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.06)">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+        <div>
+          <div style="font-weight:800;font-size:.84rem">Hydratation recommandée</div>
+          <div style="font-size:.78rem;color:var(--muted)">${escapeHtml(plan?.summary || nutrition.notes || "Base du jour")}</div>
+        </div>
+        <div style="font-size:1.15rem;font-weight:900;color:var(--teal)">${hydration > 0 ? `${hydration.toFixed(1).replace('.', ',')} L` : "2,3 L"}</div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">${Array.from({ length: waterGlasses }).map((_, idx) => `<span style="font-size:1.35rem;opacity:${idx < waterGlasses - 1 ? 1 : 0.72}">🥛</span>`).join("")}</div>
+      ${plan?.coach_note ? `<div style="margin-top:10px;font-size:.78rem;color:var(--text2);line-height:1.55">💡 ${escapeHtml(plan.coach_note)}</div>` : ""}
+    </div>`;
+
+  const meals = Array.isArray(plan?.meals) ? plan.meals : [];
+  mealsEl.innerHTML = meals.length
+    ? meals.map((meal) => `
+      <div class="meal-card" style="padding:14px;border:1px solid rgba(255,255,255,.06)">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px">
+          <div>
+            <div style="font-weight:800;font-size:.88rem">${escapeHtml(meal.name || 'Repas')}</div>
+            <div style="font-size:.75rem;color:var(--muted)">${escapeHtml(meal.time || '')}${meal.focus ? ` · ${escapeHtml(meal.focus)}` : ''}</div>
+          </div>
+          <div style="text-align:right;font-size:.77rem;color:var(--text2)">
+            <div>${meal.calories ? `🔥 ${escapeHtml(String(meal.calories))} kcal` : ''}</div>
+            <div>${meal.protein ? `💪 ${escapeHtml(String(meal.protein))}g prot.` : ''}</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;font-size:.8rem;color:rgba(238,238,245,.84)">
+          ${(Array.isArray(meal.items) ? meal.items : []).map((item) => `<div>• ${escapeHtml(String(item))}</div>`).join('')}
+        </div>
+        ${Array.isArray(meal.swap_options) && meal.swap_options.length ? `<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03);font-size:.76rem;color:var(--text2)"><strong style="color:var(--text)">Options simples</strong><div style="margin-top:4px;display:flex;flex-direction:column;gap:3px">${meal.swap_options.map((opt) => `<div>↔ ${escapeHtml(String(opt))}</div>`).join('')}</div></div>` : ''}
+        ${meal.coach_tip ? `<div style="margin-top:8px;font-size:.76rem;color:var(--text2);line-height:1.55">💬 ${escapeHtml(String(meal.coach_tip))}</div>` : ''}
+      </div>`).join("")
+    : '<div class="empty"><span class="empty-ic">🍽️</span>Le plan du jour sera affiché ici après génération.</div>';
+
+  const tips = Array.isArray(plan?.tips) ? plan.tips : [];
+  const substitutions = Array.isArray(plan?.substitutions) ? plan.substitutions : [];
+  notesEl.innerHTML = `
+    <div style="display:grid;gap:12px">
+      <div style="padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)">
+        <div style="font-size:.74rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:6px">Résumé coach</div>
+        <div style="font-size:.81rem;line-height:1.65;color:var(--text2)">${escapeHtml(plan?.notes || nutrition.notes || "Plan généré pour rester simple, cohérent et facile à suivre aujourd'hui.")}</div>
+        ${plan?.training_note ? `<div style="margin-top:8px;font-size:.77rem;line-height:1.55;color:var(--muted)">🏋️ ${escapeHtml(plan.training_note)}</div>` : ''}
+      </div>
+      ${tips.length ? `<div style="padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)"><div style="font-size:.74rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:6px">Conseils pratiques</div><div style="display:flex;flex-direction:column;gap:5px;font-size:.79rem;color:var(--text2)">${tips.map((tip) => `<div>• ${escapeHtml(String(tip))}</div>`).join('')}</div></div>` : ''}
+      ${substitutions.length ? `<div style="padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)"><div style="font-size:.74rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:6px">Substitutions utiles</div><div style="display:flex;flex-direction:column;gap:5px;font-size:.79rem;color:var(--text2)">${substitutions.map((item) => `<div>↔ ${escapeHtml(String(item))}</div>`).join('')}</div></div>` : ''}
+      ${payload?.fallback ? '<div style="font-size:.75rem;color:var(--muted)">Mode de secours premium activé: le plan reste cohérent et utilisable normalement.</div>' : ''}
+    </div>`;
+  card.style.display = "block";
+}
+
 async function generateNutrition() {
   if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
 
@@ -2558,33 +3097,44 @@ async function generateNutrition() {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
-    const r = await fetch("/api/generate-nutrition", {
+    const goal = goalEl?.value || "maintenance";
+    const activity = actEl?.value  || "moderate";
+    const { response: j } = await fetchJsonWithTimeout("/api/generate-nutrition", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({
-        goal:           goalEl?.value || "maintenance",
-        activity_level: actEl?.value  || "moderate"
-      })
-    });
-
-    const j = await safeResponseJson(r);
-
-    if (!r.ok || !j.ok) {
-      throw new Error(j.message || j.error || `Erreur serveur (HTTP ${r.status})`);
-    }
+      body: JSON.stringify({ goal, activity_level: activity })
+    }, 9000);
 
     await loadNutritionTargets();
+    const payload = {
+      goal,
+      activity_level: activity,
+      nutrition: j.nutrition || null,
+      plan: j.plan || null,
+      hydration_liters: j.hydration_liters || null,
+      fallback: !!j.fallback
+    };
+    renderNutritionGeneratedPlan(payload);
+    saveNutritionPlanState(payload);
+
     if (j.fallback) {
-      toast("Plan de secours appliqué (Gemini indisponible)", "err");
+      toast("Plan nutrition de secours appliqué", "err");
     } else {
       toast("Plan nutrition généré ✓", "ok");
     }
   }).catch((e) => {
     const msg = e.message || "Erreur génération";
     if (errEl) { errEl.textContent = `Erreur: ${msg}`; errEl.style.display = "block"; }
+    const payload = {
+      goal: goalEl?.value || "maintenance",
+      nutrition: { calories: 2200, protein: 140, carbs: 260, fats: 70, notes: "Plan local de secours affiché côté application." },
+      fallback: true
+    };
+    renderNutritionGeneratedPlan(payload);
+    saveNutritionPlanState(payload);
     toast(`Erreur: ${msg}`, "err");
   });
 }
@@ -3012,154 +3562,94 @@ function renderSvgChart(data, opts) {
 async function loadProgress() {
   if (!U) return;
 
-  // Build 30-day date range for mood
   var moodSince = new Date();
   moodSince.setDate(moodSince.getDate() - 29);
 
   var results = await Promise.allSettled([
-    SB.from("workout_sessions").select("id,created_at,duration").eq("user_id", U.id).order("created_at", { ascending: true }).limit(80),
-    SB.from("body_scans").select("created_at,physical_score").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
+    SB.from("workout_sessions").select("id,created_at,plan").eq("user_id", U.id).order("created_at", { ascending: true }).limit(120),
+    SB.from("body_scans").select("created_at,physical_score,extended_analysis").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
     SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(100),
-    SB.from("user_streaks").select("current_streak,best_streak").eq("user_id", U.id).maybeSingle(),
     SB.from("daily_moods").select("mood_level,mood_label,date").eq("user_id", U.id)
       .gte("date", moodSince.toISOString().slice(0, 10)).order("date", { ascending: true }).limit(30)
   ]);
 
   var sessions = results[0].status === "fulfilled" ? (results[0].value.data || []) : [];
-  var scans    = results[1].status === "fulfilled" ? (results[1].value.data || []) : [];
-  var meals    = results[2].status === "fulfilled" ? (results[2].value.data || []) : [];
-  var streak   = results[3].status === "fulfilled" ? (results[3].value.data || {}) : {};
-  var moods    = results[4].status === "fulfilled" ? (results[4].value.data || []) : [];
+  var scansRaw = results[1].status === "fulfilled" ? (results[1].value.data || []) : [];
+  var meals = results[2].status === "fulfilled" ? (results[2].value.data || []) : [];
+  var moods = results[3].status === "fulfilled" ? (results[3].value.data || []) : [];
+  var metrics = computeWorkoutMetrics((sessions || []).slice().sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); }));
+
+  var scans = scansRaw.map(function(s) {
+    var score = s.physical_score;
+    if (score == null && s.extended_analysis && s.extended_analysis.score_breakdown) {
+      var bd = s.extended_analysis.score_breakdown;
+      var vals = [bd.symmetry, bd.posture, bd.muscle_definition, bd.body_composition].filter(function(v) { return typeof v === "number"; });
+      if (vals.length) score = Math.round(vals.reduce(function(acc, v) { return acc + v; }, 0) / vals.length);
+    }
+    return { created_at: s.created_at, physical_score: score || 0 };
+  });
 
   var elStreak = document.getElementById("prog-streak");
-  var elSub    = document.getElementById("prog-streak-sub");
-  var elTotal  = document.getElementById("prog-sessions-total");
-  var elBest   = document.getElementById("prog-best-score");
-  if (elStreak) elStreak.textContent = streak.current_streak != null ? streak.current_streak : sessions.length;
-  if (elSub)    elSub.textContent    = streak.current_streak != null ? "jours consecutifs" : "seances total";
-  if (elTotal)  elTotal.textContent  = sessions.length;
+  var elSub = document.getElementById("prog-streak-sub");
+  var elTotal = document.getElementById("prog-sessions-total");
+  var elBest = document.getElementById("prog-best-score");
+  if (elStreak) elStreak.textContent = String(metrics.currentStreak || 0);
+  if (elSub) elSub.textContent = "jours consécutifs";
+  if (elTotal) elTotal.textContent = String(metrics.totalSessions || 0);
   var bestScore = scans.reduce(function(m, s) { return s.physical_score > m ? s.physical_score : m; }, 0);
-  if (elBest)   elBest.textContent   = bestScore > 0 ? bestScore : "—";
+  if (elBest) elBest.textContent = bestScore > 0 ? String(bestScore) : "—";
 
-  // Mood stat in progress header
   var elMoodStat = document.getElementById("prog-mood-stat");
-  if (elMoodStat && moods.length) {
-    var last = moods[moods.length - 1];
-    elMoodStat.textContent = last.mood_label || "—";
+  if (elMoodStat) {
+    var lastMood = moods.length ? moods[moods.length - 1] : null;
+    elMoodStat.textContent = lastMood ? (lastMood.mood_label || "—") : "—";
   }
 
   var sessChart = buildWeeklySessionData(sessions, 8);
-  var sessEl    = document.getElementById("chart-sessions-svg");
-  var sessHead  = document.getElementById("chart-sessions-headline");
-  if (sessEl)   sessEl.innerHTML   = renderSvgChart(sessChart, { color: "#2563eb" });
-  if (sessHead) sessHead.textContent = sessions.length + " seances total";
+  var sessEl = document.getElementById("chart-sessions-svg");
+  var sessHead = document.getElementById("chart-sessions-headline");
+  if (sessEl) sessEl.innerHTML = renderSvgChart(sessChart, { color: "#2563eb" });
+  if (sessHead) sessHead.textContent = (metrics.totalSessions || 0) + " séances total";
 
   var scanData = scans.filter(function(s) { return s.physical_score > 0; }).map(function(s) {
     return { value: s.physical_score, label: new Date(s.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) };
   });
-  var scanEl   = document.getElementById("chart-scan-svg");
+  var scanEl = document.getElementById("chart-scan-svg");
   var scanHead = document.getElementById("chart-scan-headline");
-  if (scanEl)  scanEl.innerHTML  = renderSvgChart(scanData, { color: "#9333ea", unit: "/100" });
+  if (scanEl) scanEl.innerHTML = renderSvgChart(scanData, { color: "#9333ea", unit: "/100" });
   if (scanHead) {
     var ls = scans[scans.length - 1];
-    scanHead.textContent = ls && ls.physical_score ? "Dernier score: " + ls.physical_score + "/100" : scans.length + " scan(s) effectue(s)";
+    scanHead.textContent = ls && ls.physical_score ? "Dernier score: " + ls.physical_score + "/100" : scans.length + " scan(s) effectué(s)";
   }
 
-  var calData  = buildDailyCalData(meals, 14);
-  var calEl    = document.getElementById("chart-calories-svg");
-  var calHead  = document.getElementById("chart-calories-headline");
-  if (calEl)   calEl.innerHTML = renderSvgChart(calData, { color: "#f97316", unit: " kcal", H: 110 });
+  var calData = buildDailyCalData(meals, 14);
+  var calEl = document.getElementById("chart-calories-svg");
+  var calHead = document.getElementById("chart-calories-headline");
+  if (calEl) calEl.innerHTML = renderSvgChart(calData, { color: "#f97316", unit: " kcal", H: 110 });
   if (calHead) {
-    var avg = calData.length ? Math.round(calData.reduce(function(s, d) { return s + d.value; }, 0) / calData.length) : 0;
-    calHead.textContent = avg > 0 ? "Moyenne: " + avg + " kcal / jour" : "Enregistrez vos repas pour voir l'evolution";
+    var avg = calData.length ? Math.round(calData.reduce(function(acc, d) { return acc + d.value; }, 0) / calData.length) : 0;
+    calHead.textContent = avg > 0 ? "Moyenne: " + avg + " kcal / jour" : "Enregistrez vos repas pour voir l'évolution";
   }
 
-  // Mood history dots
-  renderMoodDots(moods);
-}
-
-// ── Mood colours matching SVG faces ──────────────────────────────────────────
-var MOOD_COLORS = { 1: "#f87171", 2: "#fb923c", 3: "#fbbf24", 4: "#4ade80", 5: "#60a5fa" };
-
-function renderMoodDots(moods) {
-  var el = document.getElementById("chart-mood-dots");
-  var head = document.getElementById("chart-mood-headline");
-  if (!el) return;
-
-  if (!moods.length) {
-    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:.82rem">Sélectionnez votre humeur chaque jour pour voir l\'évolution ici.</div>';
-    if (head) head.textContent = "Pas encore de données";
-    return;
+  var moodDotsEl = document.getElementById("chart-mood-dots");
+  var moodHead = document.getElementById("chart-mood-headline");
+  if (moodDotsEl) {
+    if (!moods.length) {
+      moodDotsEl.innerHTML = '<div class="chart-empty">Pas encore de données</div>';
+    } else {
+      moodDotsEl.innerHTML = moods.map(function(m) {
+        return `<div class="mood-dot mood-${m.mood_level}" title="${escapeAttr(m.date)} · ${escapeAttr(m.mood_label || '')}"></div>`;
+      }).join("");
+    }
   }
-
-  // Build 14-day grid (today = rightmost)
-  var today = new Date();
-  var days = 14;
-  var grid = [];
-  for (var i = days - 1; i >= 0; i--) {
-    var d = new Date(today);
-    d.setDate(today.getDate() - i);
-    var dateStr = d.toISOString().slice(0, 10);
-    var entry = moods.find(function(m) { return m.date === dateStr; });
-    grid.push({ date: d, dateStr: dateStr, entry: entry || null });
-  }
-
-  // Render as dot matrix row
-  var html = '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">';
-  grid.forEach(function(cell) {
-    var lvl = cell.entry ? cell.entry.mood_level : 0;
-    var color = lvl ? MOOD_COLORS[lvl] : "rgba(255,255,255,.07)";
-    var label = cell.entry ? cell.entry.mood_label : "Pas de donnée";
-    var dayLabel = cell.date.toLocaleDateString("fr-FR", { weekday: "short" }).slice(0, 1).toUpperCase();
-    html += '<div style="display:flex;flex-direction:column;align-items:center;gap:5px">';
-    html += '<div title="' + cell.dateStr + ' — ' + label + '" style="width:32px;height:32px;border-radius:50%;background:' + color + ';' + (lvl ? 'box-shadow:0 0 8px ' + color + '55' : 'border:2px solid rgba(255,255,255,.1)') + ';transition:transform .2s;cursor:default" onmouseenter="this.style.transform=\'scale(1.2)\'" onmouseleave="this.style.transform=\'scale(1)\'"></div>';
-    html += '<div style="font-size:.55rem;color:rgba(255,255,255,.3);font-weight:700">' + dayLabel + '</div>';
-    html += '</div>';
-  });
-  html += '</div>';
-  el.innerHTML = html;
-
-  // Compute average mood
-  var filled = moods.filter(function(m) { return m.mood_level >= 1; });
-  if (head && filled.length) {
-    var avg = (filled.reduce(function(s, m) { return s + m.mood_level; }, 0) / filled.length).toFixed(1);
-    var avgLabel = MOOD_LABELS[Math.round(avg)] || avg + "/5";
-    head.textContent = filled.length + " jour(s) suivi(s) — humeur moy.: " + avgLabel;
+  if (moodHead) {
+    if (!moods.length) moodHead.textContent = "Pas encore de données";
+    else {
+      var avg = (moods.reduce(function(sum, item) { return sum + (Number(item.mood_level) || 0); }, 0) / moods.length).toFixed(1);
+      moodHead.textContent = moods.length + " jour(s) suivi(s) — humeur moy.: " + avg + "/5";
+    }
   }
 }
-
-function buildWeeklySessionData(sessions, weeks) {
-  var now = new Date(), result = [];
-  for (var w = weeks - 1; w >= 0; w--) {
-    var ws = new Date(now);
-    ws.setDate(now.getDate() - w * 7 - now.getDay());
-    ws.setHours(0, 0, 0, 0);
-    var we = new Date(ws);
-    we.setDate(ws.getDate() + 7);
-    var count = sessions.filter(function(s) { var d = new Date(s.created_at); return d >= ws && d < we; }).length;
-    result.push({ value: count, label: ws.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) });
-  }
-  return result;
-}
-
-function buildDailyCalData(meals, days) {
-  var now = new Date(), result = [];
-  for (var d = days - 1; d >= 0; d--) {
-    var day = new Date(now);
-    day.setDate(now.getDate() - d);
-    day.setHours(0, 0, 0, 0);
-    var de = new Date(day);
-    de.setDate(day.getDate() + 1);
-    var total = meals.filter(function(m) { var md = new Date(m.created_at); return md >= day && md < de; })
-                     .reduce(function(s, m) { return s + (Number(m.calories) || 0); }, 0);
-    result.push({ value: total, label: day.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) });
-  }
-  var start = 0;
-  while (start < result.length - 2 && result[start].value === 0) start++;
-  return result.slice(start);
-}
-
-window.loadProgress = loadProgress;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // THEME TOGGLE — Light / Dark
@@ -3254,12 +3744,10 @@ function completeDailyChallenge(challengeId) {
 }
 
 function updateDailyStreak() {
-  if (!U) return;
-  SB.from("user_streaks").upsert({
-    user_id: U.id,
-    last_active: getTodayKey(),
-    updated_at: new Date().toISOString()
-  }, { onConflict: "user_id" }).catch(() => {});
+  // Daily challenges are tracked locally; avoid writing drifting schemas to Supabase.
+  try {
+    localStorage.setItem("fitai_daily_last_complete", getTodayKey());
+  } catch {}
 }
 
 function renderDailyChallengesSection() {

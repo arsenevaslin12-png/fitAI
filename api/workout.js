@@ -7,13 +7,18 @@ const {
   sanitizeInput,
   getIp,
   checkRateLimit,
-  generateWorkoutPlan
+  generateWorkoutPlan,
+  strictWorkoutPayloadFromPlan
 } = require("./_coach-core");
 const {
   DEFAULT_MODEL,
   FALLBACK_MODEL,
   normalizeGeminiError
 } = require("./_gemini");
+
+function toApiWorkoutPayload(plan) {
+  return strictWorkoutPayloadFromPlan(plan);
+}
 
 module.exports = async function handler(req, res) {
   setCors(res);
@@ -42,17 +47,20 @@ module.exports = async function handler(req, res) {
   };
 
   try {
+    const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
     const result = await generateWorkoutPlan({
-      apiKey: String(process.env.GEMINI_API_KEY || "").trim(),
+      apiKey,
       message,
       history: Array.isArray(body.history) ? body.history : [],
       profile,
       goalContext: body.goalContext || {}
     });
 
+    const apiPayload = toApiWorkoutPayload(result.data);
     return sendJson(res, 200, {
       ok: true,
-      data: result.data,
+      ...apiPayload,
+      data: { ...result.data, ...apiPayload },
       fallback: !!result.fallback,
       meta: result.error ? { note: result.error } : undefined,
       model_default: DEFAULT_MODEL,

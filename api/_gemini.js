@@ -2,8 +2,9 @@
 
 const DEFAULT_MODEL = "gemini-2.0-flash";
 const FALLBACK_MODEL = "gemini-2.0-flash-lite";
-const DEFAULT_TIMEOUT_MS = 10000;
-const DEFAULT_RETRIES = 0;
+const DEFAULT_TIMEOUT_MS = 3200;
+const STREAM_TIMEOUT_MS = 3200;
+const DEFAULT_RETRIES = 1;
 const FORBIDDEN_MODELS = new Set([
   "gemini-1.5-flash",
   "gemini-1.5-flash-latest",
@@ -181,7 +182,7 @@ async function callGeminiText({
         if (isAuthIssue(error) || isQuotaIssue(error)) break;
         if (isModelIssue(error)) break;
         if (attempt < retries && isRetryableIssue(error)) {
-          await sleep((attempt + 1) * 500);
+          await sleep((attempt + 1) * 250);
           continue;
         }
         break;
@@ -199,6 +200,7 @@ async function callGeminiStream({
   contents,
   temperature = 0.6,
   maxOutputTokens = 900,
+  timeoutMs = STREAM_TIMEOUT_MS,
   onChunk
 }) {
   const Gemini = getGeminiCtor();
@@ -209,23 +211,26 @@ async function callGeminiStream({
   const modelName = uniqueModels()[0];
   const model = client.getGenerativeModel({ model: modelName, generationConfig: { temperature, maxOutputTokens } });
   const input = contents || prompt || "";
-  const { stream } = await model.generateContentStream(input);
-  let fullText = "";
-  for await (const chunk of stream) {
-    const text = chunk.text();
-    if (text) {
-      fullText += text;
-      if (typeof onChunk === "function") onChunk(text);
+  return withTimeout((async () => {
+    const { stream } = await model.generateContentStream(input);
+    let fullText = "";
+    for await (const chunk of stream) {
+      const text = chunk.text();
+      if (text) {
+        fullText += text;
+        if (typeof onChunk === "function") onChunk(text);
+      }
     }
-  }
-  if (!fullText.trim()) { const err = new Error("EMPTY_STREAM_RESPONSE"); err.code = "EMPTY"; throw err; }
-  return { model: modelName, text: fullText };
+    if (!fullText.trim()) { const err = new Error("EMPTY_STREAM_RESPONSE"); err.code = "EMPTY"; throw err; }
+    return { model: modelName, text: fullText };
+  })(), timeoutMs, "GEMINI_STREAM_TIMEOUT");
 }
 
 module.exports = {
   DEFAULT_MODEL,
   FALLBACK_MODEL,
   DEFAULT_TIMEOUT_MS,
+  STREAM_TIMEOUT_MS,
   DEFAULT_RETRIES,
   FORBIDDEN_MODELS,
   getGeminiCtor,

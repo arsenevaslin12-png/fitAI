@@ -12,7 +12,7 @@ const {
 } = require("./_gemini");
 const { assertEnv, validateBody, RecipeBodySchema } = require("./_env");
 
-const GEMINI_TIMEOUT_MS = 22000;
+const GEMINI_TIMEOUT_MS = 3400;
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");

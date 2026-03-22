@@ -7,7 +7,7 @@ const {
   callGeminiText
 } = require("./_gemini");
 
-const MAX_RETRIES = 0;
+const MAX_RETRIES = 1;
 const rateLimitBuckets = new Map();
 
 function sendJson(res, status, body) {
@@ -275,23 +275,24 @@ STRUCTURE exercises[] requise:
 function buildConversationPrompt(intent, message, history, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
   const intentGuide = {
-    greeting: "réponds avec chaleur et naturel, propose 2-3 options d'aide concrète (séance, nutrition, recette, liste de courses, organisation)",
-    nutrition_question: "réponds comme un coach nutrition simple et actionnable — macros, timing, aliments conseillés. Sois précis et concret.",
-    recovery_question: "réponds comme un coach récupération expert — sommeil, stress, mobilité, courbatures. Donne des conseils actionnables aujourd'hui.",
-    motivation_question: "réponds comme un coach mental bienveillant et direct. Parle vrai, sois humain, propose une action immédiate.",
-    progress_question: "analyse la situation, interprète les signaux, propose la prochaine étape concrète.",
-    general_fitness: "tu es un assistant personnel polyvalent — fitness, nutrition, lifestyle, organisation, recettes, courses. Sois utile, concret, humain. Réponds à la vraie question posée.",
-    shopping_list: "aide l'utilisateur à préparer sa liste de courses adaptée à ses objectifs nutritionnels",
-    meal_plan: "aide l'utilisateur à structurer ses repas pour la journée ou la semaine selon ses objectifs"
-  }[intent] || "réponds comme un assistant personnel fitness et lifestyle, concret et humain";
+    greeting: "accueille avec chaleur puis propose 2 ou 3 aides concrètes maximum",
+    nutrition_question: "réponds comme un coach nutrition premium: concret, crédible, simple à appliquer dès aujourd'hui",
+    recovery_question: "réponds comme un coach récupération: sommeil, stress, fatigue, intensité du jour et prochain meilleur choix",
+    motivation_question: "réponds comme un coach mental direct mais bienveillant: pas de banalités, une vraie relance utile",
+    progress_question: "interprète la situation puis propose l'ajustement le plus rentable à faire maintenant",
+    advice: "réponds comme un mentor fitness/lifestyle: clair, concret, utile dans la vraie vie",
+    general_chat: "réponds comme un coach humain, premium et pragmatique",
+    shopping_list: "aide l'utilisateur à préparer une liste de courses réaliste et alignée avec ses objectifs",
+    meal_plan: "aide l'utilisateur à structurer ses repas de façon simple, efficace et tenable"
+  }[intent] || "réponds comme un coach humain, premium et pragmatique";
 
-  const lengthGuide = ["shopping_list", "meal_plan"].includes(intent)
-    ? "5 à 12 lignes organisées"
-    : intent === "greeting"
-    ? "3 à 5 phrases max"
-    : "2 à 7 phrases";
+  const lengthGuide = intent === "greeting"
+    ? "3 à 5 lignes maximum"
+    : ["shopping_list", "meal_plan"].includes(intent)
+      ? "6 à 10 lignes organisées"
+      : "3 à 7 lignes utiles";
 
-  return `Tu es un assistant coach fitness et lifestyle, expert, concret et bienveillant. Réponds en français.
+  return `Tu es un coach fitness premium pour application SaaS. Réponds en français avec un ton humain, clair, motivant et expert.
 
 Profil utilisateur:
 - Objectif: ${p.goal}
@@ -306,14 +307,20 @@ ${p.display_name ? `- Prénom: ${p.display_name}` : ""}
 Historique récent:
 ${historyBlock(history) || "Aucun."}
 
-Instruction spécifique:
-- ${intentGuide}
+Consignes absolues:
+- ${intentGuide}.
 - Longueur idéale: ${lengthGuide}.
-- Si pertinent, termine par une action simple à faire aujourd'hui.
-- N'écris PAS de JSON brut.
-- N'écris PAS de programme complet d'exercices sauf si explicitement demandé.
-- Tu peux utiliser des listes à puces si ça aide la lisibilité.
-- Sois humain : tu peux avoir de l'humour bienveillant si le contexte s'y prête.
+- Ne sois jamais vague ni générique.
+- Donne d'abord la réponse utile, ensuite une explication courte si nécessaire, puis une action simple à faire ensuite.
+- Quand la question est simple: réponse courte.
+- Quand la question est plus complexe: structure avec ces libellés exacts si utile:
+  Réponse directe: ...
+  Pourquoi: ...
+  Action du jour: ...
+- Pas de JSON.
+- Pas de programme complet d'exercices sauf si explicitement demandé.
+- Tu peux utiliser 2 à 4 puces maximum si ça aide.
+- Tu peux encourager, recadrer ou simplifier, mais jamais noyer l'utilisateur.
 
 Message utilisateur:
 ${message}`;
@@ -351,7 +358,7 @@ Adapte les catégories et quantités au contexte exact de la demande (occasion s
 
 function buildMealPlanPrompt(message, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
-  return `Tu es un coach nutrition. Réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
+  return `Tu es un coach nutrition premium. Réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
 
 Profil:
 - Objectif: ${p.goal}
@@ -367,13 +374,18 @@ FORMAT JSON OBLIGATOIRE (aucun texte avant ni après):
   "title": "Journée alimentaire",
   "total_calories": 2200,
   "total_protein": 150,
+  "coach_note": "Phrase coach courte",
+  "tips": ["...", "..."],
+  "substitutions": ["...", "..."],
   "meals": [
     {
       "name": "Petit-déjeuner",
       "time": "7h30",
       "calories": 500,
       "protein": 30,
-      "items": ["Flocons d'avoine 80g", "Banane", "Fromage blanc 200g"]
+      "items": ["Flocons d'avoine 80g", "Banane", "Fromage blanc 200g"],
+      "swap_options": ["Avoine ↔ pain complet"],
+      "coach_tip": "Conseil court et utile"
     }
   ],
   "notes": "Conseil court sur l'hydratation ou la répartition"
@@ -396,26 +408,41 @@ function fallbackShoppingList(message) {
 
 function fallbackMealPlan(profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
-  const kcal = p.goal === "prise_de_masse" ? 2800 : p.goal === "perte_de_poids" ? 1800 : 2200;
-  const prot = Math.round(kcal * 0.3 / 4);
+  const kcal = p.goal === "prise_de_masse" ? 2800 : p.goal === "perte_de_poids" ? 1850 : 2250;
+  const prot = Math.round(kcal * 0.29 / 4);
   return {
-    title: "Journée alimentaire équilibrée",
+    title: "Journée alimentaire premium",
     total_calories: kcal,
     total_protein: prot,
-    meals: [
-      { name: "Petit-déjeuner", time: "7h30", calories: Math.round(kcal * 0.22), protein: Math.round(prot * 0.2), items: ["Flocons d'avoine 80g", "Lait ou boisson végétale 200ml", "1 banane", "Fromage blanc 100g"] },
-      { name: "Déjeuner", time: "12h30", calories: Math.round(kcal * 0.35), protein: Math.round(prot * 0.35), items: ["Poulet grillé 150g", "Riz complet 100g cru", "Brocoli vapeur 200g", "Huile d'olive 1 cuillère"] },
-      { name: "Collation", time: "16h00", calories: Math.round(kcal * 0.13), protein: Math.round(prot * 0.15), items: ["Fromage blanc 150g", "Noix 20g", "1 pomme"] },
-      { name: "Dîner", time: "19h30", calories: Math.round(kcal * 0.3), protein: Math.round(prot * 0.3), items: ["Saumon 150g ou thon", "Patate douce 200g", "Épinards sautés", "Citron et herbes"] }
+    coach_note: p.goal === "prise_de_masse"
+      ? "Priorité à la régularité: 4 prises simples et un vrai apport glucidique autour de la séance."
+      : p.goal === "perte_de_poids"
+        ? "Reste haut en protéines et garde le plus gros volume sur légumes + sources maigres."
+        : "Mange simple, stable et répétable: c'est la meilleure base pour progresser sans te lasser.",
+    tips: [
+      "Prépare une base protéine + féculent + légumes pour 2 repas d'avance.",
+      "Si la faim grimpe, augmente d'abord les légumes et l'hydratation avant de changer tout le plan.",
+      "Garde une collation transportable pour éviter les écarts improvisés."
     ],
-    notes: "Buvez 2 à 2.5L d'eau par jour. Adaptez les portions selon votre faim réelle."
+    substitutions: [
+      "Poulet ↔ dinde, thon, tofu ferme.",
+      "Riz ↔ pommes de terre, semoule, pâtes complètes.",
+      "Skyr ↔ yaourt grec, fromage blanc ou whey + lait."
+    ],
+    meals: [
+      { name: "Petit-déjeuner", time: "7h30", calories: Math.round(kcal * 0.22), protein: Math.round(prot * 0.2), items: ["Flocons d'avoine 80g", "Skyr ou fromage blanc", "1 fruit", "Quelques oléagineux"], swap_options: ["Avoine ↔ pain complet", "Skyr ↔ yaourt grec"], coach_tip: "Petit-déjeuner simple et stable: il doit te donner de l'énergie sans te ralentir." },
+      { name: "Déjeuner", time: "12h30", calories: Math.round(kcal * 0.35), protein: Math.round(prot * 0.35), items: ["Poulet grillé 150g", "Riz ou pommes de terre", "Brocoli ou haricots verts", "Huile d'olive 1 cuillère"], swap_options: ["Poulet ↔ steak 5% ou tofu", "Riz ↔ pommes de terre"], coach_tip: "Si tu t'entraînes l'après-midi, place ici la plus grosse portion de glucides." },
+      { name: "Collation", time: "16h00", calories: Math.round(kcal * 0.13), protein: Math.round(prot * 0.15), items: ["Fromage blanc 150g", "Noix 20g", "1 pomme ou banane"], swap_options: ["Fromage blanc ↔ shake protéiné", "Noix ↔ beurre de cacahuète"], coach_tip: "Choisis une collation que tu peux prendre même en déplacement." },
+      { name: "Dîner", time: "19h30", calories: Math.round(kcal * 0.3), protein: Math.round(prot * 0.3), items: ["Saumon 150g ou oeufs", "Patate douce ou semoule", "Légumes cuits", "Citron et herbes"], swap_options: ["Saumon ↔ thon ou tofu", "Patate douce ↔ riz"], coach_tip: "Le soir, vise surtout récupération et digestion facile: inutile de compliquer." }
+    ],
+    notes: "Buvez 2 à 2.5L d'eau par jour. Ajustez les portions selon la faim, la séance et la récupération."
   };
 }
 
 async function generateShoppingList({ apiKey, message, profile, goalContext }) {
   const prompt = buildShoppingListPrompt(message, profile, goalContext);
   try {
-    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 8000, retries: 0 });
+    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 800, timeoutMs: 3400, retries: 1 });
     const parsed = extractJSON(result.text);
     if (!parsed || !Array.isArray(parsed.categories)) throw new Error("INVALID_SHOPPING_JSON");
     return { ok: true, data: parsed, fallback: false };
@@ -427,7 +454,7 @@ async function generateShoppingList({ apiKey, message, profile, goalContext }) {
 async function generateMealPlan({ apiKey, message, profile, goalContext }) {
   const prompt = buildMealPlanPrompt(message, profile, goalContext);
   try {
-    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 8000, retries: 0 });
+    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 800, timeoutMs: 3400, retries: 1 });
     const parsed = extractJSON(result.text);
     if (!parsed || !Array.isArray(parsed.meals)) throw new Error("INVALID_MEAL_PLAN_JSON");
     return { ok: true, data: parsed, fallback: false };
@@ -574,25 +601,41 @@ function fallbackConversation(intent, message, profile = {}, goalContext = {}) {
   const p = makeProfileSummary(profile, goalContext);
   const lowRecovery = (p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 5);
   if (intent === "greeting") {
-    return `Salut ${p.display_name || "champion"} 👋 Dis-moi si tu veux une séance, un conseil nutrition ou un plan récup, et je te guide sans te noyer dans le blabla.`;
+    return `Réponse directe: Salut ${p.display_name || "champion"} 👋
+Pourquoi: Je peux te guider vite sur une séance, une journée alimentaire, une recette ou une stratégie récupération sans te noyer dans le blabla.
+Action du jour: Donne-moi ton besoin exact en une phrase, par exemple « séance full body 40 min », « idée repas sèche » ou « j'ai mal dormi, j'adapte comment ? ». `;
   }
   if (intent === "nutrition_question") {
     return p.goal === "prise_de_masse"
-      ? "Pour progresser, vise surtout une portion de protéines à chaque repas et ajoute des glucides autour de l'entraînement. Le plus simple aujourd'hui: 1 source de protéines + 1 féculent + 1 fruit après ta séance."
-      : "Le plus rentable est de sécuriser tes protéines, puis de garder des repas simples et réguliers. Aujourd'hui, vise un repas avec légumes + protéines + une portion de féculents adaptée à ta faim et à ton objectif.";
+      ? `Réponse directe: Pour progresser en prise de masse, assure surtout une vraie portion de protéines à chaque repas et place davantage de glucides autour de l'entraînement.
+Pourquoi: C'est ce qui t'aide à performer sans te sentir lourd toute la journée.
+Action du jour: Fais simple aujourd'hui: protéine + féculent + fruit après ta séance, puis une collation protéinée dans l'après-midi.`
+      : `Réponse directe: Le plus rentable pour ton objectif, c'est de sécuriser les protéines puis de garder des repas simples et réguliers.
+Pourquoi: Quand la structure est claire, tu tiens plus facilement sur plusieurs semaines.
+Action du jour: Sur ton prochain repas, vise légumes + protéines + une portion de féculents adaptée à ta faim et à ta dépense.`;
   }
   if (intent === "recovery_question") {
     return lowRecovery
-      ? "Vu ton état, je baisserais l'intensité aujourd'hui: mobilité, marche ou séance technique courte. Si tu dors mal plusieurs jours d'affilée, n'essaie pas de compenser avec plus d'intensité, récupère d'abord."
-      : "Ta récup passera surtout par le sommeil, l'hydratation et une charge bien dosée. Fais 5 à 10 minutes de mobilité ce soir et garde une séance plus lourde seulement si les courbatures baissent nettement demain.";
+      ? `Réponse directe: Aujourd'hui, je baisserais l'intensité.
+Pourquoi: Avec peu de sommeil ou une récupération basse, forcer plus fort te coûte souvent plus qu'il ne te rapporte.
+Action du jour: Fais 10 à 20 min de mobilité, une marche active ou une séance technique très propre, puis couche-toi plus tôt ce soir.`
+      : `Réponse directe: Ta récup passera surtout par sommeil, hydratation et charge bien dosée.
+Pourquoi: C'est le trio qui protège ta progression sans casser le rythme.
+Action du jour: Fais 5 à 10 minutes de mobilité ce soir et garde la séance lourde seulement si les courbatures baissent nettement demain.`;
   }
   if (intent === "motivation_question") {
-    return "Ne cherche pas la motivation parfaite: réduis le seuil d'entrée. Décide simplement de commencer 10 minutes aujourd'hui, puis laisse l'élan faire le reste; la régularité vaut plus qu'une séance héroïque isolée.";
+    return `Réponse directe: N'attends pas de te sentir ultra motivé pour agir.
+Pourquoi: La motivation varie, alors que l'action courte remet presque toujours la machine en route.
+Action du jour: Lance une version mini de 10 minutes maintenant. Si tu te sens mieux ensuite, tu prolonges. Sinon, tu as quand même gagné ta journée.`;
   }
   if (intent === "progress_question") {
-    return "Regarde d'abord trois marqueurs: régularité, qualité technique et charge/reps sur tes mouvements clés. Si un seul progresse chaque semaine, tu avances déjà dans la bonne direction; le plus utile aujourd'hui est de noter ton prochain mini-objectif concret.";
+    return `Réponse directe: Regarde d'abord régularité, qualité technique et charge ou reps sur tes mouvements clés.
+Pourquoi: Si un seul de ces marqueurs monte proprement, tu avances déjà.
+Action du jour: Choisis un mini-objectif mesurable pour la prochaine séance: +1 rep, meilleure exécution ou tempo plus propre.`;
   }
-  return `Pour ton objectif ${p.goal.replaceAll("_", " ")}, garde un plan simple: 3 à 4 séances utiles, assez de protéines et une progression mesurable. Donne-moi ton contexte exact et je te répondrai de façon beaucoup plus précise.`;
+  return `Réponse directe: Pour ton objectif ${p.goal.replaceAll("_", " ")}, garde un plan simple et mesurable.
+Pourquoi: Les bons résultats viennent plus d'une base répétable que d'un plan parfait mais irrégulier.
+Action du jour: Donne-moi ton contexte exact — temps dispo, matériel, niveau de fatigue — et je te répondrai de façon beaucoup plus précise.`;
 }
 
 function fallbackRecipe(message, profile = {}, goalContext = {}) {
@@ -602,10 +645,11 @@ function fallbackRecipe(message, profile = {}, goalContext = {}) {
     name,
     prep_time: "15 min",
     steps: [
-      "Prépare une source de protéines maigres et fais-la cuire rapidement.",
-      "Ajoute une base glucidique simple si l'objectif n'est pas une coupe agressive.",
-      "Complète avec légumes et une petite source de bons lipides.",
-      "Assaisonne simplement et ajuste la portion selon la faim et la séance du jour."
+      "Prépare une source de protéines maigres et fais-la cuire 6 à 8 minutes à feu moyen.",
+      "Fais chauffer la base glucidique choisie et garde une portion adaptée à ton objectif du jour.",
+      "Ajoute les légumes et cuis-les 3 à 5 minutes pour garder du croquant.",
+      "Incorpore une petite source de bons lipides puis assaisonne simplement avec herbes, sel et poivre.",
+      "Dresse l'assiette et ajuste la portion selon ta faim réelle et la difficulté de ta séance."
     ],
     calories: p.goal === "prise_de_masse" ? 700 : p.goal === "perte_de_poids" ? 450 : 550,
     protein: p.goal === "prise_de_masse" ? 45 : 40,
@@ -691,6 +735,7 @@ function normalizeWorkoutOutput(raw, profile = {}, goalContext = {}) {
       level:            p.level || "beginner",
       intensity:        "medium",
       duration,
+      calories: source.calories ? Math.round(Number(source.calories)) : null,
       calories_estimate: source.calories ? Math.round(Number(source.calories)) : null,
       target_muscles:   muscles,
       equipment_needed: equip,
@@ -709,6 +754,7 @@ function normalizeWorkoutOutput(raw, profile = {}, goalContext = {}) {
       level:            String(source.level || p.level || "beginner"),
       intensity:        ["low", "medium", "high"].includes(source.intensity) ? source.intensity : "medium",
       duration:         typeof source.duration === "number" ? source.duration : 45,
+      calories:         source.calories || source.calories_estimate || null,
       calories_estimate: source.calories_estimate || null,
       target_muscles:   Array.isArray(source.target_muscles) ? source.target_muscles : [],
       equipment_needed: Array.isArray(source.equipment_needed) ? source.equipment_needed : [],
@@ -756,6 +802,7 @@ function normalizeWorkoutOutput(raw, profile = {}, goalContext = {}) {
     level:            p.level || "beginner",
     intensity:        ["low", "medium", "high"].includes(session.intensity) ? session.intensity : "medium",
     duration:         Number(session.duration_min || 45),
+    calories:         null,
     calories_estimate: null,
     target_muscles:   [String(session.focus || "Full Body")],
     equipment_needed: [],
@@ -785,7 +832,7 @@ async function generateWithRetry(apiKey, prompt, options = {}) {
 async function generateWorkoutPlan({ apiKey, message, history, profile, goalContext }) {
   const prompt = buildWorkoutPrompt(message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1200, timeoutMs: 10000, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.3, maxOutputTokens: 950, timeoutMs: 3400, retries: 1 });
     const parsed = extractJSON(result.text);
     // Accept new exercises[] format OR legacy sessions[] format
     const hasExercises = parsed && Array.isArray(parsed.exercises) && parsed.exercises.length > 0;
@@ -803,7 +850,7 @@ async function generateWorkoutPlan({ apiKey, message, history, profile, goalCont
 async function generateConversationReply({ apiKey, intent, message, history, profile, goalContext }) {
   const prompt = buildConversationPrompt(intent, message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.6, maxOutputTokens: 650, timeoutMs: 8000, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.55, maxOutputTokens: 650, timeoutMs: 3400, retries: 1 });
     const text = String(result.text || "").replace(/^```[\w-]*\s*/g, "").replace(/```$/g, "").trim();
     if (!text) throw new Error("EMPTY_CONVERSATION");
     return { ok: true, message: text, model: result.model, fallback: false };
@@ -815,13 +862,52 @@ async function generateConversationReply({ apiKey, intent, message, history, pro
 async function generateRecipeJson({ apiKey, message, profile, goalContext }) {
   const prompt = buildRecipePrompt(message, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.4, maxOutputTokens: 1000, timeoutMs: 8000, retries: 0 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 850, timeoutMs: 3400, retries: 1 });
     const parsed = extractJSON(result.text);
     if (!parsed || !parsed.name) throw new Error("INVALID_RECIPE_JSON");
     return { ok: true, data: parsed, model: result.model, fallback: false };
   } catch (error) {
     return { ok: true, data: fallbackRecipe(message, profile, goalContext), fallback: true, error: String(error?.message || "generation_failed"), degraded_reason: "fallback_fast" };
   }
+}
+
+function strictWorkoutPayloadFromPlan(plan) {
+  const normalized = normalizeWorkoutOutput(plan);
+  const fromExercises = Array.isArray(normalized.exercises) ? normalized.exercises : [];
+  const derived = [];
+  if (!fromExercises.length && Array.isArray(normalized.blocks)) {
+    normalized.blocks.forEach((block) => {
+      (Array.isArray(block.items) ? block.items : []).forEach((item) => {
+        const text = String(item || "").trim();
+        if (!text) return;
+        derived.push({
+          name: text.split(/\s+[—-]\s+/)[0] || "Exercice",
+          sets: 3,
+          reps: /\b(\d+\s*(?:-\s*\d+)?)\b/.test(text) ? RegExp.$1.replace(/\s+/g, "") : "10-12",
+          rest: 60,
+          duration: /\b(\d+)s\b/i.test(text) ? Number(RegExp.$1) : 0,
+          description: text
+        });
+      });
+    });
+  }
+  const exercises = (fromExercises.length ? fromExercises : derived).slice(0, 10).map((ex) => ({
+    name: normalizeText(ex.name || "Exercice", "Exercice"),
+    sets: Math.max(1, Math.round(Number(ex.sets) || 3)),
+    reps: normalizeText(ex.reps || (ex.duration ? `${Math.max(15, Number(ex.duration) || 30)}s` : "10-12"), "10-12"),
+    rest: Math.max(0, Math.round(Number(ex.rest) || 0)),
+    duration: Math.max(0, Math.round(Number(ex.duration) || 0)),
+    description: normalizeText(ex.description || "", "")
+  }));
+  const safeExercises = exercises.length ? exercises : strictWorkoutPayloadFromPlan(fallbackWorkout("séance full body")).exercises;
+  const duration = Math.max(10, Math.round(Number(normalized.duration) || 45));
+  const calories = Math.max(120, Math.round(Number(normalized.calories || normalized.calories_estimate) || safeExercises.length * 35 + duration * 4));
+  return {
+    title: normalizeText(normalized.title || "Workout du jour", "Workout du jour"),
+    duration,
+    calories,
+    exercises: safeExercises
+  };
 }
 
 module.exports = {
@@ -841,6 +927,7 @@ module.exports = {
   makeProfileSummary,
   historyBlock,
   normalizeWorkoutOutput,
+  strictWorkoutPayloadFromPlan,
   generateWorkoutPlan,
   generateConversationReply,
   generateRecipeJson,

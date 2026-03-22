@@ -278,3 +278,142 @@ CREATE TRIGGER on_auth_user_created
 -- ============================================================
 -- DONE. All tables, indexes, RLS, storage, and triggers created.
 -- ============================================================
+
+-- ============================================================
+-- CONSOLIDATION PATCHES — required by the current frontend/api
+-- Safe to run multiple times
+-- ============================================================
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS age INTEGER CHECK (age BETWEEN 10 AND 120),
+  ADD COLUMN IF NOT EXISTS username TEXT,
+  ADD COLUMN IF NOT EXISTS weight NUMERIC(5,1),
+  ADD COLUMN IF NOT EXISTS height NUMERIC(5,1);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles(username) WHERE username IS NOT NULL;
+
+ALTER TABLE public.body_scans
+  ADD COLUMN IF NOT EXISTS physical_score NUMERIC,
+  ADD COLUMN IF NOT EXISTS extended_analysis JSONB DEFAULT '{}'::jsonb;
+
+CREATE TABLE IF NOT EXISTS public.friendships (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  requester_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  addressee_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT friendships_no_self CHECK (requester_id != addressee_id),
+  CONSTRAINT friendships_unique_pair UNIQUE (requester_id, addressee_id)
+);
+CREATE INDEX IF NOT EXISTS idx_friendships_requester ON public.friendships(requester_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_addressee ON public.friendships(addressee_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_status ON public.friendships(status);
+ALTER TABLE public.friendships ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS friendships_select ON public.friendships;
+CREATE POLICY friendships_select ON public.friendships FOR SELECT USING (auth.uid() = requester_id OR auth.uid() = addressee_id);
+DROP POLICY IF EXISTS friendships_insert ON public.friendships;
+CREATE POLICY friendships_insert ON public.friendships FOR INSERT WITH CHECK (auth.uid() = requester_id);
+DROP POLICY IF EXISTS friendships_update ON public.friendships;
+CREATE POLICY friendships_update ON public.friendships FOR UPDATE USING (auth.uid() = addressee_id);
+DROP POLICY IF EXISTS friendships_delete ON public.friendships;
+CREATE POLICY friendships_delete ON public.friendships FOR DELETE USING (auth.uid() = requester_id OR auth.uid() = addressee_id);
+
+CREATE TABLE IF NOT EXISTS public.comments (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  post_id UUID NOT NULL REFERENCES public.community_posts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  content TEXT NOT NULL CHECK (char_length(content) <= 500),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_comments_post ON public.comments(post_id, created_at);
+ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS comments_select ON public.comments;
+CREATE POLICY comments_select ON public.comments FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.community_posts cp
+    WHERE cp.id = comments.post_id
+      AND (
+        cp.user_id = auth.uid()
+        OR cp.visibility = 'public'
+        OR (
+          cp.visibility = 'friends'
+          AND EXISTS (
+            SELECT 1 FROM public.friendships f
+            WHERE f.status = 'accepted'
+              AND ((f.requester_id = auth.uid() AND f.addressee_id = cp.user_id) OR (f.addressee_id = auth.uid() AND f.requester_id = cp.user_id))
+          )
+        )
+      )
+  )
+);
+DROP POLICY IF EXISTS comments_insert ON public.comments;
+CREATE POLICY comments_insert ON public.comments FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS comments_delete ON public.comments;
+CREATE POLICY comments_delete ON public.comments FOR DELETE USING (auth.uid() = user_id);
+
+CREATE TABLE IF NOT EXISTS public.user_streaks (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+  current_streak INTEGER NOT NULL DEFAULT 0,
+  longest_streak INTEGER NOT NULL DEFAULT 0,
+  best_streak INTEGER NOT NULL DEFAULT 0,
+  total_workouts INTEGER NOT NULL DEFAULT 0,
+  last_workout_date DATE,
+  last_workout_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.user_streaks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS streaks_own ON public.user_streaks;
+CREATE POLICY streaks_own ON public.user_streaks FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+CREATE TABLE IF NOT EXISTS public.daily_moods (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  mood_level INT NOT NULL CHECK (mood_level BETWEEN 1 AND 5),
+  mood_label TEXT NOT NULL DEFAULT '',
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, date)
+);
+CREATE INDEX IF NOT EXISTS daily_moods_user_date_idx ON public.daily_moods (user_id, date DESC);
+ALTER TABLE public.daily_moods ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users manage own moods" ON public.daily_moods;
+CREATE POLICY "Users manage own moods" ON public.daily_moods FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS cp_select_all ON public.community_posts;
+DROP POLICY IF EXISTS cp_select_with_visibility ON public.community_posts;
+CREATE POLICY cp_select_with_visibility ON public.community_posts FOR SELECT USING (
+  auth.role() = 'authenticated'
+  AND (
+    visibility = 'public'
+    OR user_id = auth.uid()
+    OR (
+      visibility = 'friends'
+      AND EXISTS (
+        SELECT 1 FROM public.friendships f
+        WHERE f.status = 'accepted'
+          AND ((f.requester_id = auth.uid() AND f.addressee_id = community_posts.user_id) OR (f.addressee_id = auth.uid() AND f.requester_id = community_posts.user_id))
+      )
+    )
+  )
+);
+
+DROP POLICY IF EXISTS profiles_select_own ON public.profiles;
+DROP POLICY IF EXISTS profiles_read_authenticated ON public.profiles;
+CREATE POLICY profiles_read_authenticated ON public.profiles FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE OR REPLACE FUNCTION public.give_kudos(target_post_id UUID)
+RETURNS JSON AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN json_build_object('ok', false, 'error', 'not_authenticated');
+  END IF;
+
+  UPDATE public.community_posts
+  SET kudos = COALESCE(kudos, 0) + 1
+  WHERE id = target_post_id;
+
+  RETURN json_build_object('ok', true);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
