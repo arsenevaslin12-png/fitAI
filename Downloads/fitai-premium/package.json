@@ -1,0 +1,21 @@
+{
+  "name": "fitai-pro",
+  "version": "2.0.0",
+  "description": "FitAI Pro - AI-powered fitness coaching application",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Static build - no compilation needed'",
+    "lint": "npm run verify",
+    "verify": "node --check public/app.js && node --check api/workout.js && node --check api/coach.js && node --check api/coach-stream.js && node --check api/bodyscan.js && node --check api/generate-recipe.js && node --check api/generate-nutrition.js && node --check api/config.js && node --check api/_coach-core.js && node --check api/_env.js && node --check api/_gemini.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "zod": "^3.25.76"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "packageManager": "npm@10.9.2"
+}
