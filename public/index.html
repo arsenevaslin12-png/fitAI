@@ -596,6 +596,32 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .badge.locked{opacity:.28;filter:grayscale(1)}
 .badge-icon{font-size:1.1rem;line-height:1}
 
+/* ── CONFIRM MODAL ── */
+.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);z-index:9998;display:none;align-items:flex-end;justify-content:center}
+.confirm-overlay.open{display:flex}
+.confirm-sheet{background:var(--surf);border:1px solid var(--border);border-top:1px solid rgba(255,255,255,.1);border-radius:24px 24px 0 0;padding:28px 24px 32px;width:100%;max-width:480px;animation:slideUp .22s ease}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.confirm-title{font-weight:900;font-size:1rem;color:var(--text);margin-bottom:6px}
+.confirm-sub{font-size:.84rem;color:var(--text2);line-height:1.5;margin-bottom:22px}
+.confirm-btns{display:flex;gap:10px}
+.confirm-btns .btn{flex:1;padding:13px}
+
+/* ── PLANNING SEMAINE ── */
+.plan-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px}
+.plan-day{border-radius:10px;padding:5px 3px;text-align:center;background:var(--surf2);border:1.5px solid transparent;min-height:62px;display:flex;flex-direction:column;align-items:center;gap:2px;transition:border-color .2s}
+.plan-day.today{border-color:var(--accent)}
+.plan-day.rest{opacity:.38}
+.plan-day-lbl{font-size:.52rem;font-weight:800;text-transform:uppercase;color:var(--muted);line-height:1}
+.plan-day-ico{font-size:.9rem;margin:2px 0}
+.plan-day-txt{font-size:.5rem;color:var(--text2);font-weight:600;line-height:1.2;word-break:break-word}
+
+/* ── RECIPE HISTORY ── */
+.recipe-hist-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.recipe-hist-item:last-child{border-bottom:none;padding-bottom:0}
+.recipe-hist-icon{font-size:1.3rem;flex-shrink:0}
+.recipe-hist-name{font-weight:700;font-size:.84rem;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recipe-hist-macros{font-size:.68rem;color:var(--muted);margin-top:2px}
+
 /* ── ERR MSG ── */
 .err-box{color:var(--red);font-size:.8rem;padding:10px 14px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);border-radius:12px;display:none}
 
@@ -1239,6 +1265,17 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
 
         </div><!-- /bento -->
 
+        <!-- Planning de la semaine -->
+        <div class="card" id="weekly-plan-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <div style="font-weight:800;font-size:.92rem">📅 Planning de la semaine</div>
+            <button id="btn-gen-plan" class="btn btn-p btn-sm" onclick="generateWeeklyPlan()" style="font-size:.72rem;padding:5px 12px">Générer</button>
+          </div>
+          <div style="font-size:.72rem;color:var(--muted);margin-bottom:2px" id="plan-week-label"></div>
+          <div id="weekly-plan-grid"><div class="plan-grid" id="plan-day-grid"></div></div>
+          <div id="plan-empty" style="text-align:center;padding:14px 0;font-size:.8rem;color:var(--muted)">Aucun planning — appuie sur Générer pour créer ta semaine.</div>
+        </div>
+
         <!-- Water counter -->
         <div class="card" id="water-card" style="margin-bottom:4px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -1565,6 +1602,11 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
           </div>
           <div id="recipe-result" style="display:none;margin-top:14px"></div>
           <div class="err-box" id="recipe-err"></div>
+        </div>
+
+        <div class="card" id="recipe-history-card">
+          <div class="card-title">Mes recettes sauvegardées</div>
+          <div id="recipe-history-list"><div class="empty" style="font-size:.82rem;padding:8px 0">Aucune recette générée pour l'instant.</div></div>
         </div>
 
         <div class="card">
@@ -1915,6 +1957,18 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
         <button class="btn btn-g" onclick="woNav(1)" style="width:48px;padding:0;height:44px">›</button>
       </div>
       <button class="btn btn-d btn-sm btn-full" onclick="closeWorkoutSession()" style="margin-top:0">✕ Terminer la séance</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm modal -->
+<div id="confirm-overlay" class="confirm-overlay" onclick="confirmCancel()">
+  <div class="confirm-sheet" onclick="event.stopPropagation()">
+    <div class="confirm-title" id="confirm-title">Confirmer la suppression</div>
+    <div class="confirm-sub" id="confirm-sub">Cette action est irréversible.</div>
+    <div class="confirm-btns">
+      <button class="btn btn-g" onclick="confirmCancel()">Annuler</button>
+      <button class="btn btn-d" id="confirm-ok-btn" onclick="confirmOk()">Supprimer</button>
     </div>
   </div>
 </div>

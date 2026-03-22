@@ -87,6 +87,20 @@ Copiez-collez le contenu de `migration_v6_daily_moods.sql` dans l'éditeur SQL e
 
 ---
 
+## Étape 5b — Migration recettes sauvegardées V9 (OBLIGATOIRE)
+
+Copiez-collez `migration_v9_saved_recipes.sql` dans SQL Editor.
+
+### Ce que fait cette migration :
+| # | Action | Pourquoi |
+|---|--------|----------|
+| 1 | Crée table `saved_recipes` (user_id, name, macros, steps, tips) | Historique des recettes générées par l'IA |
+| 2 | Index sur `user_id, saved_at DESC` | Chargement rapide des 8 dernières recettes |
+| 3 | RLS CRUD — chaque user ne voit que ses propres recettes | Sécurité |
+| 4 | `UNIQUE(user_id, name)` — pas de doublons | Upsert idempotent |
+
+---
+
 ## Étape 6 — Bucket Supabase Storage (OBLIGATOIRE pour le bodyscan)
 
 Le bodyscan photo nécessite un bucket de stockage. **Ce bucket doit être créé manuellement** dans le Dashboard Supabase — il ne peut pas être créé via SQL Editor.

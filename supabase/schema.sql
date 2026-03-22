@@ -101,7 +101,23 @@ CREATE TABLE IF NOT EXISTS public.training_schedule (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 9. ACHIEVEMENTS
+-- 9. SAVED RECIPES
+CREATE TABLE IF NOT EXISTS public.saved_recipes (
+  id         UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id    UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name       TEXT        NOT NULL,
+  calories   INTEGER,
+  protein    INTEGER,
+  carbs      INTEGER,
+  fat        INTEGER,
+  prep_time  TEXT,
+  steps      JSONB       DEFAULT '[]',
+  tips       TEXT,
+  saved_at   TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, name)
+);
+
+-- 10. ACHIEVEMENTS
 CREATE TABLE IF NOT EXISTS public.achievements (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -125,6 +141,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles(usern
 CREATE INDEX IF NOT EXISTS idx_community_posts_user ON public.community_posts(user_id);
 CREATE INDEX IF NOT EXISTS idx_nutrition_targets_user ON public.nutrition_targets(user_id);
 CREATE INDEX IF NOT EXISTS idx_training_schedule_user_week ON public.training_schedule(user_id, week_start_date);
+CREATE INDEX IF NOT EXISTS idx_saved_recipes_user ON public.saved_recipes(user_id, saved_at DESC);
 
 
 -- ==================== RLS POLICIES ====================
@@ -198,6 +215,17 @@ DROP POLICY IF EXISTS "ach_insert_own" ON public.achievements;
 CREATE POLICY "ach_insert_own" ON public.achievements FOR INSERT WITH CHECK (auth.uid() = user_id);
 DROP POLICY IF EXISTS "ach_delete_own" ON public.achievements;
 CREATE POLICY "ach_delete_own" ON public.achievements FOR DELETE USING (auth.uid() = user_id);
+
+-- SAVED_RECIPES
+ALTER TABLE public.saved_recipes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sr_select_own" ON public.saved_recipes;
+CREATE POLICY "sr_select_own" ON public.saved_recipes FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "sr_insert_own" ON public.saved_recipes;
+CREATE POLICY "sr_insert_own" ON public.saved_recipes FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "sr_update_own" ON public.saved_recipes;
+CREATE POLICY "sr_update_own" ON public.saved_recipes FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "sr_delete_own" ON public.saved_recipes;
+CREATE POLICY "sr_delete_own" ON public.saved_recipes FOR DELETE USING (auth.uid() = user_id);
 
 -- NUTRITION_TARGETS: user can CRUD own rows + service role can upsert
 DROP POLICY IF EXISTS "nt_select_own" ON public.nutrition_targets;

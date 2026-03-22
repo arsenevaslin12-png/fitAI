@@ -17,6 +17,7 @@ const ASYNC_LOCKS = new Set();
 let POST_PHOTO = null;
 let FEED_FILTER = "all";
 let LAST_COACH_PROMPT = "";
+let USER_WEIGHT = null; // kg, loaded from profile — used to compute water target
 
 const GOAL_LABELS = {
   prise_de_masse: "💪 Prise de masse",
@@ -448,7 +449,7 @@ function gotoTab(name) {
   if (name === "dashboard") loadDashboard();
   if (name === "goal") loadGoal();
   if (name === "coach") { loadCoachHistory(); loadHistory(); }
-  if (name === "nutrition") loadMeals();
+  if (name === "nutrition") { loadMeals(); loadRecipeHistory(); }
   if (name === "community") loadFeed();
   if (name === "friends") { loadFriends(); loadFriendRequests(); }
   if (name === "bodyscan") loadScans();
@@ -511,6 +512,7 @@ async function loadDashboard() {
     await Promise.all([loadGoal(), loadMeals(), loadStats(), loadNutritionTargets(), loadStreak()]);
     if (typeof renderDailyChallengesSection === "function") renderDailyChallengesSection();
     renderWater();
+    loadWeeklyPlan();
     loadScanMiniTile();
     restoreMoodSelection();
   } catch (e) {
@@ -707,10 +709,15 @@ function goalEdit() {
 async function saveGoal() {
   if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
 
+  const type  = document.getElementById("g-type")?.value  || "";
+  const level = document.getElementById("g-level")?.value || "";
+  if (!type)  return toast("Sélectionnez un type d'objectif.", "err");
+  if (!level) return toast("Sélectionnez un niveau.", "err");
+
   const payload = {
     user_id: U.id,
-    type: document.getElementById("g-type")?.value || "",
-    level: document.getElementById("g-level")?.value || "",
+    type,
+    level,
     text: (document.getElementById("g-text")?.value || "").trim(),
     constraints: (document.getElementById("g-constraints")?.value || "").trim(),
     equipment: document.getElementById("g-equipment")?.value || "",
@@ -1288,6 +1295,8 @@ async function addMeal() {
 
 async function deleteMeal(id) {
   if (!U) return;
+  const ok = await confirmModal("Supprimer ce repas ?", "Il sera retiré du journal de la journée.");
+  if (!ok) return;
   await guarded(`meal-${id}`, async () => {
     const { error } = await SB.from("meals").delete().eq("id", id).eq("user_id", U.id);
     if (error) throw error;
@@ -1479,6 +1488,8 @@ async function giveKudos(postId, count) {
 
 async function deletePost(postId) {
   if (!U) return;
+  const ok = await confirmModal("Supprimer ce post ?", "Il sera retiré définitivement du fil communautaire.");
+  if (!ok) return;
   await guarded(`post-${postId}`, async () => {
     const { error } = await SB.from("community_posts").delete().eq("id", postId).eq("user_id", U.id);
     if (error) throw error;
@@ -1542,8 +1553,19 @@ async function loadFeed() {
     if (FEED_FILTER === "mine") {
       query = query.eq("user_id", U.id);
     }
-    if (FEED_FILTER === "friends") {
-      query = query.eq("visibility", "friends");
+    if (FEED_FILTER === "friends" && U) {
+      // Fetch friend user_ids (accepted friendships)
+      const { data: fships } = await SB.from("friendships")
+        .select("requester_id,addressee_id")
+        .eq("status", "accepted")
+        .or(`requester_id.eq.${U.id},addressee_id.eq.${U.id}`);
+      const friendIds = (fships || []).map(f => f.requester_id === U.id ? f.addressee_id : f.requester_id);
+      if (!friendIds.length) {
+        el.innerHTML = '<div class="empty"><span class="empty-ic">👥</span>Ajoutez des amis pour voir leur fil.</div>';
+        return;
+      }
+      // Show friends' posts (public or friends-visible)
+      query = query.in("user_id", friendIds).neq("visibility", "private");
     }
 
     const { data, error } = await query;
@@ -2018,7 +2040,7 @@ function formatFeedback(text) {
 
 async function deleteBodyScan(id) {
   if (!id || !U) return;
-  const confirmed = window.confirm("Supprimer cette analyse corporelle ? Cette action est irréversible.");
+  const confirmed = await confirmModal("Supprimer cette analyse corporelle ?", "Le scan et ses résultats seront supprimés définitivement.");
   if (!confirmed) return;
   try {
     const { error } = await SB.from("body_scans").delete().eq("id", id).eq("user_id", U.id);
@@ -2053,6 +2075,11 @@ async function loadProfile() {
     if (pAge) pAge.value = data?.age || "";
     if (pWeight) pWeight.value = data?.weight || "";
     if (pHeight) pHeight.value = data?.height || "";
+    // Update water target from weight
+    if (data?.weight) {
+      USER_WEIGHT = parseFloat(data.weight);
+      renderWater();
+    }
   } catch (e) { console.error("[Profile] Load error:", e); }
 }
 
@@ -2244,6 +2271,37 @@ async function loadDefis() {
       <div style="font-size:.72rem;color:var(--muted);margin-top:4px">${d.completed ? "🏆 Défi accompli !" : d.pct + "% accompli"}</div>
     </div>
   `).join("");
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONFIRM MODAL
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _confirmResolve = null;
+
+function confirmModal(title, sub = "Cette action est irréversible.", okLabel = "Supprimer") {
+  return new Promise((resolve) => {
+    const overlay  = document.getElementById("confirm-overlay");
+    const titleEl  = document.getElementById("confirm-title");
+    const subEl    = document.getElementById("confirm-sub");
+    const okBtn    = document.getElementById("confirm-ok-btn");
+    if (!overlay) { resolve(window.confirm(title)); return; }
+    if (titleEl) titleEl.textContent = title;
+    if (subEl)   subEl.textContent   = sub;
+    if (okBtn)   okBtn.textContent   = okLabel;
+    overlay.classList.add("open");
+    _confirmResolve = resolve;
+  });
+}
+
+function confirmOk() {
+  document.getElementById("confirm-overlay")?.classList.remove("open");
+  if (_confirmResolve) { _confirmResolve(true); _confirmResolve = null; }
+}
+
+function confirmCancel() {
+  document.getElementById("confirm-overlay")?.classList.remove("open");
+  if (_confirmResolve) { _confirmResolve(false); _confirmResolve = null; }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2605,6 +2663,8 @@ async function addComment(postId) {
 
 async function deleteComment(commentId, postId) {
   if (!U) return;
+  const ok = await confirmModal("Supprimer ce commentaire ?", "");
+  if (!ok) return;
   await guarded(`delcomment-${commentId}`, async () => {
     const { error } = await SB.from("comments").delete().eq("id", commentId).eq("user_id", U.id);
     if (error) throw error;
@@ -2948,6 +3008,8 @@ async function generateRecipe() {
         </div>`;
       // Store recipe for "add as meal"
       window._lastRecipe = recipe;
+      // Save to DB history (fire-and-forget)
+      saveRecipeToHistory(recipe).catch(() => {});
     }
   }).catch((e) => {
     if (errEl) {
@@ -2955,6 +3017,61 @@ async function generateRecipe() {
       errEl.style.display = "block";
     }
   });
+}
+
+async function saveRecipeToHistory(recipe) {
+  if (!U || !recipe?.name) return;
+  try {
+    await SB.from("saved_recipes").upsert({
+      user_id:   U.id,
+      name:      recipe.name,
+      calories:  recipe.calories  || null,
+      protein:   recipe.protein   || null,
+      carbs:     recipe.carbs     || null,
+      fat:       recipe.fat       || null,
+      prep_time: recipe.prep_time || null,
+      steps:     Array.isArray(recipe.steps) ? recipe.steps : [],
+      tips:      recipe.tips      || null,
+      saved_at:  new Date().toISOString()
+    }, { onConflict: "user_id,name" });
+    await loadRecipeHistory();
+  } catch (err) { console.warn("[recipe-history] save failed:", err); }
+}
+
+async function loadRecipeHistory() {
+  if (!U) return;
+  const el = document.getElementById("recipe-history-list");
+  if (!el) return;
+  try {
+    const { data, error } = await SB.from("saved_recipes")
+      .select("id,name,calories,protein,carbs,fat,prep_time,saved_at")
+      .eq("user_id", U.id)
+      .order("saved_at", { ascending: false })
+      .limit(8);
+    if (error) throw error;
+    renderRecipeHistory(data || []);
+  } catch (err) { console.warn("[recipe-history] load failed:", err); }
+}
+
+function renderRecipeHistory(items) {
+  const el = document.getElementById("recipe-history-list");
+  if (!el) return;
+  if (!items.length) {
+    el.innerHTML = '<div class="empty" style="font-size:.82rem;padding:8px 0">Aucune recette générée pour l\'instant.</div>';
+    return;
+  }
+  el.innerHTML = items.map(r => `
+    <div class="recipe-hist-item">
+      <div class="recipe-hist-icon">${recipeFoodArt(r.name)}</div>
+      <div style="flex:1;min-width:0">
+        <div class="recipe-hist-name">${escapeHtml(r.name)}</div>
+        <div class="recipe-hist-macros">
+          ${r.calories ? `🔥 ${r.calories} kcal` : ""}
+          ${r.protein  ? ` · 💪 ${r.protein}g prot.` : ""}
+          ${r.prep_time ? ` · ⏱ ${escapeHtml(r.prep_time)}` : ""}
+        </div>
+      </div>
+    </div>`).join("");
 }
 
 function recipeFoodArt(name) {
@@ -2988,6 +3105,113 @@ function addRecipeAsMeal() {
   if (carbEl) carbEl.value = r.carbs || "";
   if (fatEl) fatEl.value = r.fat || "";
   toast("Recette ajoutée au formulaire. Cliquez sur 'Ajouter ce repas'.", "ok");
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PLANNING SEMAINE
+// ══════════════════════════════════════════════════════════════════════════════
+
+const DAY_NAMES = ["L", "M", "M", "J", "V", "S", "D"];
+const INTENSITY_ICONS = { low: "🟢", medium: "🟡", high: "🔴", repos: "😴" };
+const WORKOUT_ICONS = {
+  cardio: "🏃", force: "🏋️", hiit: "⚡", yoga: "🧘", natation: "🏊",
+  vélo: "🚴", repos: "😴", récupération: "🛁", mobilité: "🤸", sport: "⚽"
+};
+
+function getWeekStart() {
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun
+  const diff = (day === 0) ? -6 : 1 - day; // go back to Monday
+  const mon = new Date(d);
+  mon.setDate(d.getDate() + diff);
+  return mon.toISOString().slice(0, 10);
+}
+
+function getTodayDayOfWeek() {
+  const d = new Date().getDay();
+  return d === 0 ? 7 : d; // 1=Mon … 7=Sun
+}
+
+function workoutIcon(type) {
+  const t = (type || "").toLowerCase();
+  return Object.entries(WORKOUT_ICONS).find(([k]) => t.includes(k))?.[1] || "💪";
+}
+
+async function generateWeeklyPlan() {
+  if (!U) return toast("Connectez-vous d'abord.", "err");
+  const btn = document.getElementById("btn-gen-plan");
+  if (btn) { btn.disabled = true; btn.textContent = "Génération…"; }
+  try {
+    const token = await getToken();
+    const r = await fetch("/api/generate-plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ user_id: U.id })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.error || `Erreur (HTTP ${r.status})`);
+    toast("Planning généré ✓", "ok");
+    renderWeeklyPlan(j.plan || []);
+  } catch (e) {
+    toast(`Erreur planning : ${e.message}`, "err");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Générer"; }
+  }
+}
+
+async function loadWeeklyPlan() {
+  if (!U) return;
+  try {
+    const weekStart = getWeekStart();
+    const { data, error } = await SB.from("training_schedule")
+      .select("day_of_week,workout_type,intensity,notes")
+      .eq("user_id", U.id)
+      .eq("week_start_date", weekStart)
+      .order("day_of_week", { ascending: true });
+    if (error) { console.warn("[plan] load error:", error.message); return; }
+    renderWeeklyPlan(data || []);
+  } catch (e) { console.warn("[plan] load exception:", e); }
+}
+
+function renderWeeklyPlan(plan) {
+  const grid     = document.getElementById("plan-day-grid");
+  const emptyEl  = document.getElementById("plan-empty");
+  const labelEl  = document.getElementById("plan-week-label");
+  if (!grid) return;
+
+  if (!plan.length) {
+    grid.innerHTML = "";
+    if (emptyEl) emptyEl.style.display = "block";
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = "none";
+
+  const weekStart = getWeekStart();
+  if (labelEl) {
+    const d = new Date(weekStart + "T00:00:00");
+    const end = new Date(d); end.setDate(d.getDate() + 6);
+    const fmt = (dt) => dt.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+    labelEl.textContent = `Semaine du ${fmt(d)} au ${fmt(end)}`;
+  }
+
+  const today = getTodayDayOfWeek();
+  const byDay = Object.fromEntries(plan.map(p => [p.day_of_week, p]));
+
+  grid.innerHTML = Array.from({ length: 7 }, (_, i) => {
+    const day  = i + 1;
+    const item = byDay[day];
+    const isToday = day === today;
+    const isRest  = !item || /repos|rest/i.test(item.workout_type || "");
+    const ico     = item ? workoutIcon(item.workout_type) : "😴";
+    const intIco  = item ? (INTENSITY_ICONS[item.intensity] || "") : "";
+    const label   = item ? escapeHtml(item.workout_type.slice(0, 8)) : "Repos";
+    return `<div class="plan-day${isToday ? " today" : ""}${isRest ? " rest" : ""}" title="${item?.notes || ""}">
+      <div class="plan-day-lbl">${DAY_NAMES[i]}</div>
+      <div class="plan-day-ico">${ico}</div>
+      ${intIco ? `<div style="font-size:.5rem">${intIco}</div>` : ""}
+      <div class="plan-day-txt">${label}</div>
+    </div>`;
+  }).join("");
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3029,6 +3253,9 @@ window.addComment = addComment;
 window.deleteComment = deleteComment;
 window.loadDefis = loadDefis;
 window.loadFeed = loadFeed;
+window.generateWeeklyPlan = generateWeeklyPlan;
+window.confirmOk     = confirmOk;
+window.confirmCancel = confirmCancel;
 // New
 window.searchUsers = searchUsers;
 window.sendFriendRequest = sendFriendRequest;
@@ -3489,8 +3716,15 @@ window.toggleTheme = toggleTheme;
 // EAU — COMPTEUR JOURNALIER
 // ══════════════════════════════════════════════════════════════════════════════
 
-const WATER_TARGET = 8; // verres de 250ml = 2L
-const WATER_KEY    = "fitai_water";
+const WATER_KEY = "fitai_water";
+
+function getWaterTarget() {
+  // 0.033L per kg bodyweight, rounded to nearest glass (250ml), min 6, max 16
+  if (USER_WEIGHT && USER_WEIGHT > 0) {
+    return Math.max(6, Math.min(16, Math.round((USER_WEIGHT * 0.033) / 0.25)));
+  }
+  return 8; // default = 2L
+}
 
 function getWaterData() {
   const today = getTodayKey();
@@ -3504,17 +3738,21 @@ function getWaterData() {
 }
 
 function adjustWater(delta) {
-  const d = getWaterData();
-  d.count = Math.max(0, Math.min(WATER_TARGET + 4, d.count + delta)); // allow going slightly over
+  const d      = getWaterData();
+  const target = getWaterTarget();
+  d.count = Math.max(0, Math.min(target + 4, d.count + delta));
   try { localStorage.setItem(WATER_KEY, JSON.stringify(d)); } catch {}
   renderWater();
-  if (d.count === WATER_TARGET) toast("💧 Objectif hydratation atteint ! 2L bu.", "ok");
+  if (d.count === target) {
+    const liters = (target * 0.25).toFixed(1).replace(/\.0$/, "");
+    toast(`💧 Objectif hydratation atteint ! ${liters}L bu.`, "ok");
+  }
 }
 
 function renderWater() {
-  const d = getWaterData();
-  const count = d.count;
-  const target = WATER_TARGET;
+  const d      = getWaterData();
+  const count  = d.count;
+  const target = getWaterTarget();
 
   const glassesEl = document.getElementById("water-glasses");
   const barEl     = document.getElementById("water-bar");
@@ -3533,8 +3771,9 @@ function renderWater() {
 
   const pct = Math.min(100, Math.round((count / target) * 100));
   if (barEl)    barEl.style.width = `${pct}%`;
+  const targetL = (target * 0.25).toFixed(1).replace(/\.0$/, "");
   if (summEl)   summEl.textContent = `${count} / ${target} verres`;
-  if (litersEl) litersEl.textContent = `${(count * 0.25).toFixed(2).replace(/\.?0+$/, "")} L / 2 L`;
+  if (litersEl) litersEl.textContent = `${(count * 0.25).toFixed(2).replace(/\.?0+$/, "")} L / ${targetL} L`;
   if (pctEl)    pctEl.textContent = `${pct}%`;
 }
 
