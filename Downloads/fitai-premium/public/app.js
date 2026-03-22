@@ -939,6 +939,7 @@ function detectCoachIntentClient(message) {
   if (has("recette", "cuisine", "prépare-moi", "prepare moi", "fais-moi un plat", "comment cuisiner", "comment préparer", "burger", "pancake protéiné", "pancake proteine")) return "recipe_request";
   if (has("programme", "entraînement", "entrainement", "séance", "seance", "workout", "hiit", "full body", "upper body", "lower body", "routine", "split", "cardio", "musculation", "jambes", "abdos")) return "workout_request";
   if (has("macro", "nutrition", "combien de protéines", "combien de proteines", "post-workout", "pre-workout", "après l'entraînement", "apres l'entrainement", "que manger", "quoi manger")) return "nutrition_question";
+  if (has("flemme", "pas envie", "ras le bol", "j'en peux plus", "plus la force", "pas la tête", "pas la tete", "pas motiv", "décourager", "decourager", "décourag", "decourag", "abandon", "lâche")) return "motivation_question";
   if (has("motivation", "discipline", "stagne", "plateau", "mental", "mindset")) return "motivation_question";
   if (has("progression", "streak", "résultat", "resultat", "niveau", "stats")) return "progress_question";
   return "general_chat";
@@ -1319,15 +1320,19 @@ async function sendCoachMsg(quickMsg) {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
-    const [goalRes, profileRes, streakRes] = await Promise.all([
+    const [goalRes, profileRes, streakRes, scanRes, nutritionRes] = await Promise.all([
       SB.from("goals").select("type,level,constraints,equipment").eq("user_id", U.id).maybeSingle(),
-      SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle(),
-      SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle().catch(() => ({ data: null }))
+      SB.from("profiles").select("display_name,weight,height,age,sleep_hours,recovery_score").eq("id", U.id).maybeSingle(),
+      SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle().catch(() => ({ data: null })),
+      SB.from("body_scans").select("physical_score").eq("user_id", U.id).order("created_at", { ascending: false }).limit(1).catch(() => ({ data: null })),
+      SB.from("nutrition_targets").select("calories,protein,goal").eq("user_id", U.id).order("created_at", { ascending: false }).limit(1).catch(() => ({ data: null }))
     ]);
 
     goalContext = goalRes?.data || {};
     const dbProfile = profileRes?.data || {};
-    const currentStreak = streakRes?.data?.current_streak || 0;
+    const currentStreak = streakRes?.data?.current_streak || (await fetchWorkoutMetrics(false)).currentStreak || 0;
+    const recentScan = Array.isArray(scanRes?.data) ? scanRes.data[0] : (scanRes?.data || null);
+    const recentNutrition = Array.isArray(nutritionRes?.data) ? nutritionRes.data[0] : (nutritionRes?.data || null);
     const historyForApi = COACH_HISTORY.slice(-8, -1).map((m) => ({
       role: m.role,
       content: m.role === "ai" ? stripHtml(m.content).slice(0, 300) : m.content
@@ -1356,11 +1361,18 @@ async function sendCoachMsg(quickMsg) {
       weight: dbProfile.weight || null,
       height: dbProfile.height || null,
       age: dbProfile.age || null,
+      sleep_hours: dbProfile.sleep_hours || null,
+      recovery_score: dbProfile.recovery_score || null,
       goal: goalContext.type || "",
       level: goalContext.level || "beginner",
       injuries: goalContext.constraints || "",
       equipment: goalContext.equipment || "poids du corps",
-      mood_today: moodLabel || undefined
+      mood_today: moodLabel || undefined,
+      streak: currentStreak > 0 ? currentStreak : null,
+      recent_physical_score: recentScan?.physical_score || null,
+      recent_nutrition_summary: recentNutrition
+        ? `${recentNutrition.calories || 0}kcal / ${recentNutrition.protein || 0}g prot (${recentNutrition.goal || ""})`
+        : null
     };
 
     const aiTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -3093,6 +3105,14 @@ async function generateNutrition() {
   const errEl      = document.getElementById("nutrition-gen-err");
   if (errEl) { errEl.textContent = ""; errEl.style.display = "none"; }
 
+  // Clear old plan immediately to avoid état ambigu (vieux plan = nouveau plan)
+  const card = document.getElementById("nutrition-ai-result");
+  const mealsEl = document.getElementById("nutrition-ai-meals");
+  const summaryEl = document.getElementById("nutrition-ai-summary");
+  if (card) card.style.display = "none";
+  if (mealsEl) mealsEl.innerHTML = '<div class="empty"><div class="spinner" style="width:22px;height:22px;margin:0 auto 10px"></div><div style="font-size:.83rem;color:var(--muted)">Génération du plan en cours…</div></div>';
+  if (summaryEl) summaryEl.innerHTML = "";
+
   await withButton(btn, "Génération…", async () => {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
@@ -3117,6 +3137,7 @@ async function generateNutrition() {
       hydration_liters: j.hydration_liters || null,
       fallback: !!j.fallback
     };
+    if (mealsEl) mealsEl.innerHTML = ""; // clear spinner
     renderNutritionGeneratedPlan(payload);
     saveNutritionPlanState(payload);
 
@@ -3128,6 +3149,7 @@ async function generateNutrition() {
   }).catch((e) => {
     const msg = e.message || "Erreur génération";
     if (errEl) { errEl.textContent = `Erreur: ${msg}`; errEl.style.display = "block"; }
+    if (mealsEl) mealsEl.innerHTML = ""; // clear spinner on error
     const payload = {
       goal: goalEl?.value || "maintenance",
       nutrition: { calories: 2200, protein: 140, carbs: 260, fats: 70, notes: "Plan local de secours affiché côté application." },
@@ -3505,15 +3527,15 @@ function renderSvgChart(data, opts) {
   opts = opts || {};
   var color = opts.color || "#2563eb";
   var unit  = opts.unit  || "";
-  var H     = opts.H     || 130;
+  var H     = opts.H     || 150;
   if (!data || data.length < 2) {
-    return "<div class=\"chart-empty\">Pas encore assez de donnees - continuez a utiliser l'app !</div>";
+    return "<div class=\"chart-empty\" style=\"padding:28px 0;color:var(--muted);text-align:center;font-size:.82rem\">Pas encore assez de données — continuez à utiliser l'app !</div>";
   }
   var vals  = data.map(function(d) { return d.value; });
   var minV  = Math.min.apply(null, vals);
   var maxV  = Math.max.apply(null, vals);
   var range = maxV - minV || 1;
-  var W = 340, padT = 24, padR = 16, padB = 28, padL = 38;
+  var W = 360, padT = 26, padR = 18, padB = 30, padL = 42;
   var cw = W - padL - padR, ch = H - padT - padB;
   var pts = data.map(function(d, i) {
     return {
@@ -3532,12 +3554,17 @@ function renderSvgChart(data, opts) {
   var firstSeg = linePath.indexOf(" ");
   var areaPath = "M" + padL + "," + baseline + " L" + pts[0].x.toFixed(1) + "," + pts[0].y.toFixed(1)
     + (firstSeg >= 0 ? linePath.slice(firstSeg) : "") + " L" + pts[pts.length - 1].x.toFixed(1) + "," + baseline + " Z";
-  var yTicks = [minV, (minV + maxV) / 2, maxV].map(function(v) {
+  var yTickVals = [minV, minV + range * 0.5, maxV];
+  var yTicks = yTickVals.map(function(v) {
     var y = padT + ch - ((v - minV) / range) * ch;
-    return "<text x=\"" + (padL - 6) + "\" y=\"" + y.toFixed(1) + "\" text-anchor=\"end\" dominant-baseline=\"middle\" fill=\"currentColor\" opacity=\".4\" font-size=\"9\">" + Math.round(v) + unit + "</text>"
-      + "<line x1=\"" + padL + "\" y1=\"" + y.toFixed(1) + "\" x2=\"" + (padL + cw).toFixed(1) + "\" y2=\"" + y.toFixed(1) + "\" stroke=\"currentColor\" opacity=\".06\" stroke-width=\"1\"/>";
+    return "<text x=\"" + (padL - 6) + "\" y=\"" + y.toFixed(1) + "\" text-anchor=\"end\" dominant-baseline=\"middle\" fill=\"currentColor\" opacity=\".45\" font-size=\"10\">" + Math.round(v) + unit + "</text>"
+      + "<line x1=\"" + padL + "\" y1=\"" + y.toFixed(1) + "\" x2=\"" + (padL + cw).toFixed(1) + "\" y2=\"" + y.toFixed(1) + "\" stroke=\"currentColor\" opacity=\".07\" stroke-width=\"1\" stroke-dasharray=\"3,4\"/>";
   }).join("");
-  var xIdxs  = [0, Math.floor((data.length - 1) / 2), data.length - 1].filter(function(v, i, a) { return a.indexOf(v) === i; });
+  // Show up to 5 x-axis labels for better readability
+  var maxXLabels = Math.min(5, data.length);
+  var xIdxRaw = [];
+  for (var xi = 0; xi < maxXLabels; xi++) xIdxRaw.push(Math.round(xi * (data.length - 1) / (maxXLabels - 1)));
+  var xIdxs  = xIdxRaw.filter(function(v, i, a) { return a.indexOf(v) === i; });
   var xTicks = xIdxs.map(function(i) {
     var p = pts[i];
     return "<text x=\"" + p.x.toFixed(1) + "\" y=\"" + (baseline + 14).toFixed(1) + "\" text-anchor=\"middle\" fill=\"currentColor\" opacity=\".4\" font-size=\"9\">" + escapeHtml(String(data[i].label || "")) + "</text>";
@@ -3545,13 +3572,17 @@ function renderSvgChart(data, opts) {
   var last    = pts[pts.length - 1];
   var lastVal = data[data.length - 1].value;
   var gradId  = "cg" + Math.random().toString(36).slice(2, 8);
+  // Render intermediate dots for data density
+  var dotsSvg = pts.slice(0, -1).map(function(p) {
+    return "<circle cx=\"" + p.x.toFixed(1) + "\" cy=\"" + p.y.toFixed(1) + "\" r=\"2.5\" fill=\"" + color + "\" opacity=\".35\"/>";
+  }).join("");
   return "<svg viewBox=\"0 0 " + W + " " + H + "\" xmlns=\"http://www.w3.org/2000/svg\" style=\"width:100%;display:block;color:var(--muted);overflow:visible\">"
-    + "<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0%\" stop-color=\"" + color + "\" stop-opacity=\"0.25\"/><stop offset=\"100%\" stop-color=\"" + color + "\" stop-opacity=\"0\"/></linearGradient></defs>"
+    + "<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0%\" stop-color=\"" + color + "\" stop-opacity=\"0.22\"/><stop offset=\"100%\" stop-color=\"" + color + "\" stop-opacity=\"0.01\"/></linearGradient></defs>"
     + "<path d=\"" + areaPath + "\" fill=\"url(#" + gradId + ")\"/>"
-    + "<path d=\"" + linePath + "\" fill=\"none\" stroke=\"" + color + "\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
-    + yTicks + xTicks
-    + "<circle cx=\"" + last.x.toFixed(1) + "\" cy=\"" + last.y.toFixed(1) + "\" r=\"5\" fill=\"" + color + "\" stroke=\"var(--surf)\" stroke-width=\"2.5\"/>"
-    + "<text x=\"" + last.x.toFixed(1) + "\" y=\"" + (last.y - 11).toFixed(1) + "\" text-anchor=\"middle\" fill=\"" + color + "\" font-size=\"11\" font-weight=\"800\">" + lastVal + unit + "</text>"
+    + "<path d=\"" + linePath + "\" fill=\"none\" stroke=\"" + color + "\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+    + yTicks + xTicks + dotsSvg
+    + "<circle cx=\"" + last.x.toFixed(1) + "\" cy=\"" + last.y.toFixed(1) + "\" r=\"5.5\" fill=\"" + color + "\" stroke=\"rgba(0,0,0,.25)\" stroke-width=\"2\"/>"
+    + "<text x=\"" + last.x.toFixed(1) + "\" y=\"" + (last.y - 12).toFixed(1) + "\" text-anchor=\"middle\" fill=\"" + color + "\" font-size=\"11\" font-weight=\"800\">" + lastVal + unit + "</text>"
     + "</svg>";
 }
 

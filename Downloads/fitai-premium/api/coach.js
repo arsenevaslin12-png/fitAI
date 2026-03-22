@@ -90,7 +90,10 @@ async function handleCoach(req, res) {
     height: Number(body.profile.height || 0) || null,
     age: Number(body.profile.age || 0) || null,
     sleep_hours: Number(body.profile.sleep_hours || 0) || null,
-    recovery_score: Number(body.profile.recovery_score || 0) || null
+    recovery_score: Number(body.profile.recovery_score || 0) || null,
+    streak: Number(body.profile.streak || 0) || null,
+    recent_physical_score: Number(body.profile.recent_physical_score || 0) || null,
+    recent_nutrition_summary: sanitizeInput(String(body.profile.recent_nutrition_summary || ""), 120)
   } : {};
 
   const goalContext = body.goalContext && typeof body.goalContext === "object" ? {

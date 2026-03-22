@@ -460,16 +460,16 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .score-l{font-size:.65rem;color:var(--muted);margin-top:2px;font-weight:700;text-transform:uppercase}
 .scan-feedback{font-size:.82rem;line-height:1.6;color:rgba(238,238,245,.8)}
 /* ── PROGRESS CHARTS ── */
-.progress-stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:0}
-.progress-stat-card{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:4px}
+.progress-stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:0}
+.progress-stat-card{background:rgba(15,22,38,.92);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:4px;box-shadow:0 2px 12px rgba(0,0,0,.3)}
 .progress-stat-val{font-size:1.8rem;font-weight:900;color:var(--text);line-height:1;letter-spacing:-.04em}
-.progress-stat-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
-.progress-stat-sub{font-size:.75rem;color:var(--text2);margin-top:2px}
-.chart-card{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:20px;overflow:hidden}
+.progress-stat-label{font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+.progress-stat-sub{font-size:.72rem;color:var(--text2);margin-top:2px}
+.chart-card{background:rgba(15,22,38,.92);border:1px solid rgba(255,255,255,.09);border-radius:20px;padding:22px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.35)}
 .chart-title{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:4px;display:flex;align-items:center;gap:6px}
 .chart-title-val{font-size:1.05rem;font-weight:900;color:var(--text);margin-bottom:14px;letter-spacing:-.02em}
 .chart-empty{text-align:center;padding:32px 16px;color:var(--muted);font-size:.82rem}
-@media(max-width:640px){.progress-stat-row{grid-template-columns:repeat(3,1fr);gap:8px}.progress-stat-val{font-size:1.4rem}}
+@media(max-width:720px){.progress-stat-row{grid-template-columns:repeat(2,1fr);gap:8px}.progress-stat-val{font-size:1.4rem}}
 
 /* ── DASHBOARD BENTO ── */
 .db-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:4px}
@@ -761,6 +761,10 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .chat-bubble li{margin:3px 0}
 .chat-bubble strong{color:var(--cyan)}
 .chat-bubble.user-bubble strong{color:rgba(255,255,255,.9)}
+/* ── CHAT ALIGNMENT FIX — user right, AI left ── */
+.chat-messages{display:flex;flex-direction:column;gap:10px}
+.chat-msg-user{align-self:flex-end!important;align-items:flex-end!important;flex-direction:column!important}
+.chat-msg-ai{align-self:flex-start!important;align-items:flex-start!important;flex-direction:column!important}
 /* ── TYPING INDICATOR (3 bouncing dots) ── */
 .typing-dots{display:flex;align-items:center;gap:5px;padding:3px 0}
 .typing-dots span{width:8px;height:8px;border-radius:50%;background:var(--muted);animation:typingBounce 1.2s infinite ease-in-out;flex-shrink:0}

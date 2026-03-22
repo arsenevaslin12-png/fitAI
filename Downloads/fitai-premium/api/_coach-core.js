@@ -140,7 +140,8 @@ function detectIntent(message, responseMode) {
   // Recovery
   if (has("sommeil", "repos", "récup", "recup", "courbature", "fatigue", "douleur", "blessure", "mobilité", "mobilite", "stretch", "étirement")) return "recovery_question";
 
-  // Motivation
+  // Motivation — inclut flemme, découragement, démotivation
+  if (has("flemme", "pas envie", "ras le bol", "j'en peux plus", "j en peux plus", "plus la force", "pas la tête", "pas la tete", "pas motiv", "décourag", "decourag", "abandon", "lâche", "arrete tout", "arrête tout")) return "motivation_question";
   if (has("motivation", "discipline", "plateau", "stagne", "stagnation", "habitude", "mental", "mindset")) return "motivation_question";
 
   // Progress
@@ -187,6 +188,9 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
   const height = Number(profile.height || 0);
   const age = Number(profile.age || 0);
   const mood = normalizeText(profile.mood_today || "");
+  const streak = Number(profile.streak || 0);
+  const recentScanScore = Number(profile.recent_physical_score || 0);
+  const recentNutrition = normalizeText(profile.recent_nutrition_summary || "");
 
   return {
     goal,
@@ -199,7 +203,10 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
     weight: weight > 0 ? weight : null,
     height: height > 0 ? height : null,
     age: age > 0 ? age : null,
-    display_name: normalizeText(profile.display_name || "")
+    display_name: normalizeText(profile.display_name || ""),
+    streak: streak > 0 ? streak : null,
+    recentScanScore: recentScanScore > 0 ? recentScanScore : null,
+    recentNutrition: recentNutrition || null
   };
 }
 
@@ -274,12 +281,20 @@ STRUCTURE exercises[] requise:
 
 function buildConversationPrompt(intent, message, history, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
+
+  // Detect demotivation signals in message for sharper coaching
+  const msgLow = String(message || "").toLowerCase();
+  const isFlemme = /flemme|pas envie|ras le bol|j.en peux plus|plus la force|pas la t[eê]te|pas motiv|d[eé]courag|lâche|abandon/.test(msgLow);
+  const isTired = /fatigu[eé]|[eé]puis[eé]|claqué|j.ai mal dormi|mal dormi|courbature/.test(msgLow);
+
   const intentGuide = {
-    greeting: "accueille avec chaleur puis propose 2 ou 3 aides concrètes maximum",
-    nutrition_question: "réponds comme un coach nutrition premium: concret, crédible, simple à appliquer dès aujourd'hui",
-    recovery_question: "réponds comme un coach récupération: sommeil, stress, fatigue, intensité du jour et prochain meilleur choix",
-    motivation_question: "réponds comme un coach mental direct mais bienveillant: pas de banalités, une vraie relance utile",
-    progress_question: "interprète la situation puis propose l'ajustement le plus rentable à faire maintenant",
+    greeting: `accueille${p.display_name ? ` ${p.display_name}` : ""} avec chaleur puis propose 2 ou 3 aides concrètes maximum basées sur son objectif réel`,
+    nutrition_question: "réponds comme un coach nutrition premium: concret, crédible, simple à appliquer dès aujourd'hui — base-toi sur l'objectif et le niveau réel",
+    recovery_question: "réponds comme un coach récupération: évalue la situation (sommeil, fatigue, récupération) et donne la meilleure action à faire MAINTENANT",
+    motivation_question: isFlemme
+      ? "l'utilisateur a la flemme ou pas envie — réponds directement, sans blabla, sans leçon de morale: reconnais l'état, propose une action MINI faisable maintenant (5 ou 10 min), explique pourquoi ça suffit"
+      : "réponds comme un coach mental direct mais bienveillant: pas de banalités, une vraie relance utile avec une action mini à faire tout de suite",
+    progress_question: "lis le contexte, identifie le point de blocage, propose l'ajustement le plus rentable à faire maintenant — sois spécifique",
     advice: "réponds comme un mentor fitness/lifestyle: clair, concret, utile dans la vraie vie",
     general_chat: "réponds comme un coach humain, premium et pragmatique",
     shopping_list: "aide l'utilisateur à préparer une liste de courses réaliste et alignée avec ses objectifs",
@@ -290,39 +305,64 @@ function buildConversationPrompt(intent, message, history, profile, goalContext)
     ? "3 à 5 lignes maximum"
     : ["shopping_list", "meal_plan"].includes(intent)
       ? "6 à 10 lignes organisées"
-      : "3 à 7 lignes utiles";
+      : isFlemme || isTired
+        ? "3 à 5 lignes max — va droit au but, pas de paragraphes inutiles"
+        : "3 à 7 lignes utiles";
 
-  return `Tu es un coach fitness premium pour application SaaS. Réponds en français avec un ton humain, clair, motivant et expert.
+  // Build context block with richer data
+  const contextLines = [];
+  if (p.goal)        contextLines.push(`- Objectif: ${p.goal} (${getGoalDescription(p.goal)})`);
+  if (p.level)       contextLines.push(`- Niveau: ${p.level} (${getLevelDescription(p.level)})`);
+  if (p.equipment)   contextLines.push(`- Équipement: ${p.equipment}`);
+  if (p.constraints && p.constraints !== "aucune") contextLines.push(`- Contraintes / blessures: ${p.constraints}`);
+  if (p.mood)        contextLines.push(`- Humeur du jour: ${p.mood}`);
+  if (p.sleep)       contextLines.push(`- Sommeil: ${p.sleep}h`);
+  if (p.recovery)    contextLines.push(`- Récupération ressentie: ${p.recovery}/10`);
+  if (p.weight && p.height) contextLines.push(`- Morphologie: ${p.weight}kg / ${p.height}cm`);
+  else if (p.weight) contextLines.push(`- Poids: ${p.weight}kg`);
+  if (p.streak)      contextLines.push(`- Streak actuel: ${p.streak} jours d'affilée 🔥`);
+  if (p.recentScanScore) contextLines.push(`- Dernier score body scan: ${p.recentScanScore}/100`);
+  if (p.recentNutrition) contextLines.push(`- Dernier plan nutrition: ${p.recentNutrition}`);
+  if (p.age)         contextLines.push(`- Âge: ${p.age} ans`);
 
-Profil utilisateur:
-- Objectif: ${p.goal}
-- Niveau: ${p.level}
-- Équipement: ${p.equipment}
-- Contraintes / blessures: ${p.constraints}
-- Humeur du jour: ${p.mood || "non renseignée"}
-- Sommeil moyen: ${p.sleep || "non renseigné"} h
-- Récupération: ${p.recovery || "non renseignée"}/10
-${p.display_name ? `- Prénom: ${p.display_name}` : ""}
+  // Adaptation automatique selon fatigue/récup
+  const adaptNote = [];
+  if ((p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 4)) {
+    adaptNote.push("IMPORTANT: profil basse récupération aujourd'hui — adapte tes conseils en conséquence (moins d'intensité, récupération prioritaire).");
+  }
+  if (isFlemme) {
+    adaptNote.push("L'utilisateur exprime de la flemme ou du découragement. Ne juge pas. Ne donne pas de grandes leçons. Propose UNE petite action concrète faisable maintenant. Sois humain et direct.");
+  }
+  if (isTired) {
+    adaptNote.push("L'utilisateur se dit fatigué — adapte le conseil à cet état: séance légère ou repos actif, pas un programme intense.");
+  }
+
+  return `Tu es un coach fitness IA premium. Réponds en français avec un ton humain, direct et expert.
+${p.display_name ? `Le prénom de l'utilisateur est ${p.display_name}.` : ""}
+
+CONTEXTE UTILISATEUR:
+${contextLines.length ? contextLines.join("\n") : "- Profil non renseigné"}
 
 Historique récent:
 ${historyBlock(history) || "Aucun."}
 
-Consignes absolues:
-- ${intentGuide}.
-- Longueur idéale: ${lengthGuide}.
-- Ne sois jamais vague ni générique.
-- Donne d'abord la réponse utile, ensuite une explication courte si nécessaire, puis une action simple à faire ensuite.
-- Quand la question est simple: réponse courte.
-- Quand la question est plus complexe: structure avec ces libellés exacts si utile:
-  Réponse directe: ...
-  Pourquoi: ...
-  Action du jour: ...
-- Pas de JSON.
-- Pas de programme complet d'exercices sauf si explicitement demandé.
-- Tu peux utiliser 2 à 4 puces maximum si ça aide.
-- Tu peux encourager, recadrer ou simplifier, mais jamais noyer l'utilisateur.
+${adaptNote.length ? `\nCONSIGNES DE CONTEXTE:\n${adaptNote.map(n => `⚠️ ${n}`).join("\n")}\n` : ""}
 
-Message utilisateur:
+MISSION: ${intentGuide}.
+
+RÈGLES DE FORMAT:
+- Longueur: ${lengthGuide}.
+- Ne sois JAMAIS vague ni générique. Utilise les données du profil.
+- Structure si utile:
+  Réponse directe: [réponse immédiate]
+  Pourquoi: [explication courte si nécessaire]
+  Action du jour: [1 action simple et précise]
+- Pas de JSON. Pas de programme complet sauf si demandé explicitement.
+- 2 à 4 puces max si ça aide la lisibilité.
+- Si l'utilisateur a un streak élevé, félicite-le brièvement.
+- Si le score body scan est connu, tu peux y faire référence pour contextualiser.
+
+MESSAGE DE L'UTILISATEUR:
 ${message}`;
 }
 
@@ -600,42 +640,66 @@ function fallbackWorkout(message, profile = {}, goalContext = {}) {
 function fallbackConversation(intent, message, profile = {}, goalContext = {}) {
   const p = makeProfileSummary(profile, goalContext);
   const lowRecovery = (p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 5);
+  const msgLow = String(message || "").toLowerCase();
+  const isFlemme = /flemme|pas envie|ras le bol|j.en peux plus|plus la force|pas la t[eê]te|pas motiv|d[eé]courag/.test(msgLow);
+  const isTired = /fatigu[eé]|[eé]puis[eé]|claqué|mal dormi|courbature/.test(msgLow);
+  const name = p.display_name || "";
+
   if (intent === "greeting") {
-    return `Réponse directe: Salut ${p.display_name || "champion"} 👋
-Pourquoi: Je peux te guider vite sur une séance, une journée alimentaire, une recette ou une stratégie récupération sans te noyer dans le blabla.
-Action du jour: Donne-moi ton besoin exact en une phrase, par exemple « séance full body 40 min », « idée repas sèche » ou « j'ai mal dormi, j'adapte comment ? ». `;
+    const streakLine = p.streak ? ` Tu es à ${p.streak} jour${p.streak > 1 ? "s" : ""} de streak — continue comme ça.` : "";
+    return `Réponse directe: Salut ${name || "champion"} 👋${streakLine}
+Pourquoi: Je peux te guider vite sur une séance, une journée alimentaire, une recette ou une stratégie récupération — sans te noyer dans le blabla.
+Action du jour: Dis-moi ton besoin en une phrase, par exemple « séance full body 40 min », « idée repas ${p.goal === "perte_de_poids" ? "sèche" : "prise de masse"} » ou « j'ai mal dormi, j'adapte comment ? ».`;
   }
-  if (intent === "nutrition_question") {
-    return p.goal === "prise_de_masse"
-      ? `Réponse directe: Pour progresser en prise de masse, assure surtout une vraie portion de protéines à chaque repas et place davantage de glucides autour de l'entraînement.
-Pourquoi: C'est ce qui t'aide à performer sans te sentir lourd toute la journée.
-Action du jour: Fais simple aujourd'hui: protéine + féculent + fruit après ta séance, puis une collation protéinée dans l'après-midi.`
-      : `Réponse directe: Le plus rentable pour ton objectif, c'est de sécuriser les protéines puis de garder des repas simples et réguliers.
-Pourquoi: Quand la structure est claire, tu tiens plus facilement sur plusieurs semaines.
-Action du jour: Sur ton prochain repas, vise légumes + protéines + une portion de féculents adaptée à ta faim et à ta dépense.`;
-  }
-  if (intent === "recovery_question") {
-    return lowRecovery
-      ? `Réponse directe: Aujourd'hui, je baisserais l'intensité.
-Pourquoi: Avec peu de sommeil ou une récupération basse, forcer plus fort te coûte souvent plus qu'il ne te rapporte.
-Action du jour: Fais 10 à 20 min de mobilité, une marche active ou une séance technique très propre, puis couche-toi plus tôt ce soir.`
-      : `Réponse directe: Ta récup passera surtout par sommeil, hydratation et charge bien dosée.
-Pourquoi: C'est le trio qui protège ta progression sans casser le rythme.
-Action du jour: Fais 5 à 10 minutes de mobilité ce soir et garde la séance lourde seulement si les courbatures baissent nettement demain.`;
-  }
+
   if (intent === "motivation_question") {
-    return `Réponse directe: N'attends pas de te sentir ultra motivé pour agir.
+    if (isFlemme) {
+      return `Réponse directe: La flemme, c'est normal — et tu n'as pas besoin de te forcer à fond.
+Pourquoi: Une séance de 10 minutes compte autant pour ton streak${p.streak ? ` (${p.streak}j actuellement)` : ""} qu'une séance de 60 minutes. L'important c'est de ne pas couper le fil.
+Action du jour: Fais juste 10 minutes maintenant — 3 séries de pompes, 3 séries de squats et 2 min de planche. C'est tout. Si tu veux continuer ensuite, tu continues. Sinon, c'est gagné.`;
+    }
+    return `Réponse directe: N'attends pas de te sentir ultra motivé pour agir${name ? `, ${name}` : ""}.
 Pourquoi: La motivation varie, alors que l'action courte remet presque toujours la machine en route.
-Action du jour: Lance une version mini de 10 minutes maintenant. Si tu te sens mieux ensuite, tu prolonges. Sinon, tu as quand même gagné ta journée.`;
+Action du jour: Lance une version mini de 10 minutes maintenant. Si tu te sens mieux ensuite, tu prolonges. Sinon, tu as quand même maintenu le rythme.`;
   }
+
+  if (intent === "nutrition_question") {
+    if (p.goal === "prise_de_masse") {
+      return `Réponse directe: Pour progresser en prise de masse, sécurise une vraie portion de protéines à chaque repas et place davantage de glucides autour de l'entraînement.
+Pourquoi: C'est ce qui t'aide à performer et à récupérer sans te sentir lourd toute la journée.
+Action du jour: Fais simple aujourd'hui: protéine + féculent + fruit après ta séance, puis une collation protéinée dans l'après-midi.`;
+    }
+    if (p.goal === "perte_de_poids") {
+      return `Réponse directe: Garde les protéines hautes (1.8-2g/kg) et commence chaque repas par protéines + légumes.
+Pourquoi: Ça réduit la faim naturellement et protège ta masse musculaire pendant le déficit.
+Action du jour: Sur ton prochain repas, vise légumes + protéines en priorité, puis ajuste les glucides selon ta faim et ta dépense.`;
+    }
+    return `Réponse directe: La base qui fonctionne pour ${p.goal.replaceAll("_", " ")}: protéines à chaque repas, glucides autour de l'effort, lipides de qualité.
+Pourquoi: Quand la structure est simple et répétable, tu tiens plus facilement sur plusieurs semaines.
+Action du jour: Sur ton prochain repas, vise protéines + légumes + une portion de féculents adaptée à ta faim.`;
+  }
+
+  if (intent === "recovery_question") {
+    if (isTired || lowRecovery) {
+      return `Réponse directe: Aujourd'hui, baisse l'intensité — c'est le bon choix${name ? `, ${name}` : ""}.
+Pourquoi: Forcer quand la récupération est basse coûte plus que ça ne rapporte: tu accumules de la fatigue sans stimuler la progression.
+Action du jour: Fais 10 à 15 min de mobilité ou une marche à allure confortable, hydrate-toi bien, et couche-toi 30 minutes plus tôt ce soir.`;
+    }
+    return `Réponse directe: Ta récup passe surtout par sommeil, hydratation et charge bien dosée.
+Pourquoi: C'est le trio qui protège ta progression sans casser le rythme.
+Action du jour: Fais 5 à 10 minutes de mobilité ce soir et garde la séance lourde seulement si les courbatures ont nettement diminué demain.`;
+  }
+
   if (intent === "progress_question") {
-    return `Réponse directe: Regarde d'abord régularité, qualité technique et charge ou reps sur tes mouvements clés.
-Pourquoi: Si un seul de ces marqueurs monte proprement, tu avances déjà.
-Action du jour: Choisis un mini-objectif mesurable pour la prochaine séance: +1 rep, meilleure exécution ou tempo plus propre.`;
+    const scanNote = p.recentScanScore ? ` Ton dernier body scan est à ${p.recentScanScore}/100 — c'est une bonne base de départ.` : "";
+    return `Réponse directe: Regarde d'abord régularité, qualité technique et progression sur tes mouvements clés.${scanNote}
+Pourquoi: Si un seul de ces marqueurs monte proprement sur 2-3 semaines, tu avances — même si la balance ne bouge pas.
+Action du jour: Choisis un mini-objectif mesurable pour ta prochaine séance: +1 rep, meilleure exécution ou tempo plus propre.`;
   }
-  return `Réponse directe: Pour ton objectif ${p.goal.replaceAll("_", " ")}, garde un plan simple et mesurable.
+
+  return `Réponse directe: Pour ton objectif ${p.goal.replaceAll("_", " ")}, garde un plan simple et mesurable${name ? `, ${name}` : ""}.
 Pourquoi: Les bons résultats viennent plus d'une base répétable que d'un plan parfait mais irrégulier.
-Action du jour: Donne-moi ton contexte exact — temps dispo, matériel, niveau de fatigue — et je te répondrai de façon beaucoup plus précise.`;
+Action du jour: Dis-moi ton contexte exact — temps dispo, matériel, niveau de fatigue — et je te répondrai de façon beaucoup plus précise.`;
 }
 
 function fallbackRecipe(message, profile = {}, goalContext = {}) {

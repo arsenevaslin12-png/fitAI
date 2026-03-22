@@ -94,7 +94,19 @@ CONSIGNES IMPORTANTES:
 2. Ne fais JAMAIS de diagnostic médical
 3. Base ton analyse uniquement sur ce qui est visible
 4. Si la qualité photo est insuffisante, indique-le clairement
-5. Scores entre 0-100 où 100 = excellent
+5. Scores entre 0-100 selon la VRAIE échelle ci-dessous (très important pour la crédibilité)
+
+CALIBRATION OBLIGATOIRE DES SCORES (respecte scrupuleusement):
+- 90-100: athlète de compétition / bodybuilder elite / niveau Olympique — réservé aux meilleurs 0.1%
+- 80-89: athlète très sérieux, entraîné depuis des années, corps clairement développé et défini
+- 70-79: personne très sportive, visible athlétique, entraînement régulier et résultats évidents
+- 60-69: bonne condition physique, en forme, sport régulier — la majorité des sportifs sérieux sont ici
+- 50-59: condition physique moyenne-bonne, quelques mois d'entraînement, progrès visibles
+- 40-49: débutant ou pratique irrégulière, peu de masse musculaire développée
+- 30-39: sédentaire ou très peu actif
+- 0-29: besoin de travail important
+
+RÈGLE ABSOLUE: La plupart des gens actifs et en bonne forme sans être des athlètes professionnels se situent entre 50 et 70. Un acteur de cinéma "en forme" non bodybuilder = 68-75 maximum. Ne dépasse jamais 80 sauf pour des corps clairement de compétition visible sur la photo. Les scores trop élevés détruisent la crédibilité du scan.
 
 ${historyContext}
 
@@ -157,14 +169,25 @@ async function analyzeImage({ apiKey, b64, mime, previousAnalysis = null }) {
   return { text: result.text, model: result.model };
 }
 
+// Hard cap to prevent absurd high scores — max credible for non-competition physique
+const SCORE_CAP_DEFAULT = 82;
+const SCORE_CAP_ELITE = 95; // Only if muscle_mass_level === "elite" explicitly
+
+function capScore(score, muscleLevel) {
+  if (typeof score !== "number") return score;
+  const cap = muscleLevel === "elite" ? SCORE_CAP_ELITE : SCORE_CAP_DEFAULT;
+  return Math.min(score, cap);
+}
+
 function normalizeAnalysisOutput(parsed, modelName = MODEL) {
   const p = parsed || {};
+  const muscleLevel = String(p.estimated_metrics?.muscle_mass_level || "").toLowerCase();
 
-  const physicalScore = clampScore(p.physical_score);
-  const symmetryScore = clampScore(p.score_breakdown?.symmetry);
-  const postureScore = clampScore(p.score_breakdown?.posture);
-  const muscleDefScore = clampScore(p.score_breakdown?.muscle_definition);
-  const bodyCompScore = clampScore(p.score_breakdown?.body_composition);
+  const physicalScore = clampScore(capScore(p.physical_score, muscleLevel));
+  const symmetryScore = clampScore(capScore(p.score_breakdown?.symmetry, muscleLevel));
+  const postureScore = clampScore(capScore(p.score_breakdown?.posture, muscleLevel));
+  const muscleDefScore = clampScore(capScore(p.score_breakdown?.muscle_definition, muscleLevel));
+  const bodyCompScore = clampScore(capScore(p.score_breakdown?.body_composition, muscleLevel));
   const hasUsefulScores = [physicalScore, symmetryScore, postureScore, muscleDefScore, bodyCompScore].some((v) => typeof v === "number");
 
   let bodyfatProxy = null;
