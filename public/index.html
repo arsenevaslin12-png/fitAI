@@ -547,6 +547,46 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .macro-bar-track{height:6px;background:rgba(255,255,255,.07);border-radius:999px;overflow:hidden}
 .macro-bar-fill{height:100%;border-radius:999px;transition:width 1s ease}
 
+/* ── FOOD JOURNAL ── */
+.food-journal-wrap{display:flex;flex-direction:column;gap:10px}
+.food-journal-textarea{width:100%;min-height:72px;resize:vertical;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:12px;padding:10px 12px;color:var(--text);font-size:.88rem;font-family:inherit;transition:border-color .2s}
+.food-journal-textarea:focus{outline:none;border-color:rgba(99,102,241,.5)}
+.food-journal-textarea::placeholder{color:var(--muted);font-style:italic}
+.food-analysis-loading{text-align:center;padding:16px;color:var(--muted);font-size:.82rem}
+.food-analysis-result{display:none;margin-top:6px}
+.food-items-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.food-item-row{display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:8px 12px}
+.food-item-name{font-weight:700;font-size:.82rem;color:var(--text)}
+.food-item-qty{font-size:.72rem;color:var(--muted);margin-top:1px}
+.food-item-macros{display:flex;gap:10px;flex-shrink:0}
+.food-macro-chip{font-size:.7rem;font-weight:800;padding:2px 7px;border-radius:6px}
+.food-macro-cal{background:rgba(251,191,36,.12);color:#fbbf24}
+.food-macro-prot{background:rgba(74,222,128,.12);color:#4ade80}
+.food-total-row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.18);border-radius:12px;margin-bottom:10px}
+.food-total-label{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.5)}
+.food-total-macros{display:flex;gap:12px}
+.food-total-item{text-align:center}
+.food-total-val{font-size:.95rem;font-weight:900;color:#fff}
+.food-total-unit{font-size:.58rem;color:var(--muted);font-weight:700;text-transform:uppercase}
+.quality-badge-wrap{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;margin-bottom:8px}
+.quality-badge-wrap.good{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.2)}
+.quality-badge-wrap.ok{background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.2)}
+.quality-badge-wrap.bad{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.2)}
+.quality-score{font-size:1.5rem;font-weight:900;color:#fff;flex-shrink:0}
+.quality-comment{font-size:.78rem;color:var(--text2);line-height:1.4}
+.quality-label{font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.quality-label.good{color:#4ade80}
+.quality-label.ok{color:#fbbf24}
+.quality-label.bad{color:#f87171}
+/* ── NUTRITION WEEK CHART ── */
+.nutr-chart-wrap{width:100%;height:180px;overflow:visible}
+.nutr-chart-day-lbl{font-size:.62rem;fill:rgba(255,255,255,.35);font-family:inherit;font-weight:700}
+.nutr-chart-cal-bar{opacity:.85;transition:opacity .2s}
+.nutr-chart-cal-bar:hover{opacity:1}
+.nutr-chart-legend{display:flex;gap:16px;margin-top:8px;flex-wrap:wrap}
+.nutr-legend-item{display:flex;align-items:center;gap:5px;font-size:.68rem;color:var(--text2);font-weight:700}
+.nutr-legend-dot{width:8px;height:8px;border-radius:50%}
+
 /* ── V2 SCAN IA MINI TILE ── */
 .scan-mini-label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(0,255,255,.6);margin-bottom:8px}
 .scan-avatar-wrap{position:relative;display:flex;align-items:center;justify-content:center;flex:1;min-height:80px;margin:6px 0}
@@ -1707,6 +1747,64 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
         <div class="card" id="recipe-history-card">
           <div class="card-title">Mes recettes sauvegardées</div>
           <div id="recipe-history-list"><div class="empty" style="font-size:.82rem;padding:8px 0">Aucune recette générée pour l'instant.</div></div>
+        </div>
+
+        <!-- FOOD JOURNAL AI -->
+        <div class="card">
+          <div class="card-title">🧠 Journal alimentaire IA</div>
+          <div class="page-sub" style="margin-top:-8px;margin-bottom:14px">Décris ce que tu as mangé en langage naturel</div>
+          <div class="food-journal-wrap">
+            <textarea id="food-journal-input" class="food-journal-textarea"
+              placeholder="Ex: ce matin j'ai mangé 3 œufs, du fromage, une tranche de pain. À midi j'ai eu des pâtes avec du poulet grillé…"></textarea>
+            <button class="btn btn-p btn-full" id="btn-analyze-food" onclick="analyzeFood()">🔍 Analyser mes repas</button>
+            <div id="food-analysis-loading" class="food-analysis-loading" style="display:none">⏳ Analyse en cours…</div>
+            <div id="food-analysis-result" class="food-analysis-result">
+              <div id="food-quality-badge" class="quality-badge-wrap good">
+                <div>
+                  <div id="food-quality-label" class="quality-label good">Excellent</div>
+                  <div id="food-quality-score" class="quality-score">82</div>
+                </div>
+                <div id="food-quality-comment" class="quality-comment">Bon équilibre nutritionnel.</div>
+              </div>
+              <div class="food-total-row">
+                <div class="food-total-label">Total</div>
+                <div class="food-total-macros">
+                  <div class="food-total-item">
+                    <div class="food-total-val" id="food-total-cal">—</div>
+                    <div class="food-total-unit">kcal</div>
+                  </div>
+                  <div class="food-total-item">
+                    <div class="food-total-val" id="food-total-prot">—</div>
+                    <div class="food-total-unit">protéines</div>
+                  </div>
+                  <div class="food-total-item">
+                    <div class="food-total-val" id="food-total-carbs">—</div>
+                    <div class="food-total-unit">glucides</div>
+                  </div>
+                  <div class="food-total-item">
+                    <div class="food-total-val" id="food-total-fat">—</div>
+                    <div class="food-total-unit">lipides</div>
+                  </div>
+                </div>
+              </div>
+              <div class="food-items-list" id="food-items-list"></div>
+              <button class="btn btn-s btn-full" style="margin-top:4px" onclick="saveFoodAnalysis()">➕ Ajouter à mes repas du jour</button>
+            </div>
+            <div class="err-box" id="food-analysis-err" style="margin-top:0"></div>
+          </div>
+        </div>
+
+        <!-- 7-DAY NUTRITION CURVE -->
+        <div class="card">
+          <div class="card-title">📈 Courbe nutritionnelle (7 jours)</div>
+          <svg id="nutr-week-svg" class="nutr-chart-wrap" viewBox="0 0 340 180" preserveAspectRatio="xMidYMid meet">
+            <text x="50%" y="90" text-anchor="middle" fill="rgba(255,255,255,.25)" font-size="12" font-family="inherit">Aucune donnée cette semaine</text>
+          </svg>
+          <div class="nutr-chart-legend">
+            <div class="nutr-legend-item"><div class="nutr-legend-dot" style="background:#6366f1"></div>Calories</div>
+            <div class="nutr-legend-item"><div class="nutr-legend-dot" style="background:#4ade80"></div>Protéines</div>
+            <div class="nutr-legend-item"><div class="nutr-legend-dot" style="background:rgba(255,255,255,.2);border:1px dashed rgba(255,255,255,.4)"></div>Objectif</div>
+          </div>
         </div>
 
         <div class="card">

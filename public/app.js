@@ -449,7 +449,7 @@ function gotoTab(name) {
   if (name === "dashboard") loadDashboard();
   if (name === "goal") loadGoal();
   if (name === "coach") { loadCoachHistory(); loadHistory(); }
-  if (name === "nutrition") { loadMeals(); loadRecipeHistory(); }
+  if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); }
   if (name === "community") loadFeed();
   if (name === "friends") { loadFriends(); loadFriendRequests(); }
   if (name === "bodyscan") loadScans();
@@ -3959,6 +3959,282 @@ window.renderDailyChallengesSection = renderDailyChallengesSection;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PROGRAMME 8 SEMAINES — 100% Offline-first
+// ══════════════════════════════════════════════════════════════════════════════
+// FOOD JOURNAL AI
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Offline keyword database for when API is unavailable
+const FOOD_OFFLINE_DB = {
+  "oeuf": { cal: 78, p: 6, c: 0.6, f: 5 }, "oeufs": { cal: 78, p: 6, c: 0.6, f: 5 },
+  "fromage": { cal: 350, p: 25, c: 1, f: 28 }, "pates": { cal: 158, p: 5.8, c: 31, f: 0.9 },
+  "pâtes": { cal: 158, p: 5.8, c: 31, f: 0.9 }, "riz": { cal: 130, p: 2.7, c: 28, f: 0.3 },
+  "poulet": { cal: 165, p: 31, c: 0, f: 3.6 }, "thon": { cal: 132, p: 29, c: 0, f: 1 },
+  "saumon": { cal: 208, p: 20, c: 0, f: 13 }, "boeuf": { cal: 250, p: 26, c: 0, f: 15 },
+  "pain": { cal: 265, p: 9, c: 49, f: 3.2 }, "banane": { cal: 89, p: 1.1, c: 23, f: 0.3 },
+  "yaourt": { cal: 59, p: 3.5, c: 4.7, f: 3.2 }, "yaourt grec": { cal: 97, p: 9, c: 3.6, f: 5 },
+  "avocat": { cal: 160, p: 2, c: 9, f: 15 }, "chocolat": { cal: 535, p: 7.7, c: 60, f: 30 },
+  "pizza": { cal: 266, p: 11, c: 33, f: 10 }, "burger": { cal: 295, p: 17, c: 24, f: 14 },
+  "frites": { cal: 312, p: 3.4, c: 41, f: 15 }, "lentilles": { cal: 116, p: 9, c: 20, f: 0.4 },
+  "quinoa": { cal: 120, p: 4.4, c: 22, f: 1.9 }, "amandes": { cal: 579, p: 21, c: 22, f: 50 },
+  "whey": { cal: 120, p: 24, c: 3, f: 2 }, "brocoli": { cal: 34, p: 2.8, c: 7, f: 0.4 },
+  "epinards": { cal: 23, p: 2.9, c: 3.6, f: 0.4 }, "tomate": { cal: 18, p: 0.9, c: 3.9, f: 0.2 },
+  "pomme": { cal: 52, p: 0.3, c: 14, f: 0.2 }, "orange": { cal: 47, p: 0.9, c: 12, f: 0.1 },
+  "patate douce": { cal: 86, p: 1.6, c: 20, f: 0.1 }, "skyr": { cal: 65, p: 11, c: 4, f: 0.2 },
+  "cottage": { cal: 98, p: 11, c: 3.4, f: 4.3 }, "jambon": { cal: 105, p: 17, c: 1.5, f: 3.5 },
+};
+
+function _offlineAnalyzeFood(description) {
+  const text = description.toLowerCase();
+  const items = [];
+  let totCal = 0, totP = 0, totC = 0, totF = 0;
+  const keys = Object.keys(FOOD_OFFLINE_DB).sort((a, b) => b.length - a.length);
+  const matched = new Set();
+  for (const key of keys) {
+    if (text.includes(key) && !matched.has(key)) {
+      matched.add(key);
+      const d = FOOD_OFFLINE_DB[key];
+      const beforeIdx = text.indexOf(key);
+      const before = text.slice(Math.max(0, beforeIdx - 8), beforeIdx);
+      const nm = before.match(/(\d+)/);
+      const qty = nm ? Math.min(8, parseInt(nm[1], 10)) : 1;
+      items.push({ name: key.charAt(0).toUpperCase() + key.slice(1), quantity: qty > 1 ? `×${qty}` : "1 portion",
+        calories: Math.round(d.cal * qty), protein: Math.round(d.p * qty * 10) / 10,
+        carbs: Math.round(d.c * qty * 10) / 10, fat: Math.round(d.f * qty * 10) / 10 });
+      totCal += d.cal * qty; totP += d.p * qty; totC += d.c * qty; totF += d.f * qty;
+    }
+  }
+  if (!items.length) {
+    items.push({ name: "Repas estimé", quantity: "1 portion", calories: 450, protein: 22, carbs: 50, fat: 16 });
+    totCal = 450; totP = 22; totC = 50; totF = 16;
+  }
+  const protRatio = (totP * 4) / (totCal || 1);
+  let score = 60;
+  if (protRatio > 0.25) score += 20; else if (protRatio < 0.1) score -= 15;
+  if (totCal > 1200) score -= 20; else if (totCal > 800) score -= 8;
+  if (/brocoli|epinard|tomate|courgette|salade|carotte/.test(text)) score += 10;
+  if (/pizza|burger|frites|chips/.test(text)) score -= 20;
+  score = Math.max(10, Math.min(100, Math.round(score)));
+  const comment = score >= 75 ? "Excellent équilibre nutritionnel !" : score >= 55 ? "Repas correct, enrichis en protéines/légumes." : "Repas calorique — pense à équilibrer.";
+  return { items, total: { calories: Math.round(totCal), protein: Math.round(totP * 10) / 10, carbs: Math.round(totC * 10) / 10, fat: Math.round(totF * 10) / 10 }, quality_score: score, comment, source: "offline" };
+}
+
+async function analyzeFood() {
+  const inputEl = document.getElementById("food-journal-input");
+  const errEl = document.getElementById("food-analysis-err");
+  const loadEl = document.getElementById("food-analysis-loading");
+  const resultEl = document.getElementById("food-analysis-result");
+  const btnEl = document.getElementById("btn-analyze-food");
+  if (errEl) errEl.textContent = "";
+  if (resultEl) resultEl.style.display = "none";
+
+  const description = (inputEl?.value || "").trim();
+  if (!description) {
+    if (errEl) errEl.textContent = "Décris ce que tu as mangé.";
+    return;
+  }
+
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = "⏳ Analyse…"; }
+  if (loadEl) loadEl.style.display = "block";
+
+  let result = null;
+  try {
+    const authHeader = U ? `Bearer ${(await SB.auth.getSession()).data.session?.access_token}` : "";
+    const resp = await fetch("/api/analyze-food", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+      body: JSON.stringify({ description, date: new Date().toISOString().slice(0, 10) }),
+      signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined
+    });
+    if (!resp.ok) throw new Error("API error " + resp.status);
+    result = await resp.json();
+  } catch (e) {
+    // Offline fallback
+    result = _offlineAnalyzeFood(description);
+    result.source = "offline";
+  }
+
+  if (loadEl) loadEl.style.display = "none";
+  if (btnEl) { btnEl.disabled = false; btnEl.textContent = "🔍 Analyser mes repas"; }
+
+  if (!result || !result.items) {
+    if (errEl) errEl.textContent = "Impossible d'analyser. Réessaie.";
+    return;
+  }
+
+  // Store last result for save action
+  window._lastFoodAnalysis = result;
+
+  // Render quality badge
+  const score = result.quality_score || 60;
+  const qBadge = document.getElementById("food-quality-badge");
+  const qLabel = document.getElementById("food-quality-label");
+  const qScore = document.getElementById("food-quality-score");
+  const qComment = document.getElementById("food-quality-comment");
+  const cls = score >= 75 ? "good" : score >= 50 ? "ok" : "bad";
+  const lbl = score >= 75 ? "Excellent" : score >= 50 ? "Correct" : "À améliorer";
+  if (qBadge) { qBadge.className = `quality-badge-wrap ${cls}`; }
+  if (qLabel) { qLabel.className = `quality-label ${cls}`; qLabel.textContent = lbl; }
+  if (qScore) qScore.textContent = score;
+  if (qComment) qComment.textContent = result.comment || "";
+
+  // Render totals
+  const t = result.total || {};
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setTxt("food-total-cal", (t.calories || 0) + " kcal");
+  setTxt("food-total-prot", (t.protein || 0) + "g");
+  setTxt("food-total-carbs", (t.carbs || 0) + "g");
+  setTxt("food-total-fat", (t.fat || 0) + "g");
+
+  // Render items list
+  const listEl = document.getElementById("food-items-list");
+  if (listEl) {
+    listEl.innerHTML = (result.items || []).map(item => `
+      <div class="food-item-row">
+        <div>
+          <div class="food-item-name">${escapeHtml(item.name || "")}</div>
+          <div class="food-item-qty">${escapeHtml(item.quantity || "")}</div>
+        </div>
+        <div class="food-item-macros">
+          <span class="food-macro-chip food-macro-cal">${item.calories || 0} kcal</span>
+          <span class="food-macro-chip food-macro-prot">${item.protein || 0}g P</span>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  if (resultEl) resultEl.style.display = "block";
+}
+
+async function saveFoodAnalysis() {
+  if (!U) return toast("Connecte-toi pour sauvegarder.", "err");
+  const res = window._lastFoodAnalysis;
+  if (!res) return;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Save all items as individual meals OR as one combined meal
+  const t = res.total || {};
+  const description = (document.getElementById("food-journal-input")?.value || "Repas IA").slice(0, 60);
+
+  try {
+    const { error } = await SB.from("meals").insert({
+      user_id: U.id,
+      name: description,
+      calories: t.calories || 0,
+      protein: t.protein || 0,
+      carbs: t.carbs || 0,
+      fat: t.fat || 0,
+      date: today,
+      source: "ai_journal"
+    });
+    if (error) throw error;
+    toast("Repas ajouté !", "ok");
+    loadMeals();
+    loadNutritionWeekChart();
+  } catch (e) {
+    toast("Erreur: " + e.message, "err");
+  }
+}
+
+async function loadNutritionWeekChart() {
+  const svg = document.getElementById("nutr-week-svg");
+  if (!svg) return;
+
+  const today = new Date();
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    days.push(d.toISOString().slice(0, 10));
+  }
+
+  let mealsData = [];
+  let targetCal = 2200;
+  let targetProt = 140;
+
+  if (U) {
+    try {
+      const [mealsRes, targetRes] = await Promise.all([
+        SB.from("meals").select("date,calories,protein").eq("user_id", U.id).gte("date", days[0]).lte("date", days[6]),
+        SB.from("nutrition_targets").select("calories,protein").eq("user_id", U.id).maybeSingle()
+      ]);
+      mealsData = mealsRes.data || [];
+      if (targetRes.data) { targetCal = targetRes.data.calories || 2200; targetProt = targetRes.data.protein || 140; }
+    } catch { /* offline */ }
+  }
+
+  // Group by day
+  const dayTotals = days.map(date => {
+    const dayMeals = mealsData.filter(m => m.date === date);
+    return {
+      date,
+      cal: dayMeals.reduce((s, m) => s + (m.calories || 0), 0),
+      prot: dayMeals.reduce((s, m) => s + (m.protein || 0), 0)
+    };
+  });
+
+  _renderNutritionWeekChart(svg, dayTotals, targetCal, targetProt);
+}
+
+function _renderNutritionWeekChart(svg, dayTotals, targetCal, targetProt) {
+  const W = 340, H = 160, PAD_L = 28, PAD_R = 10, PAD_T = 12, PAD_B = 28;
+  const chartW = W - PAD_L - PAD_R;
+  const chartH = H - PAD_T - PAD_B;
+  const n = dayTotals.length;
+  const barW = Math.floor(chartW / n) - 4;
+  const maxCal = Math.max(targetCal * 1.2, ...dayTotals.map(d => d.cal), 100);
+  const maxProt = Math.max(targetProt * 1.3, ...dayTotals.map(d => d.prot), 10);
+  const dayLabels = ["D-6","D-5","D-4","D-3","D-2","Hier","Auj"];
+
+  const calToY = v => PAD_T + chartH - (v / maxCal) * chartH;
+  const protToY = v => PAD_T + chartH - (v / maxProt) * chartH;
+
+  let html = "";
+
+  // Grid line at target
+  const targetY = calToY(targetCal);
+  html += `<line x1="${PAD_L}" y1="${targetY}" x2="${W - PAD_R}" y2="${targetY}" stroke="rgba(255,255,255,.2)" stroke-width="1" stroke-dasharray="4,3"/>`;
+
+  // Calorie bars
+  dayTotals.forEach((d, i) => {
+    const x = PAD_L + i * (chartW / n) + 2;
+    const barH = Math.max(2, (d.cal / maxCal) * chartH);
+    const y = PAD_T + chartH - barH;
+    const overTarget = d.cal > targetCal;
+    const hasData = d.cal > 0;
+    const fill = hasData ? (overTarget ? "rgba(248,113,113,.7)" : "rgba(99,102,241,.7)") : "rgba(255,255,255,.06)";
+    html += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="3" fill="${fill}" class="nutr-chart-cal-bar"/>`;
+    // Day label
+    html += `<text x="${x + barW / 2}" y="${H - PAD_B + 12}" text-anchor="middle" class="nutr-chart-day-lbl">${dayLabels[i]}</text>`;
+  });
+
+  // Protein line
+  const protPoints = dayTotals.map((d, i) => {
+    const x = PAD_L + i * (chartW / n) + barW / 2 + 2;
+    const y = protToY(d.prot);
+    return `${x},${y}`;
+  });
+  if (dayTotals.some(d => d.prot > 0)) {
+    html += `<polyline points="${protPoints.join(" ")}" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+    // Dots
+    dayTotals.forEach((d, i) => {
+      if (d.prot > 0) {
+        const x = PAD_L + i * (chartW / n) + barW / 2 + 2;
+        const y = protToY(d.prot);
+        html += `<circle cx="${x}" cy="${y}" r="3" fill="#4ade80" stroke="#0f172a" stroke-width="1.5"/>`;
+      }
+    });
+  }
+
+  // Y axis label
+  html += `<text x="${PAD_L - 4}" y="${PAD_T + chartH / 2}" text-anchor="middle" fill="rgba(255,255,255,.25)" font-size="8" font-family="inherit" transform="rotate(-90 ${PAD_L - 4} ${PAD_T + chartH / 2})">kcal</text>`;
+
+  svg.innerHTML = html;
+}
+
+window.analyzeFood = analyzeFood;
+window.saveFoodAnalysis = saveFoodAnalysis;
+window.loadNutritionWeekChart = loadNutritionWeekChart;
+
 // ══════════════════════════════════════════════════════════════════════════════
 
 const PROG_PHASES = [
