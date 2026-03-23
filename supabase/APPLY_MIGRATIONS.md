@@ -156,8 +156,6 @@ Dans **Vercel Dashboard → Settings → Environment Variables**, configurez :
 | `GEMINI_API_KEY` | Clé Google AI Studio | ✅ (fallbacks texte si absent) |
 | `ALLOWED_ORIGIN` | URL Vercel de production | Recommandé |
 
-> `SUPABASE_SERVICE_ROLE_KEY` n'est **pas** requise.
-
 ---
 
 ## Vérification rapide après déploiement
