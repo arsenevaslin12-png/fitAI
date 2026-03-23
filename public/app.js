@@ -3760,6 +3760,8 @@ function _applyWaterCount(newCount, animIdx = -1) {
 function adjustWater(delta) {
   const oldCount = getWaterData().count;
   _applyWaterCount(oldCount + delta, delta > 0 ? oldCount : -1);
+  // Sync programme tab water if visible
+  if (typeof syncProgWater === "function") syncProgWater();
 }
 
 function setWaterCount(n) {
@@ -3958,8 +3960,6 @@ window.completeDailyChallenge = completeDailyChallenge;
 window.renderDailyChallengesSection = renderDailyChallengesSection;
 
 // ══════════════════════════════════════════════════════════════════════════════
-// PROGRAMME 8 SEMAINES — 100% Offline-first
-// ══════════════════════════════════════════════════════════════════════════════
 // FOOD JOURNAL AI
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -4105,20 +4105,46 @@ async function analyzeFood() {
   if (resultEl) resultEl.style.display = "block";
 }
 
+// ── Meal type selection ───────────────────────────────────────────────────────
+// Calorie budget per meal type (rough target split from 2200 kcal default)
+const MEAL_CAL_BUDGETS = { petit_dej: 450, collation: 220, midi: 680, soir: 580 };
+const MEAL_TYPE_LABELS = { petit_dej: "Petit-déjeuner", collation: "Collation", midi: "Déjeuner", soir: "Dîner" };
+let _selectedMealType = "midi";
+
+function selectMealType(type) {
+  _selectedMealType = type;
+  document.querySelectorAll(".meal-type-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.type === type);
+  });
+  const budget = MEAL_CAL_BUDGETS[type] || 600;
+  const budgetEl = document.getElementById("meal-cal-budget");
+  if (budgetEl) budgetEl.textContent = budget;
+  // Update placeholder
+  const placeholders = {
+    petit_dej: "Ex: 2 œufs brouillés, fromage blanc, une tranche de pain complet, café…",
+    collation: "Ex: une pomme, 30g d'amandes, un yaourt grec…",
+    midi: "Ex: riz complet, poulet grillé 150g, brocoli vapeur, huile d'olive…",
+    soir: "Ex: saumon rôti, patate douce, salade verte, vinaigrette…"
+  };
+  const ta = document.getElementById("food-journal-input");
+  if (ta) ta.placeholder = placeholders[type] || ta.placeholder;
+}
+
 async function saveFoodAnalysis() {
   if (!U) return toast("Connecte-toi pour sauvegarder.", "err");
   const res = window._lastFoodAnalysis;
   if (!res) return;
   const today = new Date().toISOString().slice(0, 10);
 
-  // Save all items as individual meals OR as one combined meal
   const t = res.total || {};
-  const description = (document.getElementById("food-journal-input")?.value || "Repas IA").slice(0, 60);
+  const typeLabel = MEAL_TYPE_LABELS[_selectedMealType] || "Repas";
+  const rawDesc = (document.getElementById("food-journal-input")?.value || "").slice(0, 40);
+  const name = rawDesc ? `${typeLabel}: ${rawDesc}` : typeLabel;
 
   try {
     const { error } = await SB.from("meals").insert({
       user_id: U.id,
-      name: description,
+      name: name.slice(0, 80),
       calories: t.calories || 0,
       protein: t.protein || 0,
       carbs: t.carbs || 0,
@@ -4127,9 +4153,14 @@ async function saveFoodAnalysis() {
       source: "ai_journal"
     });
     if (error) throw error;
-    toast("Repas ajouté !", "ok");
+    toast(`${typeLabel} ajouté ! ${t.calories || 0} kcal`, "ok");
     loadMeals();
     loadNutritionWeekChart();
+    // Clear
+    const ta = document.getElementById("food-journal-input");
+    if (ta) ta.value = "";
+    const resultEl = document.getElementById("food-analysis-result");
+    if (resultEl) resultEl.style.display = "none";
   } catch (e) {
     toast("Erreur: " + e.message, "err");
   }
@@ -4234,6 +4265,212 @@ function _renderNutritionWeekChart(svg, dayTotals, targetCal, targetProt) {
 window.analyzeFood = analyzeFood;
 window.saveFoodAnalysis = saveFoodAnalysis;
 window.loadNutritionWeekChart = loadNutritionWeekChart;
+window.selectMealType = selectMealType;
+
+// ── Sync water counter in programme tab ──────────────────────────────────────
+function syncProgWater() {
+  const today = new Date().toDateString();
+  const dateKey = localStorage.getItem("fitai_water_date");
+  const count = dateKey === today ? parseInt(localStorage.getItem("fitai_water_count") || "0", 10) : 0;
+  const target = parseInt(localStorage.getItem("fitai_water_target") || "8", 10);
+
+  const countEl = document.getElementById("prog-water-count");
+  const targetEl = document.getElementById("prog-water-target");
+  const barEl = document.getElementById("prog-water-bar");
+  const glassesEl = document.getElementById("prog-water-glasses");
+
+  if (countEl) countEl.textContent = count;
+  if (targetEl) targetEl.textContent = `/ ${target} verres`;
+  if (barEl) barEl.style.width = Math.min(100, Math.round((count / target) * 100)) + "%";
+  if (glassesEl) {
+    glassesEl.innerHTML = Array.from({ length: target }, (_, i) =>
+      `<span class="prog-water-mini-glass" style="opacity:${i < count ? 1 : 0.2}">💧</span>`
+    ).join("");
+  }
+}
+window.syncProgWater = syncProgWater;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// WORKOUT TIMER — Interactive séance player
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _wtExercises = [];  // [{n, m, sets, reps, rest}]
+let _wtExIdx = 0;       // current exercise index
+let _wtSetsDone = 0;    // sets done for current exercise
+let _wtSetsTotal = 0;   // total sets for current exercise
+let _wtRestTimer = null; // interval id
+let _wtRestLeft = 0;
+
+function startWorkout(dayLabel, exercises, params) {
+  _wtExercises = exercises;
+  _wtExIdx = 0;
+  _wtSetsDone = 0;
+  _wtSetsTotal = params.sets || 3;
+
+  const overlay = document.getElementById("wt-overlay");
+  const titleEl = document.getElementById("wt-title");
+  const phaseEl = document.getElementById("wt-phase-label");
+  if (titleEl) titleEl.textContent = dayLabel;
+  if (phaseEl) {
+    const phase = PROG_PHASES[(_progWeek || 1) - 1];
+    phaseEl.textContent = phase ? `${phase.name} · RPE ${phase.rpe}` : "";
+  }
+  if (overlay) overlay.classList.add("open");
+  _wtRenderExercise();
+}
+
+function _wtRenderExercise() {
+  const ex = _wtExercises[_wtExIdx];
+  if (!ex) { closeWorkoutTimer(); return; }
+
+  const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
+  _wtSetsTotal = ex.sets || params.sets || 3;
+
+  const total = _wtExercises.length;
+  const pct = Math.round((_wtExIdx / total) * 100);
+
+  const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setEl("wt-ex-num", `Exercice ${_wtExIdx + 1} / ${total}`);
+  setEl("wt-ex-name", ex.n || "—");
+  setEl("wt-ex-muscle", ex.m || "");
+  const detail = ex.r || `${params.sets}×${params.reps}${params.rest ? " · " + params.rest + "s repos" : ""}`;
+  setEl("wt-ex-detail", detail);
+
+  const fillEl = document.getElementById("wt-progress-fill");
+  if (fillEl) fillEl.style.width = pct + "%";
+
+  // Set bubbles
+  const row = document.getElementById("wt-sets-row");
+  if (row) {
+    row.innerHTML = Array.from({ length: _wtSetsTotal }, (_, i) => {
+      const cls = i < _wtSetsDone ? "done" : i === _wtSetsDone ? "current" : "";
+      return `<div class="wt-set-bubble ${cls}" onclick="wtClickSet(${i})">${i + 1}</div>`;
+    }).join("");
+  }
+
+  // Prev/next buttons
+  const prevBtn = document.getElementById("wt-prev-btn");
+  const nextBtn = document.getElementById("wt-next-btn");
+  if (prevBtn) prevBtn.disabled = _wtExIdx === 0;
+  if (nextBtn) nextBtn.disabled = _wtExIdx >= total - 1;
+
+  // Hide rest area
+  const restArea = document.getElementById("wt-rest-area");
+  if (restArea) restArea.style.display = "none";
+  const setBtn = document.getElementById("wt-set-btn");
+  if (setBtn) { setBtn.style.display = ""; setBtn.disabled = false; }
+}
+
+function wtDoneSet() {
+  _wtSetsDone++;
+  const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
+  const restSec = params.rest || 90;
+
+  // Update bubbles
+  const row = document.getElementById("wt-sets-row");
+  if (row) {
+    row.innerHTML = Array.from({ length: _wtSetsTotal }, (_, i) => {
+      const cls = i < _wtSetsDone ? "done" : i === _wtSetsDone ? "current" : "";
+      return `<div class="wt-set-bubble ${cls}" onclick="wtClickSet(${i})">${i + 1}</div>`;
+    }).join("");
+  }
+
+  if (_wtSetsDone >= _wtSetsTotal) {
+    // All sets done for this exercise — auto-advance after rest
+    _startRestTimer(restSec, () => {
+      _wtSetsDone = 0;
+      _wtExIdx = Math.min(_wtExIdx + 1, _wtExercises.length - 1);
+      if (_wtExIdx >= _wtExercises.length - 1 && _wtSetsDone >= _wtSetsTotal) {
+        closeWorkoutTimer();
+        toast("🎉 Séance terminée ! Bravo !", "ok");
+        return;
+      }
+      _wtRenderExercise();
+    });
+  } else {
+    // Start rest timer between sets
+    _startRestTimer(restSec, () => {
+      _wtRenderExercise();
+    });
+  }
+}
+
+function wtClickSet(idx) {
+  // Allow clicking a bubble to mark sets done up to that index
+  if (idx >= _wtSetsDone) { _wtSetsDone = idx + 1; _wtRenderExercise(); }
+}
+
+function _startRestTimer(seconds, onDone) {
+  _wtRestLeft = seconds;
+  if (_wtRestTimer) clearInterval(_wtRestTimer);
+
+  const restArea = document.getElementById("wt-rest-area");
+  const countdown = document.getElementById("wt-rest-countdown");
+  const setBtn = document.getElementById("wt-set-btn");
+  if (restArea) restArea.style.display = "block";
+  if (setBtn) setBtn.style.display = "none";
+  if (countdown) countdown.textContent = seconds;
+
+  _wtRestTimer = setInterval(() => {
+    _wtRestLeft--;
+    if (countdown) countdown.textContent = _wtRestLeft;
+    if (_wtRestLeft <= 0) {
+      clearInterval(_wtRestTimer);
+      _wtRestTimer = null;
+      if (restArea) restArea.style.display = "none";
+      if (setBtn) setBtn.style.display = "";
+      if (onDone) onDone();
+    }
+  }, 1000);
+}
+
+function skipRestTimer() {
+  if (_wtRestTimer) { clearInterval(_wtRestTimer); _wtRestTimer = null; }
+  const restArea = document.getElementById("wt-rest-area");
+  const setBtn = document.getElementById("wt-set-btn");
+  if (restArea) restArea.style.display = "none";
+  if (setBtn) setBtn.style.display = "";
+  // If all sets done, advance to next exercise
+  if (_wtSetsDone >= _wtSetsTotal) {
+    _wtSetsDone = 0;
+    _wtExIdx = Math.min(_wtExIdx + 1, _wtExercises.length);
+    if (_wtExIdx >= _wtExercises.length) { closeWorkoutTimer(); toast("🎉 Séance terminée !", "ok"); return; }
+  }
+  _wtRenderExercise();
+}
+
+function prevWtExercise() {
+  if (_wtRestTimer) { clearInterval(_wtRestTimer); _wtRestTimer = null; }
+  _wtSetsDone = 0;
+  _wtExIdx = Math.max(0, _wtExIdx - 1);
+  _wtRenderExercise();
+}
+
+function nextWtExercise() {
+  if (_wtRestTimer) { clearInterval(_wtRestTimer); _wtRestTimer = null; }
+  _wtSetsDone = 0;
+  _wtExIdx = Math.min(_wtExercises.length - 1, _wtExIdx + 1);
+  _wtRenderExercise();
+}
+
+function closeWorkoutTimer() {
+  if (_wtRestTimer) { clearInterval(_wtRestTimer); _wtRestTimer = null; }
+  const overlay = document.getElementById("wt-overlay");
+  if (overlay) overlay.classList.remove("open");
+}
+
+function wtOverlayClick(e) {
+  if (e.target === document.getElementById("wt-overlay")) closeWorkoutTimer();
+}
+
+window.startWorkout = startWorkout;
+window.wtDoneSet = wtDoneSet;
+window.wtClickSet = wtClickSet;
+window.skipRestTimer = skipRestTimer;
+window.prevWtExercise = prevWtExercise;
+window.nextWtExercise = nextWtExercise;
+window.closeWorkoutTimer = closeWorkoutTimer;
+window.wtOverlayClick = wtOverlayClick;
 
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -4357,6 +4594,7 @@ function loadProgramme() {
   if (!_prog) { _prog = buildOfflineProgram(); _saveProg(); }
   try { _progWeek = Math.min(8, Math.max(1, parseInt(localStorage.getItem("fitai_prog_week")) || 1)); } catch {}
   renderProgramme(_progWeek);
+  syncProgWater();
 }
 
 function _saveProg() {
@@ -4458,27 +4696,38 @@ function _renderProgDays(weekNum, params) {
   const eq = _prog.equipment || "";
   const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
   const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const doneKey = `fitai_prog_done_${new Date().toISOString().slice(0, 10)}`;
+  let doneSets = {};
+  try { doneSets = JSON.parse(localStorage.getItem(doneKey) || "{}"); } catch {}
 
-  cont.innerHTML = weekly.map(item => {
+  cont.innerHTML = weekly.map((item, dayIdx) => {
     const isToday = item.d === todayDow;
     const isRest  = item.type === "rest";
     const exType  = _progExType(item.type, eq);
-    const exList  = PROG_EXERCISES[exType] || [];
+    const exList  = (PROG_EXERCISES[exType] || []).slice(0, 7);
 
     let exHtml = "";
     if (isRest) {
-      exHtml = `<div style="font-size:.76rem;color:var(--muted);padding:4px 0">Repos complet — récupération musculaire et mentale.</div>`;
+      exHtml = `<div style="font-size:.76rem;color:var(--muted);padding:8px 0">😴 Repos complet — récupération musculaire et mentale. Hydratation, sommeil, étirements légers.</div>`;
     } else {
-      exHtml = exList.slice(0, 5).map(ex => {
-        const needSets = !["hiit","cardio","mobilite","core"].includes(item.type);
+      const needSets = !["hiit","cardio","mobilite","core"].includes(item.type);
+      exHtml = exList.map((ex, exIdx) => {
         const detail = ex.r ? ex.r : (needSets ? params.sets + "×" + params.reps + (params.rest ? " · " + params.rest + "s repos" : "") : params.reps);
-        return `<div class="prog-ex-row">
-          <div class="prog-ex-name">${ex.n}</div>
+        const isDone = doneSets[`${dayIdx}_${exIdx}`];
+        return `<div class="prog-ex-row" style="${isDone ? "opacity:.5;" : ""}">
+          <div class="prog-ex-check${isDone ? " checked" : ""}" onclick="progToggleExDone(event,${dayIdx},${exIdx})">${isDone ? "✓" : ""}</div>
+          <div class="prog-ex-name" style="${isDone ? "text-decoration:line-through;" : ""}">${ex.n}</div>
           <div class="prog-ex-detail">${detail}</div>
           <div class="prog-ex-muscle">${ex.m}</div>
         </div>`;
       }).join("");
     }
+
+    // Build JS array for timer
+    const exForTimer = JSON.stringify(exList.map(ex => ({ n: ex.n, m: ex.m, r: ex.r || null })));
+    const startBtn = (!isRest && isToday)
+      ? `<button class="prog-start-btn" onclick="event.stopPropagation();progStartWorkout(${dayIdx})" data-exlist='${exForTimer}'>▶ Commencer la séance</button>`
+      : (!isRest ? `<button class="prog-start-btn" style="opacity:.5;background:rgba(99,102,241,.25)" onclick="event.stopPropagation();progStartWorkout(${dayIdx})" data-exlist='${exForTimer}'>▶ Lancer</button>` : "");
 
     return `<div class="prog-day-card${isToday ? " prog-day-today" : ""}${isRest ? " prog-day-rest" : ""}"${isRest ? "" : ` onclick="progToggleDay(this)"`}>
       <div class="prog-day-header">
@@ -4489,7 +4738,7 @@ function _renderProgDays(weekNum, params) {
         ${!isRest ? '<span class="prog-expand-arrow" style="margin-left:auto;font-size:.6rem;color:var(--muted)">▼</span>' : ""}
       </div>
       ${!isRest
-        ? `<div class="prog-day-exercises" style="display:none">${exHtml}</div>`
+        ? `<div class="prog-day-exercises" style="display:none">${exHtml}${startBtn}</div>`
         : `<div class="prog-day-exercises" style="margin-top:8px">${exHtml}</div>`}
     </div>`;
   }).join("");
@@ -4504,11 +4753,39 @@ function progToggleDay(el) {
   if (arrow) arrow.textContent = open ? "▼" : "▲";
 }
 
+function progToggleExDone(event, dayIdx, exIdx) {
+  event.stopPropagation();
+  const doneKey = `fitai_prog_done_${new Date().toISOString().slice(0, 10)}`;
+  let doneSets = {};
+  try { doneSets = JSON.parse(localStorage.getItem(doneKey) || "{}"); } catch {}
+  const k = `${dayIdx}_${exIdx}`;
+  doneSets[k] = !doneSets[k];
+  localStorage.setItem(doneKey, JSON.stringify(doneSets));
+  // Re-render just the days
+  const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1];
+  _renderProgDays(_progWeek || 1, params);
+}
+
+function progStartWorkout(dayIdx) {
+  const weekly = _progGetWeekly(_prog?.goal || "");
+  const item = weekly[dayIdx];
+  if (!item || item.type === "rest") return;
+  const eq = _prog?.equipment || "";
+  const exType = _progExType(item.type, eq);
+  const exList = (PROG_EXERCISES[exType] || []).slice(0, 7);
+  const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
+  const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const label = `${item.icon} ${item.label} · ${dayNames[item.d - 1]}`;
+  startWorkout(label, exList, params);
+}
+
 window.loadProgramme    = loadProgramme;
 window.progPrevWeek     = progPrevWeek;
 window.progNextWeek     = progNextWeek;
 window.progSetWeek      = progSetWeek;
 window.progRegenerate   = progRegenerate;
 window.progToggleDay    = progToggleDay;
+window.progToggleExDone = progToggleExDone;
+window.progStartWorkout = progStartWorkout;
 
 document.addEventListener("DOMContentLoaded", boot);

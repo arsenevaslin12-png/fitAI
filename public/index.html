@@ -549,6 +549,12 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
 /* ── FOOD JOURNAL ── */
 .food-journal-wrap{display:flex;flex-direction:column;gap:10px}
+/* Meal type pills */
+.meal-type-strip{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:2px}
+.meal-type-btn{flex:1;min-width:68px;padding:7px 4px;border-radius:12px;border:1.5px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text2);font-size:.7rem;font-weight:800;cursor:pointer;transition:all .18s;text-align:center;letter-spacing:.02em;font-family:inherit}
+.meal-type-btn.active{border-color:rgba(99,102,241,.6);background:rgba(99,102,241,.15);color:#a5b4fc}
+/* Meal calorie hint */
+.meal-type-hint{font-size:.68rem;color:var(--muted);text-align:right;margin-top:-4px}
 .food-journal-textarea{width:100%;min-height:72px;resize:vertical;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:12px;padding:10px 12px;color:var(--text);font-size:.88rem;font-family:inherit;transition:border-color .2s}
 .food-journal-textarea:focus{outline:none;border-color:rgba(99,102,241,.5)}
 .food-journal-textarea::placeholder{color:var(--muted);font-style:italic}
@@ -586,6 +592,41 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .nutr-chart-legend{display:flex;gap:16px;margin-top:8px;flex-wrap:wrap}
 .nutr-legend-item{display:flex;align-items:center;gap:5px;font-size:.68rem;color:var(--text2);font-weight:700}
 .nutr-legend-dot{width:8px;height:8px;border-radius:50%}
+
+/* ── WORKOUT TIMER MODAL ── */
+.wt-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);z-index:9990;display:none;align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom)}
+.wt-overlay.open{display:flex;animation:fadeIn .18s ease}
+.wt-modal{background:var(--surf);border:1px solid rgba(255,255,255,.1);border-radius:28px 28px 0 0;padding:24px 20px 28px;width:100%;max-width:520px;animation:slideUp .22s ease}
+.wt-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.wt-title{font-weight:900;font-size:.95rem;color:var(--text)}
+.wt-close{width:32px;height:32px;border-radius:50%;border:none;background:rgba(255,255,255,.08);color:var(--text2);font-size:.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.wt-progress-bar{height:4px;background:rgba(255,255,255,.08);border-radius:99px;margin-bottom:20px;overflow:hidden}
+.wt-progress-fill{height:100%;background:linear-gradient(90deg,#6366f1,#8b5cf6);border-radius:99px;transition:width .4s ease}
+.wt-ex-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:18px;margin-bottom:16px;text-align:center}
+.wt-ex-num{font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:6px}
+.wt-ex-name{font-size:1.25rem;font-weight:900;color:#fff;margin-bottom:4px;line-height:1.2}
+.wt-ex-muscle{font-size:.72rem;color:#38bdf8;font-weight:700;margin-bottom:10px}
+.wt-ex-detail{font-size:.8rem;color:var(--text2);font-weight:700}
+.wt-sets-row{display:flex;justify-content:center;gap:8px;margin:14px 0}
+.wt-set-bubble{width:38px;height:38px;border-radius:50%;border:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;color:var(--muted);transition:all .2s;cursor:pointer}
+.wt-set-bubble.done{background:#4ade80;border-color:#4ade80;color:#0a1a00}
+.wt-set-bubble.current{border-color:#6366f1;color:#a5b4fc;background:rgba(99,102,241,.15)}
+.wt-rest-area{text-align:center;padding:18px 0;animation:fadeIn .2s ease}
+.wt-rest-countdown{font-size:3.5rem;font-weight:900;color:#38bdf8;line-height:1;font-variant-numeric:tabular-nums}
+.wt-rest-label{font-size:.72rem;color:var(--muted);margin-top:4px;margin-bottom:14px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.wt-actions{display:flex;gap:8px;margin-top:4px}
+.wt-actions .btn{flex:1;padding:12px 8px;font-size:.82rem}
+.wt-nav-btn{flex:0 0 auto;padding:12px 14px;font-size:.82rem}
+/* Compact water in programme */
+.prog-water-mini{display:flex;align-items:center;gap:10px;padding:14px 16px;background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.15);border-radius:16px;margin-bottom:8px}
+.prog-water-mini-glasses{display:flex;gap:3px;flex:1;flex-wrap:wrap}
+.prog-water-mini-glass{font-size:.9rem;transition:opacity .2s;cursor:default;line-height:1}
+/* prog ex checkbox */
+.prog-ex-check{width:18px;height:18px;border-radius:5px;border:1.5px solid rgba(255,255,255,.2);background:transparent;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .18s}
+.prog-ex-check.checked{background:#4ade80;border-color:#4ade80}
+/* Start workout button */
+.prog-start-btn{width:100%;margin-top:10px;padding:11px;font-size:.82rem;font-weight:800;background:linear-gradient(135deg,#4338ca,#7c3aed);border:none;border-radius:12px;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .2s}
+.prog-start-btn:hover{opacity:.88}
 
 /* ── V2 SCAN IA MINI TILE ── */
 .scan-mini-label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(0,255,255,.6);margin-bottom:8px}
@@ -1435,6 +1476,29 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
           <div id="prog-days-list" style="margin-top:12px"></div>
         </div>
 
+        <!-- Water in programme -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="font-weight:800;font-size:.88rem">💧 Hydratation du jour</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:.85rem;font-weight:900;color:#38bdf8" id="prog-water-count">0</span>
+              <span style="font-size:.72rem;color:var(--muted)" id="prog-water-target">/ 8 verres</span>
+            </div>
+          </div>
+          <div class="prog-water-mini">
+            <div class="prog-water-mini-glasses" id="prog-water-glasses"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button onclick="adjustWater(-1);syncProgWater()" class="btn btn-g" style="flex:1;padding:10px;font-size:.88rem">−</button>
+            <button onclick="adjustWater(1);syncProgWater()" class="btn btn-p" style="flex:1;padding:10px;font-size:.88rem">+ Verre 💧</button>
+          </div>
+          <div style="margin-top:8px">
+            <div class="progress-track" style="height:5px">
+              <div class="progress-fill" id="prog-water-bar" style="width:0%;background:linear-gradient(90deg,#38bdf8,#0ea5e9);transition:width .35s ease"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- Offline badge -->
         <div class="card" style="background:linear-gradient(145deg,rgba(16,185,129,.07),rgba(5,150,105,.03));border-color:rgba(16,185,129,.18);display:flex;align-items:center;gap:14px;padding:16px 20px">
           <div style="font-size:1.4rem;flex-shrink:0">📴</div>
@@ -1754,9 +1818,17 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
           <div class="card-title">🧠 Journal alimentaire IA</div>
           <div class="page-sub" style="margin-top:-8px;margin-bottom:14px">Décris ce que tu as mangé en langage naturel</div>
           <div class="food-journal-wrap">
+            <!-- Meal type pills -->
+            <div class="meal-type-strip" id="meal-type-strip">
+              <button class="meal-type-btn" data-type="petit_dej" onclick="selectMealType('petit_dej')">🌅 Petit-déj</button>
+              <button class="meal-type-btn" data-type="collation" onclick="selectMealType('collation')">🍎 Collation</button>
+              <button class="meal-type-btn active" data-type="midi" onclick="selectMealType('midi')">🌞 Midi</button>
+              <button class="meal-type-btn" data-type="soir" onclick="selectMealType('soir')">🌙 Soir</button>
+            </div>
+            <div class="meal-type-hint" id="meal-type-hint">Objectif: ~<span id="meal-cal-budget">600</span> kcal pour ce repas</div>
             <textarea id="food-journal-input" class="food-journal-textarea"
-              placeholder="Ex: ce matin j'ai mangé 3 œufs, du fromage, une tranche de pain. À midi j'ai eu des pâtes avec du poulet grillé…"></textarea>
-            <button class="btn btn-p btn-full" id="btn-analyze-food" onclick="analyzeFood()">🔍 Analyser mes repas</button>
+              placeholder="Ex: 3 œufs brouillés, du fromage, une tranche de pain complet…"></textarea>
+            <button class="btn btn-p btn-full" id="btn-analyze-food" onclick="analyzeFood()">🔍 Analyser ce repas</button>
             <div id="food-analysis-loading" class="food-analysis-loading" style="display:none">⏳ Analyse en cours…</div>
             <div id="food-analysis-result" class="food-analysis-result">
               <div id="food-quality-badge" class="quality-badge-wrap good">
@@ -2168,6 +2240,46 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
       <button class="btn btn-g" onclick="confirmCancel()">Annuler</button>
       <button class="btn btn-d" id="confirm-ok-btn" onclick="confirmOk()">Supprimer</button>
     </div>
+  </div>
+</div>
+
+<!-- Workout Timer Modal -->
+<div class="wt-overlay" id="wt-overlay" onclick="wtOverlayClick(event)">
+  <div class="wt-modal" id="wt-modal">
+    <div class="wt-header">
+      <div>
+        <div class="wt-title" id="wt-title">Séance</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:2px" id="wt-phase-label"></div>
+      </div>
+      <button class="wt-close" onclick="closeWorkoutTimer()">✕</button>
+    </div>
+    <div class="wt-progress-bar"><div class="wt-progress-fill" id="wt-progress-fill" style="width:0%"></div></div>
+
+    <!-- Exercise display -->
+    <div class="wt-ex-card" id="wt-ex-card">
+      <div class="wt-ex-num" id="wt-ex-num">Exercice 1 / 5</div>
+      <div class="wt-ex-name" id="wt-ex-name">—</div>
+      <div class="wt-ex-muscle" id="wt-ex-muscle"></div>
+      <div class="wt-ex-detail" id="wt-ex-detail"></div>
+    </div>
+
+    <!-- Set bubbles -->
+    <div class="wt-sets-row" id="wt-sets-row"></div>
+
+    <!-- Rest timer (hidden by default) -->
+    <div class="wt-rest-area" id="wt-rest-area" style="display:none">
+      <div class="wt-rest-countdown" id="wt-rest-countdown">90</div>
+      <div class="wt-rest-label">secondes de repos</div>
+      <button class="btn btn-g btn-sm" onclick="skipRestTimer()" style="margin:0 auto;display:block">⏭ Passer le repos</button>
+    </div>
+
+    <!-- Actions -->
+    <div class="wt-actions">
+      <button class="btn btn-g wt-nav-btn" onclick="prevWtExercise()" id="wt-prev-btn">←</button>
+      <button class="btn btn-p" onclick="wtDoneSet()" id="wt-set-btn" style="flex:1;font-weight:800">✓ Série effectuée</button>
+      <button class="btn btn-g wt-nav-btn" onclick="nextWtExercise()" id="wt-next-btn">→</button>
+    </div>
+    <button class="btn btn-s btn-full" style="margin-top:10px;opacity:.7" onclick="closeWorkoutTimer()">🏁 Terminer la séance</button>
   </div>
 </div>
 
