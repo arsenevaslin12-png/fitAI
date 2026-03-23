@@ -2286,8 +2286,8 @@ function confirmModal(title, sub = "Cette action est irréversible.", okLabel = 
     const subEl    = document.getElementById("confirm-sub");
     const okBtn    = document.getElementById("confirm-ok-btn");
     if (!overlay) { resolve(window.confirm(title)); return; }
-    if (titleEl) titleEl.textContent = title;
-    if (subEl)   subEl.textContent   = sub;
+    if (titleEl) titleEl.textContent  = title;
+    if (subEl)   { subEl.textContent = sub; subEl.style.display = sub ? "block" : "none"; }
     if (okBtn)   okBtn.textContent   = okLabel;
     overlay.classList.add("open");
     _confirmResolve = resolve;
@@ -3182,6 +3182,7 @@ function renderWeeklyPlan(plan) {
   if (!plan.length) {
     grid.innerHTML = "";
     if (emptyEl) emptyEl.style.display = "block";
+    if (labelEl) labelEl.textContent = "";
     return;
   }
   if (emptyEl) emptyEl.style.display = "none";
@@ -3737,47 +3738,63 @@ function getWaterData() {
   return fresh;
 }
 
-function adjustWater(delta) {
-  const d      = getWaterData();
-  const target = getWaterTarget();
-  d.count = Math.max(0, Math.min(target + 4, d.count + delta));
-  try { localStorage.setItem(WATER_KEY, JSON.stringify(d)); } catch {}
-  renderWater();
-  if (d.count === target) {
-    const liters = (target * 0.25).toFixed(1).replace(/\.0$/, "");
-    toast(`💧 Objectif hydratation atteint ! ${liters}L bu.`, "ok");
-  }
+function glassesToL(n) {
+  return (n * 0.25).toFixed(1).replace(/\.0$/, "");
 }
 
-function renderWater() {
+function _applyWaterCount(newCount, animIdx = -1) {
+  const target = getWaterTarget();
+  const d      = getWaterData();
+  d.count = Math.max(0, Math.min(target, newCount));
+  try { localStorage.setItem(WATER_KEY, JSON.stringify(d)); } catch {}
+  renderWater(animIdx);
+  if (d.count === target) toast(`💧 Objectif atteint ! ${glassesToL(target)}L bu.`, "ok");
+}
+
+function adjustWater(delta) {
+  const oldCount = getWaterData().count;
+  _applyWaterCount(oldCount + delta, delta > 0 ? oldCount : -1);
+}
+
+function setWaterCount(n) {
+  const oldCount = getWaterData().count;
+  const newCount = (oldCount === n) ? n - 1 : n;
+  _applyWaterCount(newCount, newCount > oldCount ? newCount - 1 : -1);
+}
+
+function renderWater(newlyFilledIdx = -1) {
   const d      = getWaterData();
   const count  = d.count;
   const target = getWaterTarget();
 
-  const glassesEl = document.getElementById("water-glasses");
-  const barEl     = document.getElementById("water-bar");
-  const summEl    = document.getElementById("water-summary");
-  const litersEl  = document.getElementById("water-liters");
-  const pctEl     = document.getElementById("water-pct-label");
+  const glassesEl   = document.getElementById("water-glasses");
+  const barEl       = document.getElementById("water-bar");
+  const summEl      = document.getElementById("water-summary");
+  const litersEl    = document.getElementById("water-liters");
+  const pctEl       = document.getElementById("water-pct-label");
+  const countEl     = document.getElementById("water-count");
+  const targetLblEl = document.getElementById("water-target-lbl");
 
   if (!glassesEl) return;
 
-  // Render glass icons (show target slots + any overflow)
-  const slots = Math.max(target, count);
-  glassesEl.innerHTML = Array.from({ length: slots }, (_, i) => {
+  glassesEl.innerHTML = Array.from({ length: target }, (_, i) => {
     const filled = i < count;
-    return `<div class="water-glass${filled ? " filled" : ""}">${filled ? "💧" : ""}</div>`;
+    const isNew  = i === newlyFilledIdx;
+    return `<div class="water-glass${filled ? " filled" : ""}${isNew ? " done-pop" : ""}"
+      onclick="setWaterCount(${i + 1})" title="${filled ? "Retirer" : "Marquer bu"}">${filled ? "💧" : ""}</div>`;
   }).join("");
 
-  const pct = Math.min(100, Math.round((count / target) * 100));
-  if (barEl)    barEl.style.width = `${pct}%`;
-  const targetL = (target * 0.25).toFixed(1).replace(/\.0$/, "");
-  if (summEl)   summEl.textContent = `${count} / ${target} verres`;
-  if (litersEl) litersEl.textContent = `${(count * 0.25).toFixed(2).replace(/\.?0+$/, "")} L / ${targetL} L`;
-  if (pctEl)    pctEl.textContent = `${pct}%`;
+  const pct = Math.round((count / target) * 100);
+  if (barEl)       barEl.style.width       = `${pct}%`;
+  if (countEl)     countEl.textContent     = count;
+  if (targetLblEl) targetLblEl.textContent = `/ ${target} verres`;
+  if (litersEl)    litersEl.textContent    = `${glassesToL(count)} L / ${glassesToL(target)} L`;
+  if (summEl)      summEl.textContent      = `${count} / ${target} verres`;
+  if (pctEl)       pctEl.textContent       = `${pct}%`;
 }
 
-window.adjustWater = adjustWater;
+window.adjustWater  = adjustWater;
+window.setWaterCount = setWaterCount;
 
 const DAILY_POOL = [
   { id: "pushups_100", title: "100 pompes", desc: "En autant de séries que nécessaire", icon: "💪", xp: 150, category: "Force" },

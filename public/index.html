@@ -629,10 +629,20 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .progress-wrap{margin-top:12px;background:var(--surf2);border:1px solid var(--border);border-radius:14px;padding:12px}
 .progress-track{height:8px;background:var(--surf3);border-radius:999px;overflow:hidden}
 .progress-fill{height:100%;width:0;background:var(--grad);transition:width .3s;border-radius:999px}
-.water-btn{width:34px;height:34px;border-radius:50%;background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.25);color:#38bdf8;font-size:1.2rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s}
-.water-btn:hover{background:rgba(56,189,248,.22)}
-.water-glass{width:20px;height:20px;border-radius:5px;border:1.5px solid rgba(56,189,248,.35);display:flex;align-items:center;justify-content:center;font-size:.8rem;transition:all .2s;cursor:default}
-.water-glass.filled{background:rgba(56,189,248,.2);border-color:#38bdf8}
+.water-btn{width:42px;height:42px;border-radius:50%;background:rgba(56,189,248,.1);border:1.5px solid rgba(56,189,248,.28);color:#38bdf8;font-size:1.4rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;line-height:1}
+.water-btn:hover{background:rgba(56,189,248,.2);transform:scale(1.08)}
+.water-btn:active{transform:scale(.95)}
+.water-count-badge{background:rgba(56,189,248,.1);border:1.5px solid rgba(56,189,248,.25);border-radius:14px;padding:6px 14px;text-align:center;min-width:60px}
+.water-count-num{font-size:1.7rem;font-weight:900;color:#38bdf8;line-height:1;letter-spacing:-.03em}
+.water-count-lbl{font-size:.58rem;color:var(--muted);font-weight:700;margin-top:1px}
+.water-glasses-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+.water-glass{aspect-ratio:1;border-radius:10px;border:1.5px solid rgba(56,189,248,.2);display:flex;align-items:center;justify-content:center;font-size:1.1rem;cursor:pointer;transition:all .2s;background:rgba(56,189,248,.03);position:relative;overflow:hidden}
+.water-glass::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(56,189,248,.15),rgba(14,165,233,.28));opacity:0;transition:opacity .2s;border-radius:inherit}
+.water-glass.filled{border-color:#38bdf8;background:rgba(56,189,248,.12)}
+.water-glass.filled::after{opacity:1}
+.water-glass:hover{border-color:rgba(56,189,248,.55);transform:scale(1.06)}
+.water-glass.done-pop{animation:waterPop .3s ease}
+@keyframes waterPop{0%{transform:scale(1)}50%{transform:scale(1.25)}100%{transform:scale(1)}}
 .progress-text{margin-top:6px;font-size:.78rem;color:var(--muted);font-weight:700;text-align:right}
 
 /* ── SCROLLBAR ── */
@@ -1273,28 +1283,34 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
           </div>
           <div style="font-size:.72rem;color:var(--muted);margin-bottom:2px" id="plan-week-label"></div>
           <div id="weekly-plan-grid"><div class="plan-grid" id="plan-day-grid"></div></div>
-          <div id="plan-empty" style="text-align:center;padding:14px 0;font-size:.8rem;color:var(--muted)">Aucun planning — appuie sur Générer pour créer ta semaine.</div>
+          <div id="plan-empty" style="display:none;text-align:center;padding:14px 0;font-size:.8rem;color:var(--muted)">Aucun planning — appuie sur Générer pour créer ta semaine.</div>
         </div>
 
         <!-- Water counter -->
-        <div class="card" id="water-card" style="margin-bottom:4px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <div style="font-weight:800;font-size:.92rem">💧 Hydratation du jour</div>
-            <div style="font-size:.7rem;color:var(--muted);font-weight:700" id="water-pct-label">0%</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <button onclick="adjustWater(-1)" class="water-btn">−</button>
-            <div id="water-glasses" style="display:flex;gap:5px;flex:1;flex-wrap:wrap;justify-content:center"></div>
-            <button onclick="adjustWater(1)" class="water-btn">+</button>
-          </div>
-          <div style="margin-top:10px">
-            <div class="progress-track" style="height:6px">
-              <div class="progress-fill" id="water-bar" style="width:0%;background:linear-gradient(90deg,#38bdf8,#0ea5e9)"></div>
+        <div class="card" id="water-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div>
+              <div style="font-weight:800;font-size:.95rem">💧 Hydratation</div>
+              <div style="font-size:.7rem;color:var(--muted);margin-top:2px" id="water-liters">0 L / 2 L</div>
             </div>
-            <div style="display:flex;justify-content:space-between;margin-top:5px">
-              <span style="font-size:.72rem;color:var(--muted)" id="water-summary">0 / 8 verres</span>
-              <span style="font-size:.72rem;color:#38bdf8;font-weight:700" id="water-liters">0 L / 2 L</span>
+            <div class="water-count-badge">
+              <div class="water-count-num" id="water-count">0</div>
+              <div class="water-count-lbl" id="water-target-lbl">/ 8 verres</div>
             </div>
+          </div>
+          <div id="water-glasses" class="water-glasses-grid"></div>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
+            <button onclick="adjustWater(-1)" class="water-btn" aria-label="Retirer un verre">−</button>
+            <div style="flex:1">
+              <div class="progress-track" style="height:8px">
+                <div class="progress-fill" id="water-bar" style="width:0%;background:linear-gradient(90deg,#38bdf8,#0ea5e9);transition:width .35s ease"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:5px">
+                <span style="font-size:.68rem;color:var(--muted)" id="water-summary">0 / 8 verres</span>
+                <span style="font-size:.68rem;color:#38bdf8;font-weight:700" id="water-pct-label">0%</span>
+              </div>
+            </div>
+            <button onclick="adjustWater(1)" class="water-btn" aria-label="Ajouter un verre">+</button>
           </div>
         </div>
 

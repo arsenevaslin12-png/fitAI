@@ -152,6 +152,7 @@ Dans **Vercel Dashboard → Settings → Environment Variables**, configurez :
 |----------|--------|-------------|
 | `SUPABASE_URL` | `https://xxxxx.supabase.co` | ✅ |
 | `SUPABASE_ANON_KEY` | Clé anon/public depuis Supabase Settings → API | ✅ |
+| `SUPABASE_SERVICE_ROLE_KEY` | Clé service role depuis Supabase Settings → API | ✅ Pour `/api/generate-plan` |
 | `GEMINI_API_KEY` | Clé Google AI Studio | ✅ (fallbacks texte si absent) |
 | `ALLOWED_ORIGIN` | URL Vercel de production | Recommandé |
 
