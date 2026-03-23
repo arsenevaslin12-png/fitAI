@@ -455,6 +455,7 @@ function gotoTab(name) {
   if (name === "bodyscan") loadScans();
   if (name === "progress") loadProgress();
   if (name === "defis") loadDefis();
+  if (name === "programme") loadProgramme();
   if (name === "profile") {
     loadProfile();
     loadStats();
@@ -3955,5 +3956,283 @@ function renderDailyChallengesSection() {
 
 window.completeDailyChallenge = completeDailyChallenge;
 window.renderDailyChallengesSection = renderDailyChallengesSection;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROGRAMME 8 SEMAINES — 100% Offline-first
+// ══════════════════════════════════════════════════════════════════════════════
+
+const PROG_PHASES = [
+  { w:1, name:"Adaptation",    short:"S1", color:"#6366f1", volume:35, intensity:40, rpe:"5-6",  desc:"Volume léger, 12-15 reps. Apprentissage des mouvements, focus technique. RPE 5-6." },
+  { w:2, name:"Hypertrophie",  short:"S2", color:"#2563eb", volume:55, intensity:62, rpe:"6-7",  desc:"Volume modéré, 10-12 reps. Surcharge progressive légère, +1 rep ou +2% vs S1. RPE 6-7." },
+  { w:3, name:"Hypertrophie+", short:"S3", color:"#1d4ed8", volume:78, intensity:72, rpe:"7-8",  desc:"Volume élevé, pic du cycle. +1 set ou +5% poids vs S2. Fatigue musculaire élevée. RPE 7-8." },
+  { w:4, name:"Deload",        short:"S4", color:"#10b981", volume:28, intensity:38, rpe:"5",    desc:"Décharge obligatoire: volume -40%, maintien de la technique, récupération active. RPE 5." },
+  { w:5, name:"Force",         short:"S5", color:"#f97316", volume:62, intensity:78, rpe:"7-8",  desc:"Force: charges lourdes, 5-7 reps, repos 2-3 min. Composés prioritaires. RPE 7-8." },
+  { w:6, name:"Force+",        short:"S6", color:"#ea580c", volume:65, intensity:88, rpe:"8-9",  desc:"Force max: +3-5% charge vs S5, 4-6 reps. Même structure, progression stricte. RPE 8-9." },
+  { w:7, name:"Puissance",     short:"S7", color:"#ef4444", volume:48, intensity:92, rpe:"9",    desc:"Intensité max, 3-5 reps sur composés. Travail explosif. Peu d'accessoires. RPE 9." },
+  { w:8, name:"Test Final",    short:"S8", color:"#8b5cf6", volume:32, intensity:96, rpe:"10",   desc:"Test de force: tente ton max sur les composés principaux. Bilan et récupération du cycle." }
+];
+
+const PROG_PHASE_PARAMS = [
+  { sets:3, reps:"12-15", rest:60  },
+  { sets:4, reps:"10-12", rest:90  },
+  { sets:5, reps:"8-10",  rest:90  },
+  { sets:2, reps:"12-15", rest:60  },
+  { sets:4, reps:"5-7",   rest:180 },
+  { sets:4, reps:"4-6",   rest:180 },
+  { sets:4, reps:"3-5",   rest:240 },
+  { sets:3, reps:"1-3",   rest:300 }
+];
+
+const PROG_EXERCISES = {
+  push:        [{ n:"Développé couché barre", m:"Pecs" }, { n:"Développé militaire haltères", m:"Épaules" }, { n:"Développé incliné haltères", m:"Pecs haut" }, { n:"Élévations latérales", m:"Deltoïdes" }, { n:"Extension triceps poulie", m:"Triceps" }],
+  push_home:   [{ n:"Pompes (mains larges)", m:"Pecs" }, { n:"Pompes inclinées", m:"Pecs haut" }, { n:"Pike push-ups", m:"Épaules" }, { n:"Dips sur chaise", m:"Triceps" }, { n:"Pompes diamant", m:"Triceps" }],
+  pull:        [{ n:"Tractions / tirage poulie", m:"Dos/Biceps" }, { n:"Rowing barre penché", m:"Dos" }, { n:"Tirage poitrine câble", m:"Grand dorsal" }, { n:"Curl haltères alterné", m:"Biceps" }, { n:"Face pull", m:"Épaules arrière" }],
+  pull_home:   [{ n:"Rowing haltères 1 bras", m:"Dos" }, { n:"Rowing élastique", m:"Dos" }, { n:"Curl haltères", m:"Biceps" }, { n:"Oiseau haltères", m:"Épaules arrière" }, { n:"Superman", m:"Bas du dos" }],
+  legs:        [{ n:"Squat barre", m:"Quadriceps" }, { n:"Soulevé de terre roumain", m:"Ischios/Fessiers" }, { n:"Presse à cuisses", m:"Quadriceps" }, { n:"Fentes marchées", m:"Fessiers/Quadriceps" }, { n:"Extensions mollets debout", m:"Mollets" }],
+  legs_home:   [{ n:"Squat poids du corps", m:"Quadriceps" }, { n:"Pont fessier (hip thrust)", m:"Fessiers" }, { n:"Fentes avant", m:"Quadriceps/Fessiers" }, { n:"Step-ups (chaise)", m:"Fessiers" }, { n:"Relevés de mollets", m:"Mollets" }],
+  fullbody:    [{ n:"Squat haltères", m:"Jambes" }, { n:"Pompes", m:"Pecs/Triceps" }, { n:"Rowing haltères", m:"Dos/Biceps" }, { n:"Fentes avant", m:"Jambes/Fessiers" }, { n:"Planche", m:"Core" }],
+  hiit:        [{ n:"Burpees", m:"Full body", r:"20s ×8 (Tabata)" }, { n:"Mountain climbers", m:"Core/Cardio", r:"30s" }, { n:"Jump squats", m:"Jambes/Cardio", r:"30s" }, { n:"Planche dynamique", m:"Core", r:"45s" }, { n:"Montées de genoux", m:"Cardio", r:"30s" }],
+  cardio:      [{ n:"Course / marche rapide", m:"Cardio", r:"35 min zone 2" }, { n:"Vélo / elliptique", m:"Cardio", r:"30 min FC stable" }],
+  core:        [{ n:"Planche avant", m:"Core", r:"30-60s" }, { n:"Crunchs bicycle", m:"Obliques", r:"15-20 reps" }, { n:"Hollow body", m:"Core", r:"30s" }, { n:"Bird dog", m:"Stabilisateurs", r:"10/côté" }, { n:"Gainage latéral", m:"Obliques", r:"30s/côté" }],
+  mobilite:    [{ n:"Pigeon yoga (hanche)", m:"Hanches", r:"90s/côté" }, { n:"Étirement quadriceps", m:"Quadriceps", r:"60s/côté" }, { n:"Cat-cow rachis", m:"Dos", r:"10 cycles" }, { n:"Foam roller thoracique", m:"Haut du dos", r:"2 min" }, { n:"Hip flexors fente basse", m:"Hanches/Psoas", r:"90s/côté" }],
+  rest:        []
+};
+
+const PROG_WEEKLY = {
+  prise_de_masse: [
+    { d:1, label:"Push — Pecs / Épaules / Triceps", type:"push",     icon:"🏋️" },
+    { d:2, label:"Pull — Dos / Biceps",              type:"pull",     icon:"💪" },
+    { d:3, label:"Jambes + Fessiers",                type:"legs",     icon:"🦵" },
+    { d:4, label:"Repos actif / Mobilité",           type:"mobilite", icon:"🧘" },
+    { d:5, label:"Push — Épaules / Triceps focus",  type:"push",     icon:"🏋️" },
+    { d:6, label:"Pull — Dos accessoires",           type:"pull",     icon:"💪" },
+    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+  ],
+  perte_de_poids: [
+    { d:1, label:"HIIT Full Body",                   type:"hiit",     icon:"⚡" },
+    { d:2, label:"Cardio LISS",                      type:"cardio",   icon:"🏃" },
+    { d:3, label:"Full Body Circuit",                type:"fullbody", icon:"🔥" },
+    { d:4, label:"Repos actif / Marche",             type:"mobilite", icon:"🧘" },
+    { d:5, label:"HIIT Tabata",                      type:"hiit",     icon:"⚡" },
+    { d:6, label:"Cardio + Core",                    type:"core",     icon:"🏊" },
+    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+  ],
+  remise_en_forme: [
+    { d:1, label:"Full Body A",                      type:"fullbody", icon:"🏋️" },
+    { d:2, label:"Cardio modéré",                    type:"cardio",   icon:"🏃" },
+    { d:3, label:"Full Body B",                      type:"fullbody", icon:"🏋️" },
+    { d:4, label:"Repos",                            type:"rest",     icon:"😴" },
+    { d:5, label:"Full Body A (variante)",           type:"fullbody", icon:"🏋️" },
+    { d:6, label:"Mobilité + Étirements",            type:"mobilite", icon:"🧘" },
+    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+  ],
+  force: [
+    { d:1, label:"Squat + Accessoires jambes",       type:"legs",     icon:"🏋️" },
+    { d:2, label:"Repos",                            type:"rest",     icon:"😴" },
+    { d:3, label:"Développé couché + Push",         type:"push",     icon:"💪" },
+    { d:4, label:"Repos",                            type:"rest",     icon:"😴" },
+    { d:5, label:"Soulevé de terre + Pull",          type:"pull",     icon:"🏋️" },
+    { d:6, label:"Accessoires + Core",               type:"core",     icon:"🔥" },
+    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+  ],
+  endurance: [
+    { d:1, label:"Course — endurance",               type:"cardio",   icon:"🏃" },
+    { d:2, label:"Full Body léger",                  type:"fullbody", icon:"💪" },
+    { d:3, label:"Intervalles HIIT",                 type:"hiit",     icon:"⚡" },
+    { d:4, label:"Repos actif",                      type:"mobilite", icon:"🧘" },
+    { d:5, label:"Course longue",                    type:"cardio",   icon:"🏃" },
+    { d:6, label:"Force fonctionnelle",              type:"fullbody", icon:"🏋️" },
+    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+  ]
+};
+
+function _progExType(type, equipment) {
+  const eq = String(equipment || "").toLowerCase();
+  const gym = eq.includes("salle") || eq.includes("gym") || eq.includes("barre") || eq.includes("complet");
+  if (!gym) {
+    if (type === "push") return "push_home";
+    if (type === "pull") return "pull_home";
+    if (type === "legs") return "legs_home";
+  }
+  return type;
+}
+
+function _progGetWeekly(goal) {
+  return PROG_WEEKLY[String(goal || "").toLowerCase()] || PROG_WEEKLY.remise_en_forme;
+}
+
+// Build / reload program from profile (offline)
+function buildOfflineProgram() {
+  let goal = "remise_en_forme", level = "beginner", equipment = "", name = "";
+  try {
+    const gc = localStorage.getItem("fitai_goal_ctx");
+    if (gc) { const o = JSON.parse(gc); goal = o.type || o.goal || goal; level = o.level || level; equipment = o.equipment || o.text || equipment; }
+    const pp = localStorage.getItem("fitai_profile");
+    if (pp) { const o = JSON.parse(pp); name = o.display_name || ""; }
+  } catch {}
+  return { goal, level, equipment, name, generatedAt: Date.now() };
+}
+
+let _progWeek = 1;
+let _prog = null;
+
+function loadProgramme() {
+  try { const c = localStorage.getItem("fitai_prog_v2"); if (c) _prog = JSON.parse(c); } catch {}
+  if (!_prog) { _prog = buildOfflineProgram(); _saveProg(); }
+  try { _progWeek = Math.min(8, Math.max(1, parseInt(localStorage.getItem("fitai_prog_week")) || 1)); } catch {}
+  renderProgramme(_progWeek);
+}
+
+function _saveProg() {
+  try { localStorage.setItem("fitai_prog_v2", JSON.stringify(_prog)); localStorage.setItem("fitai_prog_week", String(_progWeek)); } catch {}
+}
+
+function progPrevWeek() { if (_progWeek > 1) { _progWeek--; _saveProg(); renderProgramme(_progWeek); } }
+function progNextWeek() { if (_progWeek < 8) { _progWeek++; _saveProg(); renderProgramme(_progWeek); } }
+function progSetWeek(w)  { _progWeek = w; _saveProg(); renderProgramme(w); }
+function progRegenerate() { _prog = buildOfflineProgram(); _progWeek = 1; _saveProg(); renderProgramme(1); toast("Programme régénéré ✓", "ok"); }
+
+function renderProgramme(weekNum) {
+  if (!_prog) { _prog = buildOfflineProgram(); _saveProg(); }
+  const phase = PROG_PHASES[weekNum - 1];
+  const params = PROG_PHASE_PARAMS[weekNum - 1];
+
+  // Subtitle
+  const sub = document.getElementById("prog-subtitle");
+  if (sub) sub.textContent = (_prog.name ? _prog.name + " · " : "") + phase.name + " · RPE " + phase.rpe;
+
+  // Phase strip chips
+  const strip = document.getElementById("prog-phases-strip");
+  if (strip) {
+    strip.innerHTML = PROG_PHASES.map(p => {
+      const active = p.w === weekNum;
+      return `<button class="prog-phase-chip${active ? " active" : ""}"
+        style="border-color:${p.color};${active ? "background:" + p.color + ";" : "color:" + p.color + ";"}"
+        onclick="progSetWeek(${p.w})" title="${p.name}">${p.short}</button>`;
+    }).join("");
+  }
+
+  // Cycle progress bar
+  const bar = document.getElementById("prog-cycle-bar");
+  const lbl = document.getElementById("prog-cycle-label");
+  if (bar) bar.style.width = ((weekNum / 8) * 100) + "%";
+  if (lbl) lbl.textContent = "Semaine " + weekNum + " / 8 — " + phase.name;
+
+  // SVG Chart
+  _renderProgChart(weekNum);
+
+  // Week info
+  const sw = document.getElementById("prog-sel-week");
+  const sp = document.getElementById("prog-sel-phase");
+  const wd = document.getElementById("prog-week-desc");
+  if (sw) sw.textContent = weekNum;
+  if (sp) { sp.textContent = phase.name; sp.style.color = phase.color; }
+  if (wd) wd.textContent = phase.desc;
+
+  // Days
+  _renderProgDays(weekNum, params);
+}
+
+function _renderProgChart(currentWeek) {
+  const svg = document.getElementById("prog-svg-chart");
+  if (!svg) return;
+  const W = 300, H = 90, pL = 22, pR = 10, pT = 8, pB = 18;
+  const cW = W - pL - pR, cH = H - pT - pB;
+  const toX = i => pL + (i / 7) * cW;
+  const toY = v => pT + cH - (v / 100) * cH;
+
+  const vols = PROG_PHASES.map(p => p.volume);
+  const ints = PROG_PHASES.map(p => p.intensity);
+
+  function line(vals, color, id) {
+    const pts = vals.map((v, i) => toX(i).toFixed(1) + "," + toY(v).toFixed(1)).join(" ");
+    const area = toX(0).toFixed(1) + "," + toY(0).toFixed(1) + " " + pts + " " + toX(7).toFixed(1) + "," + toY(0).toFixed(1);
+    const dots = vals.map((v, i) => {
+      const isCur = i + 1 === currentWeek;
+      return `<circle cx="${toX(i).toFixed(1)}" cy="${toY(v).toFixed(1)}" r="${isCur ? 4 : 2.5}" fill="${color}" ${isCur ? 'stroke="#fff" stroke-width="1.5"' : ""}/>`;
+    }).join("");
+    return `<polygon points="${area}" fill="${color}" opacity="0.08"/>
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      ${dots}`;
+  }
+
+  // Grid lines
+  const grid = [0, 25, 50, 75, 100].map(v => {
+    const y = toY(v).toFixed(1);
+    return `<line x1="${pL}" y1="${y}" x2="${W - pR}" y2="${y}" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+      <text x="${(pL - 2)}" y="${(parseFloat(y) + 3).toFixed(1)}" text-anchor="end" fill="rgba(255,255,255,.25)" font-size="6">${v}</text>`;
+  }).join("");
+
+  // Current week marker
+  const cx = toX(currentWeek - 1).toFixed(1);
+  const marker = `<line x1="${cx}" y1="${pT}" x2="${cx}" y2="${pT + cH}" stroke="${PROG_PHASES[currentWeek - 1].color}" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.6"/>`;
+
+  // X labels
+  const xlabels = PROG_PHASES.map((p, i) =>
+    `<text x="${toX(i).toFixed(1)}" y="${H - 3}" text-anchor="middle" fill="rgba(255,255,255,.35)" font-size="7">${p.short}</text>`
+  ).join("");
+
+  svg.innerHTML = grid + marker + line(vols, "#2563eb") + line(ints, "#f97316") + xlabels;
+}
+
+function _renderProgDays(weekNum, params) {
+  const cont = document.getElementById("prog-days-list");
+  if (!cont || !_prog) return;
+  const weekly = _progGetWeekly(_prog.goal);
+  const eq = _prog.equipment || "";
+  const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
+  const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+
+  cont.innerHTML = weekly.map(item => {
+    const isToday = item.d === todayDow;
+    const isRest  = item.type === "rest";
+    const exType  = _progExType(item.type, eq);
+    const exList  = PROG_EXERCISES[exType] || [];
+
+    let exHtml = "";
+    if (isRest) {
+      exHtml = `<div style="font-size:.76rem;color:var(--muted);padding:4px 0">Repos complet — récupération musculaire et mentale.</div>`;
+    } else {
+      exHtml = exList.slice(0, 5).map(ex => {
+        const needSets = !["hiit","cardio","mobilite","core"].includes(item.type);
+        const detail = ex.r ? ex.r : (needSets ? params.sets + "×" + params.reps + (params.rest ? " · " + params.rest + "s repos" : "") : params.reps);
+        return `<div class="prog-ex-row">
+          <div class="prog-ex-name">${ex.n}</div>
+          <div class="prog-ex-detail">${detail}</div>
+          <div class="prog-ex-muscle">${ex.m}</div>
+        </div>`;
+      }).join("");
+    }
+
+    return `<div class="prog-day-card${isToday ? " prog-day-today" : ""}${isRest ? " prog-day-rest" : ""}"${isRest ? "" : ` onclick="progToggleDay(this)"`}>
+      <div class="prog-day-header">
+        <span class="prog-day-num">${dayNames[item.d - 1]}</span>
+        <span class="prog-day-icon" style="margin-left:4px">${item.icon}</span>
+        <span class="prog-day-label">${item.label}</span>
+        ${isToday ? '<span class="prog-today-badge">Aujourd\'hui</span>' : ""}
+        ${!isRest ? '<span class="prog-expand-arrow" style="margin-left:auto;font-size:.6rem;color:var(--muted)">▼</span>' : ""}
+      </div>
+      ${!isRest
+        ? `<div class="prog-day-exercises" style="display:none">${exHtml}</div>`
+        : `<div class="prog-day-exercises" style="margin-top:8px">${exHtml}</div>`}
+    </div>`;
+  }).join("");
+}
+
+function progToggleDay(el) {
+  const ex = el.querySelector(".prog-day-exercises");
+  const arrow = el.querySelector(".prog-expand-arrow");
+  if (!ex) return;
+  const open = ex.style.display !== "none";
+  ex.style.display = open ? "none" : "block";
+  if (arrow) arrow.textContent = open ? "▼" : "▲";
+}
+
+window.loadProgramme    = loadProgramme;
+window.progPrevWeek     = progPrevWeek;
+window.progNextWeek     = progNextWeek;
+window.progSetWeek      = progSetWeek;
+window.progRegenerate   = progRegenerate;
+window.progToggleDay    = progToggleDay;
 
 document.addEventListener("DOMContentLoaded", boot);

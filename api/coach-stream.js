@@ -146,7 +146,8 @@ ${rawMessage}`;
       apiKey,
       prompt,
       temperature: 0.7,
-      maxOutputTokens: 1400,
+      maxOutputTokens: 900,
+      timeoutMs: 25000,
       onChunk: (text) => sseWrite(res, { text })
     });
 

@@ -488,9 +488,10 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .b-calories{grid-column:4;grid-row:2}
 .b-sessions{grid-column:3;grid-row:3}
 .b-scan-mini{grid-column:4;grid-row:3;cursor:pointer}
-.b-coach{grid-column:1/3;grid-row:4}
-.b-activite{grid-column:3/5;grid-row:4}
-.b-actions{grid-column:1/5;grid-row:5}
+.b-water{grid-column:1/3;grid-row:4;background:linear-gradient(145deg,rgba(56,189,248,.07),rgba(14,165,233,.03));border-color:rgba(56,189,248,.2)}
+.b-coach{grid-column:3/5;grid-row:4}
+.b-activite{grid-column:1/5;grid-row:5}
+.b-actions{grid-column:1/5;grid-row:6}
 /* Stat card helpers */
 .db-stat-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:.9rem;margin-bottom:12px}
 .db-stat-icon.ic-orange{background:rgba(249,115,22,.15);color:var(--orange)}
@@ -566,7 +567,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 /* ── Responsive ── */
 @media(max-width:640px){
   .bento{grid-template-columns:repeat(2,1fr)}
-  .b-mood,.b-seance,.b-coach,.b-activite,.b-actions{grid-column:span 2;grid-row:auto}
+  .b-mood,.b-seance,.b-water,.b-coach,.b-activite,.b-actions{grid-column:span 2;grid-row:auto}
   .b-streak,.b-calories,.b-sessions,.b-scan-mini{grid-column:auto;grid-row:auto}
   .db-actions-bento{grid-template-columns:repeat(2,1fr)}
   .mood-inner{flex-direction:column;align-items:flex-start;gap:14px}
@@ -578,7 +579,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   .b-mood{grid-column:span 2;grid-row:auto}
   .b-seance{grid-column:1/3;grid-row:auto}
   .b-streak,.b-calories,.b-sessions,.b-scan-mini{grid-column:auto;grid-row:auto}
-  .b-coach,.b-activite{grid-column:span 2;grid-row:auto}
+  .b-water,.b-coach,.b-activite{grid-column:span 2;grid-row:auto}
   .b-actions{grid-column:span 2;grid-row:auto}
   .db-actions-bento{grid-template-columns:repeat(4,1fr)}
 }
@@ -644,6 +645,29 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .water-glass.done-pop{animation:waterPop .3s ease}
 @keyframes waterPop{0%{transform:scale(1)}50%{transform:scale(1.25)}100%{transform:scale(1)}}
 .progress-text{margin-top:6px;font-size:.78rem;color:var(--muted);font-weight:700;text-align:right}
+/* ── Programme 8 semaines ── */
+.prog-phases-strip{display:flex;gap:6px;flex-wrap:wrap}
+.prog-phase-chip{font-size:.68rem;font-weight:800;padding:5px 10px;border-radius:20px;border:1.5px solid;background:transparent;cursor:pointer;transition:all .2s;letter-spacing:.04em;color:inherit}
+.prog-phase-chip.active{color:#fff!important;box-shadow:0 2px 12px rgba(0,0,0,.4);transform:scale(1.05)}
+.prog-day-card{border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:14px;margin-bottom:8px;background:rgba(255,255,255,.025);cursor:pointer;transition:background .2s}
+.prog-day-card:hover:not(.prog-day-rest){background:rgba(255,255,255,.055)}
+.prog-day-card.prog-day-today{border-color:rgba(37,99,235,.4);background:rgba(37,99,235,.07)}
+.prog-day-card.prog-day-rest{cursor:default;opacity:.65}
+.prog-day-header{display:flex;align-items:center;justify-content:space-between}
+.prog-day-num{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);width:28px;flex-shrink:0}
+.prog-day-icon{font-size:1.05rem;flex-shrink:0}
+.prog-day-label{font-size:.8rem;font-weight:700;color:var(--text);flex:1;padding:0 8px}
+.prog-today-badge{font-size:.6rem;font-weight:800;background:rgba(37,99,235,.2);color:#60a5fa;padding:2px 7px;border-radius:6px;border:1px solid rgba(37,99,235,.3);white-space:nowrap}
+.prog-expand-arrow{font-size:.6rem;color:var(--muted)}
+.prog-day-exercises{margin-top:10px;display:flex;flex-direction:column;gap:4px}
+.prog-ex-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.prog-ex-row:last-child{border-bottom:none}
+.prog-ex-name{font-size:.78rem;font-weight:700;flex:1;color:var(--text)}
+.prog-ex-detail{font-size:.7rem;color:#38bdf8;font-weight:700;white-space:nowrap}
+.prog-ex-muscle{font-size:.63rem;color:var(--muted);white-space:nowrap}
+.prog-week-nav-btn{padding:6px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:var(--text);font-size:.8rem;font-weight:700;cursor:pointer;transition:all .2s}
+.prog-week-nav-btn:hover{background:rgba(255,255,255,.12)}
+.prog-week-nav-btn:disabled{opacity:.35;cursor:default}
 
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar{width:6px}
@@ -995,6 +1019,9 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
       <button class="bnav-btn" id="n-goal" onclick="gotoTab('goal')">
         <span class="nav-ic-wrap ic-green"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span><span class="nav-label">Objectif</span><span class="nav-dot"></span>
       </button>
+      <button class="bnav-btn" id="n-programme" onclick="gotoTab('programme')">
+        <span class="nav-ic-wrap" style="background:rgba(139,92,246,.15);color:#a78bfa"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="9 16 11 18 15 14"/></svg></span><span class="nav-label">Programme</span><span class="nav-dot"></span>
+      </button>
       <button class="bnav-btn" id="n-coach" onclick="gotoTab('coach')">
         <span class="nav-ic-wrap ic-purple"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span><span class="nav-label">Coach IA</span><span class="nav-dot"></span>
       </button>
@@ -1273,35 +1300,35 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
             </div>
           </div>
 
-        </div><!-- /bento -->
+          <!-- Water bento card — grid position: below workout card (b-water) -->
+          <div class="bento-card b-water" id="water-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div>
+                <div style="font-weight:800;font-size:.88rem;color:#38bdf8">💧 Hydratation</div>
+                <div style="font-size:.68rem;color:var(--muted);margin-top:2px" id="water-liters">0 L / 2 L</div>
+              </div>
+              <div class="water-count-badge">
+                <div class="water-count-num" id="water-count">0</div>
+                <div class="water-count-lbl" id="water-target-lbl">/ 8 verres</div>
+              </div>
+            </div>
+            <div id="water-glasses" class="water-glasses-grid" style="grid-template-columns:repeat(8,1fr);gap:5px"></div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+              <button onclick="adjustWater(-1)" class="water-btn" style="width:36px;height:36px;font-size:1.2rem" aria-label="Retirer un verre">−</button>
+              <div style="flex:1">
+                <div class="progress-track" style="height:6px">
+                  <div class="progress-fill" id="water-bar" style="width:0%;background:linear-gradient(90deg,#38bdf8,#0ea5e9);transition:width .35s ease"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-top:4px">
+                  <span style="font-size:.65rem;color:var(--muted)" id="water-summary">0 / 8 verres</span>
+                  <span style="font-size:.65rem;color:#38bdf8;font-weight:700" id="water-pct-label">0%</span>
+                </div>
+              </div>
+              <button onclick="adjustWater(1)" class="water-btn" style="width:36px;height:36px;font-size:1.2rem" aria-label="Ajouter un verre">+</button>
+            </div>
+          </div>
 
-        <!-- Water counter -->
-        <div class="card" id="water-card">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-            <div>
-              <div style="font-weight:800;font-size:.95rem">💧 Hydratation</div>
-              <div style="font-size:.7rem;color:var(--muted);margin-top:2px" id="water-liters">0 L / 2 L</div>
-            </div>
-            <div class="water-count-badge">
-              <div class="water-count-num" id="water-count">0</div>
-              <div class="water-count-lbl" id="water-target-lbl">/ 8 verres</div>
-            </div>
-          </div>
-          <div id="water-glasses" class="water-glasses-grid"></div>
-          <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
-            <button onclick="adjustWater(-1)" class="water-btn" aria-label="Retirer un verre">−</button>
-            <div style="flex:1">
-              <div class="progress-track" style="height:8px">
-                <div class="progress-fill" id="water-bar" style="width:0%;background:linear-gradient(90deg,#38bdf8,#0ea5e9);transition:width .35s ease"></div>
-              </div>
-              <div style="display:flex;justify-content:space-between;margin-top:5px">
-                <span style="font-size:.68rem;color:var(--muted)" id="water-summary">0 / 8 verres</span>
-                <span style="font-size:.68rem;color:#38bdf8;font-weight:700" id="water-pct-label">0%</span>
-              </div>
-            </div>
-            <button onclick="adjustWater(1)" class="water-btn" aria-label="Ajouter un verre">+</button>
-          </div>
-        </div>
+        </div><!-- /bento -->
 
         <!-- Planning de la semaine -->
         <div class="card" id="weekly-plan-card">
@@ -1319,6 +1346,63 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
 
         <!-- Hidden compat ID used by some JS -->
         <span id="db-total-sessions" style="display:none">0</span>
+      </div>
+
+      <!-- PROGRAMME 8 SEMAINES -->
+      <div class="tab" id="t-programme">
+        <div class="page-header">
+          <div class="page-title">Programme 8 Semaines</div>
+          <div class="page-sub" id="prog-subtitle">Chargement du programme…</div>
+        </div>
+
+        <!-- Phase timeline -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="font-weight:800;font-size:.9rem">🗓️ Cycle de 8 semaines</div>
+            <button class="btn btn-g btn-sm" onclick="progRegenerate()" style="font-size:.7rem;padding:4px 10px">↺ Recalculer</button>
+          </div>
+          <div class="prog-phases-strip" id="prog-phases-strip"></div>
+          <div style="margin-top:14px">
+            <div class="progress-track" style="height:6px">
+              <div class="progress-fill" id="prog-cycle-bar" style="width:12%;background:linear-gradient(90deg,#6366f1,#8b5cf6);transition:width .4s ease"></div>
+            </div>
+            <div id="prog-cycle-label" style="font-size:.7rem;color:var(--muted);margin-top:5px">Semaine 1 / 8</div>
+          </div>
+        </div>
+
+        <!-- Progression chart -->
+        <div class="card">
+          <div style="font-weight:800;font-size:.9rem;margin-bottom:14px">📈 Courbes du cycle</div>
+          <svg id="prog-svg-chart" width="100%" height="110" viewBox="0 0 300 110" preserveAspectRatio="none" style="overflow:visible"></svg>
+          <div style="display:flex;gap:18px;margin-top:10px">
+            <span style="font-size:.7rem;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:14px;height:3px;background:#2563eb;border-radius:2px"></span>Volume</span>
+            <span style="font-size:.7rem;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:14px;height:3px;background:#f97316;border-radius:2px"></span>Intensité</span>
+          </div>
+        </div>
+
+        <!-- Week detail -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div>
+              <div style="font-weight:800;font-size:.9rem">Semaine <span id="prog-sel-week">1</span> / 8 · <span id="prog-sel-phase" style="color:#6366f1">Adaptation</span></div>
+              <div id="prog-week-desc" style="font-size:.75rem;color:var(--muted);margin-top:3px;line-height:1.5;max-width:380px"></div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0">
+              <button class="prog-week-nav-btn" onclick="progPrevWeek()">←</button>
+              <button class="prog-week-nav-btn" onclick="progNextWeek()">→</button>
+            </div>
+          </div>
+          <div id="prog-days-list" style="margin-top:12px"></div>
+        </div>
+
+        <!-- Offline badge -->
+        <div class="card" style="background:linear-gradient(145deg,rgba(16,185,129,.07),rgba(5,150,105,.03));border-color:rgba(16,185,129,.18);display:flex;align-items:center;gap:14px;padding:16px 20px">
+          <div style="font-size:1.4rem;flex-shrink:0">📴</div>
+          <div>
+            <div style="font-size:.82rem;font-weight:800;color:#34d399">Disponible hors connexion</div>
+            <div style="font-size:.7rem;color:var(--muted);margin-top:2px;line-height:1.5">Programme complet stocké sur votre appareil — fonctionne sans Wi-Fi.</div>
+          </div>
+        </div>
       </div>
 
       <!-- GOAL (Express 15min) -->
