@@ -3112,8 +3112,9 @@ function addRecipeAsMeal() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const DAY_NAMES = ["L", "M", "M", "J", "V", "S", "D"];
-const INTENSITY_ICONS = { low: "🟢", medium: "🟡", high: "🔴", repos: "😴" };
+const INTENSITY_ICONS = { low: "🟢", easy: "🟢", medium: "🟡", high: "🔴", hard: "🔴", repos: "😴" };
 const WORKOUT_ICONS = {
+  push: "🏋️", pull: "💪", legs: "🦵", upper: "🏋️", lower: "🦵", full: "🔥",
   cardio: "🏃", force: "🏋️", hiit: "⚡", yoga: "🧘", natation: "🏊",
   vélo: "🚴", repos: "😴", récupération: "🛁", mobilité: "🤸", sport: "⚽"
 };
@@ -3150,8 +3151,9 @@ async function generateWeeklyPlan() {
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.error || `Erreur (HTTP ${r.status})`);
-    toast("Planning généré ✓", "ok");
-    renderWeeklyPlan(j.plan || []);
+    const phaseLabel = j.phase ? ` — Phase ${j.phase}` : "";
+    toast(`Semaine ${j.week_number || "?"}/8 générée${phaseLabel} ✓`, "ok");
+    renderWeeklyPlan(j.plan || [], j.week_number, j.phase);
   } catch (e) {
     toast(`Erreur planning : ${e.message}`, "err");
   } finally {
@@ -3173,7 +3175,7 @@ async function loadWeeklyPlan() {
   } catch (e) { console.warn("[plan] load exception:", e); }
 }
 
-function renderWeeklyPlan(plan) {
+function renderWeeklyPlan(plan, weekNum, phase) {
   const grid     = document.getElementById("plan-day-grid");
   const emptyEl  = document.getElementById("plan-empty");
   const labelEl  = document.getElementById("plan-week-label");
@@ -3192,7 +3194,10 @@ function renderWeeklyPlan(plan) {
     const d = new Date(weekStart + "T00:00:00");
     const end = new Date(d); end.setDate(d.getDate() + 6);
     const fmt = (dt) => dt.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-    labelEl.textContent = `Semaine du ${fmt(d)} au ${fmt(end)}`;
+    let label = `Semaine du ${fmt(d)} au ${fmt(end)}`;
+    if (weekNum) label += ` · S${weekNum}/8`;
+    if (phase) label += ` ${phase}`;
+    labelEl.textContent = label;
   }
 
   const today = getTodayDayOfWeek();

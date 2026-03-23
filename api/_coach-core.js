@@ -979,5 +979,7 @@ module.exports = {
   fallbackConversation,
   fallbackRecipe,
   fallbackShoppingList,
-  fallbackMealPlan
+  fallbackMealPlan,
+  getGoalDescription,
+  getLevelDescription
 };

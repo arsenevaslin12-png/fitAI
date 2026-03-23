@@ -1275,17 +1275,6 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
 
         </div><!-- /bento -->
 
-        <!-- Planning de la semaine -->
-        <div class="card" id="weekly-plan-card">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-            <div style="font-weight:800;font-size:.92rem">📅 Planning de la semaine</div>
-            <button id="btn-gen-plan" class="btn btn-p btn-sm" onclick="generateWeeklyPlan()" style="font-size:.72rem;padding:5px 12px">Générer</button>
-          </div>
-          <div style="font-size:.72rem;color:var(--muted);margin-bottom:2px" id="plan-week-label"></div>
-          <div id="weekly-plan-grid"><div class="plan-grid" id="plan-day-grid"></div></div>
-          <div id="plan-empty" style="display:none;text-align:center;padding:14px 0;font-size:.8rem;color:var(--muted)">Aucun planning — appuie sur Générer pour créer ta semaine.</div>
-        </div>
-
         <!-- Water counter -->
         <div class="card" id="water-card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
@@ -1312,6 +1301,17 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
             </div>
             <button onclick="adjustWater(1)" class="water-btn" aria-label="Ajouter un verre">+</button>
           </div>
+        </div>
+
+        <!-- Planning de la semaine -->
+        <div class="card" id="weekly-plan-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <div style="font-weight:800;font-size:.92rem">📅 Programme 8 semaines</div>
+            <button id="btn-gen-plan" class="btn btn-p btn-sm" onclick="generateWeeklyPlan()" style="font-size:.72rem;padding:5px 12px">Générer</button>
+          </div>
+          <div style="font-size:.72rem;color:var(--muted);margin-bottom:2px" id="plan-week-label"></div>
+          <div id="weekly-plan-grid"><div class="plan-grid" id="plan-day-grid"></div></div>
+          <div id="plan-empty" style="display:none;text-align:center;padding:14px 0;font-size:.8rem;color:var(--muted)">Aucun planning — appuie sur Générer pour créer ta semaine.</div>
         </div>
 
         <!-- Daily Challenges -->
