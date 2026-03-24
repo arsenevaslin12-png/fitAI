@@ -558,32 +558,42 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .food-journal-textarea{width:100%;min-height:72px;resize:vertical;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:12px;padding:10px 12px;color:var(--text);font-size:.88rem;font-family:inherit;transition:border-color .2s}
 .food-journal-textarea:focus{outline:none;border-color:rgba(99,102,241,.5)}
 .food-journal-textarea::placeholder{color:var(--muted);font-style:italic}
-.food-analysis-loading{text-align:center;padding:16px;color:var(--muted);font-size:.82rem}
-.food-analysis-result{display:none;margin-top:6px}
-.food-items-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
-.food-item-row{display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:8px 12px}
-.food-item-name{font-weight:700;font-size:.82rem;color:var(--text)}
-.food-item-qty{font-size:.72rem;color:var(--muted);margin-top:1px}
-.food-item-macros{display:flex;gap:10px;flex-shrink:0}
-.food-macro-chip{font-size:.7rem;font-weight:800;padding:2px 7px;border-radius:6px}
-.food-macro-cal{background:rgba(251,191,36,.12);color:#fbbf24}
-.food-macro-prot{background:rgba(74,222,128,.12);color:#4ade80}
-.food-total-row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.18);border-radius:12px;margin-bottom:10px}
-.food-total-label{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.5)}
-.food-total-macros{display:flex;gap:12px}
-.food-total-item{text-align:center}
-.food-total-val{font-size:.95rem;font-weight:900;color:#fff}
-.food-total-unit{font-size:.58rem;color:var(--muted);font-weight:700;text-transform:uppercase}
-.quality-badge-wrap{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;margin-bottom:8px}
-.quality-badge-wrap.good{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.2)}
-.quality-badge-wrap.ok{background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.2)}
-.quality-badge-wrap.bad{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.2)}
-.quality-score{font-size:1.5rem;font-weight:900;color:#fff;flex-shrink:0}
-.quality-comment{font-size:.78rem;color:var(--text2);line-height:1.4}
-.quality-label{font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.food-journal-textarea{width:100%;min-height:90px;resize:vertical;background:rgba(255,255,255,.05);border:1.5px solid var(--border);border-radius:14px;padding:12px 14px;color:var(--text);font-size:.93rem;font-family:inherit;transition:border-color .2s;line-height:1.5}
+.food-journal-textarea:focus{outline:none;border-color:rgba(99,102,241,.55);background:rgba(255,255,255,.07)}
+.food-journal-textarea::placeholder{color:var(--muted);font-style:italic}
+.food-analysis-loading{text-align:center;padding:18px;color:var(--muted);font-size:.85rem}
+.food-analysis-result{display:none;margin-top:8px;animation:fadeIn .3s ease}
+/* Quality score block */
+.quality-badge-wrap{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:16px;margin-bottom:12px}
+.quality-badge-wrap.good{background:linear-gradient(135deg,rgba(74,222,128,.12),rgba(16,185,129,.06));border:1px solid rgba(74,222,128,.25)}
+.quality-badge-wrap.ok{background:linear-gradient(135deg,rgba(251,191,36,.12),rgba(245,158,11,.06));border:1px solid rgba(251,191,36,.25)}
+.quality-badge-wrap.bad{background:linear-gradient(135deg,rgba(248,113,113,.12),rgba(239,68,68,.06));border:1px solid rgba(248,113,113,.25)}
+.quality-score-circle{width:56px;height:56px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;border:2px solid currentColor}
+.quality-badge-wrap.good .quality-score-circle{border-color:#4ade80;color:#4ade80}
+.quality-badge-wrap.ok  .quality-score-circle{border-color:#fbbf24;color:#fbbf24}
+.quality-badge-wrap.bad .quality-score-circle{border-color:#f87171;color:#f87171}
+.quality-score{font-size:1.35rem;font-weight:900;line-height:1}
+.quality-score-sub{font-size:.5rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;opacity:.8}
+.quality-info{flex:1}
+.quality-label{font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
 .quality-label.good{color:#4ade80}
 .quality-label.ok{color:#fbbf24}
 .quality-label.bad{color:#f87171}
+.quality-comment{font-size:.8rem;color:var(--text2);line-height:1.45}
+/* Total macros */
+.food-total-row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;margin-bottom:10px}
+.food-total-item{text-align:center;padding:6px 4px;border-radius:10px;background:rgba(255,255,255,.03)}
+.food-total-val{font-size:1rem;font-weight:900;color:#fff;line-height:1}
+.food-total-unit{font-size:.55rem;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px;letter-spacing:.04em}
+.food-total-label{display:none}
+/* Items list */
+.food-items-list{display:flex;flex-direction:column;gap:7px;margin-bottom:10px}
+.food-item-row{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px 12px}
+.food-item-name{font-weight:800;font-size:.85rem;color:var(--text)}
+.food-item-qty{font-size:.7rem;color:var(--muted)}
+.food-macro-chip{font-size:.7rem;font-weight:800;padding:3px 8px;border-radius:7px}
+.food-macro-cal{background:rgba(251,191,36,.13);color:#fbbf24}
+.food-macro-prot{background:rgba(74,222,128,.13);color:#4ade80}
 /* ── NUTRITION WEEK CHART ── */
 .nutr-chart-wrap{width:100%;height:180px;overflow:visible}
 .nutr-chart-day-lbl{font-size:.62rem;fill:rgba(255,255,255,.35);font-family:inherit;font-weight:700}
@@ -602,11 +612,15 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .wt-close{width:32px;height:32px;border-radius:50%;border:none;background:rgba(255,255,255,.08);color:var(--text2);font-size:.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .wt-progress-bar{height:4px;background:rgba(255,255,255,.08);border-radius:99px;margin-bottom:20px;overflow:hidden}
 .wt-progress-fill{height:100%;background:linear-gradient(90deg,#6366f1,#8b5cf6);border-radius:99px;transition:width .4s ease}
-.wt-ex-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:18px;margin-bottom:16px;text-align:center}
-.wt-ex-num{font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:6px}
-.wt-ex-name{font-size:1.25rem;font-weight:900;color:#fff;margin-bottom:4px;line-height:1.2}
-.wt-ex-muscle{font-size:.72rem;color:#38bdf8;font-weight:700;margin-bottom:10px}
-.wt-ex-detail{font-size:.8rem;color:var(--text2);font-weight:700}
+.wt-ex-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:16px;margin-bottom:14px}
+.wt-ex-num{font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:10px;text-align:center}
+.wt-ex-layout{display:flex;align-items:flex-start;gap:14px}
+.wt-ex-img-wrap{width:84px;height:110px;flex-shrink:0;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px;overflow:hidden}
+.wt-ex-info{flex:1;min-width:0;padding-top:2px}
+.wt-ex-name{font-size:1.05rem;font-weight:900;color:#fff;margin-bottom:3px;line-height:1.25}
+.wt-ex-muscle{font-size:.7rem;color:#38bdf8;font-weight:700;margin-bottom:6px}
+.wt-ex-detail{font-size:.78rem;color:var(--text2);font-weight:700;margin-bottom:6px}
+.wt-ex-tip{font-size:.68rem;color:var(--muted);line-height:1.45;font-style:italic;padding:6px 8px;background:rgba(255,255,255,.03);border-left:2px solid rgba(99,102,241,.4);border-radius:0 6px 6px 0}
 .wt-sets-row{display:flex;justify-content:center;gap:8px;margin:14px 0}
 .wt-set-bubble{width:38px;height:38px;border-radius:50%;border:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;color:var(--muted);transition:all .2s;cursor:pointer}
 .wt-set-bubble.done{background:#4ade80;border-color:#4ade80;color:#0a1a00}
@@ -1831,36 +1845,40 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
             <button class="btn btn-p btn-full" id="btn-analyze-food" onclick="analyzeFood()">🔍 Analyser ce repas</button>
             <div id="food-analysis-loading" class="food-analysis-loading" style="display:none">⏳ Analyse en cours…</div>
             <div id="food-analysis-result" class="food-analysis-result">
+              <!-- Quality score -->
               <div id="food-quality-badge" class="quality-badge-wrap good">
-                <div>
-                  <div id="food-quality-label" class="quality-label good">Excellent</div>
+                <div class="quality-score-circle">
                   <div id="food-quality-score" class="quality-score">82</div>
+                  <div class="quality-score-sub">/100</div>
                 </div>
-                <div id="food-quality-comment" class="quality-comment">Bon équilibre nutritionnel.</div>
+                <div class="quality-info">
+                  <div id="food-quality-label" class="quality-label good">Excellent</div>
+                  <div id="food-quality-comment" class="quality-comment">Bon équilibre nutritionnel.</div>
+                </div>
               </div>
+              <!-- Totals grid -->
               <div class="food-total-row">
-                <div class="food-total-label">Total</div>
-                <div class="food-total-macros">
-                  <div class="food-total-item">
-                    <div class="food-total-val" id="food-total-cal">—</div>
-                    <div class="food-total-unit">kcal</div>
-                  </div>
-                  <div class="food-total-item">
-                    <div class="food-total-val" id="food-total-prot">—</div>
-                    <div class="food-total-unit">protéines</div>
-                  </div>
-                  <div class="food-total-item">
-                    <div class="food-total-val" id="food-total-carbs">—</div>
-                    <div class="food-total-unit">glucides</div>
-                  </div>
-                  <div class="food-total-item">
-                    <div class="food-total-val" id="food-total-fat">—</div>
-                    <div class="food-total-unit">lipides</div>
-                  </div>
+                <div class="food-total-item" style="border-top:2px solid #fbbf24">
+                  <div class="food-total-val" id="food-total-cal">—</div>
+                  <div class="food-total-unit">kcal</div>
+                </div>
+                <div class="food-total-item" style="border-top:2px solid #4ade80">
+                  <div class="food-total-val" id="food-total-prot">—</div>
+                  <div class="food-total-unit">protéines</div>
+                </div>
+                <div class="food-total-item" style="border-top:2px solid #a78bfa">
+                  <div class="food-total-val" id="food-total-carbs">—</div>
+                  <div class="food-total-unit">glucides</div>
+                </div>
+                <div class="food-total-item" style="border-top:2px solid #f87171">
+                  <div class="food-total-val" id="food-total-fat">—</div>
+                  <div class="food-total-unit">lipides</div>
                 </div>
               </div>
+              <!-- Items -->
+              <div style="font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px">Aliments détectés</div>
               <div class="food-items-list" id="food-items-list"></div>
-              <button class="btn btn-s btn-full" style="margin-top:4px" onclick="saveFoodAnalysis()">➕ Ajouter à mes repas du jour</button>
+              <button class="btn btn-p btn-full" style="margin-top:6px;font-weight:800" onclick="saveFoodAnalysis()">✓ Enregistrer ce repas</button>
             </div>
             <div class="err-box" id="food-analysis-err" style="margin-top:0"></div>
           </div>
@@ -2258,9 +2276,15 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
     <!-- Exercise display -->
     <div class="wt-ex-card" id="wt-ex-card">
       <div class="wt-ex-num" id="wt-ex-num">Exercice 1 / 5</div>
-      <div class="wt-ex-name" id="wt-ex-name">—</div>
-      <div class="wt-ex-muscle" id="wt-ex-muscle"></div>
-      <div class="wt-ex-detail" id="wt-ex-detail"></div>
+      <div class="wt-ex-layout">
+        <div class="wt-ex-img-wrap" id="wt-ex-img-wrap"></div>
+        <div class="wt-ex-info">
+          <div class="wt-ex-name" id="wt-ex-name">—</div>
+          <div class="wt-ex-muscle" id="wt-ex-muscle"></div>
+          <div class="wt-ex-detail" id="wt-ex-detail"></div>
+          <div class="wt-ex-tip" id="wt-ex-tip"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Set bubbles -->

@@ -3963,24 +3963,176 @@ window.renderDailyChallengesSection = renderDailyChallengesSection;
 // FOOD JOURNAL AI
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Offline keyword database for when API is unavailable
+// Offline food database — 120+ French aliments (per 100g or per unit noted)
 const FOOD_OFFLINE_DB = {
-  "oeuf": { cal: 78, p: 6, c: 0.6, f: 5 }, "oeufs": { cal: 78, p: 6, c: 0.6, f: 5 },
-  "fromage": { cal: 350, p: 25, c: 1, f: 28 }, "pates": { cal: 158, p: 5.8, c: 31, f: 0.9 },
-  "pâtes": { cal: 158, p: 5.8, c: 31, f: 0.9 }, "riz": { cal: 130, p: 2.7, c: 28, f: 0.3 },
-  "poulet": { cal: 165, p: 31, c: 0, f: 3.6 }, "thon": { cal: 132, p: 29, c: 0, f: 1 },
-  "saumon": { cal: 208, p: 20, c: 0, f: 13 }, "boeuf": { cal: 250, p: 26, c: 0, f: 15 },
-  "pain": { cal: 265, p: 9, c: 49, f: 3.2 }, "banane": { cal: 89, p: 1.1, c: 23, f: 0.3 },
-  "yaourt": { cal: 59, p: 3.5, c: 4.7, f: 3.2 }, "yaourt grec": { cal: 97, p: 9, c: 3.6, f: 5 },
-  "avocat": { cal: 160, p: 2, c: 9, f: 15 }, "chocolat": { cal: 535, p: 7.7, c: 60, f: 30 },
-  "pizza": { cal: 266, p: 11, c: 33, f: 10 }, "burger": { cal: 295, p: 17, c: 24, f: 14 },
-  "frites": { cal: 312, p: 3.4, c: 41, f: 15 }, "lentilles": { cal: 116, p: 9, c: 20, f: 0.4 },
-  "quinoa": { cal: 120, p: 4.4, c: 22, f: 1.9 }, "amandes": { cal: 579, p: 21, c: 22, f: 50 },
-  "whey": { cal: 120, p: 24, c: 3, f: 2 }, "brocoli": { cal: 34, p: 2.8, c: 7, f: 0.4 },
-  "epinards": { cal: 23, p: 2.9, c: 3.6, f: 0.4 }, "tomate": { cal: 18, p: 0.9, c: 3.9, f: 0.2 },
-  "pomme": { cal: 52, p: 0.3, c: 14, f: 0.2 }, "orange": { cal: 47, p: 0.9, c: 12, f: 0.1 },
-  "patate douce": { cal: 86, p: 1.6, c: 20, f: 0.1 }, "skyr": { cal: 65, p: 11, c: 4, f: 0.2 },
-  "cottage": { cal: 98, p: 11, c: 3.4, f: 4.3 }, "jambon": { cal: 105, p: 17, c: 1.5, f: 3.5 },
+  // ── Proteins ──
+  "oeuf":           { cal:78,  p:6,    c:0.6, f:5,   u:"unité" },
+  "oeufs":          { cal:78,  p:6,    c:0.6, f:5,   u:"unité" },
+  "blanc oeuf":     { cal:17,  p:3.6,  c:0.2, f:0,   u:"unité" },
+  "oeuf dur":       { cal:78,  p:6,    c:0.6, f:5,   u:"unité" },
+  "poulet":         { cal:165, p:31,   c:0,   f:3.6, u:"100g" },
+  "poulet grille":  { cal:165, p:31,   c:0,   f:3.6, u:"100g" },
+  "filet poulet":   { cal:110, p:24,   c:0,   f:1.2, u:"100g" },
+  "blanc poulet":   { cal:110, p:24,   c:0,   f:1.2, u:"100g" },
+  "thon":           { cal:132, p:29,   c:0,   f:1,   u:"100g" },
+  "thon boite":     { cal:132, p:29,   c:0,   f:1,   u:"100g" },
+  "saumon":         { cal:208, p:20,   c:0,   f:13,  u:"100g" },
+  "saumon fume":    { cal:170, p:18,   c:0,   f:10,  u:"100g" },
+  "boeuf":          { cal:250, p:26,   c:0,   f:15,  u:"100g" },
+  "steak":          { cal:250, p:26,   c:0,   f:15,  u:"100g" },
+  "viande hachee":  { cal:230, p:22,   c:0,   f:15,  u:"100g" },
+  "steack haché":   { cal:230, p:22,   c:0,   f:15,  u:"100g" },
+  "dinde":          { cal:135, p:29,   c:0,   f:1,   u:"100g" },
+  "jambon":         { cal:105, p:17,   c:1.5, f:3.5, u:"100g" },
+  "jambon blanc":   { cal:105, p:17,   c:1.5, f:3.5, u:"100g" },
+  "jambon serrano": { cal:143, p:27,   c:0.3, f:4,   u:"100g" },
+  "saucisse":       { cal:301, p:12,   c:1,   f:27,  u:"100g" },
+  "crevettes":      { cal:99,  p:21,   c:0,   f:1.1, u:"100g" },
+  "cabillaud":      { cal:82,  p:18,   c:0,   f:0.7, u:"100g" },
+  "thon rouge":     { cal:144, p:23,   c:0,   f:5,   u:"100g" },
+  "sardines":       { cal:208, p:25,   c:0,   f:11,  u:"100g" },
+  "maquereau":      { cal:205, p:19,   c:0,   f:14,  u:"100g" },
+  "tofu":           { cal:76,  p:8,    c:1.9, f:4.2, u:"100g" },
+  "tempeh":         { cal:193, p:19,   c:9,   f:11,  u:"100g" },
+  "seitan":         { cal:370, p:75,   c:14,  f:1.9, u:"100g" },
+  "lentilles":      { cal:116, p:9,    c:20,  f:0.4, u:"100g cuit" },
+  "pois chiche":    { cal:164, p:9,    c:27,  f:2.6, u:"100g cuit" },
+  "haricots rouges":{ cal:127, p:8.7,  c:22,  f:0.5, u:"100g cuit" },
+  "haricots blancs":{ cal:139, p:9,    c:25,  f:0.5, u:"100g cuit" },
+  "edamame":        { cal:122, p:11,   c:10,  f:5,   u:"100g" },
+  "whey":           { cal:120, p:24,   c:3,   f:2,   u:"scoop 30g" },
+  "proteine":       { cal:120, p:24,   c:3,   f:2,   u:"scoop 30g" },
+  "barre proteinee":{ cal:210, p:20,   c:20,  f:7,   u:"barre 60g" },
+  // ── Dairy ──
+  "fromage":        { cal:350, p:25,   c:1,   f:28,  u:"100g" },
+  "emmental":       { cal:382, p:29,   c:0.5, f:30,  u:"100g" },
+  "comté":          { cal:415, p:27,   c:0.2, f:34,  u:"100g" },
+  "camembert":      { cal:300, p:20,   c:0.5, f:24,  u:"100g" },
+  "brie":           { cal:334, p:21,   c:0.5, f:27,  u:"100g" },
+  "mozzarella":     { cal:280, p:18,   c:2,   f:22,  u:"100g" },
+  "parmesan":       { cal:431, p:38,   c:3,   f:29,  u:"100g" },
+  "feta":           { cal:264, p:14,   c:4,   f:21,  u:"100g" },
+  "fromage blanc":  { cal:80,  p:8,    c:4,   f:3,   u:"100g" },
+  "yaourt":         { cal:59,  p:3.5,  c:4.7, f:3.2, u:"100g" },
+  "yaourt grec":    { cal:97,  p:9,    c:3.6, f:5,   u:"100g" },
+  "skyr":           { cal:65,  p:11,   c:4,   f:0.2, u:"100g" },
+  "cottage":        { cal:98,  p:11,   c:3.4, f:4.3, u:"100g" },
+  "lait":           { cal:61,  p:3.2,  c:4.8, f:3.3, u:"100ml" },
+  "lait entier":    { cal:61,  p:3.2,  c:4.8, f:3.3, u:"100ml" },
+  "lait ecreme":    { cal:35,  p:3.5,  c:5,   f:0.1, u:"100ml" },
+  "lait vegetal":   { cal:40,  p:1.5,  c:5.5, f:1.5, u:"100ml" },
+  "lait amande":    { cal:24,  p:1,    c:3,   f:1.1, u:"100ml" },
+  "lait avoine":    { cal:47,  p:1.5,  c:7,   f:1.5, u:"100ml" },
+  "creme fraiche":  { cal:292, p:2.5,  c:3,   f:30,  u:"100g" },
+  "beurre":         { cal:717, p:0.9,  c:0.1, f:81,  u:"100g" },
+  // ── Carbs & Grains ──
+  "pâtes":          { cal:158, p:5.8,  c:31,  f:0.9, u:"100g cuit" },
+  "pates":          { cal:158, p:5.8,  c:31,  f:0.9, u:"100g cuit" },
+  "pates completes":{ cal:150, p:6,    c:29,  f:1,   u:"100g cuit" },
+  "riz":            { cal:130, p:2.7,  c:28,  f:0.3, u:"100g cuit" },
+  "riz complet":    { cal:123, p:2.9,  c:25,  f:1,   u:"100g cuit" },
+  "riz basmati":    { cal:130, p:2.7,  c:28,  f:0.3, u:"100g cuit" },
+  "quinoa":         { cal:120, p:4.4,  c:22,  f:1.9, u:"100g cuit" },
+  "boulgour":       { cal:112, p:3.8,  c:23,  f:0.7, u:"100g cuit" },
+  "couscous":       { cal:112, p:3.8,  c:23,  f:0.7, u:"100g cuit" },
+  "avoine":         { cal:389, p:17,   c:66,  f:7,   u:"100g sec" },
+  "flocons avoine": { cal:389, p:17,   c:66,  f:7,   u:"100g sec" },
+  "pain":           { cal:265, p:9,    c:49,  f:3.2, u:"100g" },
+  "pain complet":   { cal:247, p:9,    c:45,  f:3.5, u:"100g" },
+  "baguette":       { cal:265, p:9,    c:49,  f:3.2, u:"100g" },
+  "pain de mie":    { cal:278, p:8,    c:50,  f:4,   u:"100g" },
+  "pain grille":    { cal:312, p:11,   c:59,  f:3.8, u:"100g" },
+  "biscottes":      { cal:406, p:12,   c:74,  f:7,   u:"100g" },
+  "granola":        { cal:460, p:10,   c:65,  f:18,  u:"100g" },
+  "muesli":         { cal:380, p:10,   c:62,  f:7,   u:"100g" },
+  "croissant":      { cal:406, p:8,    c:45,  f:21,  u:"100g" },
+  "crepe":          { cal:202, p:6,    c:27,  f:8,   u:"100g" },
+  "pomme de terre": { cal:77,  p:2,    c:17,  f:0.1, u:"100g" },
+  "patate douce":   { cal:86,  p:1.6,  c:20,  f:0.1, u:"100g" },
+  "patates douces": { cal:86,  p:1.6,  c:20,  f:0.1, u:"100g" },
+  "frites":         { cal:312, p:3.4,  c:41,  f:15,  u:"100g" },
+  "chips":          { cal:530, p:7,    c:53,  f:33,  u:"100g" },
+  // ── Fats & Nuts ──
+  "avocat":         { cal:160, p:2,    c:9,   f:15,  u:"100g" },
+  "amandes":        { cal:579, p:21,   c:22,  f:50,  u:"100g" },
+  "noix":           { cal:654, p:15,   c:14,  f:65,  u:"100g" },
+  "noix cajou":     { cal:553, p:18,   c:30,  f:44,  u:"100g" },
+  "cacahuetes":     { cal:567, p:26,   c:16,  f:49,  u:"100g" },
+  "beurre cacahu":  { cal:588, p:25,   c:20,  f:50,  u:"100g" },
+  "beurre amande":  { cal:614, p:21,   c:19,  f:56,  u:"100g" },
+  "huile olive":    { cal:884, p:0,    c:0,   f:100, u:"100ml" },
+  "graines chia":   { cal:486, p:17,   c:42,  f:31,  u:"100g" },
+  "graines lin":    { cal:534, p:18,   c:29,  f:42,  u:"100g" },
+  "huile coco":     { cal:862, p:0,    c:0,   f:100, u:"100ml" },
+  // ── Fruits ──
+  "banane":         { cal:89,  p:1.1,  c:23,  f:0.3, u:"unité" },
+  "pomme":          { cal:52,  p:0.3,  c:14,  f:0.2, u:"unité" },
+  "poire":          { cal:57,  p:0.4,  c:15,  f:0.1, u:"unité" },
+  "orange":         { cal:47,  p:0.9,  c:12,  f:0.1, u:"unité" },
+  "clémentine":     { cal:47,  p:0.9,  c:12,  f:0.1, u:"unité" },
+  "fraises":        { cal:32,  p:0.7,  c:7.7, f:0.3, u:"100g" },
+  "myrtilles":      { cal:57,  p:0.7,  c:14,  f:0.3, u:"100g" },
+  "framboises":     { cal:52,  p:1.2,  c:12,  f:0.7, u:"100g" },
+  "kiwi":           { cal:61,  p:1.1,  c:15,  f:0.5, u:"unité" },
+  "mangue":         { cal:65,  p:0.5,  c:17,  f:0.3, u:"100g" },
+  "ananas":         { cal:50,  p:0.5,  c:13,  f:0.1, u:"100g" },
+  "raisins":        { cal:69,  p:0.7,  c:18,  f:0.2, u:"100g" },
+  "pastèque":       { cal:30,  p:0.6,  c:7.6, f:0.2, u:"100g" },
+  "cerise":         { cal:63,  p:1,    c:16,  f:0.2, u:"100g" },
+  "peche":          { cal:39,  p:0.9,  c:9.5, f:0.3, u:"unité" },
+  "abricot":        { cal:48,  p:1.4,  c:11,  f:0.4, u:"unité" },
+  // ── Vegetables ──
+  "brocoli":        { cal:34,  p:2.8,  c:7,   f:0.4, u:"100g" },
+  "epinards":       { cal:23,  p:2.9,  c:3.6, f:0.4, u:"100g" },
+  "épinards":       { cal:23,  p:2.9,  c:3.6, f:0.4, u:"100g" },
+  "tomate":         { cal:18,  p:0.9,  c:3.9, f:0.2, u:"100g" },
+  "tomates":        { cal:18,  p:0.9,  c:3.9, f:0.2, u:"100g" },
+  "courgette":      { cal:17,  p:1.2,  c:3.1, f:0.3, u:"100g" },
+  "salade":         { cal:15,  p:1.4,  c:2.9, f:0.2, u:"100g" },
+  "laitue":         { cal:15,  p:1.4,  c:2.9, f:0.2, u:"100g" },
+  "carotte":        { cal:41,  p:0.9,  c:10,  f:0.2, u:"100g" },
+  "carottes":       { cal:41,  p:0.9,  c:10,  f:0.2, u:"100g" },
+  "poivron":        { cal:31,  p:1,    c:6,   f:0.3, u:"100g" },
+  "concombre":      { cal:16,  p:0.6,  c:3.6, f:0.1, u:"100g" },
+  "celeri":         { cal:16,  p:0.7,  c:3,   f:0.2, u:"100g" },
+  "champignon":     { cal:22,  p:3.1,  c:3.3, f:0.3, u:"100g" },
+  "champignons":    { cal:22,  p:3.1,  c:3.3, f:0.3, u:"100g" },
+  "haricots verts": { cal:35,  p:1.9,  c:7,   f:0.1, u:"100g" },
+  "petits pois":    { cal:81,  p:5.4,  c:14,  f:0.4, u:"100g" },
+  "mais":           { cal:86,  p:3.3,  c:19,  f:1.4, u:"100g" },
+  "aubergine":      { cal:25,  p:1,    c:5.7, f:0.2, u:"100g" },
+  "ail":            { cal:149, p:6,    c:33,  f:0.5, u:"100g" },
+  "oignon":         { cal:40,  p:1.1,  c:9,   f:0.1, u:"100g" },
+  // ── Drinks ──
+  "eau":            { cal:0,   p:0,    c:0,   f:0,   u:"verre" },
+  "café":           { cal:5,   p:0.3,  c:0,   f:0,   u:"tasse" },
+  "cafe":           { cal:5,   p:0.3,  c:0,   f:0,   u:"tasse" },
+  "lait cafe":      { cal:35,  p:2,    c:3.5, f:1.5, u:"tasse" },
+  "the":            { cal:2,   p:0,    c:0.5, f:0,   u:"tasse" },
+  "thé":            { cal:2,   p:0,    c:0.5, f:0,   u:"tasse" },
+  "jus orange":     { cal:45,  p:0.7,  c:10,  f:0.2, u:"100ml" },
+  "jus pomme":      { cal:46,  p:0.1,  c:11,  f:0.1, u:"100ml" },
+  "smoothie":       { cal:70,  p:1.5,  c:16,  f:0.5, u:"100ml" },
+  "coca":           { cal:42,  p:0,    c:10.6,f:0,   u:"100ml" },
+  "coca zero":      { cal:1,   p:0,    c:0,   f:0,   u:"100ml" },
+  "biere":          { cal:43,  p:0.5,  c:3.6, f:0,   u:"100ml" },
+  "vin":            { cal:85,  p:0.1,  c:2.6, f:0,   u:"100ml" },
+  // ── Misc & Meals ──
+  "chocolat noir":  { cal:598, p:7.8,  c:46,  f:43,  u:"100g" },
+  "chocolat":       { cal:535, p:7.7,  c:60,  f:30,  u:"100g" },
+  "chocolat lait":  { cal:535, p:7.7,  c:60,  f:30,  u:"100g" },
+  "pizza":          { cal:266, p:11,   c:33,  f:10,  u:"100g" },
+  "burger":         { cal:295, p:17,   c:24,  f:14,  u:"100g" },
+  "quiche":         { cal:298, p:11,   c:19,  f:20,  u:"100g" },
+  "omelette":       { cal:154, p:11,   c:0.5, f:12,  u:"100g" },
+  "soupe":          { cal:55,  p:2,    c:9,   f:1.5, u:"100ml" },
+  "soupe legumes":  { cal:55,  p:2,    c:9,   f:1.5, u:"100ml" },
+  "vinaigrette":    { cal:450, p:0,    c:5,   f:48,  u:"100ml" },
+  "mayonnaise":     { cal:680, p:1.5,  c:1.5, f:75,  u:"100g" },
+  "confiture":      { cal:250, p:0.5,  c:65,  f:0.1, u:"100g" },
+  "miel":           { cal:304, p:0.3,  c:82,  f:0,   u:"100g" },
+  "sucre":          { cal:400, p:0,    c:100, f:0,   u:"100g" },
+  "nutella":        { cal:539, p:6,    c:57,  f:31,  u:"100g" },
 };
 
 function _offlineAnalyzeFood(description) {
@@ -4085,24 +4237,34 @@ async function analyzeFood() {
   setTxt("food-total-carbs", (t.carbs || 0) + "g");
   setTxt("food-total-fat", (t.fat || 0) + "g");
 
-  // Render items list
+  // Render items list with per-item macro bars
   const listEl = document.getElementById("food-items-list");
+  const maxCalItem = Math.max(...(result.items || []).map(i => i.calories || 0), 1);
   if (listEl) {
-    listEl.innerHTML = (result.items || []).map(item => `
-      <div class="food-item-row">
-        <div>
-          <div class="food-item-name">${escapeHtml(item.name || "")}</div>
-          <div class="food-item-qty">${escapeHtml(item.quantity || "")}</div>
+    listEl.innerHTML = (result.items || []).map(item => {
+      const calPct  = Math.round(((item.calories || 0) / maxCalItem) * 100);
+      const protPct = Math.min(100, Math.round(((item.protein || 0) * 4 / (item.calories || 1)) * 100));
+      return `<div class="food-item-row">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+            <div class="food-item-name">${escapeHtml(item.name || "")}</div>
+            <span class="food-macro-chip food-macro-cal" style="flex-shrink:0">${item.calories || 0} kcal</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:3px">
+            <span class="food-item-qty" style="flex-shrink:0">${escapeHtml(item.quantity || "")}</span>
+            <span style="font-size:.68rem;color:#4ade80;font-weight:700">P ${item.protein || 0}g</span>
+            <span style="font-size:.68rem;color:#fbbf24;font-weight:700">G ${item.carbs || 0}g</span>
+            <span style="font-size:.68rem;color:#f87171;font-weight:700">L ${item.fat || 0}g</span>
+          </div>
+          <div style="display:flex;gap:2px;margin-top:5px;height:4px;border-radius:99px;overflow:hidden;background:rgba(255,255,255,.06)">
+            <div style="width:${calPct}%;background:rgba(99,102,241,.5);transition:width .6s ease;border-radius:99px"></div>
+          </div>
         </div>
-        <div class="food-item-macros">
-          <span class="food-macro-chip food-macro-cal">${item.calories || 0} kcal</span>
-          <span class="food-macro-chip food-macro-prot">${item.protein || 0}g P</span>
-        </div>
-      </div>
-    `).join("");
+      </div>`;
+    }).join("");
   }
 
-  if (resultEl) resultEl.style.display = "block";
+  if (resultEl) { resultEl.style.display = "block"; resultEl.style.animation = "fadeIn .3s ease"; }
 }
 
 // ── Meal type selection ───────────────────────────────────────────────────────
@@ -4319,6 +4481,105 @@ function startWorkout(dayLabel, exercises, params) {
   _wtRenderExercise();
 }
 
+// ── Muscle body diagram SVG ───────────────────────────────────────────────────
+function _muscleSVG(muscle) {
+  const m = (muscle || "").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  const dim  = "rgba(255,255,255,.07)";
+  const hi   = "#6366f1";
+  const hiM  = "rgba(99,102,241,.55)";
+  const hi2  = "#4ade80";
+
+  const chest    = /pec|poitrine/.test(m);
+  const shoulder = /epaule|delt/.test(m) && !/arriere/.test(m);
+  const rearDelt = /arriere|oiseau|face.pull/.test(m);
+  const back     = /dos|dorsal|lat|trap|romb/.test(m);
+  const bicep    = /bicep/.test(m);
+  const tricep   = /tricep|dips/.test(m);
+  const core     = /core|abdo|obliqu|gainage|crunch|hollow|planche/.test(m);
+  const glute    = /fess|glute|hip|hanche/.test(m);
+  const quad     = /quad|jamb|squat/.test(m) && !glute;
+  const hamstr   = /ischio|hamilton/.test(m);
+  const calf     = /mollet/.test(m);
+  const cardio   = /cardio|full|hiit/.test(m);
+  const arms     = bicep || tricep || /bras/.test(m);
+
+  // Assign colors per segment
+  const C = (test, full, mid) => test ? (full || hi) : mid ? hiM : dim;
+
+  const shl = C(shoulder, hi);
+  const cht = C(chest, hi);
+  const arm = C(arms);
+  const fab = C(core, hi);
+  const glU = C(glute, hi);
+  const qd  = C(quad || (cardio && !glute), hi, cardio);
+  const cl  = C(calf, hi, quad || cardio);
+  const bck = C(back || rearDelt, hi);
+  const frm = C(arms, null, true); // forearms dim when arms highlighted
+
+  const glow = (c) => c !== dim ? `filter:drop-shadow(0 0 5px ${c})` : "";
+
+  return `<svg viewBox="0 0 88 138" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;overflow:visible">
+    <circle cx="44" cy="12" r="10" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.18)" stroke-width="1.3"/>
+    <rect x="40" y="21" width="8" height="8" rx="3" fill="rgba(255,255,255,.06)"/>
+    <ellipse cx="23" cy="33" rx="11" ry="7" fill="${shl}" style="${glow(shl)}"/>
+    <ellipse cx="65" cy="33" rx="11" ry="7" fill="${shl}" style="${glow(shl)}"/>
+    <path d="M31 28 L57 28 L61 54 L27 54 Z" fill="${cht}" rx="4" style="${glow(cht)}"/>
+    <rect x="30" y="54" width="28" height="27" rx="5" fill="${fab}" style="${glow(fab)}"/>
+    <path d="M29 81 Q44 94 59 81 L59 93 Q44 104 29 93 Z" fill="${glU}" style="${glow(glU)}"/>
+    <rect x="11" y="28" width="11" height="30" rx="5" fill="${arm}" style="${glow(arm)}"/>
+    <rect x="66" y="28" width="11" height="30" rx="5" fill="${arm}" style="${glow(arm)}"/>
+    <rect x="10" y="59" width="10" height="26" rx="4" fill="${frm}"/>
+    <rect x="68" y="59" width="10" height="26" rx="4" fill="${frm}"/>
+    <rect x="28" y="84" width="14" height="31" rx="6" fill="${qd}" style="${glow(qd)}"/>
+    <rect x="46" y="84" width="14" height="31" rx="6" fill="${qd}" style="${glow(qd)}"/>
+    <rect x="29" y="117" width="12" height="20" rx="5" fill="${cl}" style="${glow(cl)}"/>
+    <rect x="47" y="117" width="12" height="20" rx="5" fill="${cl}" style="${glow(cl)}"/>
+    ${(back||rearDelt) ? `<rect x="30" y="29" width="28" height="26" rx="4" fill="rgba(99,102,241,.25)" stroke="rgba(99,102,241,.4)" stroke-width="1" stroke-dasharray="3,2"/>` : ""}
+  </svg>`;
+}
+
+// ── Exercise technique tips ───────────────────────────────────────────────────
+const EXERCISE_TIPS = {
+  "développé couché":    "Pieds à plat. Omoplate serrées. Descends à 3s, explose à la montée.",
+  "développé militaire": "Gainage solide. Pousse vers le haut et légèrement en arrière. Coudes ni trop écartés ni trop fermés.",
+  "développé incliné":  "Banc à 30-45°. Focus sur le haut des pecs. Contrôle la descente.",
+  "pompes":             "Corps gainé comme une planche. Mains sous les épaules. Coudes à 45°.",
+  "pike push":          "Hanches hautes. Tête entre les bras à la descente. Force épaules.",
+  "dips":               "Coudes arrière. Penche légèrement le buste pour cibler les pecs.",
+  "élévations lat":     "Légère flexion des coudes. Lève jusqu'à l'horizontal. Pas d'élan.",
+  "tractions":          "Prise pronation. Initie avec les dorsaux. Montée explosive, descente contrôlée.",
+  "tirage poitrine":    "Dos légèrement arqué. Amène la barre vers le haut de la poitrine.",
+  "rowing barre":       "Dos parallèle au sol. Tire vers le nombril. Coudes proches du corps.",
+  "rowing haltère":     "Appui sur un banc. Tire le coude vers le plafond. Rotation épaule.",
+  "curl haltères":      "Coudes fixes. Tourne le poignet en montant (supination). Descente lente.",
+  "extension triceps":  "Coudes immobiles. Étend les bras complètement. Contraction en bas.",
+  "squat barre":        "Pieds largeur épaules. Genoux dans l'axe des pieds. Descend sous la parallèle.",
+  "squat poids":        "Même chose. Bras devant pour l'équilibre. Descends lentement (3s).",
+  "soulevé de terre":   "Dos neutre. Pousse le sol avec les pieds. Barre proche du corps.",
+  "fentes":             "Genou avant à 90°. Genou arrière effleure le sol. Buste droit.",
+  "hip thrust":         "Appui sur un banc. Pousse avec les talons. Contraction fessiers en haut.",
+  "planche":            "Corps droit. Fesses ni trop hautes ni trop basses. Contracte le ventre.",
+  "crunch":             "Mains sur les tempes. Exhale en montant. Dos bas au sol. Lent et contrôlé.",
+  "burpees":            "Saute-pompe-saut. Rythme régulier. Explose à chaque saut.",
+  "mountain climbers":  "Planche stable. Genoux alternatifs vers la poitrine. Rythme soutenu.",
+  "jump squats":        "Atterris en souplesse (avant-pied d'abord). Amortis la réception.",
+  "course":             "Zone 2 : tu peux parler. FC 60-70% max. Respiration nasale si possible.",
+  "vélo":               "Selle à hauteur de hanche. Cadence 80-90 RPM. Dos droit, léger.",
+  "pigeon yoga":        "Hanche avant fléchie à 90°. Descends progressivement. Respiration profonde.",
+  "cat-cow":            "En quadrupédie. Expire en arrondissant (cat). Inspire en creusant (cow).",
+};
+
+function _getExerciseTip(exName) {
+  if (!exName) return "";
+  const key = exName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  for (const [k, tip] of Object.entries(EXERCISE_TIPS)) {
+    if (key.includes(k)) return tip;
+  }
+  return "";
+}
+
 function _wtRenderExercise() {
   const ex = _wtExercises[_wtExIdx];
   if (!ex) { closeWorkoutTimer(); return; }
@@ -4335,6 +4596,15 @@ function _wtRenderExercise() {
   setEl("wt-ex-muscle", ex.m || "");
   const detail = ex.r || `${params.sets}×${params.reps}${params.rest ? " · " + params.rest + "s repos" : ""}`;
   setEl("wt-ex-detail", detail);
+
+  // Muscle diagram SVG
+  const imgWrap = document.getElementById("wt-ex-img-wrap");
+  if (imgWrap) imgWrap.innerHTML = _muscleSVG(ex.m || "");
+
+  // Technique tip
+  const tipEl = document.getElementById("wt-ex-tip");
+  const tip = _getExerciseTip(ex.n || "");
+  if (tipEl) { tipEl.textContent = tip; tipEl.style.display = tip ? "" : "none"; }
 
   const fillEl = document.getElementById("wt-progress-fill");
   if (fillEl) fillEl.style.width = pct + "%";
