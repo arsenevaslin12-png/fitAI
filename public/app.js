@@ -4136,22 +4136,30 @@ const FOOD_OFFLINE_DB = {
 };
 
 function _offlineAnalyzeFood(description) {
-  const text = description.toLowerCase();
+  const normalize = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const text = normalize(description);
   const items = [];
   let totCal = 0, totP = 0, totC = 0, totF = 0;
   const keys = Object.keys(FOOD_OFFLINE_DB).sort((a, b) => b.length - a.length);
   const matched = new Set();
   for (const key of keys) {
-    if (text.includes(key) && !matched.has(key)) {
+    const normKey = normalize(key);
+    if (text.includes(normKey) && !matched.has(key)) {
       matched.add(key);
       const d = FOOD_OFFLINE_DB[key];
-      const beforeIdx = text.indexOf(key);
-      const before = text.slice(Math.max(0, beforeIdx - 8), beforeIdx);
-      const nm = before.match(/(\d+)/);
-      const qty = nm ? Math.min(8, parseInt(nm[1], 10)) : 1;
-      items.push({ name: key.charAt(0).toUpperCase() + key.slice(1), quantity: qty > 1 ? `×${qty}` : "1 portion",
-        calories: Math.round(d.cal * qty), protein: Math.round(d.p * qty * 10) / 10,
-        carbs: Math.round(d.c * qty * 10) / 10, fat: Math.round(d.f * qty * 10) / 10 });
+      const idx = text.indexOf(normKey);
+      const around = text.slice(Math.max(0, idx - 10), idx + normKey.length + 8);
+      const nm = around.match(/(\d+(?:[,.]\d+)?)/);
+      const qty = nm ? Math.min(20, Math.max(1, Math.round(parseFloat(nm[1].replace(",", "."))))) : 1;
+      const unit = d.u || "100g";
+      items.push({
+        name:     key.charAt(0).toUpperCase() + key.slice(1),
+        quantity: qty > 1 ? `${qty}× ${unit}` : `1 ${unit}`,
+        calories: Math.round(d.cal * qty),
+        protein:  Math.round(d.p   * qty * 10) / 10,
+        carbs:    Math.round(d.c   * qty * 10) / 10,
+        fat:      Math.round(d.f   * qty * 10) / 10
+      });
       totCal += d.cal * qty; totP += d.p * qty; totC += d.c * qty; totF += d.f * qty;
     }
   }
@@ -4766,19 +4774,153 @@ const PROG_PHASE_PARAMS = [
   { sets:3, reps:"1-3",   rest:300 }
 ];
 
+// Each type has TWO pools (A/B) of exercises — A for first occurrence in week, B for second.
+// _renderProgDays picks A or B based on how many times the type has appeared in the week so far.
 const PROG_EXERCISES = {
-  push:        [{ n:"Développé couché barre", m:"Pecs" }, { n:"Développé militaire haltères", m:"Épaules" }, { n:"Développé incliné haltères", m:"Pecs haut" }, { n:"Élévations latérales", m:"Deltoïdes" }, { n:"Extension triceps poulie", m:"Triceps" }],
-  push_home:   [{ n:"Pompes (mains larges)", m:"Pecs" }, { n:"Pompes inclinées", m:"Pecs haut" }, { n:"Pike push-ups", m:"Épaules" }, { n:"Dips sur chaise", m:"Triceps" }, { n:"Pompes diamant", m:"Triceps" }],
-  pull:        [{ n:"Tractions / tirage poulie", m:"Dos/Biceps" }, { n:"Rowing barre penché", m:"Dos" }, { n:"Tirage poitrine câble", m:"Grand dorsal" }, { n:"Curl haltères alterné", m:"Biceps" }, { n:"Face pull", m:"Épaules arrière" }],
-  pull_home:   [{ n:"Rowing haltères 1 bras", m:"Dos" }, { n:"Rowing élastique", m:"Dos" }, { n:"Curl haltères", m:"Biceps" }, { n:"Oiseau haltères", m:"Épaules arrière" }, { n:"Superman", m:"Bas du dos" }],
-  legs:        [{ n:"Squat barre", m:"Quadriceps" }, { n:"Soulevé de terre roumain", m:"Ischios/Fessiers" }, { n:"Presse à cuisses", m:"Quadriceps" }, { n:"Fentes marchées", m:"Fessiers/Quadriceps" }, { n:"Extensions mollets debout", m:"Mollets" }],
-  legs_home:   [{ n:"Squat poids du corps", m:"Quadriceps" }, { n:"Pont fessier (hip thrust)", m:"Fessiers" }, { n:"Fentes avant", m:"Quadriceps/Fessiers" }, { n:"Step-ups (chaise)", m:"Fessiers" }, { n:"Relevés de mollets", m:"Mollets" }],
-  fullbody:    [{ n:"Squat haltères", m:"Jambes" }, { n:"Pompes", m:"Pecs/Triceps" }, { n:"Rowing haltères", m:"Dos/Biceps" }, { n:"Fentes avant", m:"Jambes/Fessiers" }, { n:"Planche", m:"Core" }],
-  hiit:        [{ n:"Burpees", m:"Full body", r:"20s ×8 (Tabata)" }, { n:"Mountain climbers", m:"Core/Cardio", r:"30s" }, { n:"Jump squats", m:"Jambes/Cardio", r:"30s" }, { n:"Planche dynamique", m:"Core", r:"45s" }, { n:"Montées de genoux", m:"Cardio", r:"30s" }],
-  cardio:      [{ n:"Course / marche rapide", m:"Cardio", r:"35 min zone 2" }, { n:"Vélo / elliptique", m:"Cardio", r:"30 min FC stable" }],
-  core:        [{ n:"Planche avant", m:"Core", r:"30-60s" }, { n:"Crunchs bicycle", m:"Obliques", r:"15-20 reps" }, { n:"Hollow body", m:"Core", r:"30s" }, { n:"Bird dog", m:"Stabilisateurs", r:"10/côté" }, { n:"Gainage latéral", m:"Obliques", r:"30s/côté" }],
-  mobilite:    [{ n:"Pigeon yoga (hanche)", m:"Hanches", r:"90s/côté" }, { n:"Étirement quadriceps", m:"Quadriceps", r:"60s/côté" }, { n:"Cat-cow rachis", m:"Dos", r:"10 cycles" }, { n:"Foam roller thoracique", m:"Haut du dos", r:"2 min" }, { n:"Hip flexors fente basse", m:"Hanches/Psoas", r:"90s/côté" }],
-  rest:        []
+  push: [
+    // Pool A (pecs focus)
+    { n:"Développé couché barre",      m:"Pecs",       pool:"A" },
+    { n:"Développé incliné haltères",  m:"Pecs haut",  pool:"A" },
+    { n:"Écarté haltères couché",      m:"Pecs",       pool:"A" },
+    { n:"Développé militaire barre",   m:"Épaules",    pool:"A" },
+    { n:"Élévations latérales",        m:"Deltoïdes",  pool:"A" },
+    { n:"Extension triceps poulie",    m:"Triceps",    pool:"A" },
+    { n:"Dips lestés",                 m:"Triceps",    pool:"A" },
+    // Pool B (épaules / triceps focus)
+    { n:"Développé militaire haltères",m:"Épaules",    pool:"B" },
+    { n:"Développé incliné barre",     m:"Pecs haut",  pool:"B" },
+    { n:"Oiseau inversé haltères",     m:"Épaules arrière", pool:"B" },
+    { n:"Élévations frontales",        m:"Deltoïdes",  pool:"B" },
+    { n:"Extension triceps 1 bras",    m:"Triceps",    pool:"B" },
+    { n:"Pompes lestées",              m:"Pecs/Triceps",pool:"B" },
+    { n:"Cable crossover pec deck",    m:"Pecs",       pool:"B" },
+  ],
+  push_home: [
+    { n:"Pompes mains larges",         m:"Pecs",       pool:"A" },
+    { n:"Pompes inclinées (pieds hauts)", m:"Pecs haut",pool:"A" },
+    { n:"Pike push-ups",               m:"Épaules",    pool:"A" },
+    { n:"Dips sur chaise",             m:"Triceps",    pool:"A" },
+    { n:"Pompes diamant",              m:"Triceps",    pool:"A" },
+    { n:"Pompes archer",               m:"Pecs",       pool:"A" },
+    { n:"Élévations lat haltères",     m:"Deltoïdes",  pool:"A" },
+    { n:"Pompes décoés (asymétrique)", m:"Pecs/Épaules",pool:"B" },
+    { n:"Pike push-up explosif",       m:"Épaules",    pool:"B" },
+    { n:"Pompes pieds surélevés",      m:"Pecs haut",  pool:"B" },
+    { n:"Dips entre 2 chaises",        m:"Triceps",    pool:"B" },
+    { n:"Shoulder tap pompe",          m:"Core/Épaules",pool:"B" },
+    { n:"Pompes lentes (4-0-4)",       m:"Pecs",       pool:"B" },
+  ],
+  pull: [
+    { n:"Tractions prise large",       m:"Grand dorsal",pool:"A" },
+    { n:"Rowing barre penché",         m:"Dos",        pool:"A" },
+    { n:"Tirage poulie haute",         m:"Grand dorsal",pool:"A" },
+    { n:"Curl barre EZ",               m:"Biceps",     pool:"A" },
+    { n:"Face pull câble",             m:"Épaules arrière",pool:"A" },
+    { n:"Rowing machine assise",       m:"Dos moyen",  pool:"A" },
+    { n:"Shrugs barre",                m:"Trapèzes",   pool:"A" },
+    { n:"Tractions prise serrée",      m:"Dos/Biceps", pool:"B" },
+    { n:"Rowing haltère 1 bras",       m:"Grand dorsal",pool:"B" },
+    { n:"Tirage poitrine câble",       m:"Dos",        pool:"B" },
+    { n:"Curl haltères alterné",       m:"Biceps",     pool:"B" },
+    { n:"Oiseau haltères penché",      m:"Épaules arrière",pool:"B" },
+    { n:"Pull-over haltère",           m:"Grand dorsal",pool:"B" },
+    { n:"Curl marteau",                m:"Biceps brachial",pool:"B" },
+  ],
+  pull_home: [
+    { n:"Rowing haltères 1 bras",      m:"Dos",        pool:"A" },
+    { n:"Rowing élastique debout",     m:"Dos",        pool:"A" },
+    { n:"Curl haltères alterné",       m:"Biceps",     pool:"A" },
+    { n:"Oiseau haltères",             m:"Épaules arrière",pool:"A" },
+    { n:"Superman dos au sol",         m:"Bas du dos", pool:"A" },
+    { n:"Rowing haltères bilatéral",   m:"Dos",        pool:"A" },
+    { n:"Tractions porte (TRX maison)",m:"Grand dorsal",pool:"A" },
+    { n:"Rowing élastique assis",      m:"Dos moyen",  pool:"B" },
+    { n:"Curl marteau haltères",       m:"Biceps",     pool:"B" },
+    { n:"Good morning haltères",       m:"Bas du dos/Ischios",pool:"B" },
+    { n:"Élastique face pull",         m:"Épaules arrière",pool:"B" },
+    { n:"Deadbug",                     m:"Core/Dos",   pool:"B" },
+  ],
+  legs: [
+    { n:"Squat barre",                 m:"Quadriceps", pool:"A" },
+    { n:"Soulevé de terre roumain",    m:"Ischios/Fessiers",pool:"A" },
+    { n:"Presse à cuisses",            m:"Quadriceps", pool:"A" },
+    { n:"Fentes marchées haltères",    m:"Fessiers",   pool:"A" },
+    { n:"Leg curl couché",             m:"Ischios",    pool:"A" },
+    { n:"Extensions mollets presse",   m:"Mollets",    pool:"A" },
+    { n:"Hip thrust barre",            m:"Fessiers",   pool:"A" },
+    { n:"Front squat barre",           m:"Quadriceps", pool:"B" },
+    { n:"Soulevé de terre sumo",       m:"Fessiers/Dos",pool:"B" },
+    { n:"Hack squat machine",          m:"Quadriceps", pool:"B" },
+    { n:"Fentes bulgares haltères",    m:"Quadriceps/Fessiers",pool:"B" },
+    { n:"Leg extension machine",       m:"Quadriceps", pool:"B" },
+    { n:"Relevés de mollets debout",   m:"Mollets",    pool:"B" },
+    { n:"Abducteur machine",           m:"Fessiers/Abducteurs",pool:"B" },
+  ],
+  legs_home: [
+    { n:"Squat poids de corps",        m:"Quadriceps", pool:"A" },
+    { n:"Pont fessier unilatéral",     m:"Fessiers",   pool:"A" },
+    { n:"Fentes avant haltères",       m:"Quadriceps/Fessiers",pool:"A" },
+    { n:"Step-ups dynamiques",         m:"Fessiers",   pool:"A" },
+    { n:"Relevés de mollets",          m:"Mollets",    pool:"A" },
+    { n:"Nordic curl (serviette)",      m:"Ischios",    pool:"A" },
+    { n:"Squat sauté",                 m:"Jambes/Cardio",pool:"A" },
+    { n:"Squat bulgare chaise",        m:"Quadriceps/Fessiers",pool:"B" },
+    { n:"Hip thrust au sol",           m:"Fessiers",   pool:"B" },
+    { n:"Fentes latérales",            m:"Adducteurs/Fessiers",pool:"B" },
+    { n:"Wall sit (isométrique)",      m:"Quadriceps", pool:"B" },
+    { n:"Pont fessier marchant",       m:"Fessiers",   pool:"B" },
+    { n:"Single leg deadlift",         m:"Ischios/Fessiers",pool:"B" },
+  ],
+  fullbody: [
+    { n:"Squat haltères",              m:"Jambes" },
+    { n:"Pompes",                      m:"Pecs/Triceps" },
+    { n:"Rowing haltères",             m:"Dos/Biceps" },
+    { n:"Fentes avant haltères",       m:"Jambes/Fessiers" },
+    { n:"Planche",                     m:"Core", r:"30-45s" },
+    { n:"Développé militaire haltères",m:"Épaules" },
+    { n:"Soulevé de terre haltères",   m:"Dos/Jambes" },
+    { n:"Curl haltères",               m:"Biceps" },
+    { n:"Dips sur chaise",             m:"Triceps" },
+  ],
+  hiit: [
+    { n:"Burpees",                     m:"Full body",   r:"20s ×8 (Tabata)" },
+    { n:"Mountain climbers",           m:"Core/Cardio", r:"30s effort / 10s récup" },
+    { n:"Jump squats",                 m:"Jambes",      r:"30s / 15s repos" },
+    { n:"Planche dynamique",           m:"Core",        r:"40s / 20s repos" },
+    { n:"Montées de genoux",           m:"Cardio",      r:"30s sprint" },
+    { n:"Corde à sauter (simulation)", m:"Cardio",      r:"1 min" },
+    { n:"Sprint en place",             m:"Cardio",      r:"20s max / 10s" },
+    { n:"Box jumps (squat sauté)",     m:"Jambes/Cardio",r:"8 reps explosif" },
+    { n:"Pompes explosives",           m:"Pecs/Cardio", r:"15s max" },
+  ],
+  cardio: [
+    { n:"Course / marche rapide",      m:"Cardio",      r:"35 min zone 2 (FC 130-150)" },
+    { n:"Vélo / elliptique",           m:"Cardio",      r:"30 min cadence stable" },
+    { n:"Natation",                    m:"Cardio",      r:"20-30 min" },
+    { n:"Rameur",                      m:"Cardio/Dos",  r:"20 min intervalles" },
+    { n:"Marche nordique",             m:"Cardio",      r:"45 min" },
+  ],
+  core: [
+    { n:"Planche avant",               m:"Core",        r:"3× 30-60s" },
+    { n:"Crunchs bicycle",             m:"Obliques",    r:"3× 20 reps" },
+    { n:"Hollow body hold",            m:"Core",        r:"3× 30s" },
+    { n:"Bird dog",                    m:"Core/Stabilisateurs", r:"3× 10/côté" },
+    { n:"Gainage latéral",             m:"Obliques",    r:"3× 30s/côté" },
+    { n:"Russian twist haltère",       m:"Obliques",    r:"3× 15/côté" },
+    { n:"Dead bug",                    m:"Core",        r:"3× 10/côté" },
+    { n:"Ab wheel rollout",            m:"Core",        r:"3× 8-12 reps" },
+  ],
+  mobilite: [
+    { n:"Pigeon yoga (hanche)",        m:"Hanches",     r:"90s/côté" },
+    { n:"Étirement quadriceps debout", m:"Quadriceps",  r:"60s/côté" },
+    { n:"Cat-cow rachis",              m:"Dos",         r:"10 cycles lents" },
+    { n:"Foam roller thoracique",      m:"Haut du dos", r:"2 min" },
+    { n:"Hip flexors — fente basse",   m:"Hanches/Psoas",r:"90s/côté" },
+    { n:"Étirement pectoraux porte",   m:"Pecs/Épaules",r:"60s" },
+    { n:"Thread the needle rotation",  m:"Dos/Épaules", r:"8/côté" },
+    { n:"Squat profond 90-90",         m:"Hanches/Mollets",r:"2 min" },
+  ],
+  rest: []
 };
 
 const PROG_WEEKLY = {
@@ -4970,11 +5112,20 @@ function _renderProgDays(weekNum, params) {
   let doneSets = {};
   try { doneSets = JSON.parse(localStorage.getItem(doneKey) || "{}"); } catch {}
 
+  // Count how many times each exercise type has appeared so far in the week (for A/B pool rotation)
+  const typeCount = {};
+
   cont.innerHTML = weekly.map((item, dayIdx) => {
     const isToday = item.d === todayDow;
     const isRest  = item.type === "rest";
     const exType  = _progExType(item.type, eq);
-    const exList  = (PROG_EXERCISES[exType] || []).slice(0, 7);
+    typeCount[exType] = (typeCount[exType] || 0);
+    const pool = typeCount[exType] % 2 === 0 ? "A" : "B";
+    typeCount[exType]++;
+    const allEx = PROG_EXERCISES[exType] || [];
+    // Prefer pool-matched exercises, fall back to non-pool items (fullbody, hiit, etc.)
+    const pooled = allEx.filter(e => !e.pool || e.pool === pool);
+    const exList  = (pooled.length >= 5 ? pooled : allEx).slice(0, 7);
 
     let exHtml = "";
     if (isRest) {
@@ -5042,7 +5193,12 @@ function progStartWorkout(dayIdx) {
   if (!item || item.type === "rest") return;
   const eq = _prog?.equipment || "";
   const exType = _progExType(item.type, eq);
-  const exList = (PROG_EXERCISES[exType] || []).slice(0, 7);
+  // Count occurrences of this type before dayIdx to determine pool
+  const priorCount = weekly.slice(0, dayIdx).filter(d => _progExType(d.type, eq) === exType).length;
+  const pool = priorCount % 2 === 0 ? "A" : "B";
+  const allEx = PROG_EXERCISES[exType] || [];
+  const pooled = allEx.filter(e => !e.pool || e.pool === pool);
+  const exList = (pooled.length >= 5 ? pooled : allEx).slice(0, 7);
   const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
   const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   const label = `${item.icon} ${item.label} · ${dayNames[item.d - 1]}`;
