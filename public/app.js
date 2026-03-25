@@ -941,12 +941,27 @@ async function sendCoachMsg(quickMsg) {
       const thinkEl = document.getElementById("coach-thinking");
       if (thinkEl) thinkEl.querySelector(".chat-bubble").innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
 
-      const { response: jsonResp } = await fetchJsonWithTimeout("/api/coach", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ message: prompt, history: historyForApi, profile: coachProfile, goalContext })
-      }, 30000);
-      j = jsonResp;
+      try {
+        const { response: jsonResp } = await fetchJsonWithTimeout("/api/coach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ message: prompt, history: historyForApi, profile: coachProfile, goalContext })
+        }, 30000);
+        j = jsonResp;
+      } catch (fallbackErr) {
+        // Both streaming and JSON fallback failed — show a degraded offline response
+        const offlineMsg = "Je suis temporairement indisponible. Donne-moi ton objectif et je te guide dès que la connexion revient. En attendant : séance courte, mobilité, ou révise ta nutrition du jour.";
+        const aiTime2 = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+        const thinkEl2 = document.getElementById("coach-thinking");
+        if (thinkEl2) thinkEl2.remove();
+        COACH_HISTORY.push({ role: "ai", content: formatCoachText(offlineMsg), time: aiTime2 });
+        saveCoachHistory();
+        renderCoachChat();
+        if (chatEl) setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50);
+        if (btn) btn.disabled = false;
+        ASYNC_LOCKS.delete("coach-msg");
+        return;
+      }
     }
 
     if (!j) {
@@ -2477,7 +2492,9 @@ async function fetchCoachStream({ url, body, token, onChunk, signal }) {
           if (typeof onChunk === "function") onChunk(fullText);
         }
       } catch (parseErr) {
-        if (parseErr.message !== "[object Object]") throw parseErr;
+        // Only re-throw real errors (not JSON parse failures from non-data lines)
+        if (parseErr instanceof SyntaxError) continue;
+        throw parseErr;
       }
     }
   }
@@ -4548,6 +4565,181 @@ function _muscleSVG(muscle) {
   </svg>`;
 }
 
+// ── Animated stick figure for exercise movements ──────────────────────────────
+function _stickFigureSVG(name) {
+  const n = (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const s = 'stroke="rgba(255,255,255,.88)" stroke-width="2.2" stroke-linecap="round" fill="none"';
+  const floor = '<line x1="6" y1="76" x2="74" y2="76" stroke="rgba(255,255,255,.15)" stroke-width="1"/>';
+  const style = `<style>
+    .sfa{animation:sfa 1.6s ease-in-out infinite}
+    .sfb{animation:sfb 1.6s ease-in-out infinite}
+    @keyframes sfa{0%,38%{opacity:1}50%,88%{opacity:0}100%{opacity:1}}
+    @keyframes sfb{0%,38%{opacity:0}50%,88%{opacity:1}100%{opacity:0}}
+  </style>`;
+  const open = `<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%">${style}`;
+  const close = `</svg>`;
+
+  // Push-up / pompes
+  if (/pompe|push.?up|pike.?push/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="10" cy="22" r="6" ${s}/><line x1="16" y1="24" x2="58" y2="24" ${s}/><line x1="58" y1="24" x2="64" y2="17" ${s}/><line x1="58" y1="24" x2="64" y2="31" ${s}/><line x1="28" y1="24" x2="28" y2="44" ${s}/><line x1="46" y1="24" x2="46" y2="44" ${s}/></g>` +
+      `<g class="sfb"><circle cx="10" cy="32" r="6" ${s}/><line x1="16" y1="34" x2="58" y2="34" ${s}/><line x1="58" y1="34" x2="64" y2="27" ${s}/><line x1="58" y1="34" x2="64" y2="41" ${s}/><line x1="28" y1="34" x2="28" y2="44" ${s}/><line x1="46" y1="34" x2="46" y2="44" ${s}/></g>` +
+      `<line x1="0" y1="44" x2="80" y2="44" stroke="rgba(255,255,255,.15)" stroke-width="1"/>` +
+      close;
+  }
+
+  // Squat
+  if (/squat/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="42" ${s}/><line x1="40" y1="28" x2="26" y2="22" ${s}/><line x1="40" y1="28" x2="54" y2="22" ${s}/><line x1="40" y1="42" x2="32" y2="68" ${s}/><line x1="40" y1="42" x2="48" y2="68" ${s}/><line x1="32" y1="68" x2="28" y2="76" ${s}/><line x1="48" y1="68" x2="52" y2="76" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="24" r="7" ${s}/><line x1="40" y1="31" x2="40" y2="48" ${s}/><line x1="40" y1="38" x2="22" y2="34" ${s}/><line x1="40" y1="38" x2="58" y2="34" ${s}/><line x1="40" y1="48" x2="28" y2="64" ${s}/><line x1="40" y1="48" x2="52" y2="64" ${s}/><line x1="28" y1="64" x2="28" y2="76" ${s}/><line x1="52" y1="64" x2="52" y2="76" ${s}/></g>` +
+      floor + close;
+  }
+
+  // Planche / plank
+  if (/planche|plank/.test(n)) {
+    return open +
+      `<circle cx="10" cy="36" r="6" ${s}/><line x1="16" y1="38" x2="62" y2="38" ${s}/><line x1="62" y1="38" x2="68" y2="30" ${s}/><line x1="62" y1="38" x2="68" y2="46" ${s}/><line x1="30" y1="38" x2="30" y2="54" ${s}/><line x1="47" y1="38" x2="47" y2="54" ${s}/>` +
+      `<circle cx="40" cy="38" r="3" stroke="rgba(99,102,241,.7)" stroke-width="1.5" fill="none"><animate attributeName="r" values="3;5;3" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/></circle>` +
+      `<line x1="2" y1="54" x2="78" y2="54" stroke="rgba(255,255,255,.15)" stroke-width="1"/>` +
+      close;
+  }
+
+  // Tractions / pull-ups
+  if (/traction|pull.?up|chin.?up/.test(n)) {
+    return open +
+      `<line x1="8" y1="8" x2="72" y2="8" stroke="rgba(255,255,255,.45)" stroke-width="3" stroke-linecap="round"/>` +
+      `<g class="sfa"><circle cx="40" cy="30" r="7" ${s}/><line x1="40" y1="37" x2="40" y2="62" ${s}/><line x1="40" y1="48" x2="28" y2="56" ${s}/><line x1="40" y1="48" x2="52" y2="56" ${s}/><line x1="40" y1="62" x2="34" y2="76" ${s}/><line x1="40" y1="62" x2="46" y2="76" ${s}/><line x1="28" y1="8" x2="28" y2="24" ${s}/><line x1="52" y1="8" x2="52" y2="24" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="16" r="7" ${s}/><line x1="40" y1="23" x2="40" y2="48" ${s}/><line x1="40" y1="34" x2="28" y2="42" ${s}/><line x1="40" y1="34" x2="52" y2="42" ${s}/><line x1="40" y1="48" x2="34" y2="62" ${s}/><line x1="40" y1="48" x2="46" y2="62" ${s}/><line x1="28" y1="8" x2="28" y2="10" ${s}/><line x1="52" y1="8" x2="52" y2="10" ${s}/></g>` +
+      close;
+  }
+
+  // Fentes / lunges
+  if (/fente|lunge/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="40" cy="12" r="7" ${s}/><line x1="40" y1="19" x2="40" y2="42" ${s}/><line x1="40" y1="30" x2="24" y2="36" ${s}/><line x1="40" y1="30" x2="56" y2="36" ${s}/><line x1="40" y1="42" x2="26" y2="66" ${s}/><line x1="40" y1="42" x2="54" y2="56" ${s}/><line x1="26" y1="66" x2="20" y2="76" ${s}/><line x1="54" y1="56" x2="62" y2="76" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="12" r="7" ${s}/><line x1="40" y1="19" x2="40" y2="42" ${s}/><line x1="40" y1="30" x2="24" y2="36" ${s}/><line x1="40" y1="30" x2="56" y2="36" ${s}/><line x1="40" y1="42" x2="54" y2="66" ${s}/><line x1="40" y1="42" x2="26" y2="56" ${s}/><line x1="54" y1="66" x2="60" y2="76" ${s}/><line x1="26" y1="56" x2="18" y2="76" ${s}/></g>` +
+      floor + close;
+  }
+
+  // Hip thrust
+  if (/hip.?thrust|thrust/.test(n)) {
+    return open +
+      `<rect x="4" y="38" width="18" height="7" rx="2" stroke="rgba(255,255,255,.3)" stroke-width="1.5" fill="rgba(255,255,255,.05)"/>` +
+      `<g class="sfa"><circle cx="40" cy="44" r="7" ${s}/><line x1="40" y1="51" x2="40" y2="62" ${s}/><line x1="40" y1="54" x2="22" y2="58" ${s}/><line x1="40" y1="54" x2="58" y2="58" ${s}/><line x1="40" y1="62" x2="28" y2="76" ${s}/><line x1="40" y1="62" x2="52" y2="76" ${s}/></g>` +
+      `<g class="sfb"><circle cx="34" cy="32" r="7" ${s}/><line x1="38" y1="38" x2="44" y2="54" ${s}/><line x1="40" y1="44" x2="22" y2="42" ${s}/><line x1="40" y1="44" x2="56" y2="36" ${s}/><line x1="44" y1="54" x2="34" y2="68" ${s}/><line x1="44" y1="54" x2="56" y2="68" ${s}/><line x1="34" y1="68" x2="28" y2="76" ${s}/><line x1="56" y1="68" x2="62" y2="76" ${s}/></g>` +
+      floor + close;
+  }
+
+  // Crunch / abdo / sit-up
+  if (/crunch|abdo|sit.?up|hollow/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="14" cy="52" r="6" ${s}/><line x1="20" y1="53" x2="62" y2="53" ${s}/><line x1="62" y1="53" x2="70" y2="45" ${s}/><line x1="62" y1="53" x2="70" y2="61" ${s}/><line x1="30" y1="53" x2="26" y2="66" ${s}/><line x1="46" y1="53" x2="50" y2="66" ${s}/></g>` +
+      `<g class="sfb"><circle cx="22" cy="38" r="6" ${s}/><line x1="27" y1="42" x2="56" y2="54" ${s}/><line x1="56" y1="54" x2="64" y2="46" ${s}/><line x1="56" y1="54" x2="64" y2="62" ${s}/><line x1="38" y1="48" x2="30" y2="62" ${s}/><line x1="48" y1="52" x2="52" y2="66" ${s}/></g>` +
+      `<line x1="2" y1="66" x2="78" y2="66" stroke="rgba(255,255,255,.15)" stroke-width="1"/>` +
+      close;
+  }
+
+  // Mountain climbers
+  if (/mountain|climber/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="10" cy="32" r="6" ${s}/><line x1="16" y1="34" x2="56" y2="34" ${s}/><line x1="56" y1="34" x2="62" y2="26" ${s}/><line x1="56" y1="34" x2="62" y2="42" ${s}/><line x1="30" y1="34" x2="30" y2="50" ${s}/><line x1="46" y1="34" x2="46" y2="50" ${s}/><line x1="30" y1="50" x2="22" y2="50" ${s}/><line x1="38" y1="44" x2="30" y2="44" ${s}/></g>` +
+      `<g class="sfb"><circle cx="10" cy="32" r="6" ${s}/><line x1="16" y1="34" x2="56" y2="34" ${s}/><line x1="56" y1="34" x2="62" y2="26" ${s}/><line x1="56" y1="34" x2="62" y2="42" ${s}/><line x1="30" y1="34" x2="30" y2="50" ${s}/><line x1="46" y1="34" x2="46" y2="50" ${s}/><line x1="46" y1="50" x2="54" y2="50" ${s}/><line x1="42" y1="44" x2="50" y2="44" ${s}/></g>` +
+      `<line x1="0" y1="50" x2="80" y2="50" stroke="rgba(255,255,255,.15)" stroke-width="1"/>` +
+      close;
+  }
+
+  // Burpees
+  if (/burpee/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="40" cy="8" r="7" ${s}/><line x1="40" y1="15" x2="40" y2="38" ${s}/><line x1="40" y1="25" x2="24" y2="16" ${s}/><line x1="40" y1="25" x2="56" y2="16" ${s}/><line x1="40" y1="38" x2="30" y2="54" ${s}/><line x1="40" y1="38" x2="50" y2="54" ${s}/></g>` +
+      `<g class="sfb"><circle cx="10" cy="42" r="6" ${s}/><line x1="16" y1="44" x2="58" y2="44" ${s}/><line x1="58" y1="44" x2="64" y2="37" ${s}/><line x1="58" y1="44" x2="64" y2="51" ${s}/><line x1="28" y1="44" x2="28" y2="60" ${s}/><line x1="46" y1="44" x2="46" y2="60" ${s}/></g>` +
+      `<line x1="0" y1="60" x2="80" y2="60" stroke="rgba(255,255,255,.15)" stroke-width="1"/>` +
+      close;
+  }
+
+  // Dips
+  if (/dips?/.test(n)) {
+    return open +
+      `<line x1="16" y1="16" x2="16" y2="60" stroke="rgba(255,255,255,.3)" stroke-width="2.5" stroke-linecap="round"/>` +
+      `<line x1="64" y1="16" x2="64" y2="60" stroke="rgba(255,255,255,.3)" stroke-width="2.5" stroke-linecap="round"/>` +
+      `<g class="sfa"><circle cx="40" cy="16" r="7" ${s}/><line x1="40" y1="23" x2="40" y2="46" ${s}/><line x1="40" y1="32" x2="16" y2="32" ${s}/><line x1="40" y1="32" x2="64" y2="32" ${s}/><line x1="40" y1="46" x2="34" y2="62" ${s}/><line x1="40" y1="46" x2="46" y2="62" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="28" r="7" ${s}/><line x1="40" y1="35" x2="40" y2="58" ${s}/><line x1="40" y1="44" x2="16" y2="36" ${s}/><line x1="40" y1="44" x2="64" y2="36" ${s}/><line x1="40" y1="58" x2="34" y2="72" ${s}/><line x1="40" y1="58" x2="46" y2="72" ${s}/></g>` +
+      close;
+  }
+
+  // Curl (biceps)
+  if (/curl/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="44" ${s}/><line x1="40" y1="28" x2="56" y2="22" ${s}/><line x1="40" y1="28" x2="24" y2="46" ${s}/><line x1="40" y1="44" x2="32" y2="68" ${s}/><line x1="40" y1="44" x2="48" y2="68" ${s}/><line x1="32" y1="68" x2="28" y2="76" ${s}/><line x1="48" y1="68" x2="52" y2="76" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="44" ${s}/><line x1="40" y1="28" x2="56" y2="22" ${s}/><line x1="40" y1="28" x2="26" y2="20" ${s}/><line x1="40" y1="44" x2="32" y2="68" ${s}/><line x1="40" y1="44" x2="48" y2="68" ${s}/><line x1="32" y1="68" x2="28" y2="76" ${s}/><line x1="48" y1="68" x2="52" y2="76" ${s}/></g>` +
+      floor + close;
+  }
+
+  // Rowing / tirage
+  if (/rowing|tirage|row|pull.?over|oiseau/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="36" cy="22" r="7" ${s}/><line x1="40" y1="28" x2="44" y2="50" ${s}/><line x1="42" y1="36" x2="22" y2="30" ${s}/><line x1="42" y1="36" x2="62" y2="30" ${s}/><line x1="44" y1="50" x2="36" y2="68" ${s}/><line x1="44" y1="50" x2="54" y2="68" ${s}/><line x1="36" y1="68" x2="30" y2="76" ${s}/><line x1="54" y1="68" x2="60" y2="76" ${s}/></g>` +
+      `<g class="sfb"><circle cx="36" cy="22" r="7" ${s}/><line x1="40" y1="28" x2="44" y2="50" ${s}/><line x1="42" y1="36" x2="26" y2="44" ${s}/><line x1="42" y1="36" x2="56" y2="22" ${s}/><line x1="44" y1="50" x2="36" y2="68" ${s}/><line x1="44" y1="50" x2="54" y2="68" ${s}/><line x1="36" y1="68" x2="30" y2="76" ${s}/><line x1="54" y1="68" x2="60" y2="76" ${s}/></g>` +
+      floor + close;
+  }
+
+  // Soulevé de terre / deadlift
+  if (/souleve|deadlift|terre|sumo|roumain/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="34" cy="28" r="7" ${s}/><line x1="38" y1="34" x2="54" y2="50" ${s}/><line x1="44" y1="40" x2="28" y2="46" ${s}/><line x1="44" y1="40" x2="60" y2="44" ${s}/><line x1="54" y1="50" x2="48" y2="70" ${s}/><line x1="54" y1="50" x2="62" y2="70" ${s}/><line x1="48" y1="70" x2="44" y2="76" ${s}/><line x1="62" y1="70" x2="66" y2="76" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="42" ${s}/><line x1="40" y1="28" x2="26" y2="36" ${s}/><line x1="40" y1="28" x2="54" y2="36" ${s}/><line x1="40" y1="42" x2="32" y2="66" ${s}/><line x1="40" y1="42" x2="48" y2="66" ${s}/><line x1="32" y1="66" x2="28" y2="76" ${s}/><line x1="48" y1="66" x2="52" y2="76" ${s}/></g>` +
+      floor + close;
+  }
+
+  // Press (développé, militaire, overhead, écarté)
+  if (/develop|bench|militaire|overhead|press|presse|ecarté|ecarte/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="42" ${s}/><line x1="40" y1="28" x2="22" y2="36" ${s}/><line x1="40" y1="28" x2="58" y2="36" ${s}/><line x1="40" y1="42" x2="32" y2="66" ${s}/><line x1="40" y1="42" x2="48" y2="66" ${s}/><line x1="32" y1="66" x2="28" y2="76" ${s}/><line x1="48" y1="66" x2="52" y2="76" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="42" ${s}/><line x1="40" y1="28" x2="22" y2="12" ${s}/><line x1="40" y1="28" x2="58" y2="12" ${s}/><line x1="40" y1="42" x2="32" y2="66" ${s}/><line x1="40" y1="42" x2="48" y2="66" ${s}/><line x1="32" y1="66" x2="28" y2="76" ${s}/><line x1="48" y1="66" x2="52" y2="76" ${s}/></g>` +
+      floor + close;
+  }
+
+  // Jump squat / jump
+  if (/jump|saut/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="40" cy="24" r="7" ${s}/><line x1="40" y1="31" x2="40" y2="48" ${s}/><line x1="40" y1="38" x2="22" y2="34" ${s}/><line x1="40" y1="38" x2="58" y2="34" ${s}/><line x1="40" y1="48" x2="28" y2="64" ${s}/><line x1="40" y1="48" x2="52" y2="64" ${s}/><line x1="28" y1="64" x2="26" y2="76" ${s}/><line x1="52" y1="64" x2="54" y2="76" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="6" r="7" ${s}/><line x1="40" y1="13" x2="40" y2="36" ${s}/><line x1="40" y1="22" x2="24" y2="14" ${s}/><line x1="40" y1="22" x2="56" y2="14" ${s}/><line x1="40" y1="36" x2="32" y2="54" ${s}/><line x1="40" y1="36" x2="48" y2="54" ${s}/><line x1="32" y1="54" x2="30" y2="64" ${s}/><line x1="48" y1="54" x2="50" y2="64" ${s}/></g>` +
+      floor + close;
+  }
+
+  // Running / course
+  if (/course|run|sprint|jog/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="42" ${s}/><line x1="40" y1="28" x2="24" y2="20" ${s}/><line x1="40" y1="28" x2="56" y2="36" ${s}/><line x1="40" y1="42" x2="28" y2="64" ${s}/><line x1="40" y1="42" x2="52" y2="58" ${s}/><line x1="52" y1="58" x2="60" y2="68" ${s}/><line x1="28" y1="64" x2="20" y2="58" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="42" ${s}/><line x1="40" y1="28" x2="56" y2="20" ${s}/><line x1="40" y1="28" x2="24" y2="36" ${s}/><line x1="40" y1="42" x2="52" y2="64" ${s}/><line x1="40" y1="42" x2="28" y2="58" ${s}/><line x1="28" y1="58" x2="20" y2="68" ${s}/><line x1="52" y1="64" x2="60" y2="58" ${s}/></g>` +
+      `<line x1="6" y1="70" x2="74" y2="70" stroke="rgba(255,255,255,.15)" stroke-width="1"/>` +
+      close;
+  }
+
+  // Élévations latérales / frontales / shoulder raise
+  if (/elevation|raise|oiseau.invers|face.pull|shrug/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="44" ${s}/><line x1="40" y1="28" x2="24" y2="34" ${s}/><line x1="40" y1="28" x2="56" y2="34" ${s}/><line x1="40" y1="44" x2="32" y2="68" ${s}/><line x1="40" y1="44" x2="48" y2="68" ${s}/><line x1="32" y1="68" x2="28" y2="76" ${s}/><line x1="48" y1="68" x2="52" y2="76" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="44" ${s}/><line x1="40" y1="28" x2="16" y2="22" ${s}/><line x1="40" y1="28" x2="64" y2="22" ${s}/><line x1="40" y1="44" x2="32" y2="68" ${s}/><line x1="40" y1="44" x2="48" y2="68" ${s}/><line x1="32" y1="68" x2="28" y2="76" ${s}/><line x1="48" y1="68" x2="52" y2="76" ${s}/></g>` +
+      floor + close;
+  }
+
+  // Extension triceps / tricep pushdown
+  if (/extension.tricep|tricep.push|skull|barre.front/.test(n)) {
+    return open +
+      `<g class="sfa"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="44" ${s}/><line x1="40" y1="28" x2="56" y2="22" ${s}/><line x1="40" y1="28" x2="24" y2="22" ${s}/><line x1="40" y1="44" x2="32" y2="68" ${s}/><line x1="40" y1="44" x2="48" y2="68" ${s}/></g>` +
+      `<g class="sfb"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="44" ${s}/><line x1="40" y1="28" x2="56" y2="22" ${s}/><line x1="40" y1="28" x2="24" y2="14" ${s}/><line x1="40" y1="44" x2="32" y2="68" ${s}/><line x1="40" y1="44" x2="48" y2="68" ${s}/></g>` +
+      floor + close;
+  }
+
+  // Generic — arms swing left/right
+  return open +
+    `<g class="sfa"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="44" ${s}/><line x1="40" y1="28" x2="24" y2="22" ${s}/><line x1="40" y1="28" x2="56" y2="34" ${s}/><line x1="40" y1="44" x2="32" y2="68" ${s}/><line x1="40" y1="44" x2="48" y2="60" ${s}/><line x1="32" y1="68" x2="28" y2="76" ${s}/><line x1="48" y1="60" x2="52" y2="70" ${s}/></g>` +
+    `<g class="sfb"><circle cx="40" cy="10" r="7" ${s}/><line x1="40" y1="17" x2="40" y2="44" ${s}/><line x1="40" y1="28" x2="56" y2="22" ${s}/><line x1="40" y1="28" x2="24" y2="34" ${s}/><line x1="40" y1="44" x2="48" y2="68" ${s}/><line x1="40" y1="44" x2="32" y2="60" ${s}/><line x1="48" y1="68" x2="52" y2="76" ${s}/><line x1="32" y1="60" x2="28" y2="70" ${s}/></g>` +
+    floor + close;
+}
+
 // ── Exercise technique tips ───────────────────────────────────────────────────
 const EXERCISE_TIPS = {
   "développé couché":    "Pieds à plat. Omoplate serrées. Descends à 3s, explose à la montée.",
@@ -4605,9 +4797,9 @@ function _wtRenderExercise() {
   const detail = ex.r || `${params.sets}×${params.reps}${params.rest ? " · " + params.rest + "s repos" : ""}`;
   setEl("wt-ex-detail", detail);
 
-  // Muscle diagram SVG
+  // Animated stick figure showing movement
   const imgWrap = document.getElementById("wt-ex-img-wrap");
-  if (imgWrap) imgWrap.innerHTML = _muscleSVG(ex.m || "");
+  if (imgWrap) imgWrap.innerHTML = _stickFigureSVG(ex.n || "");
 
   // Technique tip
   const tipEl = document.getElementById("wt-ex-tip");

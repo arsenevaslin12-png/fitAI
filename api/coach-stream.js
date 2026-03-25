@@ -38,11 +38,12 @@ module.exports = async function handler(req, res) {
   if (assertEnv(res)) return;
   if (req.method !== "POST") { res.statusCode = 405; return res.end(); }
 
-  // SSE headers
+  // SSE headers — must be set before any body parsing
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders(); // Critical for Vercel: sends headers immediately so SSE starts
 
   try {
     const ip = getIp(req);
@@ -59,7 +60,16 @@ module.exports = async function handler(req, res) {
       return sseDone(res);
     }
 
-    const body = parseBody(req);
+    // Parse body: try req.body (Vercel pre-parsed) then fallback to stream reading
+    let body = parseBody(req);
+    if (!body.message) {
+      try {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const raw = Buffer.concat(chunks).toString("utf8");
+        if (raw) body = JSON.parse(raw);
+      } catch { /* keep body as-is */ }
+    }
     const rawMessage = sanitizeInput(String(body.message || ""), 1000);
     if (!rawMessage) {
       sseWrite(res, { error: "Message vide." });
