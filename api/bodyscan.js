@@ -307,6 +307,7 @@ Compare avec ce scan et note les progrès ou régressions.
 
   return `Tu es un coach fitness spécialisé en analyse corporelle visuelle.
 Analyse cette photo avec franchise absolue et des standards exigeants.
+Ton analyse doit être SPÉCIFIQUE à cette photo précise — décris ce que tu vois réellement (zones, proportions, masses musculaires visibles), pas des formules génériques. Les champs "body_composition", "muscle_definition_text" et "motivational_feedback" doivent être uniques à cette personne.
 
 CALIBRATION STRICTE — respecte impérativement ces fourchettes:
 - 15-30 : personne sédentaire, peu ou pas d'activité visible sur le physique
@@ -387,8 +388,8 @@ async function analyzeImage({ apiKey, b64, mime, previousAnalysis = null }) {
       { text: prompt },
       { inlineData: { data: b64, mimeType: mime } }
     ],
-    temperature: 0.3,
-    maxOutputTokens: 1500,
+    temperature: 0.6,
+    maxOutputTokens: 1600,
     timeoutMs: TIMEOUT_GEMINI_MS,
     retries: 0
   });
@@ -476,14 +477,36 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
   const nutritionFocus = uniqStrings([...toArray(reco.nutrition), ...derivedReco.nutrition], 3);
   const exerciseExamples = uniqStrings([...toArray(reco.exercise_examples), ...derivedReco.exercise_examples], 4);
 
+  // ── Build ai_feedback using Gemini's actual personalized text ────────────────
+  // Gemini generates specific descriptions per photo — use them as the backbone.
+  const geminiComposition = String(p.body_composition || "").trim();
+  const geminiDefinition  = String(p.muscle_definition_text || "").trim();
+  const geminiMotivation  = String(p.motivational_feedback || "").trim();
+
   const feedbackParts = [];
-  if (p.analysis_quality === "poor") feedbackParts.push("⚠️ Qualité photo limitée. Les constats restent prudents: refais un scan avec lumière frontale, corps entier visible et angle stable.");
-  feedbackParts.push(`Score honnête et calibré: ${calibratedPhysical}/100. ${derivedReco.rationale}`);
-  if (strengths.length) feedbackParts.push(`✅ Ce qui ressort vraiment: ${strengths.join(", ")}.`);
-  if (improvements.length) feedbackParts.push(`🎯 Ce qui limite réellement le score: ${improvements.join(", ")}.`);
-  if (trainingFocus.length) feedbackParts.push(`🏋️ Focus entraînement: ${trainingFocus.join(", ")}.`);
-  if (nutritionFocus.length) feedbackParts.push(`🥗 Ajustements utiles: ${nutritionFocus.join(", ")}.`);
-  if (exerciseExamples.length) feedbackParts.push(`📌 Exemples concrets: ${exerciseExamples.join(", ")}.`);
+
+  if (p.analysis_quality === "poor") {
+    feedbackParts.push("⚠️ Qualité photo limitée — les constats sont prudents. Refais un scan avec lumière frontale, corps entier visible sur fond neutre et angle stable.");
+  }
+
+  // Score line + Gemini's composition & definition texts (specific to this photo)
+  let scoreLine = `Score calibré : ${calibratedPhysical}/100.`;
+  if (geminiComposition) scoreLine += `\n${geminiComposition}`;
+  if (geminiDefinition)  scoreLine += `\n${geminiDefinition}`;
+  if (!geminiComposition && !geminiDefinition) scoreLine += ` ${derivedReco.rationale}`;
+  feedbackParts.push(scoreLine);
+
+  if (strengths.length)        feedbackParts.push(`✅ Points forts : ${strengths.join(" · ")}.`);
+  if (improvements.length)     feedbackParts.push(`🎯 Ce qui limite le score : ${improvements.join(" · ")}.`);
+  if (trainingFocus.length)    feedbackParts.push(`🏋️ Focus entraînement : ${trainingFocus.join(", ")}.`);
+  if (nutritionFocus.length)   feedbackParts.push(`🥗 Ajustements nutrition : ${nutritionFocus.join(", ")}.`);
+  if (exerciseExamples.length) feedbackParts.push(`📌 Exercices clés : ${exerciseExamples.join(", ")}.`);
+
+  // Gemini's motivational message — unique per photo, use it if quality is sufficient
+  if (geminiMotivation && geminiMotivation.length > 15) {
+    feedbackParts.push(`💪 ${geminiMotivation.replace(/^💪\s*/u, "")}`);
+  }
+
   feedbackParts.push(`📅 ${reco.frequency_suggestion || derivedReco.frequency_suggestion}`);
 
   return {
@@ -509,6 +532,7 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
       estimated_metrics: p.estimated_metrics || null,
       body_composition: p.body_composition || null,
       muscle_definition_text: p.muscle_definition_text || null,
+      motivational_feedback: p.motivational_feedback || null,
       personalized_recommendations: {
         training_focus: trainingFocus,
         training: trainingFocus,
