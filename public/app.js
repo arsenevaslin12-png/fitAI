@@ -1652,6 +1652,7 @@ async function loadFeed() {
           </div>
           <div class="comments-section" id="comments-${post.id}" style="display:none"></div>
         </div>`;
+    }).join("");
   } catch (e) {
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
