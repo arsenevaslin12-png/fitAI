@@ -18,6 +18,7 @@ let POST_PHOTO = null;
 let FEED_FILTER = "all";
 let LAST_COACH_PROMPT = "";
 let USER_WEIGHT = null; // kg, loaded from profile — used to compute water target
+let _appReady = false; // guards against double-call of showApp() from onAuthStateChange + getSession()
 
 const GOAL_LABELS = {
   prise_de_masse: "💪 Prise de masse",
@@ -311,6 +312,7 @@ function loadScript(src) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function showAuth() {
+  _appReady = false;
   const auth = document.getElementById("auth");
   const app = document.getElementById("app");
   if (auth) auth.style.display = "flex";
@@ -322,6 +324,10 @@ function showApp() {
   const app = document.getElementById("app");
   if (auth) auth.style.display = "none";
   if (app) app.classList.add("on");
+  // Guard: only run full initialization once per session to avoid
+  // double-invocation from onAuthStateChange + getSession() both firing.
+  if (_appReady) return;
+  _appReady = true;
   const tu = document.getElementById("tu");
   if (tu) tu.textContent = U?.email || "Membre";
   ensureCriticalUI();
@@ -2231,6 +2237,17 @@ async function loadDefis() {
   const el = document.getElementById("defis-list");
   if (!el) return;
 
+  // Render daily challenges in the défis tab immediately
+  renderDailyChallengesSection();
+
+  // Live countdown: refresh every minute while on this tab
+  if (window._defiCountdownTimer) clearInterval(window._defiCountdownTimer);
+  window._defiCountdownTimer = setInterval(() => {
+    const cdEl = document.getElementById("daily-defi-countdown");
+    if (cdEl) cdEl.textContent = _getMidnightCountdown();
+    else { clearInterval(window._defiCountdownTimer); window._defiCountdownTimer = null; }
+  }, 60000);
+
   // Load all trackable metrics
   let totalSessions = 0, currentStreak = 0, longestStreak = 0, totalScans = 0, totalPosts = 0;
   try {
@@ -3898,8 +3915,7 @@ function getDailyChallenges() {
   return stored;
 }
 
-function completeDailyChallenge(challengeId) {
-  const today = getTodayKey();
+function completeDailyChallenge(challengeId, _ctx) {
   const data = getDailyChallenges();
   if (data.done.includes(challengeId)) return;
   data.done.push(challengeId);
@@ -3965,38 +3981,77 @@ async function updateDailyStreak({ incrementWorkouts = false } = {}) {
   }
 }
 
-function renderDailyChallengesSection() {
-  const el = document.getElementById("daily-challenges-container");
-  if (!el) return;
+// Category color map for daily challenges
+const CAT_COLORS = {
+  "Force":     { bg: "rgba(239,68,68,.12)",   fg: "#f87171" },
+  "Core":      { bg: "rgba(168,85,247,.12)",  fg: "#c084fc" },
+  "Cardio":    { bg: "rgba(59,130,246,.12)",  fg: "#60a5fa" },
+  "HIIT":      { bg: "rgba(251,146,60,.12)",  fg: "#fb923c" },
+  "Récup":     { bg: "rgba(34,197,94,.12)",   fg: "#4ade80" },
+  "Nutrition": { bg: "rgba(250,204,21,.12)",  fg: "#fbbf24" },
+  "Lifestyle": { bg: "rgba(20,184,166,.12)",  fg: "#2dd4bf" },
+  "Mental":    { bg: "rgba(99,102,241,.12)",  fg: "#818cf8" },
+};
 
+function _getMidnightCountdown() {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const diff = Math.max(0, midnight - now);
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h > 0) return `Nouveau défi dans ${h}h${m.toString().padStart(2, "0")}`;
+  return `Nouveau défi dans ${m} min`;
+}
+
+function _buildChallengeRowHtml(ch, done, context) {
+  const cat = CAT_COLORS[ch.category] || { bg: "rgba(255,255,255,.08)", fg: "var(--muted)" };
+  const btnOrDone = done
+    ? `<span style="font-size:.75rem;color:#4ade80;font-weight:800">✓ Fait</span>`
+    : `<button class="daily-ch-btn" onclick="completeDailyChallenge('${ch.id}','${context}')">Marquer ✓</button>`;
+  return `<div class="daily-ch-row${done ? " done" : ""}">
+    <div class="daily-ch-icon">${ch.icon}</div>
+    <div class="daily-ch-body">
+      <div class="daily-ch-name">${escapeHtml(ch.title)}</div>
+      <div class="daily-ch-desc">${escapeHtml(ch.desc)}</div>
+    </div>
+    <div class="daily-ch-right">
+      <span class="daily-ch-xp">+${ch.xp} XP</span>
+      <span class="daily-ch-cat" style="background:${cat.bg};color:${cat.fg}">${ch.category}</span>
+      ${btnOrDone}
+    </div>
+  </div>`;
+}
+
+function renderDailyChallengesSection() {
   const data = getDailyChallenges();
   const challenges = data.picks.map(id => DAILY_POOL.find(c => c.id === id)).filter(Boolean);
-  const allDone = data.done.length >= challenges.length;
+  const doneCount = data.done.length;
+  const allDone = doneCount >= challenges.length;
 
-  el.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div style="font-weight:800;font-size:.92rem;color:var(--text)">Défis du jour</div>
-      <div style="font-size:.72rem;color:var(--muted);font-weight:700">${data.done.length}/${challenges.length} accomplis</div>
-    </div>
-    ${challenges.map(ch => {
-      const done = data.done.includes(ch.id);
-      return `<div style="display:flex;align-items:center;gap:12px;padding:11px 14px;background:${done ? "rgba(34,197,94,.07)" : "var(--surf2)"};border:1px solid ${done ? "rgba(34,197,94,.22)" : "var(--border)"};border-radius:12px;margin-bottom:8px;transition:all .2s">
-        <div style="font-size:1.2rem;min-width:28px;text-align:center">${ch.icon}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:.83rem;font-weight:700;color:${done ? "#4ade80" : "var(--text)"};text-decoration:${done ? "line-through" : "none"};opacity:${done ? ".7" : "1"}">${escapeHtml(ch.title)}</div>
-          <div style="font-size:.72rem;color:var(--muted);margin-top:1px">${escapeHtml(ch.desc)}</div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
-          <span style="font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(245,158,11,.12);color:var(--yellow)">+${ch.xp} XP</span>
-          ${done
-            ? `<span style="font-size:.7rem;color:#4ade80;font-weight:700">✓ Fait</span>`
-            : `<button onclick="completeDailyChallenge('${ch.id}')" style="font-size:.72rem;font-weight:700;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:4px 10px;cursor:pointer;transition:opacity .2s" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">Marquer</button>`
-          }
-        </div>
-      </div>`;
-    }).join("")}
-    ${allDone ? `<div style="text-align:center;padding:10px;font-size:.8rem;font-weight:700;color:#4ade80;background:rgba(34,197,94,.06);border-radius:10px;border:1px solid rgba(34,197,94,.2)">🏆 Parfait ! Tous les défis accomplis aujourd'hui.</div>` : ""}
-  `;
+  // ── Dashboard widget ────────────────────────────────────────────────────────
+  const dashEl = document.getElementById("daily-challenges-container");
+  if (dashEl) {
+    dashEl.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-weight:800;font-size:.92rem;color:var(--text)">⚡ Défis du jour</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:700">${doneCount}/${challenges.length} accomplis</div>
+      </div>
+      ${challenges.map(ch => _buildChallengeRowHtml(ch, data.done.includes(ch.id), "dash")).join("")}
+      ${allDone ? `<div style="text-align:center;padding:10px;font-size:.8rem;font-weight:700;color:#4ade80;background:rgba(34,197,94,.06);border-radius:10px;border:1px solid rgba(34,197,94,.2)">🏆 Parfait ! Tous les défis accomplis aujourd'hui.</div>` : ""}
+    `;
+  }
+
+  // ── Défis tab full panel ────────────────────────────────────────────────────
+  const defisCards = document.getElementById("daily-defi-cards");
+  const defisCount = document.getElementById("daily-defi-done-count");
+  const defisCountdown = document.getElementById("daily-defi-countdown");
+  if (defisCards) {
+    defisCards.innerHTML = challenges.map(ch => _buildChallengeRowHtml(ch, data.done.includes(ch.id), "defis")).join("") +
+      (allDone ? `<div style="text-align:center;padding:10px;font-size:.8rem;font-weight:700;color:#4ade80;background:rgba(34,197,94,.06);border-radius:10px;border:1px solid rgba(34,197,94,.2);margin-top:4px">🏆 Tous accomplis — streak maintenu !</div>` : "");
+  }
+  if (defisCount) defisCount.textContent = `${doneCount} / ${challenges.length}`;
+  if (defisCountdown) defisCountdown.textContent = _getMidnightCountdown();
 }
 
 window.completeDailyChallenge = completeDailyChallenge;
