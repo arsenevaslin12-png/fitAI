@@ -14,7 +14,7 @@ const { assertEnv, validateBody, RecipeBodySchema } = require("./_env");
 
 // Timeout calibré pour que 2 modèles × 1 tentative (retries: 0) reste sous les 30s maxDuration Vercel.
 // 2 × 12s = 24s < 30s. Le catch retourne toujours un fallback si Gemini est trop lent.
-const GEMINI_TIMEOUT_MS = 12000;
+const GEMINI_TIMEOUT_MS = 18000; // 18s × 1 model × 0 retries = 18s max, well under Vercel 30s limit
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -193,7 +193,8 @@ module.exports = async function handler(req, res) {
         temperature: 0.75,
         maxOutputTokens: 900,
         timeoutMs: GEMINI_TIMEOUT_MS,
-        retries: 0
+        retries: 0,
+        mimeType: "application/json"  // forces Gemini to output valid JSON, no code fences
       });
 
       recipe = validateRecipe(extractJson(result.text));

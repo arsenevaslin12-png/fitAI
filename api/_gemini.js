@@ -144,7 +144,8 @@ async function callGeminiText({
   temperature = 0.5,
   maxOutputTokens = 1200,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-  retries = DEFAULT_RETRIES
+  retries = DEFAULT_RETRIES,
+  mimeType = null  // e.g. "application/json" to force structured output
 }) {
   const Gemini = getGeminiCtor();
   if (!Gemini) {
@@ -161,12 +162,15 @@ async function callGeminiText({
   const client = new Gemini(String(apiKey).trim());
   let lastError = null;
 
+  const genConfig = { temperature, maxOutputTokens };
+  if (mimeType) genConfig.responseMimeType = mimeType;
+
   for (const modelName of uniqueModels()) {
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       try {
         const model = client.getGenerativeModel({
           model: modelName,
-          generationConfig: { temperature, maxOutputTokens }
+          generationConfig: genConfig
         });
         const input = contents || prompt || "";
         const result = await withTimeout(model.generateContent(input), timeoutMs);

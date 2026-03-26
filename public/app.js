@@ -4743,17 +4743,43 @@ function _stickFigureSVG(name) {
   // ── Crossfade (2 full-body poses, CSS opacity) ─────────────
   const XF = (d="1.6s") => `<style>.sfa{animation:sfa ${d} ease-in-out infinite}.sfb{animation:sfb ${d} ease-in-out infinite}@keyframes sfa{0%,35%{opacity:1}48%,85%{opacity:0}100%{opacity:1}}@keyframes sfb{0%,35%{opacity:0}48%,85%{opacity:1}100%{opacity:0}}</style>`;
 
-  // ── Push-up — 4 frames: body descends in 3 steps ─────────
+  // ── Push-up — side view: body descends 4 frames, clearly horizontal ──────
+  // Floor at y=66. Hand fixed at (22,66). Feet fixed at (64,66).
+  // Shoulder: (22, sY) where sY goes 40→48→55→62 (arms bending)
+  // Head: left of shoulder, neck at (12, sY-2) head centre (8, sY-8)
+  // Body: from (22,sY) to (58,sY) — horizontal body
+  // Upper arm: (22,sY) to (22,66) — arm straight down to floor
+  // Hip: (58,sY) — right side of body
+  // Leg: (58,sY) to (64,66) — diagonal to feet on floor
   if (/pompe|push.?up|pike.?push/.test(nm)) {
-    return open +
-      `<line x1="4" y1="46" x2="76" y2="46" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
-      CM([10,10,10,10],[22,26,30,34],6,"1.6s") +
-      LM([[16,24,58,24],[16,28,58,28],[16,32,58,32],[16,35,58,35]],"1.6s") +
-      LM([[28,24,28,46],[28,28,28,46],[28,32,28,46],[28,35,28,46]],"1.6s") +
-      LM([[46,24,46,46],[46,28,46,46],[46,32,46,46],[46,35,46,46]],"1.6s") +
-      LM([[58,24,68,18],[58,28,68,22],[58,32,68,26],[58,35,68,29]],"1.6s") +
-      LM([[58,24,68,30],[58,28,68,34],[58,32,68,38],[58,35,68,41]],"1.6s") +
-      close;
+    const PU_KT = 'keyTimes="0;0.35;0.65;1;1"';
+    const PU_KSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.6s"';
+    const puAnim = (attr, vals) => `<animate attributeName="${attr}" values="${vals}" ${PU_KT} ${PU_KSP}/>`;
+    // shoulder Y: 40(up)→51→59→64(low)→40
+    const sYv = "40;51;59;64;40";
+    // head: slightly left and above shoulder
+    const headCY = "32;43;51;56;32";
+    const floor = `<line x1="4" y1="66" x2="76" y2="66" stroke="rgba(255,255,255,.18)" stroke-width="1.2"/>`;
+    // Fixed hand dots on floor
+    const handL = `<circle cx="22" cy="66" r="3" fill="rgba(255,255,255,.5)"/>`;
+    const handR = `<circle cx="46" cy="66" r="3" fill="rgba(255,255,255,.5)"/>`;
+    // Body (shoulder to hip, horizontal)
+    const body = `<line x1="22" y1="40" x2="58" y2="40" ${st}>${puAnim("y1",sYv)}${puAnim("y2",sYv)}</line>`;
+    // Head
+    const head = `<circle cx="10" cy="32" r="6" ${st}>${puAnim("cy",headCY)}</circle>`;
+    // Neck: short line from head to shoulder
+    const neck = `<line x1="14" y1="34" x2="22" y2="40" ${st}>${puAnim("y1","26;37;45;50;26")}${puAnim("y2",sYv)}</line>`;
+    // Left arm: shoulder down to left hand (22,66)
+    const armL = `<line x1="22" y1="40" x2="22" y2="66" ${st}>${puAnim("y1",sYv)}</line>`;
+    // Right arm: shoulder+24px right, down to right hand (46,66)
+    const armR = `<line x1="46" y1="40" x2="46" y2="66" ${st}>${puAnim("y1",sYv)}</line>`;
+    // Leg: hip (58,sY) down-right to feet (64,66)
+    const leg  = `<line x1="58" y1="40" x2="64" y2="66" ${st}>${puAnim("y1",sYv)}</line>`;
+    // Arrows showing up-down motion
+    const arrows = ARRUP(70,38) + ARRDN(70,50);
+    // Muscle pulse: chest/pecs
+    const mus = MUSCLE(34,52,"#60a5fa");
+    return open + floor + mus + head + neck + body + armL + armR + leg + handL + handR + arrows + close;
   }
 
   // ── Squat — 4 frames: stand → quarter → parallel → deep ──
@@ -5219,12 +5245,24 @@ function _startRestTimer(seconds, onDone) {
   if (restArea) restArea.style.display = "block";
   if (setBtn) setBtn.style.display = "none";
 
-  // Show drinking stick figure during rest
+  // Show drinking figure in the small imgWrap (supplementary)
   if (imgWrap) imgWrap.innerHTML = _stickFigureDrinking();
 
   // Rotating hydration messages
-  const msgs = ["💧 Hydrate-toi !", "😮‍💨 Souffle…", "💧 Bois de l'eau", "🌬️ Récupère bien", "💧 Recharge-toi !"];
+  const msgs = ["💧 Hydrate-toi !", "😮‍💨 Récupère…", "💧 Bois de l'eau", "🌬️ Respire bien", "💪 Tu assures !"];
   if (restMsg) restMsg.textContent = msgs[Math.floor(Math.random() * msgs.length)];
+
+  // Animate "Inspire / Expire" label in sync with the 4s breathing ring
+  const breathLabel = document.getElementById("wt-breath-label");
+  let _breathPhase = false;
+  if (breathLabel) {
+    breathLabel.textContent = "Expire…";
+    if (window._breathLabelTimer) clearInterval(window._breathLabelTimer);
+    window._breathLabelTimer = setInterval(() => {
+      _breathPhase = !_breathPhase;
+      if (breathLabel) breathLabel.textContent = _breathPhase ? "Inspire…" : "Expire…";
+    }, 2000);
+  }
 
   const updateCountdown = (t) => {
     if (!countdown) return;
@@ -5239,6 +5277,7 @@ function _startRestTimer(seconds, onDone) {
     if (_wtRestLeft <= 0) {
       clearInterval(_wtRestTimer);
       _wtRestTimer = null;
+      if (window._breathLabelTimer) { clearInterval(window._breathLabelTimer); window._breathLabelTimer = null; }
       if (restArea) restArea.style.display = "none";
       if (setBtn) setBtn.style.display = "";
       if (countdown) countdown.style.color = "";
@@ -5249,6 +5288,7 @@ function _startRestTimer(seconds, onDone) {
 
 function skipRestTimer() {
   if (_wtRestTimer) { clearInterval(_wtRestTimer); _wtRestTimer = null; }
+  if (window._breathLabelTimer) { clearInterval(window._breathLabelTimer); window._breathLabelTimer = null; }
   const restArea = document.getElementById("wt-rest-area");
   const setBtn = document.getElementById("wt-set-btn");
   if (restArea) restArea.style.display = "none";
