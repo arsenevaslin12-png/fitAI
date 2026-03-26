@@ -385,15 +385,40 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .meal-kcal{font-weight:800;color:var(--orange);font-size:.9rem;white-space:nowrap}
 
 /* ── COMMUNITY ── */
-.post{background:rgba(17,26,44,.9);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:10px;border:1px solid rgba(255,255,255,.09);box-shadow:0 1px 8px rgba(0,0,0,.3)}
-.post-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.post-author{font-weight:800;font-size:.85rem;color:var(--accent)}
-.post-date{font-size:.72rem;color:var(--muted)}
-.post-body{font-size:.86rem;line-height:1.55;color:rgba(238,238,245,.85)}
-.post-footer{display:flex;align-items:center;gap:10px}
-.kudos-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:24px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .25s;font-family:inherit}
-.kudos-btn:hover{border-color:var(--orange);color:var(--orange)}
-.kudos-btn.on{border-color:var(--orange);color:var(--orange);background:rgba(249,115,22,.08)}
+.post-card{background:rgba(15,22,40,.92);border-radius:20px;overflow:hidden;border:1px solid rgba(255,255,255,.09);box-shadow:0 2px 14px rgba(0,0,0,.35);display:flex;flex-direction:column;transition:border-color .2s}
+.post-card:hover{border-color:rgba(255,255,255,.16)}
+.post-card-header{display:flex;align-items:center;gap:12px;padding:14px 16px 0}
+.post-card-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:800;color:#fff;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.post-card-info{flex:1;min-width:0}
+.post-card-name{font-weight:800;font-size:.88rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.post-card-meta{font-size:.71rem;color:var(--muted);margin-top:1px}
+.post-card-handle{color:var(--teal);font-weight:700}
+.post-me-badge{background:rgba(37,99,235,.2);color:#60a5fa;font-size:.64rem;font-weight:800;padding:2px 6px;border-radius:8px;margin-left:5px;vertical-align:middle}
+.post-card-del{background:none;border:none;color:var(--muted);font-size:.9rem;cursor:pointer;padding:4px 6px;border-radius:6px;transition:color .2s;flex-shrink:0;margin-left:auto}
+.post-card-del:hover{color:var(--red)}
+.post-card-body{padding:10px 16px 12px;font-size:.88rem;line-height:1.6;color:rgba(238,238,245,.88);white-space:pre-wrap;word-break:break-word}
+.post-card-actions{display:flex;align-items:center;gap:8px;padding:0 16px 14px;border-top:1px solid rgba(255,255,255,.06);padding-top:10px}
+.kudos-btn{display:inline-flex;align-items:center;gap:5px;background:none;border:1.5px solid rgba(255,255,255,.1);color:var(--muted);padding:5px 14px;border-radius:20px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .22s;font-family:inherit}
+.kudos-btn:hover{border-color:var(--orange);color:var(--orange);background:rgba(249,115,22,.07)}
+.kudos-btn.on{border-color:var(--orange);color:var(--orange);background:rgba(249,115,22,.12)}
+/* ── PROFILE HERO ── */
+.profile-hero-card{border-radius:var(--radius);overflow:hidden;background:rgba(15,22,40,.92);border:1px solid rgba(255,255,255,.09);box-shadow:var(--shadow-md);margin-bottom:16px}
+.profile-hero-banner{height:86px;background:linear-gradient(135deg,#1d4ed8 0%,#7c3aed 45%,#0891b2 100%);position:relative;overflow:hidden}
+.profile-hero-banner::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 70% 50%,rgba(255,255,255,.08),transparent 65%)}
+.profile-hero-banner::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent,transparent 18px,rgba(255,255,255,.03) 18px,rgba(255,255,255,.03) 19px)}
+.profile-hero-body{padding:0 18px 18px}
+.profile-hero-row{display:flex;align-items:flex-end;gap:14px;margin-top:-34px;margin-bottom:14px}
+.profile-big-avatar{width:68px;height:68px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:1.9rem;font-weight:900;color:#fff;border:3px solid rgba(15,22,40,.92);box-shadow:0 0 22px rgba(37,99,235,.45);flex-shrink:0}
+.profile-hero-info{padding-bottom:2px;flex:1;min-width:0}
+.profile-hero-name{font-size:1.15rem;font-weight:900;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-hero-handle{font-size:.78rem;color:var(--teal);font-weight:700;margin-top:1px}
+.profile-hero-email{font-size:.72rem;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.profile-stat-pill{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center;transition:border-color .2s}
+.profile-stat-pill:hover{border-color:rgba(255,255,255,.16)}
+.psp-icon{font-size:.95rem;line-height:1}
+.psp-val{font-size:1.15rem;font-weight:900;color:var(--text);line-height:1}
+.psp-lbl{font-size:.62rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
 
 /* ── BODYSCAN ── */
 .drop-zone{border:2px dashed rgba(0,255,255,.2);border-radius:2rem;padding:40px 20px;text-align:center;cursor:pointer;transition:all .3s;user-select:none;background:rgba(0,255,255,.02);position:relative;overflow:hidden}
@@ -786,9 +811,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .defi-tab.on{background:var(--surf2);color:var(--text)}
 
 /* ── FEED PHOTO ── */
-.feed-img{width:100%;max-height:300px;object-fit:cover;border-radius:14px;margin-top:8px}
-.comment-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:24px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .25s;font-family:inherit}
-.comment-btn:hover{border-color:var(--purple);color:var(--purple)}
+.feed-img{width:100%;max-height:320px;object-fit:cover}
+.comment-btn{display:inline-flex;align-items:center;gap:5px;background:none;border:1.5px solid rgba(255,255,255,.1);color:var(--muted);padding:5px 14px;border-radius:20px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .22s;font-family:inherit}
+.comment-btn:hover{border-color:var(--purple);color:var(--purple);background:rgba(147,51,234,.07)}
 .comment{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:.82rem}
 .comment-author{font-weight:700;color:var(--accent);font-size:.78rem}
 .comment-text{flex:1;color:rgba(238,238,245,.85)}
@@ -1047,7 +1072,9 @@ body.light .workout-timer-card{background:#fff;border-color:rgba(37,99,235,.3)}
 body.light .workout-ex-badge{background:rgba(15,23,42,.07);color:#334155}
 /* Community */
 body.light .post-card{background:#fff;border-color:rgba(15,23,42,.1)}
-body.light .post-author{color:var(--accent)}
+body.light .post-card-name{color:#0f172a}
+body.light .profile-hero-card{background:#fff;border-color:rgba(15,23,42,.1)}
+body.light .profile-stat-pill{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.1)}
 /* Sidebar stays dark in light mode — premium hybrid */
 body.light .sidebar{background:rgba(13,18,36,.97)!important;border-right-color:rgba(255,255,255,.06)!important}
 /* Auth stays dark */
@@ -2092,65 +2119,87 @@ body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
       </div>
 
       <div class="tab" id="t-profile">
-        <div class="page-header">
-          <div class="page-title">Mon Profil</div>
-          <div class="page-sub">Gérez vos informations personnelles</div>
-        </div>
 
-        <div class="card" style="padding:0;overflow:hidden">
-          <div style="background:var(--grad);padding:28px 20px 48px;position:relative">
-            <div style="font-size:.7rem;font-weight:800;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Mon profil</div>
-            <div style="font-size:1.3rem;font-weight:900;color:#fff" id="p-name">—</div>
-            <div style="font-size:.78rem;color:rgba(255,255,255,.65);margin-top:2px" id="p-email"></div>
-          </div>
-          <div style="padding:0 20px 20px;margin-top:-30px;position:relative">
-            <div style="display:flex;align-items:flex-end;gap:16px;margin-bottom:16px">
-              <div class="avatar" id="p-avatar" style="border:3px solid var(--bg)">?</div>
-              <div class="stats-row" id="d-stats" style="flex:1;justify-content:flex-end;gap:24px;padding-bottom:4px">
-                <div class="stat"><div class="stat-v" id="st-sess">—</div><div class="stat-l">Séances</div></div>
-                <div class="stat"><div class="stat-v" id="st-scans">—</div><div class="stat-l">Scans</div></div>
-                <div class="stat"><div class="stat-v" id="st-longest">—</div><div class="stat-l">Record</div></div>
-                <div class="stat"><div class="stat-v" id="st-posts">—</div><div class="stat-l">Posts</div></div>
+        <!-- Hero card -->
+        <div class="profile-hero-card">
+          <div class="profile-hero-banner"></div>
+          <div class="profile-hero-body">
+            <div class="profile-hero-row">
+              <div class="profile-big-avatar" id="p-avatar">?</div>
+              <div class="profile-hero-info">
+                <div class="profile-hero-name" id="p-name">—</div>
+                <div class="profile-hero-handle" id="p-handle"></div>
+                <div class="profile-hero-email" id="p-email"></div>
+              </div>
+            </div>
+            <div class="profile-stats-grid">
+              <div class="profile-stat-pill">
+                <span class="psp-icon">🏋️</span>
+                <span class="psp-val" id="st-sess">—</span>
+                <span class="psp-lbl">Séances</span>
+              </div>
+              <div class="profile-stat-pill">
+                <span class="psp-icon">🔥</span>
+                <span class="psp-val" id="p-streak">—</span>
+                <span class="psp-lbl">Streak</span>
+              </div>
+              <div class="profile-stat-pill">
+                <span class="psp-icon">📸</span>
+                <span class="psp-val" id="st-scans">—</span>
+                <span class="psp-lbl">Scans IA</span>
+              </div>
+              <div class="profile-stat-pill">
+                <span class="psp-icon">⚖️</span>
+                <span class="psp-val" id="p-bmi">—</span>
+                <span class="psp-lbl">IMC</span>
               </div>
             </div>
           </div>
         </div>
 
+        <!-- Edit form -->
         <div class="card">
-          <div class="card-title">Modifier mon profil</div>
+          <div class="card-title">✏️ Modifier mon profil</div>
           <div style="display:flex;flex-direction:column;gap:12px">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-              <div class="field" style="grid-column:1/-1"><div class="lbl">Pseudo affiché</div>
+              <div class="field" style="grid-column:1/-1">
+                <div class="lbl">Pseudo affiché</div>
                 <input type="text" id="p-pseudo" placeholder="Votre pseudo…"/>
               </div>
-              <div class="field" style="grid-column:1/-1"><div class="lbl">Username unique</div>
+              <div class="field" style="grid-column:1/-1">
+                <div class="lbl">Username unique</div>
                 <input type="text" id="p-username" placeholder="votre_username" pattern="[a-z0-9_]+" style="text-transform:lowercase"/>
-                <div class="meal-info" style="margin-top:3px">Lettres minuscules, chiffres et underscore uniquement</div>
+                <div class="meal-info" style="margin-top:3px">Lettres minuscules, chiffres et underscore</div>
               </div>
-              <div class="field"><div class="lbl">Âge</div>
+              <div class="field">
+                <div class="lbl">Âge</div>
                 <input type="number" id="p-age" placeholder="25" min="10" max="99" step="1"/>
               </div>
-              <div class="field"><div class="lbl">Poids (kg)</div>
+              <div class="field">
+                <div class="lbl">Poids (kg)</div>
                 <input type="number" id="p-weight" placeholder="75" min="30" max="300" step="0.5"/>
               </div>
-              <div class="field"><div class="lbl">Taille (cm)</div>
+              <div class="field">
+                <div class="lbl">Taille (cm)</div>
                 <input type="number" id="p-height" placeholder="175" min="100" max="250" step="1"/>
               </div>
             </div>
-            <button class="btn btn-p btn-full" id="btn-save-profile" onclick="saveProfile()" style="margin-top:4px">Enregistrer le profil</button>
+            <button class="btn btn-p btn-full" id="btn-save-profile" onclick="saveProfile()" style="margin-top:4px">Enregistrer</button>
           </div>
         </div>
 
+        <!-- Achievements -->
         <div class="card" id="achievements-card">
-          <div class="card-title">Succès</div>
+          <div class="card-title">🏆 Succès</div>
           <div id="achievements-list" style="display:flex;flex-wrap:wrap;gap:10px;min-height:40px">
             <span style="color:var(--muted);font-size:.85rem">Chargement…</span>
           </div>
         </div>
 
+        <!-- Danger zone -->
         <div class="card" style="border-color:rgba(239,68,68,.2)">
           <div class="card-title" style="color:var(--red)">Zone danger</div>
-          <button class="btn btn-d btn-sm" onclick="doLogout()">🚪 Déconnexion complète</button>
+          <button class="btn btn-d btn-sm" onclick="doLogout()">🚪 Déconnexion</button>
         </div>
       </div>
       <div class="tab" id="t-progress">
