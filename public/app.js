@@ -4819,6 +4819,11 @@ function _stickFigureSVG(name) {
   if (/traction|pull.?up|chin.?up/.test(nm)) {
     return open +
       `<line x1="8" y1="8" x2="72" y2="8" stroke="rgba(255,255,255,.45)" stroke-width="3" stroke-linecap="round"/>` +
+      // Hand grips on bar (fixed)
+      `<circle cx="28" cy="8" r="3.5" fill="rgba(255,255,255,.55)"/>` +
+      `<circle cx="52" cy="8" r="3.5" fill="rgba(255,255,255,.55)"/>` +
+      MUSCLE(40,42,"#818cf8") + // lats
+      ARRUP(40,2) +
       CM([40,40,40,40],[36,28,20,16],7,"1.4s") +
       LM([[40,43,40,66],[40,35,40,58],[40,27,40,50],[40,23,40,46]],"1.4s") +
       LM([[28,8,28,30],[28,8,28,22],[28,8,28,14],[28,8,28,10]],"1.4s") +
@@ -4844,8 +4849,21 @@ function _stickFigureSVG(name) {
 
   // ── Hip thrust — 4 frames: flat → quarter → half → top ───
   if (/hip.?thrust|thrust/.test(nm)) {
+    const htKT = 'keyTimes="0;0.33;0.67;1;1"';
+    const htKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.4s"';
+    // Barbell across hips, animates upward with body
+    const htBar = `<line x1="22" y1="50" x2="58" y2="50" stroke="rgba(255,255,255,.65)" stroke-width="2.5" stroke-linecap="round">` +
+      `<animate attributeName="y1" values="50;44;38;34;50" ${htKT} ${htKSP}/>` +
+      `<animate attributeName="y2" values="50;44;38;34;50" ${htKT} ${htKSP}/>` + `</line>`;
+    const htPlL = `<circle cx="19" cy="50" r="5" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.08)" stroke-width="1.5">` +
+      `<animate attributeName="cy" values="50;44;38;34;50" ${htKT} ${htKSP}/>` + `</circle>`;
+    const htPlR = `<circle cx="61" cy="50" r="5" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.08)" stroke-width="1.5">` +
+      `<animate attributeName="cy" values="50;44;38;34;50" ${htKT} ${htKSP}/>` + `</circle>`;
     return open + FLR +
+      MUSCLE(40,36,"#f97316") + // glutes
       `<rect x="4" y="38" width="18" height="7" rx="2" stroke="rgba(255,255,255,.3)" stroke-width="1.5" fill="rgba(255,255,255,.05)"/>` +
+      ARRUP(72,30) +
+      htBar + htPlL + htPlR +
       CM([36,36,35,34],[44,38,33,28],6,"1.4s") +
       LM([[40,50,40,62],[38,44,38,56],[36,38,36,52],[34,34,34,50]],"1.4s") +
       LM([[40,53,22,58],[38,46,20,52],[36,40,18,42],[34,38,16,38]],"1.4s") +
@@ -4859,6 +4877,7 @@ function _stickFigureSVG(name) {
   if (/crunch|abdo|sit.?up|hollow/.test(nm)) {
     return open +
       `<line x1="4" y1="66" x2="76" y2="66" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
+      MUSCLE(36,46,"#f97316") + // abs
       CM([14,18,22,26],[54,48,42,38],6,"1.4s") +
       LM([[20,54,62,54],[26,48,60,55],[30,44,58,56],[34,41,58,57]],"1.4s") +
       LM([[62,54,70,46],[60,55,66,47],[58,56,64,47],[58,57,64,47]],"1.4s") +
@@ -4893,8 +4912,14 @@ function _stickFigureSVG(name) {
   // ── Dips — 4 frames: top → quarter → half → bottom ───────
   if (/dips?/.test(nm)) {
     return open +
-      `<line x1="16" y1="14" x2="16" y2="62" stroke="rgba(255,255,255,.28)" stroke-width="2.5" stroke-linecap="round"/>` +
-      `<line x1="64" y1="14" x2="64" y2="62" stroke="rgba(255,255,255,.28)" stroke-width="2.5" stroke-linecap="round"/>` +
+      // Dip station vertical bars
+      `<line x1="16" y1="10" x2="16" y2="64" stroke="rgba(255,255,255,.28)" stroke-width="2.5" stroke-linecap="round"/>` +
+      `<line x1="64" y1="10" x2="64" y2="64" stroke="rgba(255,255,255,.28)" stroke-width="2.5" stroke-linecap="round"/>` +
+      // Top crossbars of station
+      `<line x1="10" y1="14" x2="22" y2="14" stroke="rgba(255,255,255,.35)" stroke-width="2" stroke-linecap="round"/>` +
+      `<line x1="58" y1="14" x2="70" y2="14" stroke="rgba(255,255,255,.35)" stroke-width="2" stroke-linecap="round"/>` +
+      MUSCLE(40,32,"#f59e0b") + // triceps/chest
+      ARRDN(40,72) +
       CM([40,40,40,40],[16,20,24,28],7,"1.3s") +
       LM([[40,23,40,46],[40,27,40,50],[40,31,40,54],[40,35,40,58]],"1.3s") +
       LM([[40,32,16,32],[40,36,16,34],[40,40,16,36],[40,44,16,38]],"1.3s") +
@@ -4929,11 +4954,21 @@ function _stickFigureSVG(name) {
 
   // ── Rowing — 4 frames: arms pull through full ROM ─────────
   if (/rowing|tirage|row|pull.?over|oiseau/.test(nm)) {
+    const rowKT = 'keyTimes="0;0.33;0.67;1;1"';
+    const rowKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.3s"';
+    // Animated dumbbell follows pulling arm
+    const rowDB = `<circle cx="22" cy="30" r="4.5" fill="rgba(255,255,255,.38)" stroke="rgba(255,255,255,.75)" stroke-width="1">` +
+      `<animate attributeName="cx" values="22;28;36;28;22" ${rowKT} ${rowKSP}/>` +
+      `<animate attributeName="cy" values="30;36;42;44;30" ${rowKT} ${rowKSP}/>` + `</circle>`;
     return open + FLR +
+      MUSCLE(36,28,"#818cf8") + // back/lats
+      ARC("M 22,30 C 18,36 22,42 28,44") +
       C(36,22,7,22) +
       L(40,28,44,50, 40,28,44,50) +
       LM([[42,36,22,30],[42,36,28,36],[42,36,36,42],[42,36,28,44]],"1.3s") +
       LM([[42,36,62,30],[42,36,56,26],[42,36,50,20],[42,36,56,20]],"1.3s") +
+      rowDB +
+      DB(62,28,".45") +
       L(44,50,36,68, 44,50,36,68) + L(44,50,54,68, 44,50,54,68) +
       close;
   }
