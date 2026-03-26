@@ -199,10 +199,8 @@ module.exports = async function handler(req, res) {
       recipe = validateRecipe(extractJson(result.text));
 
       if (!recipe) {
-        // Gemini responded but JSON was malformed — use fallback but keep the model's text as a tip
+        // Gemini responded but JSON was malformed — pure fallback, no raw text exposure
         recipe = fallbackRecipe(ingredients, goal);
-        const rawText = String(result.text || "").slice(0, 200);
-        recipe.tips = rawText || "Recette générée en mode secours.";
         usedFallback = true;
       }
     } else {

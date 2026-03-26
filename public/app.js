@@ -1945,6 +1945,18 @@ async function loadScans() {
       return;
     }
 
+    // Resolve image_path → signed URLs (DB stores path, not full URL)
+    const scanImageUrls = {};
+    await Promise.all((data || []).map(async (scan) => {
+      const path = scan.image_url || scan.image_path;
+      if (!path) return;
+      if (/^https?:\/\//i.test(path)) { scanImageUrls[scan.id] = path; return; }
+      try {
+        const { data: signed } = await SB.storage.from("user_uploads").createSignedUrl(path, 3600);
+        if (signed?.signedUrl) scanImageUrls[scan.id] = signed.signedUrl;
+      } catch { /* show placeholder if URL fails */ }
+    }));
+
     el.innerHTML = data.map((scan) => {
       const done = Boolean(scan.ai_feedback);
       const physScore = scan.physical_score;
@@ -2026,7 +2038,7 @@ async function loadScans() {
       return `<div class="scan-v2">
         <div class="scan-v2-top">
           <div class="scan-v2-photo">
-            ${scan.image_url ? lazyImg(scan.image_url, "Scan", "", "width:100%;height:100%;object-fit:cover;opacity:.9") : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">Photo non disponible</div>`}
+            ${scanImageUrls[scan.id] ? lazyImg(scanImageUrls[scan.id], "Scan", "", "width:100%;height:100%;object-fit:cover;opacity:.9") : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">📷 Photo non disponible</div>`}
             <div class="scan-v2-photo-overlay">
               <span class="scan-v2-pill">${date}</span>
               ${physScore ? `<span class="scan-v2-pill" style="font-family:'Georgia',serif;font-size:1rem;font-weight:900">${physScore}/100</span>` : ""}
@@ -4655,6 +4667,36 @@ function _stickFigureSVG(name) {
   const open  = `<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;overflow:visible">`;
   const close = `</svg>`;
 
+  // ── Equipment SVG shapes ───────────────────────────────────────────────────
+  // DB(x,y): dumbbell icon centred at (x,y)
+  const DB = (x=62,y=72,op=".5") =>
+    `<g opacity="${op}">` +
+    `<rect x="${x-5}" y="${y-1.5}" width="10" height="3" rx="1" fill="rgba(255,255,255,.7)"/>` +
+    `<rect x="${x-7}" y="${y-3.5}" width="2.5" height="7" rx=".8" fill="white"/>` +
+    `<rect x="${x+4.5}" y="${y-3.5}" width="2.5" height="7" rx=".8" fill="white"/>` +
+    `</g>`;
+  // BB(x,y): barbell icon centred at (x,y), wider
+  const BB = (x=40,y=72,op=".5") =>
+    `<g opacity="${op}">` +
+    `<line x1="${x-16}" y1="${y}" x2="${x+16}" y2="${y}" stroke="rgba(255,255,255,.7)" stroke-width="2.2" stroke-linecap="round"/>` +
+    `<rect x="${x-19}" y="${y-4}" width="3" height="8" rx="1" fill="rgba(255,255,255,.8)"/>` +
+    `<rect x="${x-16}" y="${y-5.5}" width="3" height="11" rx="1" fill="rgba(255,255,255,.9)"/>` +
+    `<rect x="${x+13}" y="${y-5.5}" width="3" height="11" rx="1" fill="rgba(255,255,255,.9)"/>` +
+    `<rect x="${x+16}" y="${y-4}" width="3" height="8" rx="1" fill="rgba(255,255,255,.8)"/>` +
+    `</g>`;
+  // MUSCLE(cx,cy,col): pulsing muscle group indicator dot
+  const MUSCLE = (cx,cy,col="#f97316") =>
+    `<circle cx="${cx}" cy="${cy}" r="4" fill="${col}" opacity=".25" stroke="${col}" stroke-width="1.2">` +
+    `<animate attributeName="r" values="4;7;4" dur="1.8s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>` +
+    `<animate attributeName="opacity" values=".25;.05;.25" dur="1.8s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>` +
+    `</circle>`;
+  // ARC(d,col): motion path hint
+  const ARC = (d,col="rgba(99,102,241,.28)") =>
+    `<path d="${d}" stroke="${col}" stroke-width="1.5" fill="none" stroke-dasharray="3,2.5" stroke-linecap="round"/>`;
+  // ARROW_UP / ARROW_DOWN: lightweight direction hint
+  const ARRUP = (x,y) => `<g stroke="rgba(255,255,255,.3)" stroke-width="1.2" stroke-linecap="round"><line x1="${x}" y1="${y+6}" x2="${x}" y2="${y}"/><line x1="${x-3}" y1="${y+3}" x2="${x}" y2="${y}"/><line x1="${x+3}" y1="${y+3}" x2="${x}" y2="${y}"/></g>`;
+  const ARRDN = (x,y) => `<g stroke="rgba(255,255,255,.3)" stroke-width="1.2" stroke-linecap="round"><line x1="${x}" y1="${y}" x2="${x}" y2="${y+6}"/><line x1="${x-3}" y1="${y+3}" x2="${x}" y2="${y+6}"/><line x1="${x+3}" y1="${y+3}" x2="${x}" y2="${y+6}"/></g>`;
+
   // ── 2-frame helpers (A→B→A) ───────────────────────────────
   const KS2 = 'calcMode="spline" keySplines="0.42 0 0.58 1; 0.42 0 0.58 1" repeatCount="indefinite"';
   const L = (x1,y1,x2,y2, x1b,y1b,x2b,y2b, d="1.5s") => {
@@ -4716,13 +4758,20 @@ function _stickFigureSVG(name) {
 
   // ── Squat — 4 frames: stand → quarter → parallel → deep ──
   if (/squat/.test(nm)) {
+    // Barbell across shoulders (static — shoulders move but bar stays relative)
+    const sqBar = `<line x1="22" y1="26" x2="58" y2="26" stroke="rgba(255,255,255,.55)" stroke-width="3" stroke-linecap="round"/>` +
+      `<circle cx="18" cy="26" r="4" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.1)" stroke-width="1.5"/>` +
+      `<circle cx="62" cy="26" r="4" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.1)" stroke-width="1.5"/>`;
     return open + FLR +
+      MUSCLE(40,52,"#f97316") + // quads
       CM([40,40,40,40],[10,16,22,28],7,"1.8s") +
+      sqBar +
       LM([[40,17,40,42],[40,23,40,44],[40,29,40,46],[40,34,40,50]],"1.8s") +
       LM([[40,28,26,22],[40,33,22,30],[40,37,18,40],[40,41,16,46]],"1.8s") +
       LM([[40,28,54,22],[40,33,58,30],[40,37,62,40],[40,41,64,46]],"1.8s") +
       LM([[40,42,34,76],[40,44,28,76],[40,46,24,76],[40,50,22,72]],"1.8s") +
       LM([[40,42,46,76],[40,44,52,76],[40,46,56,76],[40,50,58,72]],"1.8s") +
+      ARRDN(40,6) +
       close;
   }
 
@@ -4831,11 +4880,22 @@ function _stickFigureSVG(name) {
 
   // ── Curl — 4 frames: arm down → quarter → half → full flex
   if (/curl/.test(nm)) {
+    // Animated dumbbell follows the curling arm (LM matching arm positions)
+    const curlDB_KT = 'keyTimes="0;0.33;0.67;1;1"';
+    const curlDB_KSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.4s"';
+    // hand goes: (24,46)→(28,36)→(30,24)→(26,20) loop
+    const curlDBx = `<animate attributeName="cx" values="24;28;30;26;24" ${curlDB_KT} ${curlDB_KSP}/>`;
+    const curlDBy = `<animate attributeName="cy" values="46;36;24;20;46" ${curlDB_KT} ${curlDB_KSP}/>`;
+    const animDB = `<circle cx="24" cy="46" r="4.5" fill="rgba(255,255,255,.35)" stroke="rgba(255,255,255,.7)" stroke-width="1">${curlDBx}${curlDBy}</circle>`;
     return open + FLR +
+      MUSCLE(36,28,"#818cf8") + // biceps
+      ARC("M 24,46 C 16,36 20,22 26,20") +
       C(40,10,7,10) +
       L(40,17,40,44, 40,17,40,44) +
       L(40,28,56,22, 40,28,56,22) +
       LM([[40,28,24,46],[40,28,28,36],[40,28,30,24],[40,28,26,20]],"1.4s") +
+      animDB +
+      DB(24,46) +
       L(40,44,32,68, 40,44,32,68) + L(40,44,48,68, 40,44,48,68) +
       L(32,68,28,76, 32,68,28,76) + L(48,68,52,76, 48,68,52,76) +
       close;
@@ -4854,7 +4914,21 @@ function _stickFigureSVG(name) {
 
   // ── Deadlift — 4 frames: deep bend → mid → almost up → up
   if (/souleve|deadlift|terre|sumo|roumain/.test(nm)) {
+    // Animated barbell between the hands. Hands: L=(26,46)→(24,40)→(22,36)→(22,36), R=(62,44)→(60,38)→(58,34)→(58,32)
+    // Barbell drawn as horizontal line between hands (approx)
+    const dlKT = 'keyTimes="0;0.33;0.67;1;1"';
+    const dlKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.8s"';
+    const bbLine = `<line x1="24" y1="46" x2="64" y2="46" stroke="rgba(255,255,255,.6)" stroke-width="3" stroke-linecap="round">` +
+      `<animate attributeName="y1" values="46;40;36;36;46" ${dlKT} ${dlKSP}/>` +
+      `<animate attributeName="y2" values="44;38;34;32;44" ${dlKT} ${dlKSP}/>` +
+      `</line>`;
+    const bbPlateL = `<circle cx="20" cy="46" r="5" stroke="rgba(255,255,255,.55)" fill="rgba(255,255,255,.08)" stroke-width="1.5"><animate attributeName="cy" values="46;40;36;36;46" ${dlKT} ${dlKSP}/></circle>`;
+    const bbPlateR = `<circle cx="68" cy="44" r="5" stroke="rgba(255,255,255,.55)" fill="rgba(255,255,255,.08)" stroke-width="1.5"><animate attributeName="cy" values="44;38;34;32;44" ${dlKT} ${dlKSP}/></circle>`;
     return open + FLR +
+      MUSCLE(40,35,"#22c55e") + // back/glutes
+      ARC("M 40,64 L 40,16") +
+      ARRUP(72,30) +
+      bbLine + bbPlateL + bbPlateR +
       CM([34,37,40,40],[28,20,14,10],7,"1.8s") +
       LM([[38,33,52,50],[39,24,48,44],[40,18,44,40],[40,16,40,42]],"1.8s") +
       LM([[44,40,26,46],[42,32,24,40],[41,24,22,36],[40,22,22,36]],"1.8s") +
@@ -4866,11 +4940,23 @@ function _stickFigureSVG(name) {
 
   // ── Press — 4 frames: start → quarter → half → lockout ───
   if (/develop|bench|militaire|overhead|press|presse|ecarté|ecarte/.test(nm)) {
+    // Animated barbell between the two hands
+    const prKT = 'keyTimes="0;0.33;0.67;1;1"';
+    const prKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.4s"';
+    const pressBar = `<line x1="20" y1="38" x2="60" y2="38" stroke="rgba(255,255,255,.6)" stroke-width="3" stroke-linecap="round">` +
+      `<animate attributeName="y1" values="38;30;20;12;38" ${prKT} ${prKSP}/>` +
+      `<animate attributeName="y2" values="38;30;20;12;38" ${prKT} ${prKSP}/>` +
+      `</line>`;
+    const pressPlL = `<circle cx="15" cy="38" r="5" stroke="rgba(255,255,255,.55)" fill="rgba(255,255,255,.08)" stroke-width="1.5"><animate attributeName="cy" values="38;30;20;12;38" ${prKT} ${prKSP}/></circle>`;
+    const pressPlR = `<circle cx="65" cy="38" r="5" stroke="rgba(255,255,255,.55)" fill="rgba(255,255,255,.08)" stroke-width="1.5"><animate attributeName="cy" values="38;30;20;12;38" ${prKT} ${prKSP}/></circle>`;
     return open + FLR +
+      MUSCLE(40,22,"#60a5fa") + // shoulders/chest
+      pressBar + pressPlL + pressPlR +
       C(40,10,7,10) + L(40,17,40,44, 40,17,40,44) +
       LM([[40,28,22,38],[40,28,18,30],[40,28,16,20],[40,28,20,12]],"1.4s") +
       LM([[40,28,58,38],[40,28,62,30],[40,28,64,20],[40,28,60,12]],"1.4s") +
       L(40,44,32,68, 40,44,32,68) + L(40,44,48,68, 40,44,48,68) +
+      ARRUP(40,6) +
       close;
   }
 
@@ -4903,10 +4989,25 @@ function _stickFigureSVG(name) {
 
   // ── Élévations — 4 frames: arms rise in 3 steps ───────────
   if (/elevation|raise|oiseau.invers|face.pull|shrug/.test(nm)) {
+    // Dumbbells at each hand, animated upward
+    const elKT = 'keyTimes="0;0.33;0.67;1;1"';
+    const elKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.4s"';
+    // L hand: (24,36)→(18,32)→(14,28)→(14,26) ; R hand: (56,36)→(62,32)→(66,28)→(66,26)
+    const dbL = `<circle cx="24" cy="36" r="4" fill="rgba(255,255,255,.38)" stroke="rgba(255,255,255,.7)" stroke-width="1">` +
+      `<animate attributeName="cx" values="24;18;14;14;24" ${elKT} ${elKSP}/>` +
+      `<animate attributeName="cy" values="36;32;28;26;36" ${elKT} ${elKSP}/>` + `</circle>`;
+    const dbR = `<circle cx="56" cy="36" r="4" fill="rgba(255,255,255,.38)" stroke="rgba(255,255,255,.7)" stroke-width="1">` +
+      `<animate attributeName="cx" values="56;62;66;66;56" ${elKT} ${elKSP}/>` +
+      `<animate attributeName="cy" values="36;32;28;26;36" ${elKT} ${elKSP}/>` + `</circle>`;
     return open + FLR +
+      MUSCLE(40,28,"#60a5fa") + // shoulders (deltoids)
+      ARC("M 24,36 C 14,30 12,24 14,26") +
+      ARC("M 56,36 C 66,30 68,24 66,26") +
       C(40,10,7,10) + L(40,17,40,44, 40,17,40,44) +
       LM([[40,28,24,36],[40,28,18,32],[40,28,14,28],[40,28,14,26]],"1.4s") +
       LM([[40,28,56,36],[40,28,62,32],[40,28,66,28],[40,28,66,26]],"1.4s") +
+      dbL + dbR +
+      DB(24,36) + DB(56,36) +
       L(40,44,32,68, 40,44,32,68) + L(40,44,48,68, 40,44,48,68) +
       close;
   }
