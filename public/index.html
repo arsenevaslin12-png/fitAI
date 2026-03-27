@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>FitAI Pro</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -37,7 +37,7 @@
   --shadow-lg:0 12px 32px rgba(0,0,0,.55),0 1px 0 rgba(255,255,255,.05);
   --shadow-blue:rgba(59,130,246,.3) 0px 20px 25px -5px,rgba(59,130,246,.3) 0px 8px 10px -6px;
 }
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:16px;-webkit-font-smoothing:antialiased}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',system-ui,sans-serif;font-size:16px;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 
 /* ── BOOT ── */
 #boot{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:9999;transition:opacity .4s}
@@ -1014,16 +1014,16 @@ body.light .friend-search-bar input{color:#0f172a}
   #app{flex-direction:column}
   .sidebar{
     width:100%;flex-direction:row;align-items:stretch;
-    padding:0;border-right:none;
+    padding:0 0 env(safe-area-inset-bottom);border-right:none;
     border-top:1px solid rgba(255,255,255,.08);
     position:fixed;bottom:0;left:0;right:0;
     background:rgba(8,12,24,.95);z-index:100;
     overflow-x:auto;overflow-y:visible;
-    gap:0;height:64px;flex-shrink:0;
+    gap:0;height:calc(64px + env(safe-area-inset-bottom));flex-shrink:0;
     backdrop-filter:blur(20px);
   }
   .sidebar-brand,.sidebar-user,.nav-section-label{display:none}
-  .bnav{flex-direction:row;gap:0;width:max-content;min-width:100%;height:100%;align-items:stretch}
+  .bnav{flex-direction:row;gap:0;width:max-content;min-width:100%;height:64px;align-items:stretch}
   .bnav-btn{
     min-width:78px;flex:0 0 auto;flex-direction:column;gap:2px;
     padding:6px 4px;
@@ -1034,10 +1034,12 @@ body.light .friend-search-bar input{color:#0f172a}
   .bnav-btn .ic{font-size:1.2rem}
   .nav-dot{display:none}
   .bnav-btn.on{background:none;color:#60a5fa;box-shadow:none;border-left-color:transparent}
-  .app-main{padding-bottom:64px}
+  .app-main{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   .scroll{padding:20px 16px 24px}
   #btn-out{display:none}
   .coach-stats{grid-template-columns:repeat(2,1fr)}
+  /* Prevent iOS auto-zoom on input focus (requires font-size >= 16px) */
+  input,select,textarea{font-size:1rem}
 }
 /* ── BODY SCAN PREMIUM V2 UI ── */
 .scan-v2{background:rgba(8,14,30,.95);border:1px solid rgba(0,255,255,.12);border-radius:2rem;overflow:hidden;box-shadow:0 4px 32px rgba(0,0,0,.55)}
