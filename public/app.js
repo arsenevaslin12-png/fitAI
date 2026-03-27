@@ -664,6 +664,28 @@ async function loadScanMiniTile() {
 // OBJECTIF
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ── Goal visual selectors ──────────────────────────────────────────────────────
+function selectGoalType(val) {
+  const el = document.getElementById("g-type");
+  if (el) el.value = val;
+  document.querySelectorAll(".goal-type-btn").forEach(b => b.classList.toggle("on", b.dataset.val === val));
+}
+function selectGoalLevel(val) {
+  const el = document.getElementById("g-level");
+  if (el) el.value = val;
+  document.querySelectorAll(".goal-level-tab").forEach(b => b.classList.toggle("on", b.dataset.val === val));
+}
+function selectGoalSessions(val) {
+  const el = document.getElementById("g-sessions");
+  if (el) el.value = val;
+  document.querySelectorAll(".goal-session-pill").forEach(b => b.classList.toggle("on", b.dataset.val === val));
+}
+function selectGoalEquip(val) {
+  const el = document.getElementById("g-equipment");
+  if (el) el.value = val;
+  document.querySelectorAll(".goal-equip-chip").forEach(b => b.classList.toggle("on", b.dataset.val === val));
+}
+
 async function loadGoal() {
   if (!U) return;
   try {
@@ -674,33 +696,30 @@ async function loadGoal() {
     const goalView = document.getElementById("goal-view");
     if (goalForm) goalForm.style.display = data ? "none" : "block";
     if (goalView) goalView.style.display = data ? "block" : "none";
+
     if (!data) return;
 
-    const gType = document.getElementById("g-type");
-    const gLevel = document.getElementById("g-level");
+    // Populate form hidden inputs + visual selectors (for editing)
+    if (data.type) selectGoalType(data.type);
+    if (data.level) selectGoalLevel(data.level);
+    if (data.sessions_per_week) selectGoalSessions(String(data.sessions_per_week));
+    selectGoalEquip(data.equipment || "");
     const gText = document.getElementById("g-text");
     const gConstraints = document.getElementById("g-constraints");
-    const gEquipment = document.getElementById("g-equipment");
-    if (gType) gType.value = data.type || "";
-    if (gLevel) gLevel.value = data.level || "";
     if (gText) gText.value = data.text || "";
     if (gConstraints) gConstraints.value = data.constraints || "";
-    if (gEquipment) gEquipment.value = data.equipment || "";
 
-    const equipLabels = { halteres:"Haltères", barre:"Barre + disques", salle:"Salle complète", kettlebell:"Kettlebell", elastiques:"Élastiques" };
-    const lines = [
-      ["Type", GOAL_LABELS[data.type] || data.type || "—"],
-      ["Niveau", data.level || "—"],
-      ["Équipement", equipLabels[data.equipment] || "Poids du corps"],
-      ["Objectif", data.text || "—"],
-      ["Contraintes", data.constraints || "Aucune"]
-    ];
-    const goalViewBody = document.getElementById("goal-view-body");
-    if (goalViewBody) {
-      goalViewBody.innerHTML = lines
-        .map(([k, v]) => `<div class="goal-saved-row"><strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span></div>`)
-        .join("");
-    }
+    // Hero view card
+    const GOAL_ICONS = { prise_de_masse:"💪", perte_de_poids:"🔥", endurance:"🏃", force:"🏋️", remise_en_forme:"🌟", maintien:"⚖️" };
+    const EQUIP_LABELS = { "":"Poids du corps", halteres:"Haltères", barre:"Barre", salle:"Salle complète", kettlebell:"Kettlebell", elastiques:"Élastiques" };
+    const LEVEL_SHORT = { debutant:"Débutant", intermediaire:"Inter.", avance:"Avancé", elite:"Élite" };
+    const setEl = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    setEl("goal-hero-icon", GOAL_ICONS[data.type] || "🎯");
+    setEl("goal-hero-title", GOAL_LABELS[data.type] || data.type || "Mon objectif");
+    setEl("goal-hero-sub", data.text ? data.text.slice(0, 80) : "Objectif personnalisé");
+    setEl("gs-level", LEVEL_SHORT[data.level] || data.level || "—");
+    setEl("gs-sessions", data.sessions_per_week ? `${data.sessions_per_week}×` : "—");
+    setEl("gs-equip", EQUIP_LABELS[data.equipment || ""] || "Poids du corps");
   } catch (e) {
     console.error("[Goal] Load error:", e);
   }
@@ -711,6 +730,8 @@ function goalEdit() {
   const goalForm = document.getElementById("goal-form");
   if (goalView) goalView.style.display = "none";
   if (goalForm) goalForm.style.display = "block";
+  // Scroll to top of form
+  if (goalForm) goalForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function saveGoal() {
@@ -718,9 +739,10 @@ async function saveGoal() {
 
   const type  = document.getElementById("g-type")?.value  || "";
   const level = document.getElementById("g-level")?.value || "";
-  if (!type)  return toast("Sélectionnez un type d'objectif.", "err");
-  if (!level) return toast("Sélectionnez un niveau.", "err");
+  if (!type)  return toast("Sélectionne un type d'objectif.", "err");
+  if (!level) return toast("Sélectionne ton niveau.", "err");
 
+  const sessionsRaw = document.getElementById("g-sessions")?.value || "";
   const payload = {
     user_id: U.id,
     type,
@@ -728,6 +750,7 @@ async function saveGoal() {
     text: (document.getElementById("g-text")?.value || "").trim(),
     constraints: (document.getElementById("g-constraints")?.value || "").trim(),
     equipment: document.getElementById("g-equipment")?.value || "",
+    sessions_per_week: sessionsRaw ? parseInt(sessionsRaw) : null,
     updated_at: new Date().toISOString()
   };
 
@@ -1581,6 +1604,21 @@ async function deletePost(postId) {
   }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
 }
 
+function setPostTemplate(type) {
+  const input = document.getElementById("post-input");
+  if (!input) return;
+  const tpl = {
+    seance: "Séance terminée 💪 ",
+    pr: "Nouveau record personnel 🏆 — ",
+    nutrition: "Repas du jour 🥗 ",
+    motivation: "Citation du jour 🔥\n\n",
+    progress: "Mes progrès cette semaine 📈\n\n"
+  };
+  input.value = tpl[type] || "";
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+
 function setFeedFilter(filter) {
   FEED_FILTER = filter;
   document.querySelectorAll(".feed-filter-btn").forEach(b => b.classList.toggle("on", b.dataset.filter === filter));
@@ -1741,16 +1779,19 @@ async function searchUsers() {
     if (error) throw error;
     if (!data?.length) { resultEl.innerHTML = '<div class="meal-info">Aucun résultat</div>'; return; }
 
-    resultEl.innerHTML = data.map(p => `
-      <div class="friend-row">
-        <div class="sidebar-avatar" style="width:28px;height:28px;font-size:.65rem">${(p.display_name || p.username || "?").charAt(0).toUpperCase()}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:.85rem">${escapeHtml(p.display_name || p.username || "Membre")}</div>
-          <div class="meal-info">@${escapeHtml(p.username || "")}</div>
-        </div>
-        <button class="btn btn-p btn-sm" onclick="sendFriendRequest('${p.id}')">Ajouter</button>
-      </div>
-    `).join("");
+    resultEl.innerHTML = data.map(p => {
+      const name = p.display_name || p.username || "Membre";
+      const avatarColor = AVATAR_COLORS[(p.id || "").charCodeAt(0) % AVATAR_COLORS.length];
+      return `
+        <div class="friend-card">
+          <div class="friend-card-avatar" style="background:${avatarColor}">${name.charAt(0).toUpperCase()}</div>
+          <div class="friend-card-info">
+            <div class="friend-card-name">${escapeHtml(name)}</div>
+            <div class="friend-card-meta">${p.username ? `@${escapeHtml(p.username)}` : ""}</div>
+          </div>
+          <button class="btn btn-p btn-sm" onclick="sendFriendRequest('${p.id}')">+ Ajouter</button>
+        </div>`;
+    }).join("");
   } catch (e) {
     resultEl.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
@@ -1809,45 +1850,55 @@ async function loadFriends() {
   const el = document.getElementById("friends-list");
   if (!el) return;
   try {
-    // Get accepted friendships where I'm either requester or addressee
     const { data, error } = await SB.from("friendships")
       .select("id,requester_id,addressee_id")
       .eq("status", "accepted")
       .or(`requester_id.eq.${U.id},addressee_id.eq.${U.id}`);
     if (error) throw error;
-    if (!data?.length) { el.innerHTML = '<div class="empty"><span class="empty-ic">👥</span>Aucun ami pour le moment</div>'; return; }
+    if (!data?.length) {
+      el.innerHTML = `<div class="friends-empty-state"><div style="font-size:2.4rem;margin-bottom:8px">👥</div><div style="font-weight:700;margin-bottom:4px">Aucun ami pour le moment</div><div style="font-size:.8rem;color:var(--muted)">Recherchez des profils ci-dessus pour commencer</div></div>`;
+      return;
+    }
 
-    // Get friend profile IDs
     const friendIds = data.map(f => f.requester_id === U.id ? f.addressee_id : f.requester_id);
-    const { data: profiles } = await SB.from("profiles").select("id,username,display_name").in("id", friendIds);
+    const [profilesRes, streaksRes] = await Promise.all([
+      SB.from("profiles").select("id,username,display_name").in("id", friendIds),
+      SB.from("user_streaks").select("user_id,current_streak,total_workouts").in("user_id", friendIds).catch(() => ({ data: [] }))
+    ]);
     const profileMap = {};
-    (profiles || []).forEach(p => { profileMap[p.id] = p; });
+    (profilesRes?.data || []).forEach(p => { profileMap[p.id] = p; });
+    const streakMap = {};
+    (streaksRes?.data || []).forEach(s => { streakMap[s.user_id] = s; });
 
     el.innerHTML = data.map(f => {
       const friendId = f.requester_id === U.id ? f.addressee_id : f.requester_id;
       const p = profileMap[friendId] || {};
+      const s = streakMap[friendId] || {};
+      const name = p.display_name || p.username || "Membre";
+      const handle = p.username ? `@${p.username}` : "";
+      const streak = s.current_streak || 0;
+      const totalW = s.total_workouts || 0;
+      const avatarColor = AVATAR_COLORS[(friendId || "").charCodeAt(0) % AVATAR_COLORS.length];
+      const streakBadge = streak > 0 ? `<span class="friend-streak-badge">🔥 ${streak}j</span>` : "";
+      const metaLine = [handle, totalW > 0 ? `${totalW} séances` : ""].filter(Boolean).join(" · ");
       return `
-        <div class="friend-row">
-          <div class="sidebar-avatar" style="width:28px;height:28px;font-size:.65rem">${(p.display_name || p.username || "?").charAt(0).toUpperCase()}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:.85rem">${escapeHtml(p.display_name || "Membre")}</div>
-            <div class="meal-info">@${escapeHtml(p.username || "—")}</div>
+        <div class="friend-card">
+          <div class="friend-card-avatar" style="background:${avatarColor}">${name.charAt(0).toUpperCase()}</div>
+          <div class="friend-card-info">
+            <div class="friend-card-name">${escapeHtml(name)}</div>
+            <div class="friend-card-meta">${escapeHtml(metaLine)}${streakBadge}</div>
           </div>
-          <button class="btn btn-d btn-sm" onclick="removeFriend('${f.id}')">✕</button>
+          <button class="btn btn-d btn-sm" onclick="removeFriend('${f.id}')" title="Retirer">✕</button>
         </div>`;
     }).join("");
 
-    // Update friend count
     const countEl = document.getElementById("friend-count");
     if (countEl) countEl.textContent = data.length;
   } catch (e) {
-    // If table doesn't exist (migration not applied) show a setup hint
     const isTableMissing = e.message?.includes("relation") || e.message?.includes("does not exist") || e.code === "42P01";
-    if (isTableMissing) {
-      el.innerHTML = '<div class="empty"><span class="empty-ic">⚙️</span>Migration SQL requise — appliquer supabase/migration_v3_social.sql</div>';
-    } else {
-      el.innerHTML = '<div class="empty"><span class="empty-ic">👥</span>Aucun ami pour le moment</div>';
-    }
+    el.innerHTML = isTableMissing
+      ? '<div class="friends-empty-state"><div style="font-size:2rem">⚙️</div><div>Migration SQL requise</div></div>'
+      : `<div class="friends-empty-state"><div style="font-size:2.4rem">👥</div><div>Aucun ami pour le moment</div></div>`;
   }
 }
 
@@ -1860,7 +1911,13 @@ async function loadFriendRequests() {
       .eq("addressee_id", U.id)
       .eq("status", "pending");
     if (error) throw error;
-    if (!data?.length) { el.innerHTML = '<div class="meal-info">Aucune demande en attente</div>'; return; }
+    const reqCard = document.getElementById("friend-requests-card");
+    if (!data?.length) {
+      el.innerHTML = '<div style="font-size:.82rem;color:var(--muted);padding:4px 0">Aucune demande en attente</div>';
+      if (reqCard) reqCard.style.display = "none";
+      return;
+    }
+    if (reqCard) reqCard.style.display = "block";
 
     const requesterIds = data.map(f => f.requester_id);
     const { data: profiles } = await SB.from("profiles").select("id,username,display_name").in("id", requesterIds);
@@ -1869,19 +1926,20 @@ async function loadFriendRequests() {
 
     el.innerHTML = data.map(f => {
       const p = profileMap[f.requester_id] || {};
+      const name = p.display_name || p.username || "Membre";
+      const avatarColor = AVATAR_COLORS[(f.requester_id || "").charCodeAt(0) % AVATAR_COLORS.length];
       return `
-        <div class="friend-row">
-          <div class="sidebar-avatar" style="width:28px;height:28px;font-size:.65rem">${(p.display_name || p.username || "?").charAt(0).toUpperCase()}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:.85rem">${escapeHtml(p.display_name || "Membre")}</div>
-            <div class="meal-info">@${escapeHtml(p.username || "—")}</div>
+        <div class="friend-card">
+          <div class="friend-card-avatar" style="background:${avatarColor}">${name.charAt(0).toUpperCase()}</div>
+          <div class="friend-card-info">
+            <div class="friend-card-name">${escapeHtml(name)}</div>
+            <div class="friend-card-meta">${p.username ? `@${escapeHtml(p.username)}` : ""}</div>
           </div>
-          <button class="btn btn-p btn-sm" onclick="acceptFriend('${f.id}')" style="margin-right:4px">✓</button>
+          <button class="btn btn-p btn-sm" onclick="acceptFriend('${f.id}')" style="margin-right:4px">Accepter</button>
           <button class="btn btn-d btn-sm" onclick="rejectFriend('${f.id}')">✕</button>
         </div>`;
     }).join("");
 
-    // Update pending badge
     const badge = document.getElementById("friend-pending-badge");
     if (badge) { badge.textContent = data.length; badge.style.display = data.length > 0 ? "inline-flex" : "none"; }
   } catch (e) {
@@ -3382,6 +3440,11 @@ window.doLogout = doLogout;
 window.gotoTab = gotoTab;
 window.goalEdit = goalEdit;
 window.saveGoal = saveGoal;
+window.selectGoalType = selectGoalType;
+window.selectGoalLevel = selectGoalLevel;
+window.selectGoalSessions = selectGoalSessions;
+window.selectGoalEquip = selectGoalEquip;
+window.setPostTemplate = setPostTemplate;
 window.sendCoachMsg = sendCoachMsg;
 window.retryLastCoachMessage = retryLastCoachMessage;
 window.generateWorkout = generateWorkout;

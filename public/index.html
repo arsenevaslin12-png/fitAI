@@ -191,6 +191,73 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 /* ── GOAL ── */
 .goal-saved-row{display:flex;gap:8px;align-items:baseline;font-size:.86rem}
 .goal-saved-row strong{color:var(--purple);min-width:90px;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+/* Goal type grid */
+.goal-type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.goal-type-btn{background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);border-radius:16px;padding:14px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;transition:all .2s;font-family:inherit}
+.goal-type-btn:hover{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.2);transform:translateY(-1px)}
+.goal-type-btn.on{background:rgba(37,99,235,.18);border-color:#3b82f6;box-shadow:0 0 0 1px rgba(59,130,246,.4)}
+.goal-type-icon{font-size:1.6rem}
+.goal-type-label{font-size:.66rem;font-weight:700;color:var(--text2);text-align:center;line-height:1.3}
+.goal-type-btn.on .goal-type-label{color:#93c5fd}
+/* Level tabs */
+.goal-level-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.goal-level-tab{flex:1;min-width:0;background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);border-radius:20px;padding:10px 8px;font-size:.74rem;font-weight:700;color:var(--text2);cursor:pointer;transition:all .2s;font-family:inherit;text-align:center}
+.goal-level-tab.on{background:linear-gradient(135deg,#7c3aed,#4f46e5);border-color:transparent;color:#fff;box-shadow:0 2px 12px rgba(124,58,237,.35)}
+.goal-level-tab:hover:not(.on){border-color:rgba(255,255,255,.25);color:var(--text)}
+/* Sessions picker */
+.goal-sessions-row{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}
+.goal-session-pill{width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);font-size:1.1rem;font-weight:900;color:var(--text2);cursor:pointer;transition:all .2s;font-family:inherit}
+.goal-session-pill.on{background:rgba(34,197,94,.18);border-color:#4ade80;color:#4ade80;box-shadow:0 2px 12px rgba(74,222,128,.25)}
+.goal-session-pill:hover:not(.on){border-color:rgba(255,255,255,.3);color:var(--text)}
+/* Equipment chips */
+.goal-equip-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.goal-equip-chip{background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);border-radius:12px;padding:10px 6px;font-size:.72rem;font-weight:700;color:var(--text2);cursor:pointer;transition:all .2s;font-family:inherit;text-align:center;line-height:1.4}
+.goal-equip-chip.on{background:rgba(99,102,241,.18);border-color:#818cf8;color:#c7d2fe}
+.goal-equip-chip:hover:not(.on){border-color:rgba(255,255,255,.2);color:var(--text)}
+/* Goal hero card (view state) */
+.goal-hero-card{background:linear-gradient(140deg,rgba(15,23,42,1) 0%,rgba(30,41,59,.95) 100%);border:1.5px solid rgba(255,255,255,.12);border-radius:22px;padding:20px;margin-bottom:14px;overflow:hidden}
+.goal-hero-top{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.goal-hero-icon{font-size:2.4rem;flex-shrink:0;filter:drop-shadow(0 2px 8px rgba(0,0,0,.4))}
+.goal-hero-info{flex:1;min-width:0}
+.goal-hero-title{font-size:1.2rem;font-weight:900;color:#fff;letter-spacing:-.02em}
+.goal-hero-sub{font-size:.78rem;color:var(--muted);margin-top:3px}
+.goal-edit-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:var(--muted);border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .18s;flex-shrink:0}
+.goal-edit-btn:hover{background:rgba(37,99,235,.2);border-color:rgba(37,99,235,.45);color:#60a5fa}
+.goal-hero-stats{display:flex;align-items:center;background:rgba(0,0,0,.3);border-radius:14px;padding:12px 16px}
+.goal-hero-stat{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px}
+.goal-hero-stat>span:first-child{font-size:1rem;font-weight:900;color:#fff}
+.goal-hero-stat-lbl{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.goal-hero-stat-div{width:1px;height:28px;background:rgba(255,255,255,.1)}
+/* Feed post category chips */
+.post-cat-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:2px}
+.post-cat-chip{padding:5px 12px;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.1);border-radius:20px;font-size:.74rem;font-weight:700;color:var(--text2);cursor:pointer;transition:all .18s;font-family:inherit}
+.post-cat-chip:hover{background:rgba(37,99,235,.12);border-color:rgba(37,99,235,.3);color:var(--text)}
+/* Friends redesign */
+.friend-search-bar{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);border-radius:20px;padding:8px 14px;margin-bottom:12px}
+.friend-search-bar svg{flex-shrink:0;color:var(--muted)}
+.friend-search-bar input{flex:1;background:none;border:none;outline:none;font-size:.84rem;color:var(--text);font-family:inherit}
+.friend-search-bar input::placeholder{color:var(--muted)}
+.friend-card{display:flex;align-items:center;gap:12px;padding:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:16px;margin-bottom:8px;transition:border-color .2s}
+.friend-card:hover{border-color:rgba(255,255,255,.13)}
+.friend-card-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:900;color:#fff;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.friend-card-info{flex:1;min-width:0}
+.friend-card-name{font-weight:800;font-size:.88rem;color:var(--text)}
+.friend-card-meta{font-size:.72rem;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px}
+.friend-streak-badge{background:rgba(249,115,22,.15);color:#fb923c;border:1px solid rgba(249,115,22,.25);border-radius:20px;padding:2px 8px;font-size:.65rem;font-weight:800}
+.friends-empty-state{text-align:center;padding:32px 16px;color:var(--text2)}
+/* Light mode */
+body.light .goal-type-btn{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.1)}
+body.light .goal-type-btn.on{background:rgba(37,99,235,.08)}
+body.light .goal-level-tab{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.1);color:#64748b}
+body.light .goal-session-pill{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.1);color:#64748b}
+body.light .goal-equip-chip{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.1);color:#64748b}
+body.light .goal-hero-card{background:linear-gradient(140deg,#f8fafc,#f1f5f9);border-color:rgba(15,23,42,.1)}
+body.light .goal-hero-title{color:#0f172a}
+body.light .goal-hero-stats{background:rgba(15,23,42,.06)}
+body.light .goal-hero-stat>span:first-child{color:#0f172a}
+body.light .friend-card{background:rgba(15,23,42,.02);border-color:rgba(15,23,42,.08)}
+body.light .friend-search-bar{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.1)}
+body.light .friend-search-bar input{color:#0f172a}
 
 /* ── COACH HERO CARD ── */
 .coach-hero{
@@ -1579,61 +1646,104 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
         </div>
       </div>
 
-      <!-- GOAL (Express 15min) -->
+      <!-- GOAL -->
       <div class="tab" id="t-goal">
         <div class="page-header">
-          <div class="page-title">Mon Objectif</div>
-          <div class="page-sub">Définissez votre objectif fitness personnalisé</div>
+          <div class="page-title">🎯 Mon Objectif</div>
+          <div class="page-sub">Personnalisez votre programme fitness</div>
         </div>
 
-        <div class="card" id="goal-view" style="display:none">
-          <div class="card-title">Objectif enregistré ✓</div>
-          <div id="goal-view-body" style="display:flex;flex-direction:column;gap:7px"></div>
-          <div style="margin-top:14px">
-            <button class="btn btn-g btn-sm" onclick="goalEdit()">✏️ Modifier</button>
+        <!-- VIEW STATE -->
+        <div id="goal-view" style="display:none">
+          <div class="goal-hero-card">
+            <div class="goal-hero-top">
+              <div class="goal-hero-icon" id="goal-hero-icon">🎯</div>
+              <div class="goal-hero-info">
+                <div class="goal-hero-title" id="goal-hero-title">Mon objectif</div>
+                <div class="goal-hero-sub" id="goal-hero-sub">—</div>
+              </div>
+              <button class="goal-edit-btn" onclick="goalEdit()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+            </div>
+            <div class="goal-hero-stats">
+              <div class="goal-hero-stat"><span id="gs-level">—</span><span class="goal-hero-stat-lbl">Niveau</span></div>
+              <div class="goal-hero-stat-div"></div>
+              <div class="goal-hero-stat"><span id="gs-sessions">—</span><span class="goal-hero-stat-lbl">Séances/sem.</span></div>
+              <div class="goal-hero-stat-div"></div>
+              <div class="goal-hero-stat"><span id="gs-equip">—</span><span class="goal-hero-stat-lbl">Équipement</span></div>
+            </div>
+          </div>
+          <div class="card" id="goal-detail-card" style="display:none">
+            <div id="goal-view-body" style="display:flex;flex-direction:column;gap:7px"></div>
           </div>
         </div>
 
-        <div class="card" id="goal-form">
-          <div class="card-title">Définir mon objectif</div>
-          <div style="display:flex;flex-direction:column;gap:13px">
-            <div class="field"><div class="lbl">Type d'objectif</div>
-              <select id="g-type">
-                <option value="">Sélectionner…</option>
-                <option value="prise_de_masse">💪 Prise de masse</option>
-                <option value="perte_de_poids">🔥 Perte de poids</option>
-                <option value="endurance">🏃 Endurance</option>
-                <option value="force">🏋️ Force</option>
-                <option value="remise_en_forme">🌟 Remise en forme</option>
-                <option value="maintien">⚖️ Maintien</option>
-              </select>
+        <!-- FORM STATE -->
+        <div id="goal-form">
+          <div class="card">
+            <div class="card-title">1. Quel est ton objectif ?</div>
+            <div class="goal-type-grid">
+              <button class="goal-type-btn" data-val="prise_de_masse" onclick="selectGoalType('prise_de_masse')"><span class="goal-type-icon">💪</span><span class="goal-type-label">Prise de masse</span></button>
+              <button class="goal-type-btn" data-val="perte_de_poids" onclick="selectGoalType('perte_de_poids')"><span class="goal-type-icon">🔥</span><span class="goal-type-label">Perte de poids</span></button>
+              <button class="goal-type-btn" data-val="endurance" onclick="selectGoalType('endurance')"><span class="goal-type-icon">🏃</span><span class="goal-type-label">Endurance</span></button>
+              <button class="goal-type-btn" data-val="force" onclick="selectGoalType('force')"><span class="goal-type-icon">🏋️</span><span class="goal-type-label">Force</span></button>
+              <button class="goal-type-btn" data-val="remise_en_forme" onclick="selectGoalType('remise_en_forme')"><span class="goal-type-icon">🌟</span><span class="goal-type-label">Remise en forme</span></button>
+              <button class="goal-type-btn" data-val="maintien" onclick="selectGoalType('maintien')"><span class="goal-type-icon">⚖️</span><span class="goal-type-label">Maintien</span></button>
             </div>
-            <div class="field"><div class="lbl">Niveau</div>
-              <select id="g-level">
-                <option value="">Sélectionner…</option>
-                <option value="debutant">Débutant</option>
-                <option value="intermediaire">Intermédiaire</option>
-                <option value="avance">Avancé</option>
-                <option value="elite">Élite</option>
-              </select>
+            <input type="hidden" id="g-type"/>
+          </div>
+
+          <div class="card">
+            <div class="card-title">2. Ton niveau</div>
+            <div class="goal-level-tabs">
+              <button class="goal-level-tab" data-val="debutant" onclick="selectGoalLevel('debutant')">Débutant</button>
+              <button class="goal-level-tab" data-val="intermediaire" onclick="selectGoalLevel('intermediaire')">Intermédiaire</button>
+              <button class="goal-level-tab" data-val="avance" onclick="selectGoalLevel('avance')">Avancé</button>
+              <button class="goal-level-tab" data-val="elite" onclick="selectGoalLevel('elite')">Élite</button>
             </div>
-            <div class="field"><div class="lbl">Description de votre objectif</div>
-              <textarea id="g-text" placeholder="Ex: Perdre 5kg en 3 mois, 3 séances/semaine…"></textarea>
+            <input type="hidden" id="g-level"/>
+          </div>
+
+          <div class="card">
+            <div class="card-title">3. Combien de séances par semaine ?</div>
+            <div class="goal-sessions-row">
+              <button class="goal-session-pill" data-val="2" onclick="selectGoalSessions('2')">2</button>
+              <button class="goal-session-pill" data-val="3" onclick="selectGoalSessions('3')">3</button>
+              <button class="goal-session-pill" data-val="4" onclick="selectGoalSessions('4')">4</button>
+              <button class="goal-session-pill" data-val="5" onclick="selectGoalSessions('5')">5</button>
+              <button class="goal-session-pill" data-val="6" onclick="selectGoalSessions('6')">6</button>
+              <button class="goal-session-pill" data-val="7" onclick="selectGoalSessions('7')">7</button>
             </div>
-            <div class="field"><div class="lbl">Équipement disponible</div>
-              <select id="g-equipment">
-                <option value="">Poids du corps uniquement</option>
-                <option value="halteres">Haltères</option>
-                <option value="barre">Barre + disques</option>
-                <option value="salle">Salle de sport complète</option>
-                <option value="kettlebell">Kettlebell</option>
-                <option value="elastiques">Élastiques</option>
-              </select>
+            <input type="hidden" id="g-sessions"/>
+          </div>
+
+          <div class="card">
+            <div class="card-title">4. Équipement disponible</div>
+            <div class="goal-equip-grid">
+              <button class="goal-equip-chip" data-val="" onclick="selectGoalEquip('')">🧘 Poids du corps</button>
+              <button class="goal-equip-chip" data-val="halteres" onclick="selectGoalEquip('halteres')">🏋️ Haltères</button>
+              <button class="goal-equip-chip" data-val="barre" onclick="selectGoalEquip('barre')">📊 Barre</button>
+              <button class="goal-equip-chip" data-val="salle" onclick="selectGoalEquip('salle')">🏟️ Salle complète</button>
+              <button class="goal-equip-chip" data-val="kettlebell" onclick="selectGoalEquip('kettlebell')">🔔 Kettlebell</button>
+              <button class="goal-equip-chip" data-val="elastiques" onclick="selectGoalEquip('elastiques')">🪢 Élastiques</button>
             </div>
-            <div class="field"><div class="lbl">Contraintes / blessures (optionnel)</div>
-              <textarea id="g-constraints" placeholder="Ex: Genou fragile, pas de course…" style="min-height:56px"></textarea>
+            <input type="hidden" id="g-equipment"/>
+          </div>
+
+          <div class="card">
+            <div class="card-title">5. Précisions (optionnel)</div>
+            <div style="display:flex;flex-direction:column;gap:13px">
+              <div class="field">
+                <div class="lbl">Blessures / contraintes</div>
+                <textarea id="g-constraints" placeholder="Ex: Genou fragile, pas de course…" style="min-height:56px"></textarea>
+              </div>
+              <div class="field">
+                <div class="lbl">Description libre</div>
+                <textarea id="g-text" placeholder="Ex: Perdre 5kg en 3 mois, progresser au squat…"></textarea>
+              </div>
+              <button class="btn btn-p btn-full" id="btn-save-goal" onclick="saveGoal()">Enregistrer l'objectif</button>
             </div>
-            <button class="btn btn-p btn-full" id="btn-save-goal" onclick="saveGoal()">Enregistrer l'objectif</button>
           </div>
         </div>
       </div>
@@ -1989,8 +2099,15 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
         <div class="card">
           <div class="card-title">Partager une performance</div>
           <div style="display:flex;flex-direction:column;gap:12px">
-            <div class="field"><div class="lbl">Votre message</div>
-              <textarea id="post-input" placeholder="Ex: Nouvelle PR au squat 120kg × 5 💪 Trop content !"></textarea>
+            <div class="post-cat-chips">
+              <button class="post-cat-chip" onclick="setPostTemplate('seance')">🏋️ Séance</button>
+              <button class="post-cat-chip" onclick="setPostTemplate('pr')">🏆 PR</button>
+              <button class="post-cat-chip" onclick="setPostTemplate('nutrition')">🥗 Repas</button>
+              <button class="post-cat-chip" onclick="setPostTemplate('motivation')">🔥 Motivation</button>
+              <button class="post-cat-chip" onclick="setPostTemplate('progress')">📈 Progrès</button>
+            </div>
+            <div class="field">
+              <textarea id="post-input" placeholder="Partagez votre performance du jour…" style="min-height:80px"></textarea>
             </div>
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
               <button class="btn btn-g btn-sm" onclick="document.getElementById('post-photo-input').click()">📷 Photo</button>
@@ -2138,28 +2255,40 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
       <!-- FRIENDS -->
       <div class="tab" id="t-friends">
         <div class="page-header">
-          <div class="page-title">Amis</div>
-          <div class="page-sub">Recherchez des profils, acceptez des demandes et gérez votre cercle privé</div>
+          <div class="page-title">👥 Amis</div>
+          <div class="page-sub">Connectez-vous avec votre cercle fitness</div>
         </div>
 
-        <!-- Friends section -->
+        <!-- Search card -->
         <div class="card">
-          <div class="card-title">👥 Amis <span class="badge bg-purple" id="friend-count" style="margin-left:6px">0</span></div>
-          <div style="display:flex;gap:8px;margin-bottom:12px">
-            <input type="text" id="friend-search-input" placeholder="Rechercher par username…" style="flex:1;border-radius:20px;padding:8px 14px;font-size:.82rem" onkeydown="if(event.key==='Enter')searchUsers()"/>
-            <button class="btn btn-p btn-sm" onclick="searchUsers()">🔍</button>
+          <div class="card-title">Trouver des amis</div>
+          <div class="friend-search-bar">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="friend-search-input" placeholder="Rechercher par nom ou @username…" onkeydown="if(event.key==='Enter')searchUsers()"/>
+            <button class="btn btn-p btn-sm" onclick="searchUsers()">Rechercher</button>
           </div>
           <div id="friend-search-results"></div>
-          <div style="margin-top:12px">
-            <div style="font-size:.78rem;font-weight:700;color:var(--muted);margin-bottom:6px">DEMANDES REÇUES <span class="badge bg-orange" id="friend-pending-badge" style="display:none">0</span></div>
-            <div id="friend-requests"><div class="meal-info">Aucune demande en attente</div></div>
-          </div>
-          <div style="margin-top:12px">
-            <div style="font-size:.78rem;font-weight:700;color:var(--muted);margin-bottom:6px">MES AMIS</div>
-            <div id="friends-list"><div class="empty" style="padding:12px"><span class="empty-ic">👥</span>Aucun ami</div></div>
-          </div>
         </div>
 
+        <!-- Pending requests -->
+        <div class="card" id="friend-requests-card" style="display:none">
+          <div class="card-title">Demandes reçues <span class="badge bg-orange" id="friend-pending-badge">0</span></div>
+          <div id="friend-requests"></div>
+        </div>
+
+        <!-- Friends list -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div class="card-title" style="margin-bottom:0">Mes amis <span class="badge bg-purple" id="friend-count" style="margin-left:6px">0</span></div>
+          </div>
+          <div id="friends-list">
+            <div class="friends-empty-state">
+              <div style="font-size:2.4rem;margin-bottom:8px">👥</div>
+              <div style="font-weight:700;margin-bottom:4px">Aucun ami pour le moment</div>
+              <div style="font-size:.8rem;color:var(--muted)">Recherchez des profils ci-dessus pour commencer</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="tab" id="t-profile">
