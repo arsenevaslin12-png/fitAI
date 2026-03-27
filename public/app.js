@@ -455,7 +455,7 @@ function gotoTab(name) {
   if (name === "dashboard") loadDashboard();
   if (name === "goal") loadGoal();
   if (name === "coach") { loadCoachHistory(); loadHistory(); }
-  if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); }
+  if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); loadCommunityRecipes(); }
   if (name === "community") loadFeed();
   if (name === "friends") { loadFriends(); loadFriendRequests(); }
   if (name === "bodyscan") loadScans();
@@ -702,7 +702,8 @@ async function loadGoal() {
     // Populate form hidden inputs + visual selectors (for editing)
     if (data.type) selectGoalType(data.type);
     if (data.level) selectGoalLevel(data.level);
-    if (data.sessions_per_week) selectGoalSessions(String(data.sessions_per_week));
+    const storedSessions = localStorage.getItem("fitai_goal_sessions") || "";
+    if (storedSessions) selectGoalSessions(storedSessions);
     selectGoalEquip(data.equipment || "");
     const gText = document.getElementById("g-text");
     const gConstraints = document.getElementById("g-constraints");
@@ -718,7 +719,8 @@ async function loadGoal() {
     setEl("goal-hero-title", GOAL_LABELS[data.type] || data.type || "Mon objectif");
     setEl("goal-hero-sub", data.text ? data.text.slice(0, 80) : "Objectif personnalisé");
     setEl("gs-level", LEVEL_SHORT[data.level] || data.level || "—");
-    setEl("gs-sessions", data.sessions_per_week ? `${data.sessions_per_week}×` : "—");
+    const storedSess = localStorage.getItem("fitai_goal_sessions") || "";
+    setEl("gs-sessions", storedSess ? `${storedSess}×/sem` : "—");
     setEl("gs-equip", EQUIP_LABELS[data.equipment || ""] || "Poids du corps");
   } catch (e) {
     console.error("[Goal] Load error:", e);
@@ -742,7 +744,12 @@ async function saveGoal() {
   if (!type)  return toast("Sélectionne un type d'objectif.", "err");
   if (!level) return toast("Sélectionne ton niveau.", "err");
 
+  // sessions_per_week stored locally (column may not exist in DB)
   const sessionsRaw = document.getElementById("g-sessions")?.value || "";
+  if (sessionsRaw) {
+    try { localStorage.setItem("fitai_goal_sessions", sessionsRaw); } catch {}
+  }
+
   const payload = {
     user_id: U.id,
     type,
@@ -750,7 +757,6 @@ async function saveGoal() {
     text: (document.getElementById("g-text")?.value || "").trim(),
     constraints: (document.getElementById("g-constraints")?.value || "").trim(),
     equipment: document.getElementById("g-equipment")?.value || "",
-    sessions_per_week: sessionsRaw ? parseInt(sessionsRaw) : null,
     updated_at: new Date().toISOString()
   };
 
@@ -1605,18 +1611,96 @@ async function deletePost(postId) {
 }
 
 function setPostTemplate(type) {
+  // Switch back to regular post mode if in recipe mode
+  const regularForm = document.getElementById("regular-post-form");
+  const recipeForm = document.getElementById("recipe-share-form");
+  if (regularForm) regularForm.style.display = "block";
+  if (recipeForm) recipeForm.style.display = "none";
+
   const input = document.getElementById("post-input");
   if (!input) return;
   const tpl = {
-    seance: "Séance terminée 💪 ",
-    pr: "Nouveau record personnel 🏆 — ",
-    nutrition: "Repas du jour 🥗 ",
-    motivation: "Citation du jour 🔥\n\n",
-    progress: "Mes progrès cette semaine 📈\n\n"
+    seance: "Séance terminée — ",
+    pr: "Nouveau record personnel — ",
+    nutrition: "Repas du jour : ",
+    motivation: "Ma motivation du jour :\n\n",
+    progress: "Mes progrès cette semaine :\n\n"
   };
   input.value = tpl[type] || "";
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
+}
+
+function toggleRecipeMode() {
+  const regularForm = document.getElementById("regular-post-form");
+  const recipeForm = document.getElementById("recipe-share-form");
+  if (!regularForm || !recipeForm) return;
+  const isRecipe = recipeForm.style.display !== "none";
+  regularForm.style.display = isRecipe ? "block" : "none";
+  recipeForm.style.display = isRecipe ? "none" : "block";
+  const btn = document.querySelector(".post-cat-chip-recipe");
+  if (btn) btn.style.background = isRecipe ? "" : "rgba(99,102,241,.25)";
+}
+
+async function shareRecipe() {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+  const name = document.getElementById("recipe-share-name")?.value.trim() || "";
+  const ingredients = document.getElementById("recipe-share-ingredients")?.value.trim() || "";
+  const servings = parseInt(document.getElementById("recipe-share-servings")?.value || "2");
+  const desc = document.getElementById("recipe-share-desc")?.value.trim() || "";
+  const visibility = document.getElementById("recipe-share-visibility")?.value || "public";
+
+  if (!name) return toast("Donne un nom à ta recette.", "err");
+  if (!ingredients) return toast("Liste au moins quelques ingrédients.", "err");
+
+  const btn = document.getElementById("btn-share-recipe");
+  await withButton(btn, "Analyse en cours…", async () => {
+    const token = await getToken();
+    if (!token) throw new Error("Session expirée.");
+
+    // Call Gemini nutrition check
+    let nutrition = null;
+    try {
+      const resp = await fetchJsonWithTimeout("/api/check-recipe-nutrition", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, ingredients, servings })
+      }, 20000);
+      nutrition = resp?.data || null;
+    } catch {
+      // Proceed without nutrition data
+    }
+
+    // Build recipe content (prefixed JSON for special rendering in feed)
+    const recipePayload = {
+      _t: "recipe",
+      name,
+      desc,
+      ingredients,
+      servings,
+      n: nutrition || { score: null }
+    };
+    const content = "__r__" + JSON.stringify(recipePayload);
+
+    const { error } = await SB.from("community_posts").insert({
+      user_id: U.id,
+      content,
+      visibility,
+      image_url: null,
+      created_at: new Date().toISOString(),
+      kudos: 0
+    });
+    if (error) throw error;
+
+    // Reset form
+    ["recipe-share-name","recipe-share-ingredients","recipe-share-desc"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    toggleRecipeMode();
+    await loadFeed();
+    toast(nutrition ? `Recette partagée — score nutritionnel : ${nutrition.score}/100` : "Recette partagée ✓", "ok");
+  }).catch(e => toast(`Erreur: ${e.message}`, "err"));
 }
 
 function setFeedFilter(filter) {
@@ -1690,9 +1774,12 @@ async function loadFeed() {
       query = query.in("user_id", friendIds).neq("visibility", "private");
     }
 
-    const { data, error } = await query;
     if (error) throw error;
-    if (!data?.length) {
+    // Client-side filter for recipes tab
+    const data = FEED_FILTER === "recipes"
+      ? (allData || []).filter(p => String(p.content || "").startsWith("__r__"))
+      : (allData || []);
+    if (!data.length) {
       el.innerHTML = '<div class="empty"><span class="empty-ic">👥</span>Aucun post dans ce fil.</div>';
       return;
     }
@@ -1734,6 +1821,56 @@ async function loadFeed() {
       const authorHandle = !me && author?.username ? `@${escapeHtml(author.username)}` : "";
       const initial = authorName.charAt(0).toUpperCase();
       const avatarColor = AVATAR_COLORS[(post.user_id || "").charCodeAt(0) % AVATAR_COLORS.length];
+      const rawContent = String(post.content || "");
+
+      // Recipe post rendering
+      if (rawContent.startsWith("__r__")) {
+        let recipe = null;
+        try { recipe = JSON.parse(rawContent.slice(5)); } catch {}
+        if (recipe) {
+          const n = recipe.n || {};
+          const score = typeof n.score === "number" ? n.score : null;
+          const scoreBadgeClass = score === null ? "neutral" : score >= 75 ? "good" : score >= 50 ? "medium" : "low";
+          const scoreLabel = score === null ? "N/A" : `${score}/100`;
+          const nutritionLabel = n.label || (score === null ? "" : score >= 75 ? "Excellent" : score >= 50 ? "Moyen" : "Pauvre");
+          const macrosHtml = (n.kcal || n.protein || n.carbs || n.fat) ? `
+            <div class="recipe-macros-row">
+              ${n.kcal ? `<span class="recipe-macro-pill">${n.kcal} kcal</span>` : ""}
+              ${n.protein ? `<span class="recipe-macro-pill">${n.protein}g prot.</span>` : ""}
+              ${n.carbs ? `<span class="recipe-macro-pill">${n.carbs}g gluc.</span>` : ""}
+              ${n.fat ? `<span class="recipe-macro-pill">${n.fat}g lip.</span>` : ""}
+            </div>` : "";
+          const analysisHtml = n.analysis ? `<div class="recipe-analysis-text">${escapeHtml(n.analysis)}</div>` : "";
+          const ingredientsHtml = recipe.ingredients ? `<div class="recipe-ingredients-text"><strong>Ingrédients :</strong> ${escapeHtml(String(recipe.ingredients).slice(0, 200))}${recipe.ingredients.length > 200 ? "…" : ""}</div>` : "";
+          const descHtml = recipe.desc ? `<div class="recipe-desc-text">${escapeHtml(recipe.desc)}</div>` : "";
+          return `
+            <div class="post-card recipe-post-card">
+              <div class="post-card-header recipe-post-header">
+                <div class="recipe-post-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" y1="17" x2="18" y2="17"/><line x1="6" y1="21" x2="18" y2="21"/></svg>
+                </div>
+                <div class="post-card-info">
+                  <div class="post-card-name">${escapeHtml(recipe.name || "Recette")} ${score !== null ? `<span class="recipe-score-badge ${scoreBadgeClass}">${scoreLabel}</span>` : ""}</div>
+                  <div class="post-card-meta">${authorHandle ? `<span class="post-card-handle">${authorHandle}</span> · ` : ""}${escapeHtml(authorName)} · ${visIcon} ${date}</div>
+                </div>
+                ${me ? `<button class="post-card-del" onclick="deletePost('${post.id}')" title="Supprimer">✕</button>` : ""}
+              </div>
+              <div class="recipe-post-body">
+                ${macrosHtml}
+                ${ingredientsHtml}
+                ${descHtml}
+                ${analysisHtml}
+                ${n.strengths?.length ? `<div class="recipe-strengths">${n.strengths.map(s => `<span class="recipe-strength-tag">${escapeHtml(s)}</span>`).join("")}</div>` : ""}
+              </div>
+              <div class="post-card-actions">
+                <button class="kudos-btn ${liked ? "on" : ""}" onclick="giveKudos('${post.id}', ${post.kudos || 0})">${liked ? "❤️" : "🤍"} <span>${post.kudos || 0}</span></button>
+                <button class="comment-btn" onclick="toggleComments('${post.id}')">💬 <span>${commentCount}</span></button>
+              </div>
+              <div class="comments-section" id="comments-${post.id}" style="display:none"></div>
+            </div>`;
+        }
+      }
+
       return `
         <div class="post-card">
           <div class="post-card-header">
@@ -1755,6 +1892,59 @@ async function loadFeed() {
     }).join("");
   } catch (e) {
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function loadCommunityRecipes() {
+  const el = document.getElementById("community-recipes-list");
+  if (!el) return;
+  try {
+    const { data, error } = await SB.from("community_posts")
+      .select("id,user_id,content,kudos,created_at")
+      .like("content", "__r__%")
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error) throw error;
+    if (!data?.length) {
+      el.innerHTML = '<div class="meal-info" style="text-align:center;padding:16px 0">Aucune recette partagée pour l\'instant.<br><span style="font-size:.75rem;opacity:.6">Partage ta recette dans la communauté !</span></div>';
+      return;
+    }
+    const authorIds = [...new Set(data.map(p => p.user_id))];
+    const authorMap = {};
+    try {
+      const { data: profiles } = await SB.from("profiles").select("id,display_name,username").in("id", authorIds);
+      (profiles || []).forEach(p => { authorMap[p.id] = p; });
+    } catch {}
+    el.innerHTML = data.map(post => {
+      let recipe = null;
+      try { recipe = JSON.parse(String(post.content).slice(5)); } catch {}
+      if (!recipe) return "";
+      const n = recipe.n || {};
+      const score = typeof n.score === "number" ? n.score : null;
+      const scoreBadgeClass = score === null ? "neutral" : score >= 75 ? "good" : score >= 50 ? "medium" : "low";
+      const author = authorMap[post.user_id];
+      const isMe = U && post.user_id === U.id;
+      const authorName = isMe ? "Vous" : (author?.display_name || author?.username || "Membre");
+      return `
+        <div class="community-recipe-card">
+          <div class="community-recipe-top">
+            <div class="community-recipe-name">${escapeHtml(recipe.name || "Recette")}</div>
+            ${score !== null ? `<span class="recipe-score-badge ${scoreBadgeClass}">${score}/100</span>` : ""}
+          </div>
+          ${(n.kcal || n.protein) ? `<div class="recipe-macros-row">
+            ${n.kcal ? `<span class="recipe-macro-pill">${n.kcal} kcal</span>` : ""}
+            ${n.protein ? `<span class="recipe-macro-pill">${n.protein}g prot.</span>` : ""}
+            ${n.carbs ? `<span class="recipe-macro-pill">${n.carbs}g gluc.</span>` : ""}
+          </div>` : ""}
+          ${n.analysis ? `<div class="recipe-analysis-text">${escapeHtml(n.analysis)}</div>` : ""}
+          <div class="community-recipe-footer">
+            <span class="community-recipe-author">Par ${escapeHtml(authorName)}</span>
+            <span class="community-recipe-date">${timeAgo(post.created_at)}</span>
+          </div>
+        </div>`;
+    }).filter(Boolean).join("");
+  } catch (e) {
+    el.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -3483,6 +3673,9 @@ window.acceptFriend = acceptFriend;
 window.rejectFriend = rejectFriend;
 window.removeFriend = removeFriend;
 window.setFeedFilter = setFeedFilter;
+window.toggleRecipeMode = toggleRecipeMode;
+window.shareRecipe = shareRecipe;
+window.loadCommunityRecipes = loadCommunityRecipes;
 window.startWorkoutSession = startWorkoutSession;
 window.closeWorkoutSession = closeWorkoutSession;
 window.woNav = woNav;
