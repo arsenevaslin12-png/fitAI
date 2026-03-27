@@ -751,6 +751,49 @@ function loadCoachHistory() {
     if (stored) COACH_HISTORY = JSON.parse(stored);
   } catch { COACH_HISTORY = []; }
   renderCoachChat();
+  loadCoachStats();
+}
+
+async function loadCoachStats() {
+  if (!U) return;
+  try {
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const [streakRes, goalRes, profileRes, weekMealsRes] = await Promise.all([
+      SB.from("user_streaks").select("current_streak,total_workouts").eq("user_id", U.id).maybeSingle().catch(() => ({ data: null })),
+      SB.from("goals").select("level,type").eq("user_id", U.id).maybeSingle().catch(() => ({ data: null })),
+      SB.from("profiles").select("display_name").eq("id", U.id).maybeSingle().catch(() => ({ data: null })),
+      SB.from("meals").select("calories").eq("user_id", U.id).gte("date", weekAgo).catch(() => ({ data: [] }))
+    ]);
+    const streak = streakRes?.data?.current_streak || 0;
+    const totalWorkouts = streakRes?.data?.total_workouts || 0;
+    const level = goalRes?.data?.level || "";
+    const goalType = goalRes?.data?.type || "";
+    const weekKcal = (weekMealsRes?.data || []).reduce((s, m) => s + (m.calories || 0), 0);
+    const LEVEL_LABELS = { beginner: "Débutant", intermediate: "Inter.", advanced: "Expert", debutant: "Débutant", intermediaire: "Inter.", avance: "Expert" };
+    const GOAL_LABELS = { prise_de_masse: "Masse", perte_de_poids: "Minceur", endurance: "Endurance", force: "Force", remise_en_forme: "Remise en forme", maintien: "Maintien" };
+
+    // Store display name for welcome message
+    window._coachDisplayName = profileRes?.data?.display_name || U?.email?.split("@")[0] || "";
+
+    const setEl = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+    setEl("cs-energy", streak > 0 ? `${streak}j` : "0j");
+    setEl("cs-week", totalWorkouts || "0");
+    setEl("cs-level", LEVEL_LABELS[level] || level || "—");
+    setEl("cs-kcal", weekKcal > 0 ? `${Math.round(weekKcal / 7)}` : "—");
+
+    // Update subline with goal + level + streak
+    const coachSubLine = document.getElementById("coach-sub-line");
+    if (coachSubLine) {
+      const parts = [];
+      if (GOAL_LABELS[goalType]) parts.push(GOAL_LABELS[goalType]);
+      if (LEVEL_LABELS[level]) parts.push(LEVEL_LABELS[level]);
+      if (streak > 0) parts.push(`${streak}j streak`);
+      coachSubLine.textContent = parts.length ? parts.join(" · ") : "Personnalisé à votre profil";
+    }
+
+    // Refresh welcome if no history yet
+    if (!COACH_HISTORY.length) renderCoachChat();
+  } catch {}
 }
 
 function saveCoachHistory() {
@@ -769,13 +812,26 @@ function renderCoachChat() {
   const userInitial = (U?.email?.split("@")[0] || "U").slice(0, 1).toUpperCase();
 
   if (!COACH_HISTORY.length) {
-    const userName = U?.email?.split("@")[0] || "toi";
+    const userName = window._coachDisplayName || U?.email?.split("@")[0] || "toi";
+    // Mood-aware greeting
+    let moodLine = "";
+    try {
+      const savedMood = localStorage.getItem("fitai_mood");
+      const savedMoodDate = localStorage.getItem("fitai_mood_date");
+      if (savedMood && savedMoodDate === new Date().toDateString()) {
+        const m = parseInt(savedMood);
+        if (m <= 2) moodLine = `<div style="margin-top:7px;font-size:.8rem;color:#f87171;font-weight:600">Je vois que tu es fatigué aujourd'hui — je vais adapter tes recommandations.</div>`;
+        else if (m >= 4) moodLine = `<div style="margin-top:7px;font-size:.8rem;color:#4ade80;font-weight:600">Tu es en forme aujourd'hui — parfait pour pousser un peu plus fort !</div>`;
+      }
+    } catch {}
+    const aiAvat = `<div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>`;
     el.innerHTML = `
       <div class="chat-msg chat-msg-ai">
-        <div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>
+        ${aiAvat}
         <div class="chat-bubble ai-bubble">
           <div style="font-weight:700;margin-bottom:5px">Salut ${escapeHtml(userName)} — je suis ton coach IA.</div>
-          <div style="color:var(--text2);font-size:.84rem;line-height:1.6">Séance du jour, nutrition, recette, liste de courses, récupération — pose ta question et je te réponds en moins de 10 secondes.</div>
+          <div style="color:var(--text2);font-size:.84rem;line-height:1.6">Séance du jour, nutrition, recette, liste de courses, récupération — pose ta question et je te réponds en quelques secondes.</div>
+          ${moodLine}
           <div style="margin-top:10px;font-size:.8rem;color:var(--muted)">Utilise les suggestions ci-dessous ou écris directement.</div>
         </div>
       </div>`;
@@ -817,7 +873,11 @@ async function sendCoachMsg(quickMsg) {
   if (chatEl) setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50);
 
   const quickEl = document.getElementById("chat-quick");
-  if (quickEl && COACH_HISTORY.length > 1) quickEl.style.display = "none";
+  if (quickEl && COACH_HISTORY.length > 1) {
+    quickEl.style.display = "none";
+    const tog = document.getElementById("chat-suggest-toggle");
+    if (tog) tog.style.display = "block";
+  }
 
   const btn = document.getElementById("btn-gen");
   if (btn) btn.disabled = true;
@@ -866,6 +926,8 @@ async function sendCoachMsg(quickMsg) {
     if (csEnergy) csEnergy.textContent = currentStreak > 0 ? `${currentStreak}j` : "0j";
     const csWeek = document.getElementById("cs-week");
     if (csWeek) csWeek.textContent = totalWorkouts || "0";
+    const csKcal = document.getElementById("cs-kcal");
+    if (csKcal && todayKcal > 0) csKcal.textContent = todayKcal;
 
     // Read today's mood from localStorage
     let moodLabel = "";
@@ -2658,9 +2720,23 @@ function clearCoachChat() {
   renderCoachChat();
   const quickEl = document.getElementById("chat-quick");
   if (quickEl) quickEl.style.display = "";
+  const tog = document.getElementById("chat-suggest-toggle");
+  if (tog) tog.style.display = "none";
   const planCard = document.getElementById("plan-card");
   if (planCard) planCard.style.display = "none";
   PLAN = null;
+}
+
+function toggleCoachSuggestions() {
+  const el = document.getElementById("chat-quick");
+  if (!el) return;
+  const isHidden = el.style.display === "none" || el.style.display === "";
+  el.style.display = isHidden ? "block" : "none";
+  const tog = document.getElementById("chat-suggest-toggle");
+  if (tog) {
+    const btn = tog.querySelector("button");
+    if (btn) btn.textContent = isHidden ? "— Masquer les idées" : "+ Idées de questions";
+  }
 }
 
 async function toggleComments(postId) {
@@ -3311,6 +3387,7 @@ window.retryLastCoachMessage = retryLastCoachMessage;
 window.generateWorkout = generateWorkout;
 window.saveSession = saveSession;
 window.clearCoachChat = clearCoachChat;
+window.toggleCoachSuggestions = toggleCoachSuggestions;
 window.replaySession = replaySession;
 window.addMeal = addMeal;
 window.deleteMeal = deleteMeal;
