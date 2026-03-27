@@ -486,6 +486,25 @@ body.light .friend-search-bar input{color:#0f172a}
 .meal-name{font-weight:700;font-size:.88rem;flex:1;min-width:100px}
 .meal-info{font-size:.75rem;color:var(--muted)}
 .meal-kcal{font-weight:800;color:var(--orange);font-size:.9rem;white-space:nowrap}
+/* Meal cards v2 */
+.meal-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 14px;margin-bottom:8px;transition:border-color .2s}
+.meal-card:last-child{margin-bottom:0}
+.meal-card:hover{border-color:rgba(255,255,255,.12)}
+.meal-card-top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.meal-card-name{font-weight:700;font-size:.88rem;flex:1;color:var(--text)}
+.meal-card-kcal{font-weight:900;font-size:.9rem;color:#fbbf24;white-space:nowrap}
+.meal-card-kcal-unit{font-size:.7rem;font-weight:600;color:var(--muted)}
+.meal-card-del{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;border-radius:8px;display:flex;align-items:center;transition:color .15s}
+.meal-card-del:hover{color:#f87171}
+.meal-card-macros{display:flex;flex-wrap:wrap;gap:6px}
+.meal-macro-pill{padding:3px 10px;border-radius:20px;font-size:.7rem;font-weight:700;border:1px solid;background:rgba(255,255,255,.04)}
+.meal-type-tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:.65rem;font-weight:700;background:rgba(99,102,241,.15);color:#a5b4fc;vertical-align:middle;margin-left:4px}
+/* Macro bar target labels */
+.macro-bar-target{font-size:.72rem;color:var(--muted);font-weight:600}
+/* Remaining calories row */
+.nutr-remaining-row{display:flex;align-items:center;justify-content:space-between;padding-top:10px;margin-top:6px;border-top:1px solid rgba(255,255,255,.06)}
+.nutr-remaining-lbl{font-size:.75rem;color:var(--muted);font-weight:600}
+.nutr-remaining-val{font-size:.88rem;font-weight:900}
 
 /* ── COMMUNITY ── */
 .post-card{background:rgba(15,22,40,.92);border-radius:20px;overflow:hidden;border:1px solid rgba(255,255,255,.09);box-shadow:0 2px 14px rgba(0,0,0,.35);display:flex;flex-direction:column;transition:border-color .2s}
@@ -1911,12 +1930,14 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
       <!-- NUTRITION -->
       <div class="tab" id="t-nutrition">
         <div class="page-header">
-          <div class="page-title">🍽️ Nutrition</div>
+          <div class="page-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px;margin-bottom:2px"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3v7"/></svg>Nutrition
+          </div>
           <div class="page-sub">Suivez vos apports nutritionnels quotidiens</div>
         </div>
 
         <div class="card">
-          <div class="card-title">Totaux du jour</div>
+          <div class="card-title">Apports du jour</div>
           <div class="nutr-today-wrap">
             <!-- Circular calorie ring -->
             <div class="kcal-ring-wrap">
@@ -1935,23 +1956,28 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               <div class="macro-bar-item">
                 <div class="macro-bar-header">
                   <span class="macro-bar-name">Protéines</span>
-                  <span class="macro-bar-amounts"><span id="m-prot">0g</span></span>
+                  <span class="macro-bar-amounts"><span id="m-prot">0g</span> <span class="macro-bar-target" id="macro-target-prot"></span></span>
                 </div>
                 <div class="macro-bar-track"><div class="macro-bar-fill" id="bar-prot" style="background:#4ade80;width:0%"></div></div>
               </div>
               <div class="macro-bar-item">
                 <div class="macro-bar-header">
                   <span class="macro-bar-name">Glucides</span>
-                  <span class="macro-bar-amounts"><span id="m-carb">0g</span></span>
+                  <span class="macro-bar-amounts"><span id="m-carb">0g</span> <span class="macro-bar-target" id="macro-target-carb"></span></span>
                 </div>
                 <div class="macro-bar-track"><div class="macro-bar-fill" id="bar-carb" style="background:#fbbf24;width:0%"></div></div>
               </div>
               <div class="macro-bar-item">
                 <div class="macro-bar-header">
                   <span class="macro-bar-name">Lipides</span>
-                  <span class="macro-bar-amounts"><span id="m-fat">0g</span></span>
+                  <span class="macro-bar-amounts"><span id="m-fat">0g</span> <span class="macro-bar-target" id="macro-target-fat"></span></span>
                 </div>
                 <div class="macro-bar-track"><div class="macro-bar-fill" id="bar-fat" style="background:#f87171;width:0%"></div></div>
+              </div>
+              <!-- Remaining indicator -->
+              <div class="nutr-remaining-row" id="nutr-remaining-row" style="display:none">
+                <span class="nutr-remaining-lbl">Restant</span>
+                <span class="nutr-remaining-val" id="nutr-remaining-kcal">—</span>
               </div>
             </div>
           </div>
@@ -1989,7 +2015,9 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
         <!-- GENERATE NUTRITION IA -->
         <div class="gen-nutrition-card">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-            <div style="width:38px;height:38px;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0">🎯</div>
+            <div style="width:38px;height:38px;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+            </div>
             <div>
               <div style="font-weight:800;font-size:.98rem">Plan Nutrition IA</div>
               <div class="page-sub" style="margin:0">Générez vos objectifs de macros personnalisés</div>
@@ -1999,27 +2027,32 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
             <div class="field">
               <div class="lbl">Objectif</div>
               <select id="nutr-gen-goal">
-                <option value="maintenance">⚖️ Maintien</option>
-                <option value="perte_de_poids">🔥 Perte de poids</option>
-                <option value="prise_de_masse">💪 Prise de masse</option>
-                <option value="cut">✂️ Sèche</option>
+                <option value="maintenance">Maintien</option>
+                <option value="perte_de_poids">Perte de poids</option>
+                <option value="prise_de_masse">Prise de masse</option>
+                <option value="cut">Sèche</option>
               </select>
             </div>
             <div class="field">
               <div class="lbl">Activité</div>
               <select id="nutr-gen-activity">
-                <option value="low">🚶 Faible</option>
-                <option value="moderate" selected>🏃 Modérée</option>
-                <option value="high">⚡ Élevée</option>
+                <option value="low">Faible</option>
+                <option value="moderate" selected>Modérée</option>
+                <option value="high">Élevée</option>
               </select>
             </div>
           </div>
-          <button class="btn btn-p btn-full" id="btn-gen-nutrition" onclick="generateNutrition()">🤖 Générer mon plan nutrition</button>
+          <button class="btn btn-p btn-full" id="btn-gen-nutrition" onclick="generateNutrition()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            Générer mon plan nutrition
+          </button>
           <div class="err-box" id="nutrition-gen-err" style="margin-top:8px"></div>
         </div>
 
         <div class="card" id="nutrition-recipe-card">
-          <div class="card-title">🤖 Recette IA</div>
+          <div class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px;margin-bottom:2px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>Recette IA
+          </div>
           <div class="page-sub" style="margin-top:-8px;margin-bottom:12px">Générez une recette adaptée à votre objectif</div>
           <div style="display:flex;flex-direction:column;gap:12px">
             <div class="field"><div class="lbl">Ingrédients disponibles</div>
@@ -2028,18 +2061,21 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
             <div class="grid2">
               <div class="field"><div class="lbl">Objectif nutritionnel</div>
                 <select id="recipe-goal">
-                  <option value="equilibre">🥗 Équilibré</option>
-                  <option value="hyperproteine">💪 Hyperprotéiné</option>
-                  <option value="low_carb">🥑 Low carb</option>
-                  <option value="prise_de_masse">🏋️ Prise de masse</option>
-                  <option value="seche">🔥 Sèche</option>
+                  <option value="equilibre">Équilibré</option>
+                  <option value="hyperproteine">Hyperprotéiné</option>
+                  <option value="low_carb">Low carb</option>
+                  <option value="prise_de_masse">Prise de masse</option>
+                  <option value="seche">Sèche</option>
                 </select>
               </div>
               <div class="field"><div class="lbl">Calories cible</div>
                 <input type="number" id="recipe-kcal" placeholder="500" min="100" max="2000"/>
               </div>
             </div>
-            <button class="btn btn-p btn-full" id="btn-recipe" onclick="generateRecipe()">🤖 Générer une recette</button>
+            <button class="btn btn-p btn-full" id="btn-recipe" onclick="generateRecipe()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              Générer une recette
+            </button>
           </div>
           <div id="recipe-result" style="display:none;margin-top:14px"></div>
           <div class="err-box" id="recipe-err"></div>
@@ -2065,21 +2101,26 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
 
         <!-- FOOD JOURNAL AI -->
         <div class="card">
-          <div class="card-title">🧠 Journal alimentaire IA</div>
+          <div class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px;margin-bottom:2px"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v11m0 0H5a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2h-4m-5 0h5"/></svg>Journal alimentaire IA
+          </div>
           <div class="page-sub" style="margin-top:-8px;margin-bottom:14px">Décris ce que tu as mangé en langage naturel</div>
           <div class="food-journal-wrap">
             <!-- Meal type pills -->
             <div class="meal-type-strip" id="meal-type-strip">
-              <button class="meal-type-btn" data-type="petit_dej" onclick="selectMealType('petit_dej')">🌅 Petit-déj</button>
-              <button class="meal-type-btn" data-type="collation" onclick="selectMealType('collation')">🍎 Collation</button>
-              <button class="meal-type-btn active" data-type="midi" onclick="selectMealType('midi')">🌞 Midi</button>
-              <button class="meal-type-btn" data-type="soir" onclick="selectMealType('soir')">🌙 Soir</button>
+              <button class="meal-type-btn" data-type="petit_dej" onclick="selectMealType('petit_dej')">Petit-déj</button>
+              <button class="meal-type-btn" data-type="collation" onclick="selectMealType('collation')">Collation</button>
+              <button class="meal-type-btn active" data-type="midi" onclick="selectMealType('midi')">Déjeuner</button>
+              <button class="meal-type-btn" data-type="soir" onclick="selectMealType('soir')">Dîner</button>
             </div>
             <div class="meal-type-hint" id="meal-type-hint">Objectif: ~<span id="meal-cal-budget">600</span> kcal pour ce repas</div>
             <textarea id="food-journal-input" class="food-journal-textarea"
               placeholder="Ex: 3 œufs brouillés, du fromage, une tranche de pain complet…"></textarea>
-            <button class="btn btn-p btn-full" id="btn-analyze-food" onclick="analyzeFood()">🔍 Analyser ce repas</button>
-            <div id="food-analysis-loading" class="food-analysis-loading" style="display:none">⏳ Analyse en cours…</div>
+            <button class="btn btn-p btn-full" id="btn-analyze-food" onclick="analyzeFood()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              Analyser ce repas
+            </button>
+            <div id="food-analysis-loading" class="food-analysis-loading" style="display:none">Analyse en cours…</div>
             <div id="food-analysis-result" class="food-analysis-result">
               <!-- Quality score -->
               <div id="food-quality-badge" class="quality-badge-wrap good">
@@ -2114,7 +2155,10 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               <!-- Items -->
               <div style="font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px">Aliments détectés</div>
               <div class="food-items-list" id="food-items-list"></div>
-              <button class="btn btn-p btn-full" style="margin-top:6px;font-weight:800" onclick="saveFoodAnalysis()">✓ Enregistrer ce repas</button>
+              <button class="btn btn-p btn-full" style="margin-top:6px;font-weight:800" onclick="saveFoodAnalysis()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><polyline points="20 6 9 17 4 12"/></svg>
+                Enregistrer ce repas
+              </button>
             </div>
             <div class="err-box" id="food-analysis-err" style="margin-top:0"></div>
           </div>
@@ -2122,7 +2166,9 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
 
         <!-- 7-DAY NUTRITION CURVE -->
         <div class="card">
-          <div class="card-title">📈 Courbe nutritionnelle (7 jours)</div>
+          <div class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px;margin-bottom:2px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Courbe nutritionnelle (7 jours)
+          </div>
           <svg id="nutr-week-svg" class="nutr-chart-wrap" viewBox="0 0 340 180" preserveAspectRatio="xMidYMid meet">
             <text x="50%" y="90" text-anchor="middle" fill="rgba(255,255,255,.25)" font-size="12" font-family="inherit">Aucune donnée cette semaine</text>
           </svg>
@@ -2133,8 +2179,11 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           </div>
         </div>
 
+        <!-- AJOUTER UN REPAS MANUELLEMENT -->
         <div class="card">
-          <div class="card-title">Ajouter un repas</div>
+          <div class="card-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px;margin-bottom:2px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Ajouter un repas
+          </div>
           <div style="display:flex;flex-direction:column;gap:12px">
             <div class="field"><div class="lbl">Nom du repas</div>
               <input type="text" id="n-name" placeholder="Ex: Poulet riz légumes"/>
@@ -2145,14 +2194,16 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               <div class="field"><div class="lbl">Glucides (g)</div><input type="number" id="n-carb" placeholder="55" min="0"/></div>
               <div class="field"><div class="lbl">Lipides (g)</div><input type="number" id="n-fat" placeholder="12" min="0"/></div>
             </div>
-            <button class="btn btn-p btn-full" id="btn-meal" onclick="addMeal()">➕ Ajouter ce repas</button>
+            <button class="btn btn-p btn-full" id="btn-meal" onclick="addMeal()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Ajouter ce repas
+            </button>
           </div>
         </div>
 
-
         <div class="card">
           <div class="card-title">Repas du jour</div>
-          <div id="meals-list" class="empty"><span class="empty-ic">🍽️</span>Aucun repas aujourd'hui</div>
+          <div id="meals-list" class="empty"><span class="empty-ic">—</span>Aucun repas aujourd'hui</div>
         </div>
       </div>
 

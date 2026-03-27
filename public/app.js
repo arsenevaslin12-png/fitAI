@@ -1448,18 +1448,33 @@ async function loadMeals() {
     await renderNutritionProgress(totals);
 
     if (!data?.length) {
-      el.innerHTML = '<div class="empty"><span class="empty-ic">🍽️</span>Aucun repas aujourd\'hui</div>';
+      el.innerHTML = '<div class="empty"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;margin:0 auto 8px"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3v7"/></svg>Aucun repas aujourd\'hui</div>';
       return;
     }
 
-    el.innerHTML = data.map((meal) => `
-      <div class="meal-row">
-        <div class="meal-name">${escapeHtml(meal.name)}</div>
-        <div class="meal-info">P:${meal.protein || 0}g · G:${meal.carbs || 0}g · L:${meal.fat || 0}g</div>
-        <div class="meal-kcal">${meal.calories || 0} kcal</div>
-        <button class="btn btn-g btn-sm" onclick="deleteMeal('${meal.id}')">🗑️</button>
-      </div>
-    `).join("");
+    const MEAL_TYPE_LABELS = { petit_dej: "Petit-déj", collation: "Collation", midi: "Déjeuner", soir: "Dîner" };
+    el.innerHTML = data.map((meal) => {
+      const typeLabel = MEAL_TYPE_LABELS[meal.meal_type] || "";
+      const kcal = meal.calories || 0;
+      const prot = meal.protein || 0;
+      const carb = meal.carbs || 0;
+      const fat = meal.fat || 0;
+      return `
+      <div class="meal-card">
+        <div class="meal-card-top">
+          <div class="meal-card-name">${escapeHtml(meal.name)}${typeLabel ? ` <span class="meal-type-tag">${typeLabel}</span>` : ""}</div>
+          <div class="meal-card-kcal">${kcal} <span class="meal-card-kcal-unit">kcal</span></div>
+          <button class="meal-card-del" onclick="deleteMeal('${meal.id}')" title="Supprimer">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+          </button>
+        </div>
+        <div class="meal-card-macros">
+          <span class="meal-macro-pill" style="border-color:rgba(74,222,128,.3);color:#4ade80">${prot}g prot.</span>
+          <span class="meal-macro-pill" style="border-color:rgba(251,191,36,.3);color:#fbbf24">${carb}g gluc.</span>
+          <span class="meal-macro-pill" style="border-color:rgba(248,113,113,.3);color:#f87171">${fat}g lip.</span>
+        </div>
+      </div>`;
+    }).join("");
   } catch (e) {
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
@@ -1507,13 +1522,35 @@ async function renderNutritionProgress(totals) {
     if (calFill) calFill.style.width = `${Math.round(pct * 100)}%`;
     if (calText) calText.textContent = `${totals.kcal} / ${targetCalories} kcal`;
 
-    // Macro bars
+    // Macro bars + targets labels
     const barProt = document.getElementById("bar-prot");
     const barCarb = document.getElementById("bar-carb");
     const barFat = document.getElementById("bar-fat");
     if (barProt) barProt.style.width = `${Math.min(100, Math.round((totals.protein / targetProt) * 100))}%`;
     if (barCarb) barCarb.style.width = `${Math.min(100, Math.round((totals.carbs / targetCarb) * 100))}%`;
     if (barFat) barFat.style.width = `${Math.min(100, Math.round((totals.fat / targetFat) * 100))}%`;
+
+    const tProt = document.getElementById("macro-target-prot");
+    const tCarb = document.getElementById("macro-target-carb");
+    const tFat = document.getElementById("macro-target-fat");
+    if (tProt) tProt.textContent = `/ ${targetProt}g`;
+    if (tCarb) tCarb.textContent = `/ ${targetCarb}g`;
+    if (tFat) tFat.textContent = `/ ${targetFat}g`;
+
+    // Remaining calories indicator
+    const remaining = targetCalories - totals.kcal;
+    const remainingRow = document.getElementById("nutr-remaining-row");
+    const remainingVal = document.getElementById("nutr-remaining-kcal");
+    if (remainingRow && remainingVal) {
+      remainingRow.style.display = "";
+      if (remaining > 0) {
+        remainingVal.textContent = `${remaining} kcal`;
+        remainingVal.style.color = "#4ade80";
+      } else {
+        remainingVal.textContent = `+${Math.abs(remaining)} kcal dépassé`;
+        remainingVal.style.color = "#f87171";
+      }
+    }
   } catch (e) {
     console.error("[Nutrition] renderProgress error:", e);
   }
