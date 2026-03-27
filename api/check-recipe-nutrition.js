@@ -1,49 +1,33 @@
 "use strict";
 
-// api/check-recipe-nutrition.js
-// Vérifie la valeur nutritionnelle d'une recette partagée dans la communauté.
-// Retourne un score 0-100 + analyse Gemini + macros estimés.
-
-const { callGeminiText, normalizeGeminiError } = require("./_gemini");
+const { callGeminiText } = require("./_gemini");
 const { assertEnv } = require("./_env");
+const { setCors, sendJson, parseBody } = require("./_coach-core");
 
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-}
-
-function sendJson(res, status, payload) {
-  if (res.writableEnded) return;
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(payload));
-}
-
-function parseBody(req) {
-  if (!req.body) return {};
-  if (typeof req.body === "string") {
-    try { return JSON.parse(req.body); } catch { return {}; }
-  }
-  return req.body;
-}
+const FALLBACK = {
+  score: 60, label: "Moyen",
+  kcal: 400, protein: 25, carbs: 45, fat: 15, fiber: 4,
+  analysis: "Analyse nutritionnelle indisponible momentanément.",
+  strengths: ["Recette faite maison"],
+  improvements: ["Ajouter plus de légumes verts"],
+  _fallback: true
+};
 
 module.exports = async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") { res.statusCode = 204; res.end(); return; }
   if (req.method !== "POST") { sendJson(res, 405, { error: "method_not_allowed" }); return; }
 
-  // Auth check
   const authHeader = req.headers["authorization"] || "";
   if (!authHeader.startsWith("Bearer ")) {
     sendJson(res, 401, { error: "unauthorized" }); return;
   }
 
-  const GEMINI_API_KEY = assertEnv("GEMINI_API_KEY");
+  if (assertEnv(res)) return;
+  const { GEMINI_API_KEY } = process.env;
+
   const body = parseBody(req);
   const { name, ingredients, servings = 1 } = body;
-
   if (!name || !ingredients) {
     sendJson(res, 400, { error: "name and ingredients required" }); return;
   }
@@ -83,32 +67,13 @@ Critères du score: densité nutritionnelle, équilibre protéines/glucides/lipi
     let result;
     try {
       result = typeof raw === "string" ? JSON.parse(raw) : raw;
-      // Validate required fields
       if (!result || typeof result.score !== "number") throw new Error("invalid");
     } catch {
-      result = {
-        score: 60, label: "Moyen",
-        kcal: 400, protein: 25, carbs: 45, fat: 15, fiber: 4,
-        analysis: "Recette partagée. Analyse indisponible temporairement.",
-        strengths: ["Recette maison"],
-        improvements: ["Ajouter des légumes pour enrichir la valeur nutritive"]
-      };
+      result = { ...FALLBACK, analysis: "Recette partagée. Analyse indisponible temporairement.", strengths: ["Recette maison"] };
     }
 
     sendJson(res, 200, { ok: true, data: result });
-  } catch (err) {
-    const detail = normalizeGeminiError(err);
-    // Return a graceful fallback instead of an error
-    sendJson(res, 200, {
-      ok: true,
-      data: {
-        score: 60, label: "Moyen",
-        kcal: 400, protein: 25, carbs: 45, fat: 15, fiber: 4,
-        analysis: "Analyse nutritionnelle indisponible momentanément.",
-        strengths: ["Recette faite maison"],
-        improvements: ["Ajouter plus de légumes verts"],
-        _fallback: true
-      }
-    });
+  } catch {
+    sendJson(res, 200, { ok: true, data: FALLBACK });
   }
 };

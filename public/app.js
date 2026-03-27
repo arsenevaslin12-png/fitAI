@@ -313,6 +313,7 @@ function loadScript(src) {
 
 function showAuth() {
   _appReady = false;
+  _nutrTargetsCache = null;
   const auth = document.getElementById("auth");
   const app = document.getElementById("app");
   if (auth) auth.style.display = "flex";
@@ -1480,11 +1481,20 @@ async function loadMeals() {
   }
 }
 
+let _nutrTargetsCache = null;
+
+async function _fetchNutritionTargets() {
+  if (_nutrTargetsCache) return _nutrTargetsCache;
+  const { data } = await SB.from("nutrition_targets").select("calories,protein,carbs,fats").eq("user_id", U.id).maybeSingle();
+  _nutrTargetsCache = data || { calories: 2200, protein: 140, carbs: 260, fats: 70 };
+  return _nutrTargetsCache;
+}
+
 async function loadNutritionTargets() {
   if (!U) return;
   try {
-    const { data } = await SB.from("nutrition_targets").select("calories,protein,carbs,fats").eq("user_id", U.id).maybeSingle();
-    const target = data || { calories: 2200, protein: 140, carbs: 260, fats: 70 };
+    _nutrTargetsCache = null; // force refresh when explicitly called
+    const target = await _fetchNutritionTargets();
     const targetKcal = document.getElementById("target-kcal");
     const targetProt = document.getElementById("target-prot");
     const targetCarb = document.getElementById("target-carb");
@@ -1501,11 +1511,11 @@ async function loadNutritionTargets() {
 async function renderNutritionProgress(totals) {
   if (!U) return;
   try {
-    const { data } = await SB.from("nutrition_targets").select("calories,protein,carbs,fats").eq("user_id", U.id).maybeSingle();
-    const targetCalories = data?.calories || 2200;
-    const targetProt = data?.protein || 140;
-    const targetCarb = data?.carbs || 260;
-    const targetFat = data?.fats || 70;
+    const t = await _fetchNutritionTargets();
+    const targetCalories = t.calories || 2200;
+    const targetProt = t.protein || 140;
+    const targetCarb = t.carbs || 260;
+    const targetFat = t.fats || 70;
 
     // Calorie ring (SVG arc — circumference of r=46 is ≈ 289)
     const pct = Math.max(0, Math.min(1, totals.kcal / targetCalories));
@@ -1811,6 +1821,7 @@ async function loadFeed() {
       query = query.in("user_id", friendIds).neq("visibility", "private");
     }
 
+    const { data: allData, error } = await query;
     if (error) throw error;
     // Client-side filter for recipes tab
     const data = FEED_FILTER === "recipes"
@@ -1869,7 +1880,6 @@ async function loadFeed() {
           const score = typeof n.score === "number" ? n.score : null;
           const scoreBadgeClass = score === null ? "neutral" : score >= 75 ? "good" : score >= 50 ? "medium" : "low";
           const scoreLabel = score === null ? "N/A" : `${score}/100`;
-          const nutritionLabel = n.label || (score === null ? "" : score >= 75 ? "Excellent" : score >= 50 ? "Moyen" : "Pauvre");
           const macrosHtml = (n.kcal || n.protein || n.carbs || n.fat) ? `
             <div class="recipe-macros-row">
               ${n.kcal ? `<span class="recipe-macro-pill">${n.kcal} kcal</span>` : ""}
