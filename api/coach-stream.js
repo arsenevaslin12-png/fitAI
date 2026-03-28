@@ -107,9 +107,14 @@ module.exports = async function handler(req, res) {
     if (/stagne|plateau|progresse plus/.test(msgLower)) extra = `\n→ Stagnation: analyse cause (volume? charge? récup? nutrition?) et propose ajustement concret.`;
 
     const histBlk = formatHistory(history);
+    const isBodyweight = !p.equipment || !/halt[eè]re|barre|salle|machine|kettlebell|banc/i.test(p.equipment);
+    const equipRule = isBodyweight
+      ? "\n⚠️ ÉQUIPEMENT: POIDS DU CORPS UNIQUEMENT — n'utilise pas d'haltères, barres, machines ou kettlebell dans tes suggestions."
+      : "";
+
     const prompt = `Tu es FitAI Coach, expert fitness et nutrition. Français, direct, humain.
 
-PROFIL: ${p.display_name ? p.display_name + " | " : ""}${p.goal} (${goalDesc}) | ${p.level} | ${equipLabel}${p.constraints ? " | ⚠️ " + p.constraints : ""}
+PROFIL: ${p.display_name ? p.display_name + " | " : ""}${p.goal} (${goalDesc}) | ${p.level} | ${equipLabel}${p.constraints ? " | ⚠️ " + p.constraints : ""}${equipRule}
 Humeur: ${p.mood || "?"} ${moodRule}${extra}
 Stats: streak ${streak}j | ${totalWorkouts} séances${recentWorkouts.length ? " | " + recentWorkouts.join(", ") : ""}${lastScanScore ? " | scan " + lastScanScore + "/100" : ""}${todayKcal > 0 ? " | " + todayKcal + "kcal/" + todayProtein + "g prot" : ""}
 ${histBlk ? "Historique:\n" + histBlk + "\n" : ""}

@@ -5042,43 +5042,71 @@ function _muscleSVG(muscle) {
 // ── Animated stick figure for exercise movements ──────────────────────────────
 function _stickFigureSVG(name) {
   const nm = (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const st = 'stroke="rgba(255,255,255,.88)" stroke-width="2.2" stroke-linecap="round" fill="none"';
-  const FLR = '<line x1="4" y1="76" x2="76" y2="76" stroke="rgba(255,255,255,.12)" stroke-width="1"/>';
-  const open  = `<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;overflow:visible">`;
-  const close = `</svg>`;
+  // Near (front) limb — brighter, thicker
+  const st  = 'stroke="rgba(255,255,255,.92)" stroke-width="2.6" stroke-linecap="round" fill="none"';
+  // Far (back) limb — dimmer, thinner
+  const stF = 'stroke="rgba(255,255,255,.38)" stroke-width="1.9" stroke-linecap="round" fill="none"';
+
+  // Ground shadow ellipse + floor line
+  const FLR = '<ellipse cx="40" cy="77" rx="20" ry="3" fill="rgba(0,0,0,.28)"/>' +
+    '<line x1="6" y1="76" x2="74" y2="76" stroke="rgba(255,255,255,.1)" stroke-width="1"/>';
+
+  // SVG defs: drop shadow filter + head radial gradient
+  const DEFS = `<defs>
+    <filter id="sf" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="1" dy="3" stdDeviation="2.5" flood-color="rgba(0,0,40,.6)"/>
+    </filter>
+    <radialGradient id="hg" cx="36%" cy="34%" r="58%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="65%" stop-color="#c8d4ff" stop-opacity=".92"/>
+      <stop offset="100%" stop-color="#6070b0" stop-opacity=".85"/>
+    </radialGradient>
+  </defs>`;
+
+  const open  = `<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;overflow:visible">${DEFS}<g filter="url(#sf)">`;
+  const close = `</g></svg>`;
 
   // ── Equipment SVG shapes ───────────────────────────────────────────────────
-  // DB(x,y): dumbbell icon centred at (x,y)
   const DB = (x=62,y=72,op=".5") =>
     `<g opacity="${op}">` +
     `<rect x="${x-5}" y="${y-1.5}" width="10" height="3" rx="1" fill="rgba(255,255,255,.7)"/>` +
     `<rect x="${x-7}" y="${y-3.5}" width="2.5" height="7" rx=".8" fill="white"/>` +
     `<rect x="${x+4.5}" y="${y-3.5}" width="2.5" height="7" rx=".8" fill="white"/>` +
     `</g>`;
-  // BB(x,y): barbell icon centred at (x,y), wider
   const BB = (x=40,y=72,op=".5") =>
     `<g opacity="${op}">` +
-    `<line x1="${x-16}" y1="${y}" x2="${x+16}" y2="${y}" stroke="rgba(255,255,255,.7)" stroke-width="2.2" stroke-linecap="round"/>` +
+    `<line x1="${x-16}" y1="${y}" x2="${x+16}" y2="${y}" stroke="rgba(255,255,255,.7)" stroke-width="2.4" stroke-linecap="round"/>` +
     `<rect x="${x-19}" y="${y-4}" width="3" height="8" rx="1" fill="rgba(255,255,255,.8)"/>` +
     `<rect x="${x-16}" y="${y-5.5}" width="3" height="11" rx="1" fill="rgba(255,255,255,.9)"/>` +
     `<rect x="${x+13}" y="${y-5.5}" width="3" height="11" rx="1" fill="rgba(255,255,255,.9)"/>` +
     `<rect x="${x+16}" y="${y-4}" width="3" height="8" rx="1" fill="rgba(255,255,255,.8)"/>` +
     `</g>`;
+
   // MUSCLE(cx,cy,col): pulsing muscle group indicator dot
   const MUSCLE = (cx,cy,col="#f97316") =>
-    `<circle cx="${cx}" cy="${cy}" r="4" fill="${col}" opacity=".25" stroke="${col}" stroke-width="1.2">` +
-    `<animate attributeName="r" values="4;7;4" dur="1.8s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>` +
-    `<animate attributeName="opacity" values=".25;.05;.25" dur="1.8s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>` +
+    `<circle cx="${cx}" cy="${cy}" r="4.5" fill="${col}" opacity=".22" stroke="${col}" stroke-width="1">` +
+    `<animate attributeName="r" values="4.5;8;4.5" dur="1.8s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>` +
+    `<animate attributeName="opacity" values=".22;.04;.22" dur="1.8s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>` +
     `</circle>`;
-  // ARC(d,col): motion path hint
+
   const ARC = (d,col="rgba(99,102,241,.28)") =>
     `<path d="${d}" stroke="${col}" stroke-width="1.5" fill="none" stroke-dasharray="3,2.5" stroke-linecap="round"/>`;
-  // ARROW_UP / ARROW_DOWN: lightweight direction hint
-  const ARRUP = (x,y) => `<g stroke="rgba(255,255,255,.3)" stroke-width="1.2" stroke-linecap="round"><line x1="${x}" y1="${y+6}" x2="${x}" y2="${y}"/><line x1="${x-3}" y1="${y+3}" x2="${x}" y2="${y}"/><line x1="${x+3}" y1="${y+3}" x2="${x}" y2="${y}"/></g>`;
-  const ARRDN = (x,y) => `<g stroke="rgba(255,255,255,.3)" stroke-width="1.2" stroke-linecap="round"><line x1="${x}" y1="${y}" x2="${x}" y2="${y+6}"/><line x1="${x-3}" y1="${y+3}" x2="${x}" y2="${y+6}"/><line x1="${x+3}" y1="${y+3}" x2="${x}" y2="${y+6}"/></g>`;
+  const ARRUP = (x,y) => `<g stroke="rgba(255,255,255,.32)" stroke-width="1.3" stroke-linecap="round"><line x1="${x}" y1="${y+7}" x2="${x}" y2="${y}"/><line x1="${x-3.5}" y1="${y+3.5}" x2="${x}" y2="${y}"/><line x1="${x+3.5}" y1="${y+3.5}" x2="${x}" y2="${y}"/></g>`;
+  const ARRDN = (x,y) => `<g stroke="rgba(255,255,255,.32)" stroke-width="1.3" stroke-linecap="round"><line x1="${x}" y1="${y}" x2="${x}" y2="${y+7}"/><line x1="${x-3.5}" y1="${y+3.5}" x2="${x}" y2="${y+7}"/><line x1="${x+3.5}" y1="${y+3.5}" x2="${x}" y2="${y+7}"/></g>`;
+
+  // ── 3D head: filled gradient circle + specular highlight ──
+  const HEAD = (cx, cy, r=7) =>
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1"/>` +
+    `<circle cx="${cx-r*.3}" cy="${cy-r*.28}" r="${r*.18}" fill="rgba(255,255,255,.42)"/>`;
+
+  // ── Joint dot (shoulder, hip, elbow, knee) ────────────────
+  const J = (cx, cy, r=2.2) =>
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(200,215,255,.62)" stroke="rgba(255,255,255,.22)" stroke-width=".7"/>`;
 
   // ── 2-frame helpers (A→B→A) ───────────────────────────────
   const KS2 = 'calcMode="spline" keySplines="0.42 0 0.58 1; 0.42 0 0.58 1" repeatCount="indefinite"';
+
+  // L: near-limb 2-frame line
   const L = (x1,y1,x2,y2, x1b,y1b,x2b,y2b, d="1.5s") => {
     let el = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${st}>`;
     if(x1!==x1b) el+=`<animate attributeName="x1" values="${x1};${x1b};${x1}" dur="${d}" ${KS2}/>`;
@@ -5087,14 +5115,36 @@ function _stickFigureSVG(name) {
     if(y2!==y2b) el+=`<animate attributeName="y2" values="${y2};${y2b};${y2}" dur="${d}" ${KS2}/>`;
     return el + `</line>`;
   };
+  // LF: same but far-limb style
+  const LF = (x1,y1,x2,y2, x1b,y1b,x2b,y2b, d="1.5s") => {
+    let el = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${stF}>`;
+    if(x1!==x1b) el+=`<animate attributeName="x1" values="${x1};${x1b};${x1}" dur="${d}" ${KS2}/>`;
+    if(y1!==y1b) el+=`<animate attributeName="y1" values="${y1};${y1b};${y1}" dur="${d}" ${KS2}/>`;
+    if(x2!==x2b) el+=`<animate attributeName="x2" values="${x2};${x2b};${x2}" dur="${d}" ${KS2}/>`;
+    if(y2!==y2b) el+=`<animate attributeName="y2" values="${y2};${y2b};${y2}" dur="${d}" ${KS2}/>`;
+    return el + `</line>`;
+  };
+
+  // C: animated circle (head/joint) — now uses HEAD for r>=6
   const C = (cx,cy,r,cyB,d="1.5s") => {
+    if (r >= 6) {
+      // 3D head with vertical animation
+      const KS2h = 'calcMode="spline" keySplines="0.42 0 0.58 1; 0.42 0 0.58 1" repeatCount="indefinite"';
+      const headAnim = cy !== cyB
+        ? `<animate attributeName="cy" values="${cy};${cyB};${cy}" dur="${d}" ${KS2h}/>`
+        : "";
+      const hilAnim = cy !== cyB
+        ? `<animate attributeName="cy" values="${cy-r*.28};${cyB-r*.28};${cy-r*.28}" dur="${d}" ${KS2h}/>`
+        : "";
+      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1">${headAnim}</circle>` +
+        `<circle cx="${cx-r*.3}" cy="${cy-r*.28}" r="${r*.18}" fill="rgba(255,255,255,.42)">${hilAnim}</circle>`;
+    }
     const anim = cy!==cyB ? `<animate attributeName="cy" values="${cy};${cyB};${cy}" dur="${d}" ${KS2}/>` : "";
-    return `<circle cx="${cx}" cy="${cy}" r="${r}" ${st}>${anim}</circle>`;
+    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(200,215,255,.58)" stroke="rgba(255,255,255,.5)" stroke-width=".9">${anim}</circle>`;
   };
 
   // ── N-frame helpers — smooth multi-keyframe SMIL ──────────
-  // LM: frames = [[x1,y1,x2,y2], ...], auto-loops back to frame[0]
-  const LM = (frames, d="1.6s") => {
+  const _LM_build = (frames, d, style) => {
     const N = frames.length;
     const loop = [...frames, frames[0]];
     const kt = loop.map((_,i) => (i/(loop.length-1)).toFixed(4)).join(";");
@@ -5106,9 +5156,14 @@ function _stickFigureSVG(name) {
       return `<animate attributeName="${attr}" values="${vals}" dur="${d}" ${SM}/>`;
     };
     const f0 = frames[0];
-    return `<line x1="${f0[0]}" y1="${f0[1]}" x2="${f0[2]}" y2="${f0[3]}" ${st}>${a("x1",0)}${a("y1",1)}${a("x2",2)}${a("y2",3)}</line>`;
+    return `<line x1="${f0[0]}" y1="${f0[1]}" x2="${f0[2]}" y2="${f0[3]}" ${style}>${a("x1",0)}${a("y1",1)}${a("x2",2)}${a("y2",3)}</line>`;
   };
-  // CM: cxs/cys = arrays of values for each keyframe
+  // LM: near-limb N-frame
+  const LM  = (frames, d="1.6s") => _LM_build(frames, d, st);
+  // LMF: far-limb N-frame (dimmer)
+  const LMF = (frames, d="1.6s") => _LM_build(frames, d, stF);
+
+  // CM: animated circle (joint/head) N-frame
   const CM = (cxs, cys, r, d="1.6s") => {
     const N = cxs.length;
     const cxL = [...cxs, cxs[0]], cyL = [...cys, cys[0]];
@@ -5117,66 +5172,58 @@ function _stickFigureSVG(name) {
     const SM = `calcMode="spline" keyTimes="${kt}" keySplines="${ks}" repeatCount="indefinite"`;
     const acx = cxs.every(v=>v===cxs[0]) ? "" : `<animate attributeName="cx" values="${cxL.join(";")}" dur="${d}" ${SM}/>`;
     const acy = cys.every(v=>v===cys[0]) ? "" : `<animate attributeName="cy" values="${cyL.join(";")}" dur="${d}" ${SM}/>`;
-    return `<circle cx="${cxs[0]}" cy="${cys[0]}" r="${r}" ${st}>${acx}${acy}</circle>`;
+    if (r >= 6) {
+      const hilX = cxs[0] - r*.3, hilY0 = cys[0] - r*.28;
+      const acxH = cxs.every(v=>v===cxs[0]) ? "" : `<animate attributeName="cx" values="${cxL.map(v=>v-r*.3).join(";")}" dur="${d}" ${SM}/>`;
+      const acyH = cys.every(v=>v===cys[0]) ? "" : `<animate attributeName="cy" values="${cyL.map(v=>v-r*.28).join(";")}" dur="${d}" ${SM}/>`;
+      return `<circle cx="${cxs[0]}" cy="${cys[0]}" r="${r}" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1">${acx}${acy}</circle>` +
+        `<circle cx="${hilX}" cy="${hilY0}" r="${r*.18}" fill="rgba(255,255,255,.42)">${acxH}${acyH}</circle>`;
+    }
+    return `<circle cx="${cxs[0]}" cy="${cys[0]}" r="${r}" fill="rgba(200,215,255,.58)" stroke="rgba(255,255,255,.5)" stroke-width=".9">${acx}${acy}</circle>`;
   };
 
   // ── Crossfade (2 full-body poses, CSS opacity) ─────────────
   const XF = (d="1.6s") => `<style>.sfa{animation:sfa ${d} ease-in-out infinite}.sfb{animation:sfb ${d} ease-in-out infinite}@keyframes sfa{0%,35%{opacity:1}48%,85%{opacity:0}100%{opacity:1}}@keyframes sfb{0%,35%{opacity:0}48%,85%{opacity:1}100%{opacity:0}}</style>`;
 
-  // ── Push-up — side view: body descends 4 frames, clearly horizontal ──────
-  // Floor at y=66. Hand fixed at (22,66). Feet fixed at (64,66).
-  // Shoulder: (22, sY) where sY goes 40→48→55→62 (arms bending)
-  // Head: left of shoulder, neck at (12, sY-2) head centre (8, sY-8)
-  // Body: from (22,sY) to (58,sY) — horizontal body
-  // Upper arm: (22,sY) to (22,66) — arm straight down to floor
-  // Hip: (58,sY) — right side of body
-  // Leg: (58,sY) to (64,66) — diagonal to feet on floor
+  // ── Push-up — side view, 3D near/far arms ────────────────────────────────
   if (/pompe|push.?up|pike.?push/.test(nm)) {
     const PU_KT = 'keyTimes="0;0.35;0.65;1;1"';
     const PU_KSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.6s"';
     const puAnim = (attr, vals) => `<animate attributeName="${attr}" values="${vals}" ${PU_KT} ${PU_KSP}/>`;
-    // shoulder Y: 40(up)→51→59→64(low)→40
     const sYv = "40;51;59;64;40";
-    // head: slightly left and above shoulder
     const headCY = "32;43;51;56;32";
     const floor = `<line x1="4" y1="66" x2="76" y2="66" stroke="rgba(255,255,255,.18)" stroke-width="1.2"/>`;
-    // Fixed hand dots on floor
     const handL = `<circle cx="22" cy="66" r="3" fill="rgba(255,255,255,.5)"/>`;
-    const handR = `<circle cx="46" cy="66" r="3" fill="rgba(255,255,255,.5)"/>`;
-    // Body (shoulder to hip, horizontal)
+    const handR = `<circle cx="46" cy="66" r="2.2" fill="rgba(255,255,255,.28)"/>`;
     const body = `<line x1="22" y1="40" x2="58" y2="40" ${st}>${puAnim("y1",sYv)}${puAnim("y2",sYv)}</line>`;
-    // Head
-    const head = `<circle cx="10" cy="32" r="6" ${st}>${puAnim("cy",headCY)}</circle>`;
-    // Neck: short line from head to shoulder
+    const head = `<circle cx="10" cy="32" r="6" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1">${puAnim("cy",headCY)}</circle>` +
+      `<circle cx="8" cy="30" r="1.1" fill="rgba(255,255,255,.42)">${puAnim("cy","28;39;47;52;28")}</circle>`;
     const neck = `<line x1="14" y1="34" x2="22" y2="40" ${st}>${puAnim("y1","26;37;45;50;26")}${puAnim("y2",sYv)}</line>`;
-    // Left arm: shoulder down to left hand (22,66)
-    const armL = `<line x1="22" y1="40" x2="22" y2="66" ${st}>${puAnim("y1",sYv)}</line>`;
-    // Right arm: shoulder+24px right, down to right hand (46,66)
-    const armR = `<line x1="46" y1="40" x2="46" y2="66" ${st}>${puAnim("y1",sYv)}</line>`;
-    // Leg: hip (58,sY) down-right to feet (64,66)
+    // Far arm (back, dimmer)
+    const armFar = `<line x1="46" y1="40" x2="46" y2="66" ${stF}>${puAnim("y1",sYv)}</line>`;
+    // Near arm (front, bright)
+    const armNear = `<line x1="22" y1="40" x2="22" y2="66" ${st}>${puAnim("y1",sYv)}</line>`;
     const leg  = `<line x1="58" y1="40" x2="64" y2="66" ${st}>${puAnim("y1",sYv)}</line>`;
-    // Arrows showing up-down motion
     const arrows = ARRUP(70,38) + ARRDN(70,50);
-    // Muscle pulse: chest/pecs
     const mus = MUSCLE(34,52,"#60a5fa");
-    return open + floor + mus + head + neck + body + armL + armR + leg + handL + handR + arrows + close;
+    return open + floor + mus + armFar + handR + head + neck + body + armNear + leg + handL + arrows + close;
   }
 
-  // ── Squat — 4 frames: stand → quarter → parallel → deep ──
+  // ── Squat — 4 frames: stand → quarter → parallel → deep (3D legs) ──
   if (/squat/.test(nm)) {
-    // Barbell across shoulders (static — shoulders move but bar stays relative)
     const sqBar = `<line x1="22" y1="26" x2="58" y2="26" stroke="rgba(255,255,255,.55)" stroke-width="3" stroke-linecap="round"/>` +
       `<circle cx="18" cy="26" r="4" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.1)" stroke-width="1.5"/>` +
       `<circle cx="62" cy="26" r="4" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.1)" stroke-width="1.5"/>`;
     return open + FLR +
-      MUSCLE(40,52,"#f97316") + // quads
+      MUSCLE(40,52,"#f97316") +
       CM([40,40,40,40],[10,16,22,28],7,"1.8s") +
       sqBar +
       LM([[40,17,40,42],[40,23,40,44],[40,29,40,46],[40,34,40,50]],"1.8s") +
-      LM([[40,28,26,22],[40,33,22,30],[40,37,18,40],[40,41,16,46]],"1.8s") +
+      LMF([[40,28,26,22],[40,33,22,30],[40,37,18,40],[40,41,16,46]],"1.8s") +
       LM([[40,28,54,22],[40,33,58,30],[40,37,62,40],[40,41,64,46]],"1.8s") +
-      LM([[40,42,34,76],[40,44,28,76],[40,46,24,76],[40,50,22,72]],"1.8s") +
+      LMF([[40,42,34,76],[40,44,28,76],[40,46,24,76],[40,50,22,72]],"1.8s") +
       LM([[40,42,46,76],[40,44,52,76],[40,46,56,76],[40,50,58,72]],"1.8s") +
+      J(40,42) + J(40,50) +
       ARRDN(40,6) +
       close;
   }
@@ -5195,61 +5242,63 @@ function _stickFigureSVG(name) {
       close;
   }
 
-  // ── Tractions — 4 frames: body rises in 3 steps ──────────
+  // ── Tractions — 4 frames: body rises in 3 steps (3D arms) ──
   if (/traction|pull.?up|chin.?up/.test(nm)) {
     return open +
       `<line x1="8" y1="8" x2="72" y2="8" stroke="rgba(255,255,255,.45)" stroke-width="3" stroke-linecap="round"/>` +
-      // Hand grips on bar (fixed)
-      `<circle cx="28" cy="8" r="3.5" fill="rgba(255,255,255,.55)"/>` +
+      `<circle cx="28" cy="8" r="3.5" fill="rgba(255,255,255,.28)"/>` +
       `<circle cx="52" cy="8" r="3.5" fill="rgba(255,255,255,.55)"/>` +
-      MUSCLE(40,42,"#818cf8") + // lats
+      MUSCLE(40,42,"#818cf8") +
       ARRUP(40,2) +
       CM([40,40,40,40],[36,28,20,16],7,"1.4s") +
       LM([[40,43,40,66],[40,35,40,58],[40,27,40,50],[40,23,40,46]],"1.4s") +
-      LM([[28,8,28,30],[28,8,28,22],[28,8,28,14],[28,8,28,10]],"1.4s") +
+      LMF([[28,8,28,30],[28,8,28,22],[28,8,28,14],[28,8,28,10]],"1.4s") +
       LM([[52,8,52,30],[52,8,52,22],[52,8,52,14],[52,8,52,10]],"1.4s") +
-      LM([[40,66,28,76],[40,58,28,70],[40,50,30,64],[40,46,32,58]],"1.4s") +
+      LMF([[40,66,28,76],[40,58,28,70],[40,50,30,64],[40,46,32,58]],"1.4s") +
       LM([[40,66,52,76],[40,58,52,70],[40,50,50,64],[40,46,48,58]],"1.4s") +
+      J(40,43) +
       close;
   }
 
-  // ── Fentes — 4 frames: neutral → L fwd → neutral → R fwd ─
+  // ── Fentes — 4 frames: neutral → L fwd → neutral → R fwd (3D legs) ─
   if (/fente|lunge/.test(nm)) {
     return open + FLR +
-      C(40,12,7,12) +
+      MUSCLE(40,52,"#f97316") +
+      CM([40,40,40,40],[12,12,12,12],7,"1.8s") +
       L(40,19,40,42, 40,19,40,42) +
-      LM([[40,30,24,36],[40,30,28,32],[40,30,56,36],[40,30,52,32]],"1.8s") +
+      LMF([[40,30,24,36],[40,30,28,32],[40,30,56,36],[40,30,52,32]],"1.8s") +
       LM([[40,30,56,36],[40,30,52,32],[40,30,24,36],[40,30,28,32]],"1.8s") +
-      LM([[40,42,22,66],[40,42,28,62],[40,42,58,56],[40,42,52,58]],"1.8s") +
-      LM([[22,66,16,76],[28,62,22,72],[58,56,64,76],[52,58,56,70]],"1.8s") +
+      LMF([[40,42,22,66],[40,42,28,62],[40,42,58,56],[40,42,52,58]],"1.8s") +
+      LMF([[22,66,16,76],[28,62,22,72],[58,56,64,76],[52,58,56,70]],"1.8s") +
       LM([[40,42,58,56],[40,42,52,58],[40,42,22,66],[40,42,28,62]],"1.8s") +
       LM([[58,56,64,76],[52,58,56,70],[22,66,16,76],[28,62,22,72]],"1.8s") +
+      J(40,42) +
       close;
   }
 
-  // ── Hip thrust — 4 frames: flat → quarter → half → top ───
+  // ── Hip thrust — 4 frames: flat → quarter → half → top (3D legs) ──
   if (/hip.?thrust|thrust/.test(nm)) {
     const htKT = 'keyTimes="0;0.33;0.67;1;1"';
     const htKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.4s"';
-    // Barbell across hips, animates upward with body
     const htBar = `<line x1="22" y1="50" x2="58" y2="50" stroke="rgba(255,255,255,.65)" stroke-width="2.5" stroke-linecap="round">` +
       `<animate attributeName="y1" values="50;44;38;34;50" ${htKT} ${htKSP}/>` +
       `<animate attributeName="y2" values="50;44;38;34;50" ${htKT} ${htKSP}/>` + `</line>`;
-    const htPlL = `<circle cx="19" cy="50" r="5" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.08)" stroke-width="1.5">` +
+    const htPlL = `<circle cx="19" cy="50" r="5" stroke="rgba(255,255,255,.3)" fill="rgba(255,255,255,.05)" stroke-width="1.5">` +
       `<animate attributeName="cy" values="50;44;38;34;50" ${htKT} ${htKSP}/>` + `</circle>`;
     const htPlR = `<circle cx="61" cy="50" r="5" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.08)" stroke-width="1.5">` +
       `<animate attributeName="cy" values="50;44;38;34;50" ${htKT} ${htKSP}/>` + `</circle>`;
     return open + FLR +
-      MUSCLE(40,36,"#f97316") + // glutes
+      MUSCLE(40,36,"#f97316") +
       `<rect x="4" y="38" width="18" height="7" rx="2" stroke="rgba(255,255,255,.3)" stroke-width="1.5" fill="rgba(255,255,255,.05)"/>` +
       ARRUP(72,30) +
       htBar + htPlL + htPlR +
       CM([36,36,35,34],[44,38,33,28],6,"1.4s") +
       LM([[40,50,40,62],[38,44,38,56],[36,38,36,52],[34,34,34,50]],"1.4s") +
-      LM([[40,53,22,58],[38,46,20,52],[36,40,18,42],[34,38,16,38]],"1.4s") +
+      LMF([[40,53,22,58],[38,46,20,52],[36,40,18,42],[34,38,16,38]],"1.4s") +
       LM([[40,53,58,58],[38,46,56,50],[36,40,54,38],[34,38,52,34]],"1.4s") +
-      LM([[40,62,28,76],[38,56,28,76],[36,52,28,76],[34,50,28,76]],"1.4s") +
+      LMF([[40,62,28,76],[38,56,28,76],[36,52,28,76],[34,50,28,76]],"1.4s") +
       LM([[40,62,52,76],[38,56,52,76],[36,52,52,76],[34,50,52,76]],"1.4s") +
+      J(40,50) + J(34,50) +
       close;
   }
 
@@ -5257,12 +5306,12 @@ function _stickFigureSVG(name) {
   if (/crunch|abdo|sit.?up|hollow/.test(nm)) {
     return open +
       `<line x1="4" y1="66" x2="76" y2="66" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
-      MUSCLE(36,46,"#f97316") + // abs
+      MUSCLE(36,46,"#f97316") +
       CM([14,18,22,26],[54,48,42,38],6,"1.4s") +
       LM([[20,54,62,54],[26,48,60,55],[30,44,58,56],[34,41,58,57]],"1.4s") +
-      LM([[62,54,70,46],[60,55,66,47],[58,56,64,47],[58,57,64,47]],"1.4s") +
+      LMF([[62,54,70,46],[60,55,66,47],[58,56,64,47],[58,57,64,47]],"1.4s") +
       LM([[62,54,70,62],[60,55,66,63],[58,56,64,63],[58,57,64,63]],"1.4s") +
-      LM([[30,54,26,66],[34,52,28,64],[38,50,30,63],[40,54,28,64]],"1.4s") +
+      LMF([[30,54,26,66],[34,52,28,64],[38,50,30,63],[40,54,28,64]],"1.4s") +
       LM([[46,54,50,66],[48,54,52,66],[50,54,52,66],[50,57,52,66]],"1.4s") +
       close;
   }
@@ -5289,44 +5338,41 @@ function _stickFigureSVG(name) {
       close;
   }
 
-  // ── Dips — 4 frames: top → quarter → half → bottom ───────
+  // ── Dips — 4 frames: top → quarter → half → bottom (3D arms) ──
   if (/dips?/.test(nm)) {
     return open +
-      // Dip station vertical bars
-      `<line x1="16" y1="10" x2="16" y2="64" stroke="rgba(255,255,255,.28)" stroke-width="2.5" stroke-linecap="round"/>` +
+      `<line x1="16" y1="10" x2="16" y2="64" stroke="rgba(255,255,255,.18)" stroke-width="2.5" stroke-linecap="round"/>` +
       `<line x1="64" y1="10" x2="64" y2="64" stroke="rgba(255,255,255,.28)" stroke-width="2.5" stroke-linecap="round"/>` +
-      // Top crossbars of station
-      `<line x1="10" y1="14" x2="22" y2="14" stroke="rgba(255,255,255,.35)" stroke-width="2" stroke-linecap="round"/>` +
+      `<line x1="10" y1="14" x2="22" y2="14" stroke="rgba(255,255,255,.22)" stroke-width="2" stroke-linecap="round"/>` +
       `<line x1="58" y1="14" x2="70" y2="14" stroke="rgba(255,255,255,.35)" stroke-width="2" stroke-linecap="round"/>` +
-      MUSCLE(40,32,"#f59e0b") + // triceps/chest
+      MUSCLE(40,32,"#f59e0b") +
       ARRDN(40,72) +
       CM([40,40,40,40],[16,20,24,28],7,"1.3s") +
       LM([[40,23,40,46],[40,27,40,50],[40,31,40,54],[40,35,40,58]],"1.3s") +
-      LM([[40,32,16,32],[40,36,16,34],[40,40,16,36],[40,44,16,38]],"1.3s") +
+      LMF([[40,32,16,32],[40,36,16,34],[40,40,16,36],[40,44,16,38]],"1.3s") +
       LM([[40,32,64,32],[40,36,64,34],[40,40,64,36],[40,44,64,38]],"1.3s") +
-      LM([[40,46,34,62],[40,50,34,66],[40,54,34,70],[40,58,34,74]],"1.3s") +
+      LMF([[40,46,34,62],[40,50,34,66],[40,54,34,70],[40,58,34,74]],"1.3s") +
       LM([[40,46,46,62],[40,50,46,66],[40,54,46,70],[40,58,46,74]],"1.3s") +
+      J(40,32) +
       close;
   }
 
-  // ── Curl — 4 frames: arm down → quarter → half → full flex
+  // ── Curl — 4 frames: arm curls up (3D far arm static) ──────
   if (/curl/.test(nm)) {
-    // Animated dumbbell follows the curling arm (LM matching arm positions)
     const curlDB_KT = 'keyTimes="0;0.33;0.67;1;1"';
     const curlDB_KSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.4s"';
-    // hand goes: (24,46)→(28,36)→(30,24)→(26,20) loop
     const curlDBx = `<animate attributeName="cx" values="24;28;30;26;24" ${curlDB_KT} ${curlDB_KSP}/>`;
     const curlDBy = `<animate attributeName="cy" values="46;36;24;20;46" ${curlDB_KT} ${curlDB_KSP}/>`;
     const animDB = `<circle cx="24" cy="46" r="4.5" fill="rgba(255,255,255,.35)" stroke="rgba(255,255,255,.7)" stroke-width="1">${curlDBx}${curlDBy}</circle>`;
     return open + FLR +
-      MUSCLE(36,28,"#818cf8") + // biceps
+      MUSCLE(36,28,"#818cf8") +
       ARC("M 24,46 C 16,36 20,22 26,20") +
-      C(40,10,7,10) +
-      L(40,17,40,44, 40,17,40,44) +
-      L(40,28,56,22, 40,28,56,22) +
+      CM([40,40,40,40],[10,10,10,10],7,"1.4s") +
+      LF(40,17,40,44, 40,17,40,44) +
+      LF(40,28,56,22, 40,28,56,22) +
       LM([[40,28,24,46],[40,28,28,36],[40,28,30,24],[40,28,26,20]],"1.4s") +
       animDB +
-      DB(24,46) +
+      J(40,28) +
       L(40,44,32,68, 40,44,32,68) + L(40,44,48,68, 40,44,48,68) +
       L(32,68,28,76, 32,68,28,76) + L(48,68,52,76, 48,68,52,76) +
       close;
@@ -5413,18 +5459,19 @@ function _stickFigureSVG(name) {
       close;
   }
 
-  // ── Running — 4-frame SMIL stride cycle (smooth, no XF) ──
+  // ── Running — 4-frame stride cycle (3D near/far limbs) ──
   if (/course|run|sprint|jog/.test(nm)) {
     return open +
       `<line x1="6" y1="68" x2="74" y2="68" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
-      C(40,10,7,10) +
+      CM([40,40,40,40],[10,10,10,10],7,"0.7s") +
       `<line x1="40" y1="17" x2="40" y2="42" ${st}/>` +
-      LM([[40,28,26,18],[40,28,34,26],[40,28,54,38],[40,28,46,32]],"0.7s") +
+      LMF([[40,28,26,18],[40,28,34,26],[40,28,54,38],[40,28,46,32]],"0.7s") +
       LM([[40,28,54,38],[40,28,46,32],[40,28,26,18],[40,28,34,26]],"0.7s") +
-      LM([[40,42,30,58],[40,42,38,62],[40,42,50,56],[40,42,44,60]],"0.7s") +
-      LM([[30,58,22,68],[38,62,34,70],[50,56,58,68],[44,60,46,68]],"0.7s") +
+      LMF([[40,42,30,58],[40,42,38,62],[40,42,50,56],[40,42,44,60]],"0.7s") +
+      LMF([[30,58,22,68],[38,62,34,70],[50,56,58,68],[44,60,46,68]],"0.7s") +
       LM([[40,42,50,56],[40,42,44,60],[40,42,30,58],[40,42,38,62]],"0.7s") +
       LM([[50,56,58,68],[44,60,46,68],[30,58,22,68],[38,62,34,70]],"0.7s") +
+      J(40,42) +
       close;
   }
 
@@ -5464,12 +5511,81 @@ function _stickFigureSVG(name) {
       close;
   }
 
+  // ── Jumping jacks — 4 frames: closed → open → closed → open ─
+  if (/jumping.?jack|ecart|jumping/.test(nm)) {
+    return open + FLR +
+      CM([40,40,40,40],[10,10,10,10],7,"0.8s") +
+      L(40,17,40,44, 40,17,40,44) +
+      // Far arm (left, dimmer) swings up
+      LMF([[40,28,26,34],[40,28,16,18],[40,28,26,34],[40,28,16,18]],"0.8s") +
+      // Near arm (right, bright) swings up opposite phase
+      LM([[40,28,54,34],[40,28,64,18],[40,28,54,34],[40,28,64,18]],"0.8s") +
+      // Far leg (left, dimmer)
+      LMF([[40,44,32,68],[40,44,18,64],[40,44,32,68],[40,44,18,64]],"0.8s") +
+      // Near leg (right, bright)
+      LM([[40,44,48,68],[40,44,62,64],[40,44,48,68],[40,44,62,64]],"0.8s") +
+      J(40,44) +
+      close;
+  }
+
+  // ── Gainage latéral — side plank hold with hip pulse ──────
+  if (/gainage.lat|side.?plank|lateral/.test(nm)) {
+    const slKS = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite"';
+    const hipY = `<animate attributeName="cy" values="42;38;42" dur="2.2s" ${slKS}/>`;
+    const hipYl = `<animate attributeName="y1" values="42;38;42" dur="2.2s" ${slKS}/>`;
+    const hipYl2 = `<animate attributeName="y2" values="42;38;42" dur="2.2s" ${slKS}/>`;
+    return open +
+      `<line x1="4" y1="62" x2="76" y2="62" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
+      MUSCLE(50,38,"#f97316") +
+      // Head
+      `<circle cx="10" cy="36" r="6" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1"/>` +
+      `<circle cx="8.2" cy="34.3" r="1.1" fill="rgba(255,255,255,.42)"/>` +
+      // Neck + torso (horizontal)
+      `<line x1="16" y1="38" x2="68" y2="38" ${st}>` +
+      `<animate attributeName="y1" values="38;34;38" dur="2.2s" ${slKS}/>` +
+      `<animate attributeName="y2" values="38;34;38" dur="2.2s" ${slKS}/></line>` +
+      // Top arm straight up (near)
+      `<line x1="38" y1="38" x2="38" y2="22" ${st}>` +
+      `<animate attributeName="y1" values="38;34;38" dur="2.2s" ${slKS}/></line>` +
+      // Bottom arm (far, supporting)
+      `<line x1="16" y1="38" x2="16" y2="62" ${stF}>` +
+      `<animate attributeName="y1" values="38;34;38" dur="2.2s" ${slKS}/></line>` +
+      // Hip pulse circle
+      `<circle cx="68" cy="42" r="3" fill="rgba(200,215,255,.55)" stroke="rgba(255,255,255,.22)" stroke-width=".7">${hipY}</circle>` +
+      // Legs
+      `<line x1="68" y1="42" x2="68" y2="62" ${stF}>${hipYl}</line>` +
+      `<line x1="68" y1="42" x2="76" y2="62" ${st}>${hipYl}</line>` +
+      ARRUP(72,14) +
+      close;
+  }
+
+  // ── Étirement / Stretch — slow arm reach + torso tilt ─────
+  if (/etir|stretch|mobilit|yoga|souplesse/.test(nm)) {
+    return open + FLR +
+      CM([40,40,40,40],[10,10,10,8],7,"2.4s") +
+      // Torso tilts slightly
+      LM([[40,17,40,44],[40,17,40,44],[40,16,38,44],[40,17,40,44]],"2.4s") +
+      // Far arm: reaches across low
+      LMF([[40,28,24,34],[40,28,22,32],[40,28,20,30],[40,28,24,34]],"2.4s") +
+      // Near arm: sweeps up overhead
+      LM([[40,28,54,34],[40,28,60,22],[40,28,64,14],[40,28,54,34]],"2.4s") +
+      // Far leg: slight step back
+      LMF([[40,44,34,68],[40,44,32,68],[40,44,30,68],[40,44,34,68]],"2.4s") +
+      // Near leg: static
+      LM([[40,44,46,68],[40,44,46,68],[40,44,46,68],[40,44,46,68]],"2.4s") +
+      J(40,28) + J(40,44) +
+      ARC("M 54,34 C 62,22 66,14 64,14") +
+      close;
+  }
+
   // ── Generic — 4-frame arm swing ───────────────────────────
   return open + FLR +
-    C(40,10,7,10) + L(40,17,40,44, 40,17,40,44) +
-    LM([[40,28,24,22],[40,28,30,28],[40,28,56,36],[40,28,50,30]],"1.5s") +
+    CM([40,40,40,40],[10,10,10,10],7,"1.5s") +
+    L(40,17,40,44, 40,17,40,44) +
+    LMF([[40,28,24,22],[40,28,30,28],[40,28,56,36],[40,28,50,30]],"1.5s") +
     LM([[40,28,56,22],[40,28,50,30],[40,28,24,36],[40,28,30,28]],"1.5s") +
     L(40,44,32,68, 40,44,32,68) + L(40,44,48,68, 40,44,48,68) +
+    J(40,28) + J(40,44) +
     close;
 }
 

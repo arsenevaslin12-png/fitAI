@@ -252,6 +252,7 @@ ${message}
 
 RÈGLES ABSOLUES:
 - Respecte les blessures et contraintes.
+- ÉQUIPEMENT STRICT: ${/halt[eè]re|barre|salle|machine|kettlebell|banc/i.test(p.equipment || "") ? `Utilise UNIQUEMENT: ${p.equipment}. N'ajoute pas d'équipement non mentionné.` : "POIDS DU CORPS UNIQUEMENT — INTERDIT: haltères, barres, kettlebell, machines, câbles, poulies. Chaque exercice doit être réalisable sans aucun matériel."}
 - Adapte l'intensité si sommeil < 6h ou récupération <= 5/10 ou humeur "Épuisé"/"Fatigué".
 - Si humeur "Épuisé": séance très légère, récupération active, mobilité seulement.
 - Si humeur "Fatigué": intensité réduite (-30%), durée courte, pas de HIIT.
