@@ -506,23 +506,31 @@ body.light .friend-search-bar input{color:#0f172a}
 .coach-meal-items{margin-top:4px;font-size:.78rem;color:var(--text2);line-height:1.5}
 .coach-thinking-bubble{min-width:132px;display:flex;flex-direction:column;align-items:flex-start;gap:8px}
 .coach-thinking-copy{font-size:.74rem;color:var(--text2)}
-.ex-card-premium{display:grid;grid-template-columns:34px 190px 1fr;align-items:stretch;padding:14px 14px 14px 10px;gap:12px}
+.ex-card-premium{display:grid;grid-template-columns:34px 190px 1fr;align-items:stretch;padding:14px 14px 14px 10px}
 .ex-visual-col{display:flex;align-items:stretch}
-.ex-visual-stack{display:grid;grid-template-rows:minmax(150px,1fr) auto auto;gap:8px;width:100%}
-.ex-figure,.ex-muscle-map{position:relative;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:radial-gradient(circle at 50% 10%,rgba(255,255,255,.11),rgba(255,255,255,.03));padding:10px;min-height:112px;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.ex-figure-hero{min-height:170px}.ex-muscle-map{min-height:108px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.025))}.ex-visual-tag{position:absolute;top:10px;left:10px;font-size:.58rem;font-weight:900;text-transform:uppercase;letter-spacing:.14em;color:rgba(255,255,255,.55)}.ex-muscle-card .ex-visual-tag{color:rgba(255,255,255,.48)}.ex-visual-footer{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ex-visual-footer span{display:flex;align-items:center;justify-content:center;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.06);font-size:.7rem;font-weight:800;color:var(--text2);text-align:center}
+.ex-visual-stack{display:grid;grid-template-rows:1fr auto;gap:8px;width:100%}
+.ex-figure,.ex-muscle-map{position:relative;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:radial-gradient(circle at 50% 10%,rgba(255,255,255,.11),rgba(255,255,255,.03));padding:10px;min-height:132px;display:flex;align-items:center;justify-content:center}
+.ex-muscle-map{min-height:96px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.025))}
 .ex-howto{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
 .ex-howto-item{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.05)}
 .ex-howto-item span{display:block;font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:4px}
 .ex-howto-item p{margin:0;font-size:.76rem;line-height:1.5;color:var(--text2)}
+
+.ex-demo-gif,.wt-demo-gif{width:100%;height:100%;object-fit:contain;display:block;filter:drop-shadow(0 10px 20px rgba(0,0,0,.28))}
+.ex-figure-tag{position:absolute;top:10px;left:10px;font-size:.58rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.ex-figure-tag-muscle{color:rgba(96,165,250,.72)}
+#coach-plan-anchor{display:flex;flex-direction:column;gap:16px;margin-bottom:16px}
+#plan-card{margin-bottom:2px}
+.coach-conversation-card{position:relative}
+
 .ex-badge.equip{background:rgba(234,179,8,.12);color:#fde68a}
-.wt-ex-img-wrap{display:grid;grid-template-columns:1.3fr .8fr;gap:12px;align-items:stretch}
-.wt-visual-main,.wt-visual-muscle{position:relative;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.025));display:flex;align-items:center;justify-content:center;padding:12px;min-height:190px;overflow:hidden}.wt-visual-tag{position:absolute;top:10px;left:10px;font-size:.56rem;font-weight:900;text-transform:uppercase;letter-spacing:.14em;color:rgba(255,255,255,.52)}
+.wt-ex-img-wrap{display:grid;grid-template-columns:1.45fr .75fr;gap:12px;align-items:stretch}
+.wt-visual-main,.wt-visual-muscle{position:relative;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.025));display:flex;align-items:center;justify-content:center;padding:12px;min-height:210px}
 .wt-tip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
 .wt-tip-grid div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06)}
 .wt-tip-grid span{display:block;font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;font-weight:800;color:var(--muted);margin-bottom:4px}
 .wt-tip-grid p{margin:0;font-size:.78rem;line-height:1.5;color:var(--text2)}
-@media (max-width: 980px){.coach-state-panel{grid-template-columns:1fr}.coach-priority-card{min-width:0}.coach-action-grid{grid-template-columns:1fr}.ex-card-premium{grid-template-columns:34px 1fr}.ex-visual-col{grid-column:2}.ex-howto{grid-template-columns:1fr}.ex-visual-footer{grid-template-columns:1fr}.wt-ex-img-wrap{grid-template-columns:1fr}.wt-tip-grid{grid-template-columns:1fr}}
+@media (max-width: 980px){.coach-state-panel{grid-template-columns:1fr}.coach-priority-card{min-width:0}.coach-action-grid{grid-template-columns:1fr}.ex-card-premium{grid-template-columns:34px 1fr}.ex-visual-col{grid-column:2}.ex-howto{grid-template-columns:1fr}.wt-ex-img-wrap{grid-template-columns:1fr}.wt-tip-grid{grid-template-columns:1fr}}
 body.light .coach-action-tile,body.light .coach-priority-card,body.light .coach-mood-btn,body.light .coach-more-actions,body.light .ex-figure,body.light .ex-muscle-map,body.light .ex-howto-item,body.light .wt-visual-main,body.light .wt-visual-muscle,body.light .wt-tip-grid div{background:#fff;border-color:rgba(15,23,42,.1)}
 body.light .coach-mini-pill{background:rgba(15,23,42,.05);color:#334155}
 body.light .coach-inline-note{background:rgba(15,23,42,.05)}
@@ -827,13 +835,13 @@ body.light .coach-inline-note{background:rgba(15,23,42,.05)}
 .wt-progress-fill{height:100%;background:linear-gradient(90deg,#6366f1,#8b5cf6);border-radius:99px;transition:width .4s ease}
 .wt-ex-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:16px;margin-bottom:14px}
 .wt-ex-num{font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:10px;text-align:center}
-.wt-ex-layout{display:flex;align-items:flex-start;gap:14px;flex-direction:column}
-.wt-ex-img-wrap{width:100%;flex-shrink:0;background:transparent;border:none;border-radius:14px;padding:0;overflow:visible}
+.wt-ex-layout{display:flex;align-items:flex-start;gap:14px}
+.wt-ex-img-wrap{width:84px;height:110px;flex-shrink:0;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px;overflow:hidden}
 .wt-ex-info{flex:1;min-width:0;padding-top:2px}
 .wt-ex-name{font-size:1.05rem;font-weight:900;color:#fff;margin-bottom:3px;line-height:1.25}
 .wt-ex-muscle{font-size:.7rem;color:#38bdf8;font-weight:700;margin-bottom:6px}
 .wt-ex-detail{font-size:.78rem;color:var(--text2);font-weight:700;margin-bottom:6px}
-.wt-ex-tip{font-size:.68rem;color:var(--muted);line-height:1.45;padding:0;background:transparent;border:none;border-radius:0}
+.wt-ex-tip{font-size:.68rem;color:var(--muted);line-height:1.45;font-style:italic;padding:6px 8px;background:rgba(255,255,255,.03);border-left:2px solid rgba(99,102,241,.4);border-radius:0 6px 6px 0}
 .wt-sets-row{display:flex;justify-content:center;gap:8px;margin:14px 0}
 .wt-set-bubble{width:38px;height:38px;border-radius:50%;border:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;color:var(--muted);transition:all .2s;cursor:pointer}
 .wt-set-bubble.done{background:#4ade80;border-color:#4ade80;color:#0a1a00}
@@ -1182,7 +1190,6 @@ body.light .coach-inline-note{background:rgba(15,23,42,.05)}
 .scan-score-rail{position:relative;display:flex;height:18px;border-radius:999px;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);margin-top:12px}.scan-score-seg{position:relative;display:flex;align-items:flex-end;justify-content:center;padding-bottom:3px;background:rgba(255,255,255,.02);font-size:.54rem;font-weight:800;color:rgba(255,255,255,.45)}.scan-score-seg:nth-child(1){background:rgba(248,113,113,.08)}.scan-score-seg:nth-child(2){background:rgba(251,191,36,.08)}.scan-score-seg:nth-child(3){background:rgba(34,197,94,.08)}.scan-score-seg:nth-child(4){background:rgba(6,182,212,.08)}.scan-score-seg:nth-child(5){background:rgba(99,102,241,.08)}.scan-score-seg:nth-child(6){background:rgba(168,85,247,.1)}.scan-score-seg.active span{color:#fff}.scan-score-marker{position:absolute;top:1px;bottom:1px;width:16px;border-radius:999px;background:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.08),0 8px 24px rgba(255,255,255,.22)}
 .scan-v3-mini{display:flex;flex-direction:column;gap:8px;justify-content:center}.scan-v3-mini-row{display:flex;justify-content:space-between;gap:10px;font-size:.74rem;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.06);color:var(--text2)}.scan-v3-mini-row:last-child{border-bottom:none;padding-bottom:0}.scan-v3-mini-row strong{color:#fff;font-weight:800;text-transform:capitalize}
 .scan-v3-rings{justify-content:flex-start;flex-wrap:wrap}.scan-v3-verdict{padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);font-size:.84rem;line-height:1.55;color:var(--text2)}
-.scan-v3-recap{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.scan-v3-recap-card{padding:12px 13px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;gap:8px}.scan-v3-recap-card span{font-size:.68rem;font-weight:900;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}.scan-v3-recap-card strong{font-size:.84rem;line-height:1.45;color:#fff;font-weight:800}
 .scan-v3-columns .scan-v2-strengths,.scan-v3-columns .scan-v2-weaknesses{padding:14px;border-radius:16px}
 .scan-v3-bottom{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:14px 16px;border-top:1px solid var(--border)}
 .scan-v3-block{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:14px}.scan-v3-block-hdr{font-size:.68rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}.scan-v3-line{font-size:.78rem;line-height:1.5;color:var(--text2);padding:5px 0}.scan-v3-pill{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.2);font-size:.73rem;font-weight:700;color:#c4b5fd;margin:0 6px 6px 0}
@@ -1190,7 +1197,7 @@ body.light .coach-inline-note{background:rgba(15,23,42,.05)}
 .scan-pending-grid{position:absolute;background:rgba(255,255,255,.8);box-shadow:0 0 16px rgba(255,255,255,.28)}.scan-pending-grid-h{left:0;right:0;top:50%;height:2px}.scan-pending-grid-v{top:0;bottom:0;left:50%;width:2px}
 .scan-pending-avatar{position:absolute;top:34px;left:50%;transform:translateX(-50%);width:112px;height:112px;border-radius:999px;background:radial-gradient(circle at 50% 35%,rgba(255,255,255,.96),rgba(255,255,255,.88))}.scan-pending-eye{position:absolute;top:46px;width:8px;height:17px;border-radius:999px;background:#f97316;opacity:.7}.scan-pending-eye.left{left:30px}.scan-pending-eye.right{right:30px}.scan-pending-body{position:absolute;top:132px;left:50%;transform:translateX(-50%);width:72px;height:130px;border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.88))}.scan-pending-arm,.scan-pending-leg{position:absolute;width:28px;border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.88))}.scan-pending-arm.left{top:146px;left:46px;height:102px;transform:rotate(24deg)}.scan-pending-arm.right{top:146px;right:46px;height:102px;transform:rotate(-24deg)}.scan-pending-leg.left{top:250px;left:90px;height:106px}.scan-pending-leg.right{top:250px;right:90px;height:106px}
 .scan-pending-copy{display:flex;flex-direction:column;align-items:flex-start;gap:10px}.scan-pending-date{font-size:.72rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#fdba74}.scan-pending-title{font-size:1.22rem;font-weight:900;color:#fff}.scan-pending-sub{font-size:.84rem;line-height:1.6;color:var(--text2);max-width:420px}.scan-pending-chip{padding:6px 10px;border-radius:999px;background:rgba(249,115,22,.12);border:1px solid rgba(249,115,22,.22);color:#fdba74;font-size:.73rem;font-weight:800}
-@media(max-width:900px){.scan-loading-shell,.scan-pending-shell{grid-template-columns:1fr}.scan-v3-top{grid-template-columns:1fr}.scan-v3-scorecard{grid-template-columns:1fr}.scan-v3-bottom{grid-template-columns:1fr}.scan-v3-recap{grid-template-columns:1fr}.scan-loading-figure,.scan-pending-figure{min-height:240px}}
+@media(max-width:900px){.scan-loading-shell,.scan-pending-shell{grid-template-columns:1fr}.scan-v3-top{grid-template-columns:1fr}.scan-v3-scorecard{grid-template-columns:1fr}.scan-v3-bottom{grid-template-columns:1fr}.scan-loading-figure,.scan-pending-figure{min-height:240px}}
 /* ── COACH CHAT V2 ── */
 .chat-msg{display:flex;flex-direction:column;max-width:88%;animation:fadeSlide .25s ease}
 .chat-msg-user{align-self:flex-end;align-items:flex-end}
@@ -1963,7 +1970,9 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           </div>
         </div>
 
-        <div class="card" style="padding:18px">
+        <div id="coach-plan-anchor"></div>
+
+        <div class="card coach-conversation-card" id="coach-conversation-card" style="padding:18px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
             <div style="font-size:.78rem;font-weight:700;color:var(--muted)">Conversation</div>
             <button class="coach-clear-btn" onclick="clearCoachChat()" title="Effacer la conversation">

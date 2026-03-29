@@ -141,6 +141,42 @@ function detectCoachModeClient(prompt) {
   return 'advice';
 }
 
+
+function isCoachWorkoutPrompt(prompt) {
+  const t = String(prompt || '').toLowerCase();
+  return /séance|seance|workout|full body|upper body|lower body|prise de masse|hypertroph|musculation|fais-moi une vraie séance|adapte ma séance|entrainement|entraînement|cardio|jambes|pecs|dos|abdos|push|pull/.test(t);
+}
+
+async function requestWorkoutPlanDirect(prompt, token, coachProfile, goalContext, historyForApi) {
+  const payload = {
+    prompt,
+    message: prompt,
+    history: historyForApi,
+    goalContext,
+    goal: goalContext?.type || coachProfile?.goal || '',
+    level: coachProfile?.level || goalContext?.level || 'beginner',
+    equipment: coachProfile?.equipment || 'poids du corps',
+    injuries: coachProfile?.injuries || goalContext?.constraints || '',
+    weight: coachProfile?.weight || null,
+    height: coachProfile?.height || null,
+    sleep_hours: coachProfile?.sleep_hours || null,
+    recovery_score: coachProfile?.recovery_score || null
+  };
+  const { response } = await fetchJsonWithTimeout('/api/workout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload)
+  }, 12000);
+  return response;
+}
+
+function ensureCoachPlanPlacement() {
+  const anchor = document.getElementById('coach-plan-anchor');
+  const planCard = document.getElementById('plan-card');
+  if (!anchor || !planCard) return;
+  if (planCard.parentElement !== anchor) anchor.appendChild(planCard);
+}
+
 function coachToneLabel(val) {
   return { balanced: 'Équilibré', supportive: 'Bienveillant', direct: 'Direct', strict: 'Exigeant' }[String(val || 'balanced')] || 'Équilibré';
 }
@@ -1131,13 +1167,22 @@ async function sendCoachMsg(quickMsg) {
     }));
 
     const responseMode = detectCoachModeClient(prompt);
-    const { response: j } = await fetchJsonWithTimeout("/api/coach", {
+    let { response: j } = await fetchJsonWithTimeout("/api/coach", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ message: prompt, responseMode, history: historyForApi, profile: coachProfile, goalContext })
     }, 12000);
 
     if (requestId !== COACH_REQUEST_SEQ) return;
+
+    if (isCoachWorkoutPrompt(prompt) && (!j || j.type !== 'workout')) {
+      try {
+        const direct = await requestWorkoutPlanDirect(prompt, token, coachProfile, goalContext, historyForApi);
+        if (direct?.data?.exercises?.length) {
+          j = { ok: true, type: 'workout', data: direct.data, fallback: !!direct.fallback };
+        }
+      } catch {}
+    }
 
     const thinkEl = document.getElementById("coach-thinking");
     if (thinkEl) thinkEl.remove();
@@ -1257,39 +1302,100 @@ function exerciseCuePack(ex = {}) {
   };
 }
 
-function exerciseMistakeHint(ex = {}) {
-  const name = String(ex.name || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const packs = [
-    [/squat|fente|split squat|leg press/, "Genoux qui rentrent, buste qui se relâche et descente trop rapide."],
-    [/souleve|deadlift|hip thrust|pont/, "Bas du dos qui s'arrondit, barre trop loin du corps ou poussée sans gainage."],
-    [/pompe|developpe|bench|dips|presse/, "Coudes trop ouverts, bassin qui s'affaisse ou amplitude coupée."],
-    [/traction|rowing|tirage|pull|curl/, "Épaules qui montent, tirage avec l'élan et poitrine qui se ferme."],
-    [/planche|gainage|crunch|abdo|mountain/, "Bassin qui tombe, nuque cassée ou respiration bloquée."],
-    [/course|velo|bike|burpee|hiit|jump/, "Partir trop fort et perdre le rythme dès les premières reps."],
-    [/yoga|mobilite|stretch|etirement/, "Forcer l'amplitude au lieu de rester dans une tension propre."],
-  ];
-  for (const [rx, tip] of packs) if (rx.test(name)) return tip;
-  return "Cherche la propreté avant la vitesse : amplitude propre, rythme stable, gainage présent.";
+function _exerciseDemoSvg(label = '') {
+  const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const base = (body, accent='#60a5fa') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 160" width="100%" height="100%"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0f172a" stop-opacity="0.08"/><stop offset="100%" stop-color="#38bdf8" stop-opacity="0.02"/></linearGradient><filter id="g"><feGaussianBlur stdDeviation="10"/></filter></defs><rect width="220" height="160" rx="24" fill="url(#bg)"/><ellipse cx="110" cy="134" rx="52" ry="10" fill="${accent}" opacity="0.18" filter="url(#g)"/>${body}</svg>`;
+  if (/squat|fente|split|jambes|leg/.test(t)) {
+    return base(`
+      <g stroke="rgba(255,255,255,.22)" stroke-width="4" stroke-linecap="round" fill="none">
+        <path d="M88 44 L110 60 L132 44" opacity=".3"/>
+        <path d="M110 60 L98 94 L76 118" opacity=".3"/>
+        <path d="M110 60 L124 94 L144 118" opacity=".3"/>
+      </g>
+      <g stroke="white" stroke-width="6" stroke-linecap="round" fill="none">
+        <circle cx="110" cy="26" r="13" fill="rgba(255,255,255,.9)"/>
+        <line x1="110" y1="40" x2="110" y2="74"/>
+        <line x1="110" y1="48" x2="84" y2="64"/>
+        <line x1="110" y1="48" x2="136" y2="64"/>
+        <line x1="110" y1="74" x2="92" y2="108"><animate attributeName="x2" values="92;84;92" dur="1.35s" repeatCount="indefinite"/></line>
+        <line x1="110" y1="74" x2="128" y2="108"><animate attributeName="x2" values="128;136;128" dur="1.35s" repeatCount="indefinite"/></line>
+        <line x1="92" y1="108" x2="82" y2="128"><animate attributeName="x1" values="92;84;92" dur="1.35s" repeatCount="indefinite"/><animate attributeName="x2" values="82;78;82" dur="1.35s" repeatCount="indefinite"/></line>
+        <line x1="128" y1="108" x2="138" y2="128"><animate attributeName="x1" values="128;136;128" dur="1.35s" repeatCount="indefinite"/><animate attributeName="x2" values="138;144;138" dur="1.35s" repeatCount="indefinite"/></line>
+      </g>
+      <rect x="72" y="132" width="76" height="3" rx="2" fill="rgba(255,255,255,.16)"/>
+      <path d="M154 52 q14 18 0 36" stroke="${accent}" stroke-width="4" fill="none" stroke-linecap="round" opacity=".85"/>
+      <path d="M149 82 l5 6 l6-6" stroke="${accent}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+    `, '#8b5cf6');
+  }
+  if (/pompe|push/.test(t)) {
+    return base(`
+      <g stroke="rgba(255,255,255,.22)" stroke-width="4" stroke-linecap="round" fill="none">
+        <line x1="56" y1="110" x2="156" y2="86" opacity=".28"/>
+      </g>
+      <g stroke="white" stroke-width="6" stroke-linecap="round" fill="none">
+        <circle cx="62" cy="100" r="12" fill="rgba(255,255,255,.92)"/>
+        <line x1="74" y1="100" x2="124" y2="90"><animate attributeName="y2" values="90;98;90" dur="1.25s" repeatCount="indefinite"/></line>
+        <line x1="95" y1="96" x2="84" y2="126"><animate attributeName="y1" values="96;101;96" dur="1.25s" repeatCount="indefinite"/></line>
+        <line x1="115" y1="92" x2="134" y2="122"><animate attributeName="y1" values="92;98;92" dur="1.25s" repeatCount="indefinite"/></line>
+        <line x1="126" y1="90" x2="154" y2="84"><animate attributeName="y1" values="90;98;90" dur="1.25s" repeatCount="indefinite"/></line>
+        <line x1="126" y1="90" x2="146" y2="118"><animate attributeName="y1" values="90;98;90" dur="1.25s" repeatCount="indefinite"/></line>
+      </g>
+      <path d="M168 54 q14 18 0 36" stroke="${accent}" stroke-width="4" fill="none" stroke-linecap="round" opacity=".85"/>
+      <path d="M163 84 l5 6 l6-6" stroke="${accent}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+    `, '#22c55e');
+  }
+  if (/hip thrust|pont|glute bridge/.test(t)) {
+    return base(`
+      <g stroke="white" stroke-width="6" stroke-linecap="round" fill="none">
+        <circle cx="74" cy="88" r="12" fill="rgba(255,255,255,.92)"/>
+        <line x1="86" y1="90" x2="122" y2="96"><animate attributeName="y2" values="96;82;96" dur="1.25s" repeatCount="indefinite"/></line>
+        <line x1="122" y1="96" x2="146" y2="104"><animate attributeName="y1" values="96;82;96" dur="1.25s" repeatCount="indefinite"/><animate attributeName="y2" values="104;92;104" dur="1.25s" repeatCount="indefinite"/></line>
+        <line x1="122" y1="96" x2="132" y2="122"><animate attributeName="y1" values="96;82;96" dur="1.25s" repeatCount="indefinite"/></line>
+        <line x1="146" y1="104" x2="160" y2="124"><animate attributeName="y1" values="104;92;104" dur="1.25s" repeatCount="indefinite"/></line>
+      </g>
+      <rect x="48" y="126" width="124" height="4" rx="3" fill="rgba(255,255,255,.16)"/>
+      <path d="M174 50 q14 18 0 36" stroke="${accent}" stroke-width="4" fill="none" stroke-linecap="round" opacity=".85"/>
+      <path d="M169 80 l5 6 l6-6" stroke="${accent}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+    `, '#f97316');
+  }
+  if (/planche|plank|gainage/.test(t)) {
+    return base(`
+      <g stroke="white" stroke-width="6" stroke-linecap="round" fill="none">
+        <circle cx="64" cy="90" r="11" fill="rgba(255,255,255,.92)"/>
+        <line x1="75" y1="92" x2="132" y2="88"/>
+        <line x1="92" y1="90" x2="82" y2="122"/>
+        <line x1="126" y1="88" x2="148" y2="118"/>
+        <line x1="132" y1="88" x2="162" y2="84"/>
+      </g>
+      <path d="M150 56 q12 16 0 32" stroke="${accent}" stroke-width="4" fill="none" stroke-linecap="round" opacity=".85"/>
+      <path d="M145 84 l5 6 l6-6" stroke="${accent}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+    `, '#38bdf8');
+  }
+  return base(`
+    <g stroke="rgba(255,255,255,.2)" stroke-width="4" stroke-linecap="round" fill="none"><path d="M110 44 L110 76 L88 112" opacity=".3"/><path d="M110 76 L132 112" opacity=".3"/></g>
+    <g stroke="white" stroke-width="6" stroke-linecap="round" fill="none">
+      <circle cx="110" cy="28" r="13" fill="rgba(255,255,255,.92)"/>
+      <line x1="110" y1="42" x2="110" y2="76"/>
+      <line x1="110" y1="48" x2="86" y2="64"><animate attributeName="y2" values="64;52;64" dur="1.3s" repeatCount="indefinite"/></line>
+      <line x1="110" y1="48" x2="134" y2="64"><animate attributeName="y2" values="64;52;64" dur="1.3s" repeatCount="indefinite"/></line>
+      <line x1="110" y1="76" x2="92" y2="112"><animate attributeName="x2" values="92;88;92" dur="1.3s" repeatCount="indefinite"/></line>
+      <line x1="110" y1="76" x2="128" y2="112"><animate attributeName="x2" values="128;132;128" dur="1.3s" repeatCount="indefinite"/></line>
+    </g>
+  `, '#60a5fa');
 }
 
-function exerciseTempoHint(ex = {}) {
-  const reps = String(ex.reps || "");
-  const name = String(ex.name || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  if (/planche|gainage|hollow/.test(name)) return "Tension continue et respiration courte contrôlée.";
-  if (/jump|burpee|hiit|sprint/.test(name)) return "Explosif à la montée, reprise contrôlée au retour.";
-  if (/squat|fente|pompe|developpe|traction|rowing|deadlift|souleve/.test(name)) return "3s descente · 1s pause si possible · montée tonique.";
-  if (reps && reps !== '0') return `${reps} reps propres avec tempo régulier.`;
-  return "Tempo propre : contrôle d'abord, vitesse ensuite.";
+function _exerciseDemoDataUri(label = '') {
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(_exerciseDemoSvg(label));
 }
 
 function exerciseVisualHtml(ex = {}) {
-  const target = escapeHtml(ex.muscle || ex.name || "Corps complet");
-  return `<div class="ex-visual-stack"><div class="ex-figure ex-figure-hero"><div class="ex-visual-tag">Mouvement</div>${_stickFigureSVG(ex.name || "")}</div><div class="ex-muscle-map ex-muscle-card"><div class="ex-visual-tag">Zone ciblée</div>${_muscleSVG(ex.muscle || ex.name || "")}</div><div class="ex-visual-footer"><span>${target}</span><span>${escapeHtml(ex.equipment || "Poids du corps")}</span></div></div>`;
+  const name = ex.name || ex.n || ex.muscle || '';
+  return `<div class="ex-visual-stack"><div class="ex-figure"><div class="ex-figure-tag">Démo mouvement</div><img class="ex-demo-gif" src="${_exerciseDemoDataUri(name)}" alt="Démo ${escapeHtml(name)}"/></div><div class="ex-muscle-map"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(ex.muscle || ex.name || '')}</div></div>`;
 }
 
 function exerciseHowToHtml(ex = {}) {
   const cue = exerciseCuePack(ex);
-  return `<div class="ex-howto"><div class="ex-howto-item"><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div class="ex-howto-item"><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div class="ex-howto-item"><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div class="ex-howto-item"><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div><div class="ex-howto-item"><span>Tempo</span><p>${escapeHtml(exerciseTempoHint(ex))}</p></div><div class="ex-howto-item"><span>Erreur à éviter</span><p>${escapeHtml(exerciseMistakeHint(ex))}</p></div></div>`;
+  return `<div class="ex-howto"><div class="ex-howto-item"><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div class="ex-howto-item"><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div class="ex-howto-item"><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div class="ex-howto-item"><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div></div>`;
 }
 
 function renderExerciseCard(ex, idx) {
@@ -1418,8 +1524,8 @@ function renderPlan(plan) {
   }
 
   const planCard = document.getElementById("plan-card");
+  ensureCoachPlanPlacement();
   if (planCard) planCard.style.display = "block";
-  if (planCard) setTimeout(() => planCard.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
 }
 
 async function saveSession() {
@@ -2327,12 +2433,12 @@ function handleFile(file) {
 
 function bodyScanLevelMeta(score) {
   const s = Number(score || 0);
-  if (s >= 90) return { label: "Exceptionnel", hint: "niveau rarissime", tone: "elite" };
-  if (s >= 82) return { label: "Très athlétique", hint: "sec, dense, très net", tone: "athletic" };
-  if (s >= 74) return { label: "Athlétique", hint: "niveau sportif visible", tone: "strong" };
-  if (s >= 66) return { label: "Bon niveau", hint: "bonne base mais encore perfectible", tone: "good" };
-  if (s >= 58) return { label: "Actif régulier", hint: "actif sans rendu très athlétique", tone: "mid" };
-  if (s >= 48) return { label: "Base correcte", hint: "encore peu marquée", tone: "base" };
+  if (s >= 92) return { label: "Exceptionnel", hint: "niveau rarissime", tone: "elite" };
+  if (s >= 86) return { label: "Très athlétique", hint: "sec et dense", tone: "athletic" };
+  if (s >= 78) return { label: "Athlétique", hint: "niveau sportif net", tone: "strong" };
+  if (s >= 70) return { label: "Bon niveau", hint: "bonne base visible", tone: "good" };
+  if (s >= 62) return { label: "Actif régulier", hint: "correct mais perfectible", tone: "mid" };
+  if (s >= 52) return { label: "Base correcte", hint: "encore peu marquée", tone: "base" };
   return { label: "Début de base", hint: "potentiel à construire", tone: "early" };
 }
 
@@ -2385,11 +2491,11 @@ function bodyScanScoreRail(score) {
 }
 
 function bodyScanLoadingCopy(progress) {
-  if (progress < 18) return { title: "Préparation du scan", sub: "On valide la photo, le cadrage et la lisibilité du corps entier." };
-  if (progress < 42) return { title: "Lecture posture / symétrie", sub: "On compare l'alignement, l'ouverture du buste et la stabilité générale." };
-  if (progress < 68) return { title: "Composition et relief", sub: "On estime la définition musculaire, la composition et le niveau visuel réel." };
-  if (progress < 90) return { title: "Calibration du score", sub: "Le score est plafonné ou renforcé selon la cohérence de la photo et du physique." };
-  return { title: "Synthèse coach", sub: "On prépare les points forts, les freins et la prochaine priorité utile." };
+  if (progress < 18) return { title: "Préparation du scan", sub: "On aligne la photo et on vérifie le cadrage." };
+  if (progress < 42) return { title: "Lecture de la posture", sub: "Symétrie, posture et appuis sont en cours d'estimation." };
+  if (progress < 68) return { title: "Analyse corporelle", sub: "On évalue la définition, la composition et le niveau perçu." };
+  if (progress < 90) return { title: "Synthèse coach", sub: "On prépare les axes prioritaires et les recommandations utiles." };
+  return { title: "Finalisation", sub: "Le score calibré et les conseils arrivent." };
 }
 
 function setBodyScanLoading(progress) {
@@ -2575,10 +2681,6 @@ function renderBodyScanCard(scan, imageUrl) {
   const improvements = parsed.improvements.slice(0, 3);
   const strengths = parsed.strengths.slice(0, 3);
   const previousScore = ext?.comparison?.previous_score;
-  const scoreDrivers = Array.isArray(ext?.score_drivers) ? ext.score_drivers.slice(0, 3) : strengths;
-  const scoreBrakes = Array.isArray(ext?.score_brakes) ? ext.score_brakes.slice(0, 3) : improvements;
-  const confidencePct = Number(ext?.confidence_pct || 0);
-  const visualTier = String(ext?.visual_tier || '').replace(/_/g, ' ');
 
   return `<div class="scan-v2">
     <div class="scan-v2-top scan-v3-top">
@@ -2603,25 +2705,20 @@ function renderBodyScanCard(scan, imageUrl) {
           <div class="scan-v3-mini">
             <div class="scan-v3-mini-row"><span>Bodyfat estimé</span><strong>${bodyfat || "—"}</strong></div>
             <div class="scan-v3-mini-row"><span>Catégorie</span><strong>${ext?.estimated_metrics?.fitness_category ? escapeHtml(String(ext.estimated_metrics.fitness_category)) : "—"}</strong></div>
-            <div class="scan-v3-mini-row"><span>Niveau lu</span><strong>${visualTier ? escapeHtml(visualTier) : level.label}</strong></div>
-            <div class="scan-v3-mini-row"><span>Fiabilité</span><strong>${confidence.label}${confidencePct ? ` · ${confidencePct}%` : ''}</strong></div>
+            <div class="scan-v3-mini-row"><span>Scan précédent</span><strong>${previousScore != null ? `${previousScore}/100` : '—'}</strong></div>
+            <div class="scan-v3-mini-row"><span>Fiabilité</span><strong>${confidence.label}</strong></div>
           </div>
         </div>
         ${scoreChips ? `<div class="rings-row scan-v3-rings">${scoreChips}</div>` : ""}
         <div class="scan-v3-verdict">${escapeHtml(verdict)}</div>
-        <div class="scan-v3-recap">
-          ${trend ? `<div class="scan-v3-recap-card"><span>Écart vs précédent</span><strong>${escapeHtml(trend.label)}</strong></div>` : ''}
-          <div class="scan-v3-recap-card"><span>Ce qui aide la note</span><strong>${escapeHtml((scoreDrivers[0] || strengths[0] || 'Base exploitable'))}</strong></div>
-          <div class="scan-v3-recap-card"><span>Ce qui freine la note</span><strong>${escapeHtml((scoreBrakes[0] || improvements[0] || 'Lisibilité moyenne de la photo'))}</strong></div>
-        </div>
         <div class="scan-v2-2col scan-v3-columns">
           <div class="scan-v2-strengths">
             <div class="scan-v2-col-hdr scan-v2-str-hdr">Ce qui soutient la note</div>
-            ${scoreDrivers.length ? scoreDrivers.map(s => `<div class="scan-v2-pt scan-v2-str-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-str-pt">Base exploitable pour progresser si tu restes régulier.</div>`}
+            ${strengths.length ? strengths.map(s => `<div class="scan-v2-pt scan-v2-str-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-str-pt">Base exploitable pour progresser si tu restes régulier.</div>`}
           </div>
           <div class="scan-v2-weaknesses">
-            <div class="scan-v2-col-hdr scan-v2-wk-hdr">Ce qui bloque vraiment</div>
-            ${scoreBrakes.length ? scoreBrakes.map(s => `<div class="scan-v2-pt scan-v2-wk-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-wk-pt">Photo ou lecture trop moyenne pour aller plus haut.</div>`}
+            <div class="scan-v2-col-hdr scan-v2-wk-hdr">Ce qui freine vraiment</div>
+            ${improvements.length ? improvements.map(s => `<div class="scan-v2-pt scan-v2-wk-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-wk-pt">Photo ou lecture trop moyenne pour aller plus haut.</div>`}
           </div>
         </div>
       </div>
@@ -6059,14 +6156,14 @@ function _wtRenderExercise() {
 
   // Premium visual: animated figure + target map
   const imgWrap = document.getElementById("wt-ex-img-wrap");
-  if (imgWrap) imgWrap.innerHTML = `<div class="wt-visual-main"><div class="wt-visual-tag">Démo mouvement</div>${_stickFigureSVG(ex.n || "")}</div><div class="wt-visual-muscle"><div class="wt-visual-tag">Muscles ciblés</div>${_muscleSVG(ex.m || ex.n || "")}</div>`;
+  if (imgWrap) imgWrap.innerHTML = `<div class="wt-visual-main"><div class="ex-figure-tag">Démo mouvement</div><img class="wt-demo-gif" src="${_exerciseDemoDataUri(ex.n || '')}" alt="Démo ${escapeHtml(ex.n || '')}"/></div><div class="wt-visual-muscle"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(ex.m || ex.n || '')}</div>`;
 
   // Technique guide
   const tipEl = document.getElementById("wt-ex-tip");
   const tip = _getExerciseTip(ex.n || "");
   const cue = exerciseCuePack({ name: ex.n || "", muscle: ex.m || "" });
   if (tipEl) {
-    tipEl.innerHTML = `<div class="wt-tip-grid"><div><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div><span>Repère</span><p>${escapeHtml(tip || cue.breathe)}</p></div><div><span>Tempo</span><p>${escapeHtml(exerciseTempoHint({ name: ex.n || "", reps: ex.r || "" }))}</p></div><div><span>Erreur à éviter</span><p>${escapeHtml(exerciseMistakeHint({ name: ex.n || "", muscle: ex.m || "" }))}</p></div></div>`;
+    tipEl.innerHTML = `<div class="wt-tip-grid"><div><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div><span>Repère</span><p>${escapeHtml(tip || cue.breathe)}</p></div></div>`;
     tipEl.style.display = "";
   }
 
