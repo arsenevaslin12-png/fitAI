@@ -1257,39 +1257,13 @@ function exerciseCuePack(ex = {}) {
   };
 }
 
-function exerciseMistakeHint(ex = {}) {
-  const name = String(ex.name || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const packs = [
-    [/squat|fente|split squat|leg press/, "Genoux qui rentrent, buste qui se relâche et descente trop rapide."],
-    [/souleve|deadlift|hip thrust|pont/, "Bas du dos qui s'arrondit, barre trop loin du corps ou poussée sans gainage."],
-    [/pompe|developpe|bench|dips|presse/, "Coudes trop ouverts, bassin qui s'affaisse ou amplitude coupée."],
-    [/traction|rowing|tirage|pull|curl/, "Épaules qui montent, tirage avec l'élan et poitrine qui se ferme."],
-    [/planche|gainage|crunch|abdo|mountain/, "Bassin qui tombe, nuque cassée ou respiration bloquée."],
-    [/course|velo|bike|burpee|hiit|jump/, "Partir trop fort et perdre le rythme dès les premières reps."],
-    [/yoga|mobilite|stretch|etirement/, "Forcer l'amplitude au lieu de rester dans une tension propre."],
-  ];
-  for (const [rx, tip] of packs) if (rx.test(name)) return tip;
-  return "Cherche la propreté avant la vitesse : amplitude propre, rythme stable, gainage présent.";
-}
-
-function exerciseTempoHint(ex = {}) {
-  const reps = String(ex.reps || "");
-  const name = String(ex.name || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  if (/planche|gainage|hollow/.test(name)) return "Tension continue et respiration courte contrôlée.";
-  if (/jump|burpee|hiit|sprint/.test(name)) return "Explosif à la montée, reprise contrôlée au retour.";
-  if (/squat|fente|pompe|developpe|traction|rowing|deadlift|souleve/.test(name)) return "3s descente · 1s pause si possible · montée tonique.";
-  if (reps && reps !== '0') return `${reps} reps propres avec tempo régulier.`;
-  return "Tempo propre : contrôle d'abord, vitesse ensuite.";
-}
-
 function exerciseVisualHtml(ex = {}) {
-  const target = escapeHtml(ex.muscle || ex.name || "Corps complet");
-  return `<div class="ex-visual-stack"><div class="ex-figure ex-figure-hero"><div class="ex-visual-tag">Mouvement</div>${_stickFigureSVG(ex.name || "")}</div><div class="ex-muscle-map ex-muscle-card"><div class="ex-visual-tag">Zone ciblée</div>${_muscleSVG(ex.muscle || ex.name || "")}</div><div class="ex-visual-footer"><span>${target}</span><span>${escapeHtml(ex.equipment || "Poids du corps")}</span></div></div>`;
+  return `<div class="ex-visual-stack"><div class="ex-figure">${_stickFigureSVG(ex.name || "")}</div><div class="ex-muscle-map">${_muscleSVG(ex.muscle || ex.name || "")}</div></div>`;
 }
 
 function exerciseHowToHtml(ex = {}) {
   const cue = exerciseCuePack(ex);
-  return `<div class="ex-howto"><div class="ex-howto-item"><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div class="ex-howto-item"><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div class="ex-howto-item"><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div class="ex-howto-item"><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div><div class="ex-howto-item"><span>Tempo</span><p>${escapeHtml(exerciseTempoHint(ex))}</p></div><div class="ex-howto-item"><span>Erreur à éviter</span><p>${escapeHtml(exerciseMistakeHint(ex))}</p></div></div>`;
+  return `<div class="ex-howto"><div class="ex-howto-item"><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div class="ex-howto-item"><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div class="ex-howto-item"><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div class="ex-howto-item"><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div></div>`;
 }
 
 function renderExerciseCard(ex, idx) {
@@ -6059,14 +6033,14 @@ function _wtRenderExercise() {
 
   // Premium visual: animated figure + target map
   const imgWrap = document.getElementById("wt-ex-img-wrap");
-  if (imgWrap) imgWrap.innerHTML = `<div class="wt-visual-main"><div class="wt-visual-tag">Démo mouvement</div>${_stickFigureSVG(ex.n || "")}</div><div class="wt-visual-muscle"><div class="wt-visual-tag">Muscles ciblés</div>${_muscleSVG(ex.m || ex.n || "")}</div>`;
+  if (imgWrap) imgWrap.innerHTML = `<div class="wt-visual-main">${_stickFigureSVG(ex.n || "")}</div><div class="wt-visual-muscle">${_muscleSVG(ex.m || ex.n || "")}</div>`;
 
   // Technique guide
   const tipEl = document.getElementById("wt-ex-tip");
   const tip = _getExerciseTip(ex.n || "");
   const cue = exerciseCuePack({ name: ex.n || "", muscle: ex.m || "" });
   if (tipEl) {
-    tipEl.innerHTML = `<div class="wt-tip-grid"><div><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div><span>Repère</span><p>${escapeHtml(tip || cue.breathe)}</p></div><div><span>Tempo</span><p>${escapeHtml(exerciseTempoHint({ name: ex.n || "", reps: ex.r || "" }))}</p></div><div><span>Erreur à éviter</span><p>${escapeHtml(exerciseMistakeHint({ name: ex.n || "", muscle: ex.m || "" }))}</p></div></div>`;
+    tipEl.innerHTML = `<div class="wt-tip-grid"><div><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div><span>Repère</span><p>${escapeHtml(tip || cue.breathe)}</p></div></div>`;
     tipEl.style.display = "";
   }
 
