@@ -473,6 +473,18 @@ body.light .friend-search-bar input{color:#0f172a}
 #coach-priority-line{font-size:.8rem;line-height:1.45;color:var(--text2)}
 .coach-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .coach-action-grid.compact{display:none}
+.coach-inline-workout-cta{background:rgba(37,99,235,.12);border:1px solid rgba(37,99,235,.22);color:#bfdbfe}
+.coach-header-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px}
+.coach-tone-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);font-size:.68rem;font-weight:800;color:var(--text2)}
+.coach-state-panel{grid-template-columns:1fr auto;gap:8px;margin-bottom:8px}
+.coach-priority-card{padding:10px 12px;min-width:210px}
+.coach-action-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.coach-action-tile{padding:12px 12px;border-radius:16px}
+.coach-action-tile small{display:none}
+.coach-more-actions summary{cursor:pointer;list-style:none;font-weight:700;color:var(--text2)}
+.coach-more-actions summary::-webkit-details-marker{display:none}
+.profile-inline-help{font-size:.72rem;color:var(--muted);margin-top:4px}
+.profile-tone-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
 .coach-action-tile{padding:12px 13px;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(160deg,rgba(255,255,255,.045),rgba(255,255,255,.02));display:flex;flex-direction:column;gap:3px;align-items:flex-start;cursor:pointer;transition:.2s;color:var(--text);text-align:left;min-height:78px}
 .coach-action-tile span{font-size:1rem}
 .coach-action-tile strong{font-size:.82rem}
@@ -1924,7 +1936,7 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
             </div>
             <div class="coach-header-text">
               <div class="coach-header-title">Coach IA Expert</div>
-              <div class="coach-header-sub" id="coach-sub-line">Personnalisé à votre profil</div>
+              <div class="coach-header-meta"><div class="coach-header-sub" id="coach-sub-line">Personnalisé à votre profil</div><span class="coach-tone-badge" id="coach-tone-badge">Équilibré</span></div>
             </div>
             <div style="display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--muted);font-weight:600">
               <div class="coach-online-dot"></div>En ligne
@@ -1977,9 +1989,9 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           </div>
           <div id="chat-quick" class="coach-action-grid" style="margin-bottom:12px">
             <button class="coach-action-tile" onclick="sendCoachMsg('J'ai la flemme de faire du sport aujourd'hui, recadre-moi intelligemment')"><span>🧠</span><strong>Recadre-moi</strong><small>mental + action</small></button>
-            <button class="coach-action-tile" onclick="sendCoachMsg('Séance full body 40 min adaptée à mon niveau et mon énergie du jour')"><span>🏋️</span><strong>Séance utile</strong><small>court et efficace</small></button>
-            <button class="coach-action-tile" onclick="sendCoachMsg('Mal dormi, adapte ma journée entre récup, nutrition et entraînement')"><span>😴</span><strong>Adapter</strong><small>récup / fatigue</small></button>
+            <button class="coach-action-tile" onclick="sendCoachMsg('Mal dormi, adapte ma journée entre récup, nutrition et entraînement')"><span>😴</span><strong>Adapter ma journée</strong><small>récup / fatigue</small></button>
             <details class="coach-more-actions"><summary>Plus d'idées</summary><div class="chat-chips-row compact">
+              <button class="coach-chip" onclick="sendCoachMsg('Séance full body 40 min adaptée à mon niveau et mon énergie du jour')">Séance ciblée</button>
               <button class="coach-chip" onclick="sendCoachMsg('Journée alimentaire selon mes objectifs et ma séance du jour')">Journée alimentaire</button>
               <button class="coach-chip" onclick="sendCoachMsg('Liste de courses pour la semaine selon mon objectif')">Liste de courses</button>
               <button class="coach-chip" onclick="sendCoachMsg('Recette riche en protéines rapide')">Recette protéinée</button>
@@ -2636,6 +2648,19 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               <div class="field">
                 <div class="lbl">Taille (cm)</div>
                 <input type="number" id="p-height" placeholder="175" min="100" max="250" step="1"/>
+              </div>
+              <div class="field profile-tone-row" style="grid-column:1/-1">
+                <div>
+                  <div class="lbl">Ton du coach</div>
+                  <select id="p-coach-tone" onchange="document.getElementById('coach-tone-current').textContent = this.options[this.selectedIndex].text">
+                    <option value="balanced">Équilibré</option>
+                    <option value="supportive">Bienveillant</option>
+                    <option value="direct">Direct</option>
+                    <option value="strict">Exigeant</option>
+                  </select>
+                  <div class="profile-inline-help">Le coach adapte son style de réponse à ta préférence.</div>
+                </div>
+                <div class="coach-tone-badge" id="coach-tone-current">Équilibré</div>
               </div>
             </div>
             <button class="btn btn-p btn-full" id="btn-save-profile" onclick="saveProfile()" style="margin-top:4px">Enregistrer</button>

@@ -137,7 +137,26 @@ function detectCoachModeClient(prompt) {
   if (/liste de course|liste d'achat|faire les courses|courses pour|supermarch|barbecue|bbq|soir[eé]e burgers/.test(t)) return 'shopping_list';
   if (/journée alimentaire|journee alimentaire|que manger|quoi manger|repas|menu|plan alimentaire/.test(t)) return 'meal_plan';
   if (/recette|cuisine|prépare|prepare|plat/.test(t)) return 'recipe_json';
+  if (/programme|séance|seance|workout|full body|upper body|lower body|hiit|musculation|circuit|abdos|cardio|push|pull|jambes|pecs|dos/.test(t)) return 'workout_json';
   return 'advice';
+}
+
+function coachToneLabel(val) {
+  return { balanced: 'Équilibré', supportive: 'Bienveillant', direct: 'Direct', strict: 'Exigeant' }[String(val || 'balanced')] || 'Équilibré';
+}
+
+function getCoachTonePreference() {
+  try {
+    const stored = localStorage.getItem('fitai_coach_tone');
+    if (stored) return stored;
+  } catch {}
+  return 'balanced';
+}
+
+function setCoachTonePreference(val) {
+  try { localStorage.setItem('fitai_coach_tone', val || 'balanced'); } catch {}
+  const badge = document.getElementById('coach-tone-badge');
+  if (badge) badge.textContent = coachToneLabel(val);
 }
 
 async function loadCoachContext(force = false) {
@@ -205,7 +224,8 @@ async function loadCoachContext(force = false) {
     nutrition_summary: nutritionSummary || undefined,
     recent_meal_pattern: recentMealPattern || undefined,
     today_kcal: todayKcal > 0 ? todayKcal : undefined,
-    today_protein: todayProtein > 0 ? todayProtein : undefined
+    today_protein: todayProtein > 0 ? todayProtein : undefined,
+    coach_tone: getCoachTonePreference()
   };
 
   const ctx = { goalContext, coachProfile, insights: { currentStreak, recentSessions7d, todayProtein, todayKcal, bestScanScore, lastScanSummary, moodLabel } };
@@ -930,6 +950,8 @@ function loadCoachHistory() {
     if (stored) COACH_HISTORY = JSON.parse(stored);
   } catch { COACH_HISTORY = []; }
   renderCoachChat();
+  const coachToneBadge = document.getElementById('coach-tone-badge');
+  if (coachToneBadge) coachToneBadge.textContent = coachToneLabel(getCoachTonePreference());
   loadCoachStats();
 }
 
@@ -985,6 +1007,8 @@ async function loadCoachStats() {
       if (moodLabel) parts.push(moodLabel);
       coachSubLine.textContent = parts.filter(Boolean).join(" · ");
     }
+    const coachToneBadge = document.getElementById('coach-tone-badge');
+    if (coachToneBadge) coachToneBadge.textContent = coachToneLabel(getCoachTonePreference());
 
     const lastScanFocus = lastScan?.extended_analysis?.areas_for_improvement?.[0]
       || lastScan?.extended_analysis?.personalized_recommendations?.training?.[0]
@@ -1155,22 +1179,13 @@ async function sendCoachMsg(quickMsg) {
     } else if (j.type === "workout" && j.data) {
       PLAN = j.data;
       const plan = j.data;
-      let aiResponse = `<div class="coach-card-head"><span class="coach-card-kicker">Séance du jour</span><strong>${escapeHtml(plan.title || "Séance générée")}</strong></div>`;
+      let aiResponse = `<div class="coach-card-head"><span class="coach-card-kicker">Séance prête</span><strong>${escapeHtml(plan.title || "Séance générée")}</strong></div>`;
       const metaParts = [];
       if (plan.duration) metaParts.push(`⏱ ${plan.duration} min`);
       if (plan.calories_estimate || plan.calories) metaParts.push(`🔥 ~${plan.calories_estimate || plan.calories} kcal`);
       if (plan.exercises?.length) metaParts.push(`💪 ${plan.exercises.length} exercices`);
       if (metaParts.length) aiResponse += `<div class="coach-mini-pills">${metaParts.map(p => `<span class="coach-mini-pill">${escapeHtml(p)}</span>`).join("")}</div>`;
-      if (Array.isArray(plan.exercises) && plan.exercises.length > 0) {
-        aiResponse += '<ul class="coach-list">';
-        plan.exercises.slice(0, 4).forEach((ex) => {
-          const badge = ex.sets > 1 ? `${ex.sets}×${ex.reps}` : (ex.duration > 0 ? `${ex.duration}s` : ex.reps);
-          aiResponse += `<li><strong>${escapeHtml(ex.name)}</strong> — ${escapeHtml(String(badge || ''))}</li>`;
-        });
-        if (plan.exercises.length > 4) aiResponse += `<li>+${plan.exercises.length - 4} autres exercices dans le plan complet</li>`;
-        aiResponse += '</ul>';
-      }
-      aiResponse += `<div class="coach-inline-note">Plan complet juste en dessous.</div>${fallbackBadge}`;
+      aiResponse += `<p class="coach-p">Je t'ai préparé un plan complet hors du chat pour garder la conversation propre. Ouvre la séance détaillée juste en dessous.</p><div class="coach-inline-note coach-inline-workout-cta">⬇️ Le détail des exercices, consignes et visuels est affiché dans le bloc séance.</div>${fallbackBadge}`;
       COACH_HISTORY.push({ role: "ai", content: aiResponse, time: aiTime });
       renderPlan(PLAN);
     } else if (j.type === "recipe" && j.data) {
@@ -2681,6 +2696,9 @@ async function loadProfile() {
     setVal("p-age", data?.age || "");
     setVal("p-weight", data?.weight || "");
     setVal("p-height", data?.height || "");
+    setVal("p-coach-tone", getCoachTonePreference());
+    const coachToneHint = document.getElementById('coach-tone-current');
+    if (coachToneHint) coachToneHint.textContent = coachToneLabel(getCoachTonePreference());
     const tu = document.getElementById("tu");
     if (tu) tu.textContent = name;
     // Streak pill
@@ -2709,11 +2727,13 @@ async function saveProfile() {
   const age = parseInt(document.getElementById("p-age")?.value || "0", 10) || null;
   const weight = parseFloat(document.getElementById("p-weight")?.value || "0") || null;
   const height = parseFloat(document.getElementById("p-height")?.value || "0") || null;
+  const coachTone = String(document.getElementById('p-coach-tone')?.value || 'balanced');
   if (!display_name) return toast("Pseudo requis.", "err");
   if (username && username.length < 3) return toast("Username: 3 caractères minimum.", "err");
 
   const btn = document.getElementById("btn-save-profile");
   await withButton(btn, "Enregistrement…", async () => {
+    setCoachTonePreference(coachTone);
     const payload = { id: U.id, display_name, updated_at: new Date().toISOString() };
     if (username) payload.username = username;
     if (age) payload.age = age;
@@ -2736,7 +2756,9 @@ async function saveProfile() {
       throw error;
     }
     toast("Profil mis à jour ✓", "ok");
+    DataCache.del('coach_ctx_v2');
     await loadProfile();
+    await loadCoachStats();
   }).catch(e => toast(`Erreur: ${e.message}`, "err"));
 }
 
@@ -3202,11 +3224,12 @@ function formatCoachText(raw) {
       continue;
     }
 
-    if (/^(Réponse directe|Pourquoi|Action du jour|Focus du jour)\s*:/i.test(line)) {
+    const normalizedHead = line.replace(/^\*\*(.+?)\*\*$/, '$1').trim();
+    if (/^(Réponse directe|Pourquoi|Action du jour|Focus du jour)\s*:?/i.test(normalizedHead)) {
       closeList();
-      const parts = line.split(/:\s+/);
+      const parts = normalizedHead.split(/:\s+/);
       const head = parts.shift();
-      const rest = parts.join(": ");
+      const rest = parts.join(": " );
       out.push(`<div class="coach-h2">${inlineFormat(head || "")}</div>`);
       if (rest) out.push(`<p class="coach-p">${inlineFormat(rest)}</p>`);
       continue;

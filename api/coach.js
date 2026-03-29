@@ -90,7 +90,20 @@ async function handleCoach(req, res) {
     height: Number(body.profile.height || 0) || null,
     age: Number(body.profile.age || 0) || null,
     sleep_hours: Number(body.profile.sleep_hours || 0) || null,
-    recovery_score: Number(body.profile.recovery_score || 0) || null
+    recovery_score: Number(body.profile.recovery_score || 0) || null,
+    current_streak: Number(body.profile.current_streak || 0) || null,
+    total_workouts: Number(body.profile.total_workouts || 0) || null,
+    recent_sessions_7d: Number(body.profile.recent_sessions_7d || 0) || null,
+    best_scan_score: Number(body.profile.best_scan_score || 0) || null,
+    last_scan_summary: sanitizeInput(body.profile.last_scan_summary || "", 220),
+    nutrition_summary: sanitizeInput(body.profile.nutrition_summary || "", 220),
+    recent_meal_pattern: sanitizeInput(body.profile.recent_meal_pattern || "", 280),
+    recent_workouts: Array.isArray(body.profile.recent_workouts)
+      ? body.profile.recent_workouts.slice(0, 6).map((x) => sanitizeInput(String(x || ""), 80)).filter(Boolean)
+      : [],
+    today_kcal: Number(body.profile.today_kcal || 0) || null,
+    today_protein: Number(body.profile.today_protein || 0) || null,
+    coach_tone: sanitizeInput(body.profile.coach_tone || "", 20)
   } : {};
 
   const goalContext = body.goalContext && typeof body.goalContext === "object" ? {

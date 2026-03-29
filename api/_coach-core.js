@@ -90,6 +90,7 @@ function checkRateLimit(bucket, key, limit = 12, windowMs = 60000) {
 
 function detectIntent(message, responseMode) {
   if (responseMode === "recipe_json") return "recipe_request";
+  if (responseMode === "workout_json") return "workout_request";
   if (responseMode === "shopping_list") return "shopping_list";
   if (responseMode === "meal_plan") return "meal_plan";
   const text = String(message || "").toLowerCase();
@@ -209,7 +210,8 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
     recent_meal_pattern: normalizeText(profile.recent_meal_pattern || ""),
     recent_workouts: Array.isArray(profile.recent_workouts) ? profile.recent_workouts.map((x) => normalizeText(x)).filter(Boolean).slice(0, 4) : [],
     today_kcal: Number(profile.today_kcal || 0) || null,
-    today_protein: Number(profile.today_protein || 0) || null
+    today_protein: Number(profile.today_protein || 0) || null,
+    coach_tone: normalizeText(profile.coach_tone || 'balanced') || 'balanced'
   };
 }
 
@@ -221,7 +223,17 @@ function buildContextSnapshot(p) {
   if (p.last_scan_summary) lines.push(`- Dernier scan: ${p.last_scan_summary}`);
   if (p.nutrition_summary) lines.push(`- Nutrition cible: ${p.nutrition_summary}`);
   if (p.recent_meal_pattern) lines.push(`- Repas récents: ${p.recent_meal_pattern}`);
+  if (p.coach_tone) lines.push(`- Ton attendu du coach: ${p.coach_tone}`);
   return lines.length ? lines.join("\n") : "- Contexte avancé indisponible";
+}
+
+
+function coachToneGuide(tone) {
+  const t = String(tone || 'balanced').toLowerCase();
+  if (t === 'supportive') return "Ton attendu: chaleureux, rassurant, motivant, sans mollesse. Tu aides l'utilisateur à repartir sans culpabiliser.";
+  if (t === 'direct') return "Ton attendu: franc, net, sans détour. Tu vas droit au point utile sans être froid.";
+  if (t === 'strict') return "Ton attendu: exigeant, cadrant, discipliné. Tu recadres vite mais toujours de façon utile et respectueuse.";
+  return "Ton attendu: équilibré, premium, humain, clair et pragmatique.";
 }
 
 function historyBlock(history = []) {
@@ -336,6 +348,7 @@ PROFIL:
 - Humeur du jour: ${p.mood || "non renseignée"}
 - Sommeil: ${p.sleep ? `${p.sleep}h` : "non renseigné"} | Récupération: ${p.recovery ? `${p.recovery}/10` : "non renseignée"}
 ${p.display_name ? `- Prénom: ${p.display_name}` : ""}
+- Préférence de ton: ${coachToneGuide(p.coach_tone)}
 
 CONTEXTE SUIVI:
 ${buildContextSnapshot(p)}
@@ -359,6 +372,8 @@ RÈGLES:
 - Pas de JSON. Pas de programme complet sauf si explicitement demandé.
 - Ne jamais parler de serveur, timeout, fallback ou de technique.
 - Ne jamais dire "Je suis une IA" ou se décrire comme un assistant.
+- Respecte la préférence de ton sans tomber dans la caricature.
+- Si l'utilisateur veut une séance, commence par un cadrage court puis donne un plan exploitable, sans transformer la réponse en pavé confus.
 
 MESSAGE:
 ${message}`;
@@ -650,8 +665,10 @@ function fallbackWorkout(message, profile = {}, goalContext = {}) {
 function fallbackConversation(intent, message, profile = {}, goalContext = {}) {
   const p = makeProfileSummary(profile, goalContext);
   const lowRecovery = (p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 5);
+  const tone = String(p.coach_tone || 'balanced').toLowerCase();
+  const intro = tone === 'strict' ? 'On coupe le bruit et on agit.' : tone === 'direct' ? 'On va droit au plus rentable.' : tone === 'supportive' ? 'On garde l\'élan sans se juger.' : 'On reste simple et utile.';
   if (intent === "greeting") {
-    return `Réponse directe: Salut ${p.display_name || "champion"} 👋
+    return `Réponse directe: Salut ${p.display_name || "champion"} 👋 ${intro}
 Pourquoi: Je peux te guider vite sur une séance, une journée alimentaire, une recette ou une stratégie récupération sans te noyer dans le blabla.
 Action du jour: Donne-moi ton besoin exact en une phrase, par exemple « séance full body 40 min », « idée repas sèche » ou « j'ai mal dormi, j'adapte comment ? ». `;
   }
@@ -666,10 +683,10 @@ Action du jour: Sur ton prochain repas, vise légumes + protéines + une portion
   }
   if (intent === "recovery_question") {
     return lowRecovery
-      ? `Réponse directe: Aujourd'hui, je baisserais l'intensité.
+      ? `Réponse directe: ${tone === 'strict' ? "Aujourd'hui on n'ego pas : on baisse l'intensité." : "Aujourd'hui, je baisserais l'intensité."}
 Pourquoi: Avec peu de sommeil ou une récupération basse, forcer plus fort te coûte souvent plus qu'il ne te rapporte.
 Action du jour: Fais 10 à 20 min de mobilité, une marche active ou une séance technique très propre, puis couche-toi plus tôt ce soir.`
-      : `Réponse directe: Ta récup passera surtout par sommeil, hydratation et charge bien dosée.
+      : `Réponse directe: ${intro} Ta récup passera surtout par sommeil, hydratation et charge bien dosée.
 Pourquoi: C'est le trio qui protège ta progression sans casser le rythme.
 Action du jour: Fais 5 à 10 minutes de mobilité ce soir et garde la séance lourde seulement si les courbatures baissent nettement demain.`;
   }
@@ -677,7 +694,7 @@ Action du jour: Fais 5 à 10 minutes de mobilité ce soir et garde la séance lo
     const streakNote = p.current_streak ? `Tu as déjà ${p.current_streak} jour(s) de régularité en jeu.` : "Tu n'as pas besoin d'une énorme séance pour rester dans le rythme.";
     const scanNote = p.last_scan_summary ? `Ton dernier scan rappelle déjà l'axe prioritaire: ${p.last_scan_summary}.` : "";
     const sessionNote = p.recent_sessions_7d ? `Tu as déjà bougé ${p.recent_sessions_7d} fois cette semaine.` : "";
-    return `Réponse directe: Avoir la flemme est normal — on ne cherche pas l'héroïsme, on protège l'élan.
+    return `Réponse directe: ${intro} Avoir la flemme est normal — on ne cherche pas l'héroïsme, on protège l'élan.
 Pourquoi: ${[streakNote, sessionNote, scanNote].filter(Boolean).join(' ')}`.trim() + `
 Action du jour: Mets ta tenue maintenant. Fais 6 minutes de marche active ou 2 mouvements faciles. Si l'énergie remonte, tu prolonges 10 minutes. Si non, tu as quand même gagné ta journée de discipline.`;
   }
@@ -686,7 +703,7 @@ Action du jour: Mets ta tenue maintenant. Fais 6 minutes de marche active ou 2 m
 Pourquoi: Si un seul de ces marqueurs monte proprement, tu avances déjà.
 Action du jour: Choisis un mini-objectif mesurable pour la prochaine séance: +1 rep, meilleure exécution ou tempo plus propre.`;
   }
-  return `Réponse directe: Pour ton objectif ${p.goal.replaceAll("_", " ")}, on va chercher l'action la plus rentable aujourd'hui, pas la réponse la plus théorique.
+  return `Réponse directe: ${intro} Pour ton objectif ${p.goal.replaceAll("_", " ")}, on va chercher l'action la plus rentable aujourd'hui, pas la réponse la plus théorique.
 Pourquoi: Tu progresses surtout quand tes choix collent à ton niveau réel, à ton énergie et à ce que tu tiens dans la durée.${p.best_scan_score ? ` Ton meilleur repère récent est ${p.best_scan_score}/100, donc on ajuste sans perdre le fil.` : ""}
 Action du jour: Donne-moi ton contexte exact — temps dispo, matériel, fatigue du jour — et je te répondrai avec une action courte, précise et applicable maintenant.`;
 }
