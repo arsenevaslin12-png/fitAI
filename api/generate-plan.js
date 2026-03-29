@@ -107,7 +107,7 @@ function buildPlanPrompt(ctx) {
 - Poids: ${weight || "?"}kg | Taille: ${height || "?"}cm
 - Objectif: ${goal || "remise_en_forme"} → ${goalDesc}
 - Niveau: ${level || "beginner"} → ${levelDesc}
-- Équipement: ${equipment || "salle complète"}
+- Équipement: ${equipment || "poids du corps"}
 - Contraintes/blessures: ${constraints || "aucune"}
 - Séances totales réalisées: ${totalSessions}
 - Streak actuel: ${streak} jours
@@ -131,7 +131,8 @@ S8: Test & Récupération (bilan, max, récup)
 3. Respecter la phase "${phase.phase}" : ${phase.desc}
 4. Adapter au niveau "${level || "beginner"}" et à l'objectif "${goal || "remise_en_forme"}"
 5. Respecter les contraintes : ${constraints || "aucune"}
-6. Le notes doit contenir 2-3 exercices clés + consignes spécifiques à la phase
+6. ÉQUIPEMENT STRICT: ${/halt[eè]re|barre|salle|machine|kettlebell|banc/i.test(equipment || "") ? `Utilise UNIQUEMENT: ${equipment}. N'inclus pas d'équipement non mentionné.` : "POIDS DU CORPS UNIQUEMENT — INTERDIT: haltères, barres, kettlebell, machines. Exercices sans matériel uniquement (pompes, squats, tractions, fentes, gainage…)."}
+7. Le notes doit contenir 2-3 exercices clés + consignes spécifiques à la phase
 7. Si dernier workout > 5 jours : réintégration progressive
 
 ═══ FORMAT JSON STRICT (aucun markdown, aucun texte avant/après) ═══
@@ -231,7 +232,7 @@ module.exports = async function handler(req, res) {
     // Fetch all profile data in parallel
     const [profileRes, goalRes, lastWsRes, streakRes, weekCountRes] = await Promise.all([
       supabase.from("profiles").select("weight,height").eq("id", userId).maybeSingle(),
-      supabase.from("goals").select("type,level,text,constraints").eq("user_id", userId).maybeSingle(),
+      supabase.from("goals").select("type,level,text,constraints,equipment").eq("user_id", userId).maybeSingle(),
       supabase.from("workout_sessions").select("created_at")
         .eq("user_id", userId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("user_streaks").select("current_streak,total_workouts").eq("user_id", userId).maybeSingle(),
@@ -265,7 +266,7 @@ module.exports = async function handler(req, res) {
       goalDesc: getGoalDesc(goalType),
       level: levelVal,
       levelDesc: getLevelDesc(levelVal),
-      equipment: goal?.text || "salle complète",
+      equipment: goal?.equipment || "poids du corps",
       constraints: goal?.constraints || "aucune",
       lastWorkoutDays,
       totalSessions: streakData?.total_workouts || 0,

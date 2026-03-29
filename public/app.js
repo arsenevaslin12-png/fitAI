@@ -5042,24 +5042,26 @@ function _muscleSVG(muscle) {
 // ── Animated stick figure for exercise movements ──────────────────────────────
 function _stickFigureSVG(name) {
   const nm = (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  // Near (front) limb — brighter, thicker
+  // Near (right/front) limb — bright, thick
   const st  = 'stroke="rgba(255,255,255,.92)" stroke-width="2.6" stroke-linecap="round" fill="none"';
-  // Far (back) limb — dimmer, thinner
+  // Far (left/back) limb — dim, thin
   const stF = 'stroke="rgba(255,255,255,.38)" stroke-width="1.9" stroke-linecap="round" fill="none"';
+  // Mid (torso structural lines)
+  const stM = 'stroke="rgba(255,255,255,.65)" stroke-width="2.1" stroke-linecap="round" fill="none"';
 
   // Ground shadow ellipse + floor line
-  const FLR = '<ellipse cx="40" cy="77" rx="20" ry="3" fill="rgba(0,0,0,.28)"/>' +
-    '<line x1="6" y1="76" x2="74" y2="76" stroke="rgba(255,255,255,.1)" stroke-width="1"/>';
+  const FLR = '<ellipse cx="41" cy="77" rx="22" ry="3.5" fill="rgba(0,0,0,.3)"/>' +
+    '<line x1="6" y1="76" x2="76" y2="76" stroke="rgba(255,255,255,.1)" stroke-width="1"/>';
 
   // SVG defs: drop shadow filter + head radial gradient
   const DEFS = `<defs>
-    <filter id="sf" x="-25%" y="-25%" width="150%" height="150%">
-      <feDropShadow dx="1" dy="3" stdDeviation="2.5" flood-color="rgba(0,0,40,.6)"/>
+    <filter id="sf" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="rgba(0,0,40,.55)"/>
     </filter>
     <radialGradient id="hg" cx="36%" cy="34%" r="58%">
       <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="65%" stop-color="#c8d4ff" stop-opacity=".92"/>
-      <stop offset="100%" stop-color="#6070b0" stop-opacity=".85"/>
+      <stop offset="60%" stop-color="#c8d4ff" stop-opacity=".93"/>
+      <stop offset="100%" stop-color="#5a6ab0" stop-opacity=".88"/>
     </radialGradient>
   </defs>`;
 
@@ -5100,8 +5102,34 @@ function _stickFigureSVG(name) {
     `<circle cx="${cx-r*.3}" cy="${cy-r*.28}" r="${r*.18}" fill="rgba(255,255,255,.42)"/>`;
 
   // ── Joint dot (shoulder, hip, elbow, knee) ────────────────
-  const J = (cx, cy, r=2.2) =>
-    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(200,215,255,.62)" stroke="rgba(255,255,255,.22)" stroke-width=".7"/>`;
+  const J = (cx, cy, r=2.4) =>
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(200,215,255,.65)" stroke="rgba(255,255,255,.25)" stroke-width=".8"/>`;
+
+  // ── 3D Torso (static parallelogram) ──────────────────────
+  // sfx,sfy = far(left) shoulder; snx,sny = near(right) shoulder
+  // hfx,hfy = far(left) hip;      hnx,hny = near(right) hip
+  const TORSO = (sfx=32,sfy=21,snx=50,sny=21,hfx=34,hfy=46,hnx=48,hny=46) =>
+    `<polygon points="${sfx},${sfy} ${snx},${sny} ${hnx},${hny} ${hfx},${hfy}" fill="rgba(255,255,255,.07)" stroke="none"/>` +
+    `<line x1="${sfx}" y1="${sfy}" x2="${hfx}" y2="${hfy}" ${stF}/>` +
+    `<line x1="${snx}" y1="${sny}" x2="${hnx}" y2="${hny}" ${st}/>` +
+    `<line x1="${sfx}" y1="${sfy}" x2="${snx}" y2="${sny}" ${stM}/>` +
+    `<line x1="${hfx}" y1="${hfy}" x2="${hnx}" y2="${hny}" ${stM}/>`;
+
+  // ── Animated 3D Torso: sYs=shoulder Ys/frame, hYs=hip Ys/frame ──────────
+  // X positions fixed: far shoulder x=32, near shoulder x=50, far hip x=34, near hip x=48
+  const TORSOA = (sYs, hYs, d="1.8s") => {
+    const N = sYs.length;
+    const sYL = [...sYs, sYs[0]], hYL = [...hYs, hYs[0]];
+    const kt = sYL.map((_,i) => (i/(sYL.length-1)).toFixed(4)).join(";");
+    const ks = Array(N).fill("0.42 0 0.58 1").join("; ");
+    const A = (attr, vals) =>
+      `<animate attributeName="${attr}" values="${vals.join(";")}" dur="${d}" calcMode="spline" keyTimes="${kt}" keySplines="${ks}" repeatCount="indefinite"/>`;
+    const fs = `<line x1="32" y1="${sYs[0]}" x2="34" y2="${hYs[0]}" ${stF}>${A("y1",sYL)}${A("y2",hYL)}</line>`;
+    const ns = `<line x1="50" y1="${sYs[0]}" x2="48" y2="${hYs[0]}" ${st}>${A("y1",sYL)}${A("y2",hYL)}</line>`;
+    const sl = `<line x1="32" y1="${sYs[0]}" x2="50" y2="${sYs[0]}" ${stM}>${A("y1",sYL)}${A("y2",sYL)}</line>`;
+    const hl = `<line x1="34" y1="${hYs[0]}" x2="48" y2="${hYs[0]}" ${stM}>${A("y1",hYL)}${A("y2",hYL)}</line>`;
+    return fs + sl + ns + hl;
+  };
 
   // ── 2-frame helpers (A→B→A) ───────────────────────────────
   const KS2 = 'calcMode="spline" keySplines="0.42 0 0.58 1; 0.42 0 0.58 1" repeatCount="indefinite"';
@@ -5209,97 +5237,92 @@ function _stickFigureSVG(name) {
     return open + floor + mus + armFar + handR + head + neck + body + armNear + leg + handL + arrows + close;
   }
 
-  // ── Squat — 4 frames: stand → quarter → parallel → deep (3D legs) ──
+  // ── Squat — 3/4 view, 4 frames ───────────────────────────────────────────
   if (/squat/.test(nm)) {
-    const sqBar = `<line x1="22" y1="26" x2="58" y2="26" stroke="rgba(255,255,255,.55)" stroke-width="3" stroke-linecap="round"/>` +
-      `<circle cx="18" cy="26" r="4" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.1)" stroke-width="1.5"/>` +
-      `<circle cx="62" cy="26" r="4" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.1)" stroke-width="1.5"/>`;
-    return open + FLR +
-      MUSCLE(40,52,"#f97316") +
-      CM([40,40,40,40],[10,16,22,28],7,"1.8s") +
-      sqBar +
-      LM([[40,17,40,42],[40,23,40,44],[40,29,40,46],[40,34,40,50]],"1.8s") +
-      LMF([[40,28,26,22],[40,33,22,30],[40,37,18,40],[40,41,16,46]],"1.8s") +
-      LM([[40,28,54,22],[40,33,58,30],[40,37,62,40],[40,41,64,46]],"1.8s") +
-      LMF([[40,42,34,76],[40,44,28,76],[40,46,24,76],[40,50,22,72]],"1.8s") +
-      LM([[40,42,46,76],[40,44,52,76],[40,46,56,76],[40,50,58,72]],"1.8s") +
-      J(40,42) + J(40,50) +
-      ARRDN(40,6) +
-      close;
+    const sYs=[21,26,31,36], hYs=[46,51,55,58];
+    return open + FLR + MUSCLE(41,50,"#f97316") +
+      CM([42,42,42,42],[11,15,19,23],7,"1.8s") +
+      LM([[41,14,41,21],[41,18,41,26],[41,22,41,31],[41,26,41,36]],"1.8s") +
+      TORSOA(sYs, hYs, "1.8s") +
+      LMF([[32,21,28,34],[32,26,28,38],[32,31,28,42],[32,36,28,46]],"1.8s") +
+      LM([[50,21,54,34],[50,26,54,38],[50,31,54,42],[50,36,54,46]],"1.8s") +
+      LMF([[34,46,28,63],[34,51,26,63],[34,55,22,63],[34,58,18,62]],"1.8s") +
+      LMF([[28,63,24,76],[26,63,22,76],[22,63,18,76],[18,62,16,76]],"1.8s") +
+      LM([[48,46,52,63],[48,51,56,63],[48,55,60,63],[48,58,62,62]],"1.8s") +
+      LM([[52,63,56,76],[56,63,60,76],[60,63,64,76],[62,62,66,76]],"1.8s") +
+      J(34,46) + J(48,46) + ARRDN(40,5) + close;
   }
 
-  // ── Planche — core pulse ───────────────────────────────────
+  // ── Planche — 3D side profile ─────────────────────────────────────────────
   if (/planche|plank/.test(nm)) {
     return open +
       `<line x1="4" y1="54" x2="76" y2="54" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
-      `<circle cx="10" cy="36" r="6" ${st}/>` +
-      `<line x1="16" y1="38" x2="62" y2="38" ${st}/>` +
-      `<line x1="30" y1="38" x2="30" y2="54" ${st}/>` + `<line x1="47" y1="38" x2="47" y2="54" ${st}/>` +
-      `<line x1="62" y1="38" x2="68" y2="30" ${st}/>` + `<line x1="62" y1="38" x2="68" y2="46" ${st}/>` +
-      `<circle cx="40" cy="38" r="3.5" stroke="rgba(99,102,241,.55)" fill="rgba(99,102,241,.1)" stroke-width="1.5">` +
-      `<animate attributeName="r" values="3.5;6;3.5" dur="2.2s" ${KS2}/>` +
-      `<animate attributeName="opacity" values="0.9;0.2;0.9" dur="2.2s" ${KS2}/></circle>` +
-      close;
+      HEAD(10,36) +
+      `<line x1="16" y1="38" x2="62" y2="38" ${stM}/>` +
+      `<line x1="24" y1="38" x2="24" y2="41" ${stM}/>` +
+      `<line x1="40" y1="38" x2="40" y2="41" ${stM}/>` +
+      `<line x1="55" y1="38" x2="55" y2="41" ${stM}/>` +
+      `<line x1="30" y1="38" x2="30" y2="54" ${stF}/>` +
+      `<line x1="46" y1="38" x2="46" y2="54" ${st}/>` +
+      `<line x1="62" y1="38" x2="68" y2="30" ${stF}/>` +
+      `<line x1="62" y1="38" x2="68" y2="46" ${st}/>` +
+      J(62,38) + J(30,54) + J(46,54) + MUSCLE(40,38,"#60a5fa") +
+      `<circle cx="40" cy="38" r="4" stroke="rgba(99,102,241,.55)" fill="rgba(99,102,241,.1)" stroke-width="1.5">` +
+      `<animate attributeName="r" values="4;7;4" dur="2.2s" ${KS2}/>` +
+      `<animate attributeName="opacity" values=".9;.2;.9" dur="2.2s" ${KS2}/></circle>` + close;
   }
 
-  // ── Tractions — 4 frames: body rises in 3 steps (3D arms) ──
+  // ── Tractions — 3/4 view, 4 frames ───────────────────────────────────────
   if (/traction|pull.?up|chin.?up/.test(nm)) {
+    const sYs=[36,28,20,16], hYs=[61,53,45,41];
     return open +
       `<line x1="8" y1="8" x2="72" y2="8" stroke="rgba(255,255,255,.45)" stroke-width="3" stroke-linecap="round"/>` +
       `<circle cx="28" cy="8" r="3.5" fill="rgba(255,255,255,.28)"/>` +
       `<circle cx="52" cy="8" r="3.5" fill="rgba(255,255,255,.55)"/>` +
-      MUSCLE(40,42,"#818cf8") +
-      ARRUP(40,2) +
-      CM([40,40,40,40],[36,28,20,16],7,"1.4s") +
-      LM([[40,43,40,66],[40,35,40,58],[40,27,40,50],[40,23,40,46]],"1.4s") +
-      LMF([[28,8,28,30],[28,8,28,22],[28,8,28,14],[28,8,28,10]],"1.4s") +
-      LM([[52,8,52,30],[52,8,52,22],[52,8,52,14],[52,8,52,10]],"1.4s") +
-      LMF([[40,66,28,76],[40,58,28,70],[40,50,30,64],[40,46,32,58]],"1.4s") +
-      LM([[40,66,52,76],[40,58,52,70],[40,50,50,64],[40,46,48,58]],"1.4s") +
-      J(40,43) +
-      close;
+      MUSCLE(41,42,"#818cf8") + ARRUP(40,2) +
+      CM([42,42,42,42],[26,18,10,6],7,"1.4s") +
+      LM([[41,29,41,36],[41,21,41,28],[41,13,41,20],[41,9,41,16]],"1.4s") +
+      TORSOA(sYs, hYs, "1.4s") +
+      LMF([[32,36,28,8],[32,28,28,8],[32,20,28,8],[32,16,28,8]],"1.4s") +
+      LM([[50,36,52,8],[50,28,52,8],[50,20,52,8],[50,16,52,8]],"1.4s") +
+      LMF([[34,61,30,72],[34,53,30,65],[34,45,32,58],[34,41,34,56]],"1.4s") +
+      LMF([[30,72,28,76],[30,65,28,70],[32,58,30,64],[34,56,34,60]],"1.4s") +
+      LM([[48,61,52,72],[48,53,52,65],[48,45,50,58],[48,41,48,56]],"1.4s") +
+      LM([[52,72,54,76],[52,65,54,70],[50,58,52,64],[48,56,50,60]],"1.4s") +
+      J(32,36) + J(50,36) + close;
   }
 
-  // ── Fentes — 4 frames: neutral → L fwd → neutral → R fwd (3D legs) ─
+  // ── Fentes — 3/4 view, 4 frames ──────────────────────────────────────────
   if (/fente|lunge/.test(nm)) {
-    return open + FLR +
-      MUSCLE(40,52,"#f97316") +
-      CM([40,40,40,40],[12,12,12,12],7,"1.8s") +
-      L(40,19,40,42, 40,19,40,42) +
-      LMF([[40,30,24,36],[40,30,28,32],[40,30,56,36],[40,30,52,32]],"1.8s") +
-      LM([[40,30,56,36],[40,30,52,32],[40,30,24,36],[40,30,28,32]],"1.8s") +
-      LMF([[40,42,22,66],[40,42,28,62],[40,42,58,56],[40,42,52,58]],"1.8s") +
-      LMF([[22,66,16,76],[28,62,22,72],[58,56,64,76],[52,58,56,70]],"1.8s") +
-      LM([[40,42,58,56],[40,42,52,58],[40,42,22,66],[40,42,28,62]],"1.8s") +
-      LM([[58,56,64,76],[52,58,56,70],[22,66,16,76],[28,62,22,72]],"1.8s") +
-      J(40,42) +
-      close;
+    return open + FLR + MUSCLE(41,50,"#f97316") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LMF([[32,21,26,36],[32,21,26,32],[32,21,28,36],[32,21,28,32]],"1.8s") +
+      LMF([[26,36,22,48],[26,32,22,44],[28,36,24,48],[28,32,24,44]],"1.8s") +
+      LM([[50,21,56,36],[50,21,56,32],[50,21,54,36],[50,21,54,32]],"1.8s") +
+      LM([[56,36,62,48],[56,32,62,44],[54,36,60,48],[54,32,60,44]],"1.8s") +
+      LMF([[34,46,26,62],[34,46,20,62],[34,46,44,60],[34,46,38,62]],"1.8s") +
+      LMF([[26,62,20,76],[20,62,14,76],[44,60,52,76],[38,62,40,76]],"1.8s") +
+      LM([[48,46,54,62],[48,46,60,56],[48,46,34,56],[48,46,42,60]],"1.8s") +
+      LM([[54,62,60,76],[60,56,68,72],[34,56,26,70],[42,60,44,76]],"1.8s") +
+      J(34,46) + J(48,46) + close;
   }
 
-  // ── Hip thrust — 4 frames: flat → quarter → half → top (3D legs) ──
+  // ── Hip thrust — 3/4 view, 4 frames ──────────────────────────────────────
   if (/hip.?thrust|thrust/.test(nm)) {
-    const htKT = 'keyTimes="0;0.33;0.67;1;1"';
-    const htKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.4s"';
-    const htBar = `<line x1="22" y1="50" x2="58" y2="50" stroke="rgba(255,255,255,.65)" stroke-width="2.5" stroke-linecap="round">` +
-      `<animate attributeName="y1" values="50;44;38;34;50" ${htKT} ${htKSP}/>` +
-      `<animate attributeName="y2" values="50;44;38;34;50" ${htKT} ${htKSP}/>` + `</line>`;
-    const htPlL = `<circle cx="19" cy="50" r="5" stroke="rgba(255,255,255,.3)" fill="rgba(255,255,255,.05)" stroke-width="1.5">` +
-      `<animate attributeName="cy" values="50;44;38;34;50" ${htKT} ${htKSP}/>` + `</circle>`;
-    const htPlR = `<circle cx="61" cy="50" r="5" stroke="rgba(255,255,255,.5)" fill="rgba(255,255,255,.08)" stroke-width="1.5">` +
-      `<animate attributeName="cy" values="50;44;38;34;50" ${htKT} ${htKSP}/>` + `</circle>`;
+    const sYs=[46,41,37,33], hYs=[52,47,42,38];
     return open + FLR +
-      MUSCLE(40,36,"#f97316") +
-      `<rect x="4" y="38" width="18" height="7" rx="2" stroke="rgba(255,255,255,.3)" stroke-width="1.5" fill="rgba(255,255,255,.05)"/>` +
-      ARRUP(72,30) +
-      htBar + htPlL + htPlR +
-      CM([36,36,35,34],[44,38,33,28],6,"1.4s") +
-      LM([[40,50,40,62],[38,44,38,56],[36,38,36,52],[34,34,34,50]],"1.4s") +
-      LMF([[40,53,22,58],[38,46,20,52],[36,40,18,42],[34,38,16,38]],"1.4s") +
-      LM([[40,53,58,58],[38,46,56,50],[36,40,54,38],[34,38,52,34]],"1.4s") +
-      LMF([[40,62,28,76],[38,56,28,76],[36,52,28,76],[34,50,28,76]],"1.4s") +
-      LM([[40,62,52,76],[38,56,52,76],[36,52,52,76],[34,50,52,76]],"1.4s") +
-      J(40,50) + J(34,50) +
-      close;
+      `<rect x="4" y="42" width="16" height="6" rx="2" stroke="rgba(255,255,255,.3)" stroke-width="1.5" fill="rgba(255,255,255,.05)"/>` +
+      MUSCLE(41,38,"#f97316") + ARRUP(72,28) +
+      CM([42,42,42,42],[36,31,27,23],7,"1.4s") +
+      LM([[41,32,41,36],[41,27,41,31],[41,23,41,27],[41,19,41,23]],"1.4s") +
+      TORSOA(sYs, hYs, "1.4s") +
+      LMF([[32,46,28,58],[32,41,28,53],[32,37,28,50],[32,33,28,46]],"1.4s") +
+      LM([[50,46,54,58],[50,41,54,53],[50,37,54,50],[50,33,54,46]],"1.4s") +
+      LMF([[34,52,28,62],[34,47,28,58],[34,42,28,54],[34,38,28,50]],"1.4s") +
+      LMF([[28,62,22,76],[28,58,22,76],[28,54,22,76],[28,50,22,76]],"1.4s") +
+      LM([[48,52,54,62],[48,47,54,58],[48,42,54,54],[48,38,54,50]],"1.4s") +
+      LM([[54,62,60,76],[54,58,60,76],[54,54,60,76],[54,50,60,76]],"1.4s") +
+      J(34,52) + J(48,52) + close;
   }
 
   // ── Crunch — 4 frames: flat → quarter → half → full ──────
@@ -5316,216 +5339,210 @@ function _stickFigureSVG(name) {
       close;
   }
 
-  // ── Mountain climbers — 4-frame alternating knee drives ───
+  // ── Mountain climbers — 3D side profile ──────────────────────────────────
   if (/mountain|climber/.test(nm)) {
     return open +
       `<line x1="0" y1="50" x2="80" y2="50" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
-      `<circle cx="10" cy="32" r="6" ${st}/>` +
-      `<line x1="16" y1="34" x2="56" y2="34" ${st}/>` +
-      `<line x1="56" y1="34" x2="62" y2="26" ${st}/>` + `<line x1="56" y1="34" x2="62" y2="42" ${st}/>` +
-      `<line x1="30" y1="34" x2="30" y2="50" ${st}/>` + `<line x1="46" y1="34" x2="46" y2="50" ${st}/>` +
-      LM([[30,50,20,44],[30,50,28,50],[30,50,40,50],[30,50,32,46]],"0.8s") +
+      HEAD(10,32) +
+      `<line x1="16" y1="34" x2="58" y2="34" ${stM}/>` +
+      `<line x1="24" y1="34" x2="24" y2="38" ${stM}/>` +
+      `<line x1="40" y1="34" x2="40" y2="38" ${stM}/>` +
+      `<line x1="58" y1="34" x2="64" y2="26" ${stF}/>` +
+      `<line x1="58" y1="34" x2="64" y2="42" ${st}/>` +
+      `<line x1="30" y1="34" x2="30" y2="50" ${stF}/>` +
+      `<line x1="46" y1="34" x2="46" y2="50" ${st}/>` +
+      J(58,34) + J(30,50) + J(46,50) +
+      LMF([[30,50,20,44],[30,50,28,50],[30,50,40,50],[30,50,32,46]],"0.8s") +
       LM([[46,50,56,44],[46,50,50,50],[46,50,36,44],[46,50,42,46]],"0.8s") +
       close;
   }
 
-  // ── Burpees — jump ↔ plank crossfade ────────────────────
+  // ── Burpees — 3D jump ↔ plank crossfade ─────────────────────────────────
   if (/burpee/.test(nm)) {
     return open + XF("1.8s") +
-      `<g class="sfa"><circle cx="40" cy="8" r="7" ${st}/><line x1="40" y1="15" x2="40" y2="38" ${st}/><line x1="40" y1="25" x2="24" y2="16" ${st}/><line x1="40" y1="25" x2="56" y2="16" ${st}/><line x1="40" y1="38" x2="30" y2="54" ${st}/><line x1="40" y1="38" x2="50" y2="54" ${st}/></g>` +
-      `<g class="sfb"><circle cx="10" cy="40" r="6" ${st}/><line x1="16" y1="42" x2="58" y2="42" ${st}/><line x1="30" y1="42" x2="30" y2="58" ${st}/><line x1="46" y1="42" x2="46" y2="58" ${st}/><line x1="58" y1="42" x2="64" y2="35" ${st}/><line x1="58" y1="42" x2="64" y2="49" ${st}/></g>` +
-      `<line x1="0" y1="58" x2="80" y2="58" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
-      close;
+      `<g class="sfa">${HEAD(42,8)}` +
+        `<line x1="41" y1="15" x2="41" y2="21" ${stM}/>` +
+        `<polygon points="32,21 50,21 48,38 34,38" fill="rgba(255,255,255,.07)" stroke="none"/>` +
+        `<line x1="32" y1="21" x2="50" y2="21" ${stM}/>` +
+        `<line x1="34" y1="38" x2="48" y2="38" ${stM}/>` +
+        `<line x1="32" y1="21" x2="34" y2="38" ${stF}/>` +
+        `<line x1="50" y1="21" x2="48" y2="38" ${st}/>` +
+        `<line x1="32" y1="21" x2="24" y2="14" ${stF}/>` +
+        `<line x1="50" y1="21" x2="58" y2="14" ${st}/>` +
+        `<line x1="34" y1="38" x2="28" y2="54" ${stF}/>` +
+        `<line x1="48" y1="38" x2="54" y2="54" ${st}/>` +
+      `</g>` +
+      `<g class="sfb">${HEAD(10,40)}` +
+        `<line x1="16" y1="42" x2="58" y2="42" ${stM}/>` +
+        `<line x1="24" y1="42" x2="24" y2="46" ${stM}/>` +
+        `<line x1="40" y1="42" x2="40" y2="46" ${stM}/>` +
+        `<line x1="30" y1="42" x2="30" y2="58" ${stF}/>` +
+        `<line x1="46" y1="42" x2="46" y2="58" ${st}/>` +
+        `<line x1="58" y1="42" x2="64" y2="35" ${stF}/>` +
+        `<line x1="58" y1="42" x2="64" y2="49" ${st}/>` +
+      `</g>` +
+      `<line x1="0" y1="58" x2="80" y2="58" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` + close;
   }
 
-  // ── Dips — 4 frames: top → quarter → half → bottom (3D arms) ──
+  // ── Dips — 3/4 view, 4 frames ────────────────────────────────────────────
   if (/dips?/.test(nm)) {
+    const sYs=[16,20,25,30], hYs=[41,45,50,55];
     return open +
-      `<line x1="16" y1="10" x2="16" y2="64" stroke="rgba(255,255,255,.18)" stroke-width="2.5" stroke-linecap="round"/>` +
-      `<line x1="64" y1="10" x2="64" y2="64" stroke="rgba(255,255,255,.28)" stroke-width="2.5" stroke-linecap="round"/>` +
-      `<line x1="10" y1="14" x2="22" y2="14" stroke="rgba(255,255,255,.22)" stroke-width="2" stroke-linecap="round"/>` +
-      `<line x1="58" y1="14" x2="70" y2="14" stroke="rgba(255,255,255,.35)" stroke-width="2" stroke-linecap="round"/>` +
-      MUSCLE(40,32,"#f59e0b") +
-      ARRDN(40,72) +
-      CM([40,40,40,40],[16,20,24,28],7,"1.3s") +
-      LM([[40,23,40,46],[40,27,40,50],[40,31,40,54],[40,35,40,58]],"1.3s") +
-      LMF([[40,32,16,32],[40,36,16,34],[40,40,16,36],[40,44,16,38]],"1.3s") +
-      LM([[40,32,64,32],[40,36,64,34],[40,40,64,36],[40,44,64,38]],"1.3s") +
-      LMF([[40,46,34,62],[40,50,34,66],[40,54,34,70],[40,58,34,74]],"1.3s") +
-      LM([[40,46,46,62],[40,50,46,66],[40,54,46,70],[40,58,46,74]],"1.3s") +
-      J(40,32) +
-      close;
+      `<line x1="14" y1="10" x2="14" y2="64" stroke="rgba(255,255,255,.18)" stroke-width="2.5" stroke-linecap="round"/>` +
+      `<line x1="66" y1="10" x2="66" y2="64" stroke="rgba(255,255,255,.3)" stroke-width="2.5" stroke-linecap="round"/>` +
+      `<line x1="8" y1="14" x2="20" y2="14" stroke="rgba(255,255,255,.22)" stroke-width="2"/>` +
+      `<line x1="60" y1="14" x2="72" y2="14" stroke="rgba(255,255,255,.38)" stroke-width="2"/>` +
+      MUSCLE(41,32,"#f59e0b") + ARRDN(41,72) +
+      CM([42,42,42,42],[6,10,15,20],7,"1.3s") +
+      LM([[41,9,41,16],[41,13,41,20],[41,18,41,25],[41,23,41,30]],"1.3s") +
+      TORSOA(sYs, hYs, "1.3s") +
+      LMF([[32,16,14,16],[32,20,14,20],[32,25,14,26],[32,30,14,30]],"1.3s") +
+      LM([[50,16,66,16],[50,20,66,20],[50,25,66,26],[50,30,66,30]],"1.3s") +
+      LMF([[34,41,32,58],[34,45,32,62],[34,50,32,66],[34,55,32,70]],"1.3s") +
+      LM([[48,41,50,58],[48,45,50,62],[48,50,50,66],[48,55,50,70]],"1.3s") +
+      J(32,16) + J(50,16) + close;
   }
 
-  // ── Curl — 4 frames: arm curls up (3D far arm static) ──────
+  // ── Curl — 4 frames: bicep curl, 3/4 view, no dumbbell ──────
   if (/curl/.test(nm)) {
-    const curlDB_KT = 'keyTimes="0;0.33;0.67;1;1"';
-    const curlDB_KSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.4s"';
-    const curlDBx = `<animate attributeName="cx" values="24;28;30;26;24" ${curlDB_KT} ${curlDB_KSP}/>`;
-    const curlDBy = `<animate attributeName="cy" values="46;36;24;20;46" ${curlDB_KT} ${curlDB_KSP}/>`;
-    const animDB = `<circle cx="24" cy="46" r="4.5" fill="rgba(255,255,255,.35)" stroke="rgba(255,255,255,.7)" stroke-width="1">${curlDBx}${curlDBy}</circle>`;
     return open + FLR +
-      MUSCLE(36,28,"#818cf8") +
-      ARC("M 24,46 C 16,36 20,22 26,20") +
-      CM([40,40,40,40],[10,10,10,10],7,"1.4s") +
-      LF(40,17,40,44, 40,17,40,44) +
-      LF(40,28,56,22, 40,28,56,22) +
-      LM([[40,28,24,46],[40,28,28,36],[40,28,30,24],[40,28,26,20]],"1.4s") +
-      animDB +
-      J(40,28) +
-      L(40,44,32,68, 40,44,32,68) + L(40,44,48,68, 40,44,48,68) +
-      L(32,68,28,76, 32,68,28,76) + L(48,68,52,76, 48,68,52,76) +
-      close;
+      MUSCLE(50,28,"#818cf8") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      // Far arm static hanging
+      LF(32,21,28,38, 32,21,28,38) + LF(28,38,26,48, 28,38,26,48) +
+      // Near arm: upper arm static, forearm curls up
+      LM([[50,21,56,34],[50,21,56,34],[50,21,56,34],[50,21,56,34]],"1.4s") +
+      LM([[56,34,60,48],[56,34,58,38],[56,34,54,26],[56,34,58,38]],"1.4s") +
+      // Legs static
+      L(34,46,30,68, 34,46,30,68) + L(48,46,52,68, 48,46,52,68) +
+      L(30,68,26,76, 30,68,26,76) + L(52,68,56,76, 52,68,56,76) +
+      J(50,21) + J(56,34) + J(34,46) + J(48,46) + close;
   }
 
-  // ── Rowing — 4 frames: arms pull through full ROM ─────────
+  // ── Rowing — bent-over pull, 3/4 view, no dumbbell ─────────
   if (/rowing|tirage|row|pull.?over|oiseau/.test(nm)) {
-    const rowKT = 'keyTimes="0;0.33;0.67;1;1"';
-    const rowKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.3s"';
-    // Animated dumbbell follows pulling arm
-    const rowDB = `<circle cx="22" cy="30" r="4.5" fill="rgba(255,255,255,.38)" stroke="rgba(255,255,255,.75)" stroke-width="1">` +
-      `<animate attributeName="cx" values="22;28;36;28;22" ${rowKT} ${rowKSP}/>` +
-      `<animate attributeName="cy" values="30;36;42;44;30" ${rowKT} ${rowKSP}/>` + `</circle>`;
+    // Bent-over: torso ~45° forward, shoulders at (28,26)/(46,26), hips at (30,46)/(48,46)
     return open + FLR +
-      MUSCLE(36,28,"#818cf8") + // back/lats
-      ARC("M 22,30 C 18,36 22,42 28,44") +
-      C(36,22,7,22) +
-      L(40,28,44,50, 40,28,44,50) +
-      LM([[42,36,22,30],[42,36,28,36],[42,36,36,42],[42,36,28,44]],"1.3s") +
-      LM([[42,36,62,30],[42,36,56,26],[42,36,50,20],[42,36,56,20]],"1.3s") +
-      rowDB +
-      DB(62,28,".45") +
-      L(44,50,36,68, 44,50,36,68) + L(44,50,54,68, 44,50,54,68) +
-      close;
+      MUSCLE(38,30,"#818cf8") +
+      HEAD(20,20) +
+      `<line x1="24" y1="24" x2="28" y2="26" ${stM}/>` +
+      TORSO(28,26,46,26,30,46,48,46) +
+      // Far arm pulls back: elbow (22,36) → (30,30) → (36,24)
+      LMF([[28,26,20,36],[28,26,24,30],[28,26,32,22],[28,26,24,30]],"1.3s") +
+      LMF([[20,36,16,46],[24,30,20,40],[32,22,34,32],[24,30,20,40]],"1.3s") +
+      // Near arm pulls back
+      LM([[46,26,54,36],[46,26,56,28],[46,26,58,20],[46,26,56,28]],"1.3s") +
+      LM([[54,36,58,46],[56,28,60,36],[58,20,62,30],[56,28,60,36]],"1.3s") +
+      // Legs bent stance
+      LMF([[30,46,24,66],[30,46,24,66],[30,46,24,66],[30,46,24,66]],"1.3s") +
+      LM([[48,46,54,66],[48,46,54,66],[48,46,54,66],[48,46,54,66]],"1.3s") +
+      J(28,26) + J(46,26) + J(30,46) + J(48,46) + close;
   }
 
-  // ── Deadlift — 4 frames: deep bend → mid → almost up → up
+  // ── Deadlift — 4 frames: deep bend → mid → almost up → upright, 3/4 view
   if (/souleve|deadlift|terre|sumo|roumain/.test(nm)) {
-    // Animated barbell between the hands. Hands: L=(26,46)→(24,40)→(22,36)→(22,36), R=(62,44)→(60,38)→(58,34)→(58,32)
-    // Barbell drawn as horizontal line between hands (approx)
-    const dlKT = 'keyTimes="0;0.33;0.67;1;1"';
-    const dlKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.8s"';
-    const bbLine = `<line x1="24" y1="46" x2="64" y2="46" stroke="rgba(255,255,255,.6)" stroke-width="3" stroke-linecap="round">` +
-      `<animate attributeName="y1" values="46;40;36;36;46" ${dlKT} ${dlKSP}/>` +
-      `<animate attributeName="y2" values="44;38;34;32;44" ${dlKT} ${dlKSP}/>` +
-      `</line>`;
-    const bbPlateL = `<circle cx="20" cy="46" r="5" stroke="rgba(255,255,255,.55)" fill="rgba(255,255,255,.08)" stroke-width="1.5"><animate attributeName="cy" values="46;40;36;36;46" ${dlKT} ${dlKSP}/></circle>`;
-    const bbPlateR = `<circle cx="68" cy="44" r="5" stroke="rgba(255,255,255,.55)" fill="rgba(255,255,255,.08)" stroke-width="1.5"><animate attributeName="cy" values="44;38;34;32;44" ${dlKT} ${dlKSP}/></circle>`;
+    // Torso hinges from bent (sY=36,hY=46) to upright (sY=21,hY=46)
+    const sYs=[36,30,24,21], hYs=[46,46,46,46];
     return open + FLR +
-      MUSCLE(40,35,"#22c55e") + // back/glutes
-      ARC("M 40,64 L 40,16") +
+      MUSCLE(40,35,"#22c55e") +
       ARRUP(72,30) +
-      bbLine + bbPlateL + bbPlateR +
-      CM([34,37,40,40],[28,20,14,10],7,"1.8s") +
-      LM([[38,33,52,50],[39,24,48,44],[40,18,44,40],[40,16,40,42]],"1.8s") +
-      LM([[44,40,26,46],[42,32,24,40],[41,24,22,36],[40,22,22,36]],"1.8s") +
-      LM([[44,40,62,44],[42,32,60,38],[41,24,58,34],[40,22,58,32]],"1.8s") +
-      LM([[52,50,46,68],[46,44,38,68],[42,40,34,68],[40,42,32,68]],"1.8s") +
-      LM([[52,50,60,68],[46,44,52,68],[42,40,48,68],[40,42,48,68]],"1.8s") +
-      close;
+      CM([30,35,38,42],[36,26,18,11],7,"1.8s") +
+      `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` +
+      TORSOA(sYs, hYs, "1.8s") +
+      // Far arm hangs down toward floor
+      LMF([[32,36,28,56],[32,30,28,50],[32,24,28,44],[32,21,28,40]],"1.8s") +
+      LMF([[28,56,26,70],[28,50,26,64],[28,44,26,60],[28,40,26,56]],"1.8s") +
+      // Near arm hangs down toward floor
+      LM([[50,36,54,56],[50,30,54,50],[50,24,54,44],[50,21,54,40]],"1.8s") +
+      LM([[54,56,56,70],[54,50,56,64],[54,44,56,60],[54,40,56,56]],"1.8s") +
+      // Legs (knee bend at bottom, straight at top)
+      LMF([[34,46,26,62],[34,46,27,64],[34,46,28,66],[34,46,30,68]],"1.8s") +
+      LM([[48,46,56,62],[48,46,55,64],[48,46,54,66],[48,46,52,68]],"1.8s") +
+      J(34,46) + J(48,46) + close;
   }
 
-  // ── Press — 4 frames: start → quarter → half → lockout ───
+  // ── Press — 4 frames: start → quarter → half → lockout, 3/4 view ───
   if (/develop|bench|militaire|overhead|press|presse|ecarté|ecarte/.test(nm)) {
-    // Animated barbell between the two hands
-    const prKT = 'keyTimes="0;0.33;0.67;1;1"';
-    const prKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.4s"';
-    const pressBar = `<line x1="20" y1="38" x2="60" y2="38" stroke="rgba(255,255,255,.6)" stroke-width="3" stroke-linecap="round">` +
-      `<animate attributeName="y1" values="38;30;20;12;38" ${prKT} ${prKSP}/>` +
-      `<animate attributeName="y2" values="38;30;20;12;38" ${prKT} ${prKSP}/>` +
-      `</line>`;
-    const pressPlL = `<circle cx="15" cy="38" r="5" stroke="rgba(255,255,255,.55)" fill="rgba(255,255,255,.08)" stroke-width="1.5"><animate attributeName="cy" values="38;30;20;12;38" ${prKT} ${prKSP}/></circle>`;
-    const pressPlR = `<circle cx="65" cy="38" r="5" stroke="rgba(255,255,255,.55)" fill="rgba(255,255,255,.08)" stroke-width="1.5"><animate attributeName="cy" values="38;30;20;12;38" ${prKT} ${prKSP}/></circle>`;
     return open + FLR +
-      MUSCLE(40,22,"#60a5fa") + // shoulders/chest
-      pressBar + pressPlL + pressPlR +
-      C(40,10,7,10) + L(40,17,40,44, 40,17,40,44) +
-      LM([[40,28,22,38],[40,28,18,30],[40,28,16,20],[40,28,20,12]],"1.4s") +
-      LM([[40,28,58,38],[40,28,62,30],[40,28,64,20],[40,28,60,12]],"1.4s") +
-      L(40,44,32,68, 40,44,32,68) + L(40,44,48,68, 40,44,48,68) +
-      ARRUP(40,6) +
-      close;
+      MUSCLE(41,22,"#60a5fa") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      ARRUP(42,6) +
+      // Far arm presses overhead: shoulder(32,21) → elbow → hand
+      LMF([[32,21,24,34],[32,21,22,26],[32,21,20,18],[32,21,22,10]],"1.4s") +
+      LMF([[24,34,20,46],[22,26,18,36],[20,18,18,26],[22,10,20,14]],"1.4s") +
+      // Near arm presses overhead
+      LM([[50,21,58,34],[50,21,60,26],[50,21,62,18],[50,21,60,10]],"1.4s") +
+      LM([[58,34,62,46],[60,26,64,36],[62,18,66,26],[60,10,62,14]],"1.4s") +
+      // Legs static
+      L(34,46,30,68, 34,46,30,68) + L(48,46,52,68, 48,46,52,68) +
+      L(30,68,26,76, 30,68,26,76) + L(52,68,56,76, 52,68,56,76) +
+      J(32,21) + J(50,21) + J(34,46) + J(48,46) + close;
   }
 
-  // ── Jump squat — 4 frames: squat → launch → apex → land ──
+  // ── Jump squat — 3/4 view, 4 frames ─────────────────────────────────────
   if (/jump|saut/.test(nm)) {
+    const sYs=[26,19,9,17], hYs=[50,42,30,40];
     return open + FLR +
-      CM([40,40,40,40],[24,16,6,14],7,"1.2s") +
-      LM([[40,31,40,48],[40,23,40,40],[40,13,40,32],[40,21,40,38]],"1.2s") +
-      LM([[40,38,22,34],[40,28,24,22],[40,18,26,12],[40,26,22,18]],"1.2s") +
-      LM([[40,38,58,34],[40,28,56,22],[40,18,54,12],[40,26,58,18]],"1.2s") +
-      LM([[40,48,28,64],[40,40,30,56],[40,32,32,50],[40,38,28,58]],"1.2s") +
-      LM([[40,48,52,64],[40,40,50,56],[40,32,48,50],[40,38,52,58]],"1.2s") +
-      close;
+      CM([42,42,42,42],[16,9,0,8],7,"1.2s") +
+      LM([[41,19,41,26],[41,12,41,19],[41,3,41,9],[41,11,41,17]],"1.2s") +
+      TORSOA(sYs, hYs, "1.2s") +
+      LMF([[32,26,24,38],[32,19,24,28],[32,9,22,12],[32,17,24,24]],"1.2s") +
+      LM([[50,26,58,38],[50,19,56,28],[50,9,58,10],[50,17,56,24]],"1.2s") +
+      LMF([[34,50,28,66],[34,42,28,58],[34,30,32,44],[34,40,28,58]],"1.2s") +
+      LMF([[28,66,24,76],[28,58,24,72],[32,44,30,54],[28,58,24,70]],"1.2s") +
+      LM([[48,50,54,66],[48,42,54,58],[48,30,50,44],[48,40,54,58]],"1.2s") +
+      LM([[54,66,58,76],[54,58,60,72],[50,44,54,54],[54,58,58,70]],"1.2s") +
+      J(34,50) + J(48,50) + close;
   }
 
   // ── Running — 4-frame stride cycle (3D near/far limbs) ──
   if (/course|run|sprint|jog/.test(nm)) {
     return open +
       `<line x1="6" y1="68" x2="74" y2="68" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
-      CM([40,40,40,40],[10,10,10,10],7,"0.7s") +
-      `<line x1="40" y1="17" x2="40" y2="42" ${st}/>` +
-      LMF([[40,28,26,18],[40,28,34,26],[40,28,54,38],[40,28,46,32]],"0.7s") +
-      LM([[40,28,54,38],[40,28,46,32],[40,28,26,18],[40,28,34,26]],"0.7s") +
-      LMF([[40,42,30,58],[40,42,38,62],[40,42,50,56],[40,42,44,60]],"0.7s") +
-      LMF([[30,58,22,68],[38,62,34,70],[50,56,58,68],[44,60,46,68]],"0.7s") +
-      LM([[40,42,50,56],[40,42,44,60],[40,42,30,58],[40,42,38,62]],"0.7s") +
-      LM([[50,56,58,68],[44,60,46,68],[30,58,22,68],[38,62,34,70]],"0.7s") +
-      J(40,42) +
-      close;
+      CM([42,42,42,42],[11,11,11,11],7,"0.7s") +
+      `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LMF([[32,21,22,32],[32,21,28,30],[32,21,38,26],[32,21,34,24]],"0.7s") +
+      LM([[50,21,60,28],[50,21,56,30],[50,21,46,34],[50,21,50,32]],"0.7s") +
+      LMF([[34,46,28,62],[34,46,32,62],[34,46,40,60],[34,46,36,62]],"0.7s") +
+      LMF([[28,62,22,68],[32,62,26,68],[40,60,50,68],[36,62,32,68]],"0.7s") +
+      LM([[48,46,54,60],[48,46,50,62],[48,46,40,64],[48,46,44,62]],"0.7s") +
+      LM([[54,60,60,68],[50,62,52,68],[40,64,34,68],[44,62,46,68]],"0.7s") +
+      J(34,46) + J(48,46) + close;
   }
 
-  // ── Élévations — 4 frames: arms rise in 3 steps ───────────
+  // ── Élévations latérales — 3/4 view ──────────────────────────────────────
   if (/elevation|raise|oiseau.invers|face.pull|shrug/.test(nm)) {
-    // Dumbbells at each hand, animated upward
-    const elKT = 'keyTimes="0;0.33;0.67;1;1"';
-    const elKSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.4s"';
-    // L hand: (24,36)→(18,32)→(14,28)→(14,26) ; R hand: (56,36)→(62,32)→(66,28)→(66,26)
-    const dbL = `<circle cx="24" cy="36" r="4" fill="rgba(255,255,255,.38)" stroke="rgba(255,255,255,.7)" stroke-width="1">` +
-      `<animate attributeName="cx" values="24;18;14;14;24" ${elKT} ${elKSP}/>` +
-      `<animate attributeName="cy" values="36;32;28;26;36" ${elKT} ${elKSP}/>` + `</circle>`;
-    const dbR = `<circle cx="56" cy="36" r="4" fill="rgba(255,255,255,.38)" stroke="rgba(255,255,255,.7)" stroke-width="1">` +
-      `<animate attributeName="cx" values="56;62;66;66;56" ${elKT} ${elKSP}/>` +
-      `<animate attributeName="cy" values="36;32;28;26;36" ${elKT} ${elKSP}/>` + `</circle>`;
-    return open + FLR +
-      MUSCLE(40,28,"#60a5fa") + // shoulders (deltoids)
-      ARC("M 24,36 C 14,30 12,24 14,26") +
-      ARC("M 56,36 C 66,30 68,24 66,26") +
-      C(40,10,7,10) + L(40,17,40,44, 40,17,40,44) +
-      LM([[40,28,24,36],[40,28,18,32],[40,28,14,28],[40,28,14,26]],"1.4s") +
-      LM([[40,28,56,36],[40,28,62,32],[40,28,66,28],[40,28,66,26]],"1.4s") +
-      dbL + dbR +
-      DB(24,36) + DB(56,36) +
-      L(40,44,32,68, 40,44,32,68) + L(40,44,48,68, 40,44,48,68) +
+    return open + FLR + MUSCLE(41,24,"#60a5fa") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LMF([[32,21,24,36],[32,21,18,28],[32,21,14,22],[32,21,18,28]],"1.4s") +
+      LM([[50,21,58,36],[50,21,64,28],[50,21,68,22],[50,21,64,28]],"1.4s") +
+      L(34,46,30,68, 34,46,30,68) + L(48,46,52,68, 48,46,52,68) +
+      L(30,68,26,76, 30,68,26,76) + L(52,68,56,76, 52,68,56,76) +
       close;
   }
 
-  // ── Extension triceps — 4 frames: arm extends ─────────────
+  // ── Extension triceps — 3/4 view ─────────────────────────────────────────
   if (/extension.tricep|tricep.push|skull/.test(nm)) {
-    return open + FLR +
-      C(40,10,7,10) + L(40,17,40,44, 40,17,40,44) +
-      L(40,28,56,22, 40,28,56,22) +
-      L(40,28,30,14, 40,28,30,14) +
-      LM([[30,14,22,26],[30,14,30,18],[30,14,38,12],[30,14,44,8]],"1.3s") +
-      L(40,44,32,68, 40,44,32,68) + L(40,44,48,68, 40,44,48,68) +
-      close;
+    return open + FLR + MUSCLE(38,26,"#f59e0b") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LF(32,21,26,14, 32,21,26,14) +
+      LM([[26,14,20,24],[26,14,26,18],[26,14,36,12],[26,14,40,10]],"1.3s") +
+      LMF([[50,21,56,14],[50,21,56,14],[50,21,58,14],[50,21,58,14]],"1.3s") +
+      L(34,46,30,68, 34,46,30,68) + L(48,46,52,68, 48,46,52,68) +
+      L(30,68,26,76, 30,68,26,76) + L(52,68,56,76, 52,68,56,76) + close;
   }
 
-  // ── Jumping jacks — 4 frames: closed → open → closed → open ─
+  // ── Jumping jacks — 3/4 view ─────────────────────────────────────────────
   if (/jumping.?jack|ecart|jumping/.test(nm)) {
     return open + FLR +
-      CM([40,40,40,40],[10,10,10,10],7,"0.8s") +
-      L(40,17,40,44, 40,17,40,44) +
-      // Far arm (left, dimmer) swings up
-      LMF([[40,28,26,34],[40,28,16,18],[40,28,26,34],[40,28,16,18]],"0.8s") +
-      // Near arm (right, bright) swings up opposite phase
-      LM([[40,28,54,34],[40,28,64,18],[40,28,54,34],[40,28,64,18]],"0.8s") +
-      // Far leg (left, dimmer)
-      LMF([[40,44,32,68],[40,44,18,64],[40,44,32,68],[40,44,18,64]],"0.8s") +
-      // Near leg (right, bright)
-      LM([[40,44,48,68],[40,44,62,64],[40,44,48,68],[40,44,62,64]],"0.8s") +
-      J(40,44) +
-      close;
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LMF([[32,21,28,38],[32,21,14,18],[32,21,28,38],[32,21,14,18]],"0.8s") +
+      LMF([[28,38,24,48],[14,18,8,26],[28,38,24,48],[14,18,8,26]],"0.8s") +
+      LM([[50,21,54,38],[50,21,68,18],[50,21,54,38],[50,21,68,18]],"0.8s") +
+      LM([[54,38,58,48],[68,18,74,26],[54,38,58,48],[68,18,74,26]],"0.8s") +
+      LMF([[34,46,28,68],[34,46,16,62],[34,46,28,68],[34,46,16,62]],"0.8s") +
+      LM([[48,46,54,68],[48,46,66,62],[48,46,54,68],[48,46,66,62]],"0.8s") +
+      J(32,21) + J(50,21) + J(34,46) + J(48,46) + close;
   }
 
   // ── Gainage latéral — side plank hold with hip pulse ──────
@@ -5559,33 +5576,32 @@ function _stickFigureSVG(name) {
       close;
   }
 
-  // ── Étirement / Stretch — slow arm reach + torso tilt ─────
+  // ── Étirement / Stretch — slow arm reach + torso tilt, 3/4 view ─────
   if (/etir|stretch|mobilit|yoga|souplesse/.test(nm)) {
+    const sYs=[21,21,21,21], hYs=[46,46,46,46];
     return open + FLR +
-      CM([40,40,40,40],[10,10,10,8],7,"2.4s") +
-      // Torso tilts slightly
-      LM([[40,17,40,44],[40,17,40,44],[40,16,38,44],[40,17,40,44]],"2.4s") +
-      // Far arm: reaches across low
-      LMF([[40,28,24,34],[40,28,22,32],[40,28,20,30],[40,28,24,34]],"2.4s") +
+      CM([42,42,42,42],[10,10,10,8],7,"2.4s") +
+      `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` +
+      TORSOA(sYs, hYs, "2.4s") +
+      // Far arm: reaches across and down
+      LMF([[32,21,22,32],[32,21,20,28],[32,21,18,26],[32,21,22,32]],"2.4s") +
       // Near arm: sweeps up overhead
-      LM([[40,28,54,34],[40,28,60,22],[40,28,64,14],[40,28,54,34]],"2.4s") +
+      LM([[50,21,58,30],[50,21,62,20],[50,21,66,12],[50,21,58,30]],"2.4s") +
       // Far leg: slight step back
-      LMF([[40,44,34,68],[40,44,32,68],[40,44,30,68],[40,44,34,68]],"2.4s") +
+      LMF([[34,46,28,68],[34,46,26,68],[34,46,24,68],[34,46,28,68]],"2.4s") +
       // Near leg: static
-      LM([[40,44,46,68],[40,44,46,68],[40,44,46,68],[40,44,46,68]],"2.4s") +
-      J(40,28) + J(40,44) +
-      ARC("M 54,34 C 62,22 66,14 64,14") +
-      close;
+      LM([[48,46,54,68],[48,46,54,68],[48,46,54,68],[48,46,54,68]],"2.4s") +
+      J(32,21) + J(50,21) + J(34,46) + J(48,46) + close;
   }
 
-  // ── Generic — 4-frame arm swing ───────────────────────────
+  // ── Generic — 4-frame arm swing, 3/4 view ───────────────────────────
   return open + FLR +
-    CM([40,40,40,40],[10,10,10,10],7,"1.5s") +
-    L(40,17,40,44, 40,17,40,44) +
-    LMF([[40,28,24,22],[40,28,30,28],[40,28,56,36],[40,28,50,30]],"1.5s") +
-    LM([[40,28,56,22],[40,28,50,30],[40,28,24,36],[40,28,30,28]],"1.5s") +
-    L(40,44,32,68, 40,44,32,68) + L(40,44,48,68, 40,44,48,68) +
-    J(40,28) + J(40,44) +
+    HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+    LMF([[32,21,22,30],[32,21,26,34],[32,21,38,32],[32,21,28,36]],"1.5s") +
+    LM([[50,21,60,30],[50,21,56,34],[50,21,44,32],[50,21,54,36]],"1.5s") +
+    L(34,46,30,68, 34,46,30,68) + L(48,46,52,68, 48,46,52,68) +
+    L(30,68,26,76, 30,68,26,76) + L(52,68,56,76, 52,68,56,76) +
+    J(32,21) + J(50,21) + J(34,46) + J(48,46) +
     close;
 }
 
