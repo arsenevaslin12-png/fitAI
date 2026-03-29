@@ -17,6 +17,7 @@ const ASYNC_LOCKS = new Set();
 let POST_PHOTO = null;
 let FEED_FILTER = "all";
 let LAST_COACH_PROMPT = "";
+let COACH_REQUEST_SEQ = 0;
 let USER_WEIGHT = null; // kg, loaded from profile — used to compute water target
 let _appReady = false; // guards against double-call of showApp() from onAuthStateChange + getSession()
 
@@ -112,11 +113,11 @@ function coachGoalLabel(goal) {
 
 function buildCoachPriorityLine(ctx = {}) {
   const parts = [];
-  if (ctx.lastScanFocus) parts.push(`Focus scan: ${ctx.lastScanFocus}`);
-  if (ctx.recentSessions7d > 0) parts.push(`${ctx.recentSessions7d} séance${ctx.recentSessions7d > 1 ? 's' : ''} sur 7 jours`);
-  if (ctx.todayProtein > 0) parts.push(`${ctx.todayProtein}g prot. aujourd'hui`);
+  if (ctx.lastScanFocus) parts.push(`Focus: ${ctx.lastScanFocus}`);
+  if (ctx.recentSessions7d > 0) parts.push(`${ctx.recentSessions7d} séance${ctx.recentSessions7d > 1 ? 's' : ''}/7j`);
+  if (ctx.todayProtein > 0) parts.push(`${ctx.todayProtein}g prot.`);
   if (ctx.currentStreak > 0) parts.push(`streak ${ctx.currentStreak}j`);
-  return parts.length ? parts.join(' · ') : 'On réduit la friction et on avance avec une action claire.';
+  return parts.length ? parts.slice(0, 3).join(' · ') : 'Action simple, utile, réaliste.';
 }
 
 function coachMoodPrompt(kind) {
@@ -127,6 +128,104 @@ function coachMoodPrompt(kind) {
     recover: "Je suis fatigué ou j'ai mal dormi. Adapte ma journée entre récupération active, mobilité et séance très légère."
   };
   return prompts[kind] || prompts.medium;
+}
+
+function detectCoachModeClient(prompt) {
+  const t = String(prompt || '').toLowerCase();
+  if (/flemme|pas envie|motivation|discipline|stagne|stagnation|j'ai la flemme|j ai la flemme/.test(t)) return 'motivation';
+  if (/fatigu|mal dormi|courbature|récup|recup|repos|épuis|epuis|claqué|claque/.test(t)) return 'recovery';
+  if (/liste de course|liste d'achat|faire les courses|courses pour|supermarch|barbecue|bbq|soir[eé]e burgers/.test(t)) return 'shopping_list';
+  if (/journée alimentaire|journee alimentaire|que manger|quoi manger|repas|menu|plan alimentaire/.test(t)) return 'meal_plan';
+  if (/recette|cuisine|prépare|prepare|plat/.test(t)) return 'recipe_json';
+  return 'advice';
+}
+
+async function loadCoachContext(force = false) {
+  const cacheKey = 'coach_ctx_v2';
+  if (!force) {
+    const cached = DataCache.get(cacheKey);
+    if (cached) return cached;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgoIso = new Date(Date.now() - 7 * 86400000).toISOString();
+  const [goalRes, profileRes, streakRes, recentSessionsRes, scanRes, mealsTodayRes, mealsWeekRes] = await Promise.all([
+    sbSafeSingle(SB.from('goals').select('type,level,constraints,equipment').eq('user_id', U.id).maybeSingle()),
+    sbSafeSingle(SB.from('profiles').select('display_name,weight,height,age').eq('id', U.id).maybeSingle()),
+    sbSafeSingle(SB.from('user_streaks').select('current_streak,total_workouts').eq('user_id', U.id).maybeSingle()),
+    sbSafeList(SB.from('workout_sessions').select('plan,created_at').eq('user_id', U.id).gte('created_at', weekAgoIso).order('created_at', { ascending: false }).limit(6)),
+    sbSafeList(SB.from('body_scans').select('physical_score,created_at,extended_analysis,ai_feedback').eq('user_id', U.id).order('created_at', { ascending: false }).limit(3)),
+    sbSafeList(SB.from('meals').select('name,calories,protein').eq('user_id', U.id).eq('date', today)),
+    sbSafeList(SB.from('meals').select('name,calories,protein,date').eq('user_id', U.id).gte('date', today.slice(0,8) + '01').limit(12))
+  ]);
+
+  const goalContext = goalRes?.data || {};
+  const dbProfile = profileRes?.data || {};
+  const currentStreak = Number(streakRes?.data?.current_streak || 0);
+  const totalWorkouts = Number(streakRes?.data?.total_workouts || 0);
+  const recentSessions = recentSessionsRes?.data || [];
+  const recentWorkoutNames = recentSessions.map(s => s.plan?.title || 'Séance').filter(Boolean).slice(0, 4);
+  const recentSessions7d = recentSessions.length;
+  const scans = scanRes?.data || [];
+  const lastScan = scans[0] || null;
+  const bestScanScore = scans.reduce((best, s) => Math.max(best, Number(s.physical_score) || 0), 0) || null;
+  const lastScanSummary = lastScan?.extended_analysis?.areas_for_improvement?.[0]
+    || lastScan?.extended_analysis?.personalized_recommendations?.training?.[0]
+    || String(lastScan?.ai_feedback || '').split(/[.!?]/)[0]
+    || '';
+  const todayMeals = mealsTodayRes?.data || [];
+  const todayKcal = Math.round(todayMeals.reduce((s, m) => s + (Number(m.calories) || 0), 0));
+  const todayProtein = Math.round(todayMeals.reduce((s, m) => s + (Number(m.protein) || 0), 0));
+  const nutritionSummary = todayKcal > 0 ? `${todayKcal} kcal · ${todayProtein}g protéines` : 'Suivi nutrition encore léger';
+  const recentMealPattern = (mealsWeekRes?.data || []).slice(0, 5).map((m) => `${m.name || 'Repas'} ${m.calories ? `${m.calories}kcal` : ''}`.trim()).join(', ');
+
+  let moodLabel = '';
+  try {
+    const savedMood = localStorage.getItem('fitai_mood');
+    const savedMoodDate = localStorage.getItem('fitai_mood_date');
+    if (savedMood && savedMoodDate === new Date().toDateString()) moodLabel = MOOD_LABELS[parseInt(savedMood)] || '';
+  } catch {}
+
+  const coachProfile = {
+    display_name: dbProfile.display_name || U.email?.split('@')[0] || '',
+    weight: dbProfile.weight || null,
+    height: dbProfile.height || null,
+    age: dbProfile.age || null,
+    goal: goalContext.type || '',
+    level: goalContext.level || 'beginner',
+    injuries: goalContext.constraints || '',
+    equipment: goalContext.equipment || 'poids du corps',
+    mood_today: moodLabel || undefined,
+    current_streak: currentStreak || undefined,
+    total_workouts: totalWorkouts || undefined,
+    recent_workouts: recentWorkoutNames.length ? recentWorkoutNames : undefined,
+    recent_sessions_7d: recentSessions7d || undefined,
+    best_scan_score: bestScanScore || undefined,
+    last_scan_summary: lastScanSummary || undefined,
+    nutrition_summary: nutritionSummary || undefined,
+    recent_meal_pattern: recentMealPattern || undefined,
+    today_kcal: todayKcal > 0 ? todayKcal : undefined,
+    today_protein: todayProtein > 0 ? todayProtein : undefined
+  };
+
+  const ctx = { goalContext, coachProfile, insights: { currentStreak, recentSessions7d, todayProtein, todayKcal, bestScanScore, lastScanSummary, moodLabel } };
+  DataCache.set(cacheKey, ctx, 45000);
+  return ctx;
+}
+
+function buildCoachLocalFallback(prompt, ctx = {}) {
+  const t = String(prompt || '').toLowerCase();
+  const name = ctx.coachProfile?.display_name || U?.email?.split('@')[0] || 'champion';
+  const streak = Number(ctx.coachProfile?.current_streak || 0);
+  const scanNote = ctx.coachProfile?.last_scan_summary ? `Ton dernier scan pointe surtout : ${ctx.coachProfile.last_scan_summary}.` : '';
+  const nutritionNote = ctx.coachProfile?.nutrition_summary ? `Côté nutrition, tu en es à ${ctx.coachProfile.nutrition_summary}.` : '';
+  if (/flemme|pas envie|motivation|discipline|j'ai la flemme|j ai la flemme/.test(t)) {
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Coach mental</span><strong>OK ${escapeHtml(name)}, on ne cherche pas la séance parfaite, on protège l'élan.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">La flemme n'est pas le problème. Le vrai risque, c'est de laisser une journée moyenne casser ton rythme.</p><div class="coach-h2">Pourquoi</div><p class="coach-p">${escapeHtml(streak > 0 ? `Tu as déjà ${streak} jour(s) de régularité.` : `Tu n'as pas besoin d'une grosse séance pour garder le cap.`)} ${escapeHtml(scanNote)} ${escapeHtml(nutritionNote)}</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>mets juste ta tenue maintenant</li><li>fais 6 min de marche active ou 2 exercices faciles</li><li>si l'énergie remonte, tu continues 10 min de plus</li></ul>`;
+  }
+  if (/fatigu|mal dormi|courbature|épuis|epuis|recup|repos|claqué|claque/.test(t)) {
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Récupération</span><strong>Aujourd'hui on adapte, on ne force pas.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">Je te conseille une journée légère : mobilité, marche, technique propre, mais pas de séance dure.</p><div class="coach-h2">Pourquoi</div><p class="coach-p">Quand la récup est basse, pousser plus fort rapporte rarement plus. Tu veux garder le mouvement, pas t'écraser.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>8 à 12 min de marche</li><li>2 mouvements mobilité</li><li>un repas protéiné propre ce soir</li></ul>`;
+  }
+  return `<div class="coach-card-head"><span class="coach-card-kicker">Coach express</span><strong>Je te donne l'action la plus utile maintenant.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">On va droit au but : adapte ta journée à ton énergie réelle et garde une action simple, propre et tenable.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>dis-moi ton temps dispo</li><li>ton matériel</li><li>ton niveau d'énergie sur 10</li></ul>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -938,10 +1037,9 @@ function renderCoachChat() {
       <div class="chat-msg chat-msg-ai">
         ${aiAvat}
         <div class="chat-bubble ai-bubble">
-          <div class="coach-card-head"><span class="coach-card-kicker">Coach personnel</span><strong>Salut ${escapeHtml(userName)}. On fait simple, utile et actionnable.</strong></div>
-          <div class="coach-p">Dis-moi ton état du jour et je te donne soit une séance, soit une adaptation récupération, soit un plan nutrition rapide.</div>
+          <div class="coach-card-head"><span class="coach-card-kicker">Coach personnel</span><strong>Salut ${escapeHtml(userName)}. Dis-moi juste ton état du jour ou ton besoin exact.</strong></div>
+          <div class="coach-p">Je te réponds court, utile et contextuel : séance, récup, nutrition ou recadrage mental.</div>
           ${moodLine}
-          <div class="coach-inline-note">Choisis une action rapide ou écris ton vrai contexte.</div>
         </div>
       </div>`;
     return;
@@ -968,6 +1066,8 @@ async function sendCoachMsg(quickMsg) {
   if (errorEl) { errorEl.style.display = "none"; errorEl.innerHTML = ""; }
   if (!prompt) return;
   LAST_COACH_PROMPT = prompt;
+  COACH_REQUEST_SEQ += 1;
+  const requestId = COACH_REQUEST_SEQ;
   if (coachInput) coachInput.value = "";
 
   if (ASYNC_LOCKS.has("coach-msg")) return;
@@ -992,7 +1092,7 @@ async function sendCoachMsg(quickMsg) {
   if (btn) btn.disabled = true;
 
   if (chatEl) {
-    chatEl.insertAdjacentHTML("beforeend", '<div class="chat-msg chat-msg-ai" id="coach-thinking"><div class="chat-avatar coach-ai-avatar">⚡</div><div class="chat-bubble ai-bubble coach-thinking-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div></div>');
+    chatEl.insertAdjacentHTML("beforeend", '<div class="chat-msg chat-msg-ai" id="coach-thinking"><div class="chat-avatar coach-ai-avatar">⚡</div><div class="chat-bubble ai-bubble coach-thinking-bubble"><div class="typing-dots"><span></span><span></span><span></span></div><div class="coach-thinking-copy">Le coach analyse ton contexte…</div></div></div>');
     chatEl.scrollTop = chatEl.scrollHeight;
   }
 
@@ -1000,83 +1100,25 @@ async function sendCoachMsg(quickMsg) {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
-    const today = new Date().toISOString().slice(0, 10);
-    const weekAgoIso = new Date(Date.now() - 7 * 86400000).toISOString();
-    const [goalRes, profileRes, streakRes, recentSessionsRes, scanRes, mealsTodayRes, mealsWeekRes] = await Promise.all([
-      sbSafeSingle(SB.from("goals").select("type,level,constraints,equipment").eq("user_id", U.id).maybeSingle()),
-      sbSafeSingle(SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle()),
-      sbSafeSingle(SB.from("user_streaks").select("current_streak,total_workouts").eq("user_id", U.id).maybeSingle()),
-      sbSafeList(SB.from("workout_sessions").select("plan,created_at").eq("user_id", U.id).gte("created_at", weekAgoIso).order("created_at", { ascending: false }).limit(5)),
-      sbSafeList(SB.from("body_scans").select("physical_score,created_at,extended_analysis,ai_feedback").eq("user_id", U.id).order("created_at", { ascending: false }).limit(3)),
-      sbSafeList(SB.from("meals").select("name,calories,protein").eq("user_id", U.id).eq("date", today)),
-      sbSafeList(SB.from("meals").select("name,calories,protein,date").eq("user_id", U.id).gte("date", today.slice(0,8) + "01").limit(12))
-    ]);
-
-    const goalContext = goalRes?.data || {};
-    const dbProfile = profileRes?.data || {};
-    const currentStreak = Number(streakRes?.data?.current_streak || 0);
-    const totalWorkouts = Number(streakRes?.data?.total_workouts || 0);
+    const { goalContext, coachProfile } = await loadCoachContext();
     const historyForApi = COACH_HISTORY.slice(-15, -1).map((m) => ({
       role: m.role,
       content: m.role === "ai" ? stripHtml(m.content).slice(0, 400) : m.content
     }));
 
-    const recentSessions = recentSessionsRes?.data || [];
-    const recentWorkoutNames = recentSessions.map(s => s.plan?.title || "Séance").filter(Boolean).slice(0, 4);
-    const recentSessions7d = recentSessions.length;
-    const scans = scanRes?.data || [];
-    const lastScan = scans[0] || null;
-    const bestScanScore = scans.reduce((best, s) => Math.max(best, Number(s.physical_score) || 0), 0) || null;
-    const lastScanSummary = lastScan?.extended_analysis?.areas_for_improvement?.[0]
-      || lastScan?.extended_analysis?.personalized_recommendations?.training?.[0]
-      || String(lastScan?.ai_feedback || "").split(/[.!?]/)[0]
-      || "";
-
-    const todayMeals = mealsTodayRes?.data || [];
-    const todayKcal = Math.round(todayMeals.reduce((s, m) => s + (Number(m.calories) || 0), 0));
-    const todayProtein = Math.round(todayMeals.reduce((s, m) => s + (Number(m.protein) || 0), 0));
-    const nutritionSummary = todayKcal > 0 ? `${todayKcal} kcal · ${todayProtein}g protéines` : "Suivi nutrition encore léger";
-    const recentMealPattern = (mealsWeekRes?.data || []).slice(0, 5).map((m) => `${m.name || 'Repas'} ${m.calories ? `${m.calories}kcal` : ''}`.trim()).join(', ');
-
-    let moodLabel = "";
-    try {
-      const savedMood = localStorage.getItem("fitai_mood");
-      const savedMoodDate = localStorage.getItem("fitai_mood_date");
-      if (savedMood && savedMoodDate === new Date().toDateString()) moodLabel = MOOD_LABELS[parseInt(savedMood)] || "";
-    } catch {}
-
-    const coachProfile = {
-      display_name: dbProfile.display_name || U.email?.split("@")[0] || "",
-      weight: dbProfile.weight || null,
-      height: dbProfile.height || null,
-      age: dbProfile.age || null,
-      goal: goalContext.type || "",
-      level: goalContext.level || "beginner",
-      injuries: goalContext.constraints || "",
-      equipment: goalContext.equipment || "poids du corps",
-      mood_today: moodLabel || undefined,
-      current_streak: currentStreak || undefined,
-      total_workouts: totalWorkouts || undefined,
-      recent_workouts: recentWorkoutNames.length ? recentWorkoutNames : undefined,
-      recent_sessions_7d: recentSessions7d || undefined,
-      best_scan_score: bestScanScore || undefined,
-      last_scan_summary: lastScanSummary || undefined,
-      nutrition_summary: nutritionSummary || undefined,
-      recent_meal_pattern: recentMealPattern || undefined,
-      today_kcal: todayKcal > 0 ? todayKcal : undefined,
-      today_protein: todayProtein > 0 ? todayProtein : undefined
-    };
-
+    const responseMode = detectCoachModeClient(prompt);
     const { response: j } = await fetchJsonWithTimeout("/api/coach", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ message: prompt, history: historyForApi, profile: coachProfile, goalContext })
-    }, 18000);
+      body: JSON.stringify({ message: prompt, responseMode, history: historyForApi, profile: coachProfile, goalContext })
+    }, 12000);
+
+    if (requestId !== COACH_REQUEST_SEQ) return;
 
     const thinkEl = document.getElementById("coach-thinking");
     if (thinkEl) thinkEl.remove();
     const aiTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-    const fallbackBadge = j.fallback ? '<div class="coach-inline-note">Conseil instantané</div>' : '';
+    const fallbackBadge = j.fallback ? '<div class="coach-inline-note">Réponse sécurisée</div>' : '';
 
     if (j.type === "shopping_list" && j.data) {
       const d = j.data;
@@ -1131,6 +1173,24 @@ async function sendCoachMsg(quickMsg) {
       aiResponse += `<div class="coach-inline-note">Plan complet juste en dessous.</div>${fallbackBadge}`;
       COACH_HISTORY.push({ role: "ai", content: aiResponse, time: aiTime });
       renderPlan(PLAN);
+    } else if (j.type === "recipe" && j.data) {
+      const r = j.data;
+      let html = `<div class="coach-card-head"><span class="coach-card-kicker">Recette</span><strong>${escapeHtml(r.name || 'Recette coach')}</strong></div>`;
+      if (r.calories || r.protein) {
+        html += `<div class="coach-mini-pills">${[
+          r.calories ? `🔥 ${r.calories} kcal` : '',
+          r.protein ? `💪 ${r.protein}g prot.` : '',
+          r.prep_time ? `⏱ ${r.prep_time}` : ''
+        ].filter(Boolean).map(p => `<span class="coach-mini-pill">${escapeHtml(p)}</span>`).join('')}</div>`;
+      }
+      if (Array.isArray(r.steps) && r.steps.length) {
+        html += '<ol class="coach-list">';
+        r.steps.slice(0, 5).forEach(step => { html += `<li>${escapeHtml(step)}</li>`; });
+        html += '</ol>';
+      }
+      if (r.tips) html += `<div class="coach-inline-tip">💡 ${escapeHtml(r.tips)}</div>`;
+      html += fallbackBadge;
+      COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
     } else {
       const textHtml = formatCoachText(j.message || "Je n'ai pas pu formuler une réponse.") + fallbackBadge;
       COACH_HISTORY.push({ role: "ai", content: textHtml, time: aiTime });
@@ -1140,11 +1200,13 @@ async function sendCoachMsg(quickMsg) {
     renderCoachChat();
     if (chatEl) setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50);
   } catch (e) {
+    if (requestId !== COACH_REQUEST_SEQ) return;
     const thinkEl = document.getElementById("coach-thinking");
     if (thinkEl) thinkEl.remove();
+    let ctx = null;
+    try { ctx = await loadCoachContext(); } catch {}
     const errTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-    const fallbackHtml = `<div class="coach-card-head"><span class="coach-card-kicker">Coach indisponible</span><strong>Je te laisse une action simple plutôt qu'un écran vide.</strong></div><p class="coach-p">Respire, réduis l'objectif et protège ton élan.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>marche active 8 à 12 min</li><li>2 exercices faciles</li><li>1 repas protéiné propre</li></ul><div class="coach-inline-tip"><button class="coach-chip" onclick="retryLastCoachMessage()">↩ Réessayer</button></div>`;
-    COACH_HISTORY.push({ role: "ai", content: fallbackHtml, time: errTime });
+    COACH_HISTORY.push({ role: "ai", content: buildCoachLocalFallback(prompt, ctx || {}), time: errTime });
     saveCoachHistory();
     renderCoachChat();
     if (errorEl) { errorEl.style.display = "none"; errorEl.innerHTML = ""; }
@@ -3168,6 +3230,7 @@ function clearCoachChat() {
   COACH_HISTORY = [];
   LAST_COACH_PROMPT = "";
   try { localStorage.removeItem("fp_coach_history"); } catch {}
+  DataCache.del('coach_ctx_v2');
   renderCoachChat();
   const quickEl = document.getElementById("chat-quick");
   if (quickEl) quickEl.classList.remove("compact");

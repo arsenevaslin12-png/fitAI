@@ -464,27 +464,27 @@ body.light .friend-search-bar input{color:#0f172a}
 
 .chat-role-label{font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;font-weight:800;opacity:.56;margin-bottom:6px}
 .coach-ai-avatar{width:34px;height:34px;border-radius:12px;background:linear-gradient(135deg,#1d4ed8,#0891b2);display:flex;align-items:center;justify-content:center;box-shadow:0 10px 24px rgba(37,99,235,.25)}
-.coach-state-panel{display:grid;grid-template-columns:1.2fr .8fr;gap:12px;margin-bottom:12px}
-.coach-mood-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-.coach-mood-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 8px;border-radius:18px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);color:var(--text);cursor:pointer;transition:.18s;font-weight:700;font-size:.78rem}
-.coach-mood-btn span{font-size:.74rem;color:var(--text2)}
+.coach-state-panel{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:stretch;margin-bottom:10px}
+.coach-mood-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.coach-mood-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 8px;border-radius:16px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);color:var(--text);cursor:pointer;transition:.18s;font-weight:700;font-size:.74rem;min-height:44px}
+.coach-mood-btn span{font-size:.7rem;color:var(--text2)}
 .coach-mood-btn:hover{transform:translateY(-1px);border-color:rgba(37,99,235,.35);background:rgba(37,99,235,.08)}
-.coach-priority-card{padding:14px 16px;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(150deg,rgba(255,255,255,.04),rgba(255,255,255,.02));min-height:100%}
-#coach-priority-line{font-size:.84rem;line-height:1.55;color:var(--text2)}
-.coach-action-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.coach-priority-card{padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(150deg,rgba(255,255,255,.04),rgba(255,255,255,.02));min-width:230px}
+#coach-priority-line{font-size:.8rem;line-height:1.45;color:var(--text2)}
+.coach-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .coach-action-grid.compact{display:none}
-.coach-action-tile{padding:14px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.025));display:flex;flex-direction:column;gap:4px;align-items:flex-start;cursor:pointer;transition:.2s;color:var(--text);text-align:left}
-.coach-action-tile span{font-size:1.1rem}
-.coach-action-tile strong{font-size:.88rem}
-.coach-action-tile small{font-size:.73rem;color:var(--text2)}
+.coach-action-tile{padding:12px 13px;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(160deg,rgba(255,255,255,.045),rgba(255,255,255,.02));display:flex;flex-direction:column;gap:3px;align-items:flex-start;cursor:pointer;transition:.2s;color:var(--text);text-align:left;min-height:78px}
+.coach-action-tile span{font-size:1rem}
+.coach-action-tile strong{font-size:.82rem}
+.coach-action-tile small{font-size:.7rem;color:var(--text2)}
 .coach-action-tile:hover{transform:translateY(-1px);border-color:rgba(37,99,235,.32);box-shadow:0 14px 30px rgba(2,6,23,.18)}
-.coach-more-actions{grid-column:1/-1;padding:10px 12px;border-radius:18px;border:1px dashed rgba(255,255,255,.1);background:rgba(255,255,255,.025)}
-.coach-more-actions summary{cursor:pointer;list-style:none;font-size:.8rem;font-weight:700;color:var(--muted)}
+.coach-more-actions{grid-column:1/-1;padding:9px 11px;border-radius:16px;border:1px dashed rgba(255,255,255,.1);background:rgba(255,255,255,.022)}
+.coach-more-actions summary{cursor:pointer;list-style:none;font-size:.77rem;font-weight:700;color:var(--muted)}
 .coach-more-actions summary::-webkit-details-marker{display:none}
-.chat-chips-row.compact{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px}
+.chat-chips-row.compact{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
 .coach-card-head{display:flex;flex-direction:column;gap:4px;margin-bottom:6px}
 .coach-card-kicker{font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--cyan);font-weight:800}
-.coach-inline-note{margin-top:10px;display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.06);font-size:.72rem;color:var(--text2)}
+.coach-inline-note{margin-top:10px;display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;background:rgba(255,255,255,.05);font-size:.7rem;color:var(--text2)}
 .coach-inline-tip{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(99,102,241,.09);border:1px solid rgba(99,102,241,.18);font-size:.8rem;color:#c7d2fe}
 .coach-mini-pills{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}
 .coach-mini-pill{padding:5px 9px;border-radius:999px;background:rgba(255,255,255,.06);font-size:.72rem;font-weight:700;color:var(--text2)}
@@ -492,7 +492,8 @@ body.light .friend-search-bar input{color:#0f172a}
 .coach-meal-top{display:flex;justify-content:space-between;gap:8px;font-size:.82rem}
 .coach-meal-top span{font-size:.74rem;color:var(--muted)}
 .coach-meal-items{margin-top:4px;font-size:.78rem;color:var(--text2);line-height:1.5}
-.coach-thinking-bubble{min-width:120px}
+.coach-thinking-bubble{min-width:132px;display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.coach-thinking-copy{font-size:.74rem;color:var(--text2)}
 .ex-card-premium{display:grid;grid-template-columns:34px 150px 1fr;align-items:stretch;padding:14px 14px 14px 10px}
 .ex-visual-col{display:flex;align-items:stretch}
 .ex-visual-stack{display:grid;grid-template-rows:1fr auto;gap:8px;width:100%}
@@ -509,7 +510,7 @@ body.light .friend-search-bar input{color:#0f172a}
 .wt-tip-grid div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06)}
 .wt-tip-grid span{display:block;font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;font-weight:800;color:var(--muted);margin-bottom:4px}
 .wt-tip-grid p{margin:0;font-size:.78rem;line-height:1.5;color:var(--text2)}
-@media (max-width: 980px){.coach-state-panel{grid-template-columns:1fr}.coach-action-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ex-card-premium{grid-template-columns:34px 1fr}.ex-visual-col{grid-column:2}.ex-howto{grid-template-columns:1fr}.wt-ex-img-wrap{grid-template-columns:1fr}.wt-tip-grid{grid-template-columns:1fr}}
+@media (max-width: 980px){.coach-state-panel{grid-template-columns:1fr}.coach-priority-card{min-width:0}.coach-action-grid{grid-template-columns:1fr}.ex-card-premium{grid-template-columns:34px 1fr}.ex-visual-col{grid-column:2}.ex-howto{grid-template-columns:1fr}.wt-ex-img-wrap{grid-template-columns:1fr}.wt-tip-grid{grid-template-columns:1fr}}
 body.light .coach-action-tile,body.light .coach-priority-card,body.light .coach-mood-btn,body.light .coach-more-actions,body.light .ex-figure,body.light .ex-muscle-map,body.light .ex-howto-item,body.light .wt-visual-main,body.light .wt-visual-muscle,body.light .wt-tip-grid div{background:#fff;border-color:rgba(15,23,42,.1)}
 body.light .coach-mini-pill{background:rgba(15,23,42,.05);color:#334155}
 body.light .coach-inline-note{background:rgba(15,23,42,.05)}
@@ -1961,28 +1962,27 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           </div>
           <div class="coach-state-panel">
             <div>
-              <div class="chat-quick-cat" style="margin:0 0 8px">État du jour</div>
+              <div class="chat-quick-cat" style="margin:0 0 7px">État du jour</div>
               <div class="coach-mood-row">
                 <button class="coach-mood-btn" onclick="useCoachMood('low')">😮‍💨<span>Flemme</span></button>
                 <button class="coach-mood-btn" onclick="useCoachMood('recover')">😴<span>Fatigué</span></button>
-                <button class="coach-mood-btn" onclick="useCoachMood('medium')">🙂<span>Normal</span></button>
+                <button class="coach-mood-btn" onclick="useCoachMood('medium')">🙂<span>OK</span></button>
                 <button class="coach-mood-btn" onclick="useCoachMood('high')">⚡<span>Chaud</span></button>
               </div>
             </div>
             <div class="coach-priority-card">
-              <div class="chat-quick-cat" style="margin:0 0 6px">Focus coach</div>
-              <div id="coach-priority-line">On réduit la friction et on avance avec une action claire.</div>
+              <div class="chat-quick-cat" style="margin:0 0 4px">Focus coach</div>
+              <div id="coach-priority-line">Action simple, utile, réaliste.</div>
             </div>
           </div>
           <div id="chat-quick" class="coach-action-grid" style="margin-bottom:12px">
-            <button class="coach-action-tile" onclick="sendCoachMsg('Séance full body 45min orientée progression propre')"><span>🏋️</span><strong>Séance utile</strong><small>45 min cadrées</small></button>
-            <button class="coach-action-tile" onclick="sendCoachMsg('Mal dormi, adapte ma séance et ma récupération aujourd'hui')"><span>😴</span><strong>Adapter</strong><small>fatigue / récup</small></button>
-            <button class="coach-action-tile" onclick="sendCoachMsg('Journée alimentaire selon mes objectifs et ma séance du jour')"><span>🥗</span><strong>Nutrition</strong><small>journée complète</small></button>
-            <button class="coach-action-tile" onclick="sendCoachMsg('Liste de courses pour la semaine selon mon objectif')"><span>🛒</span><strong>Courses</strong><small>liste réaliste</small></button>
+            <button class="coach-action-tile" onclick="sendCoachMsg('J'ai la flemme de faire du sport aujourd'hui, recadre-moi intelligemment')"><span>🧠</span><strong>Recadre-moi</strong><small>mental + action</small></button>
+            <button class="coach-action-tile" onclick="sendCoachMsg('Séance full body 40 min adaptée à mon niveau et mon énergie du jour')"><span>🏋️</span><strong>Séance utile</strong><small>court et efficace</small></button>
+            <button class="coach-action-tile" onclick="sendCoachMsg('Mal dormi, adapte ma journée entre récup, nutrition et entraînement')"><span>😴</span><strong>Adapter</strong><small>récup / fatigue</small></button>
             <details class="coach-more-actions"><summary>Plus d'idées</summary><div class="chat-chips-row compact">
-              <button class="coach-chip" onclick="sendCoachMsg('Programme 8 semaines pour mon objectif')">Programme 8 sem.</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Journée alimentaire selon mes objectifs et ma séance du jour')">Journée alimentaire</button>
+              <button class="coach-chip" onclick="sendCoachMsg('Liste de courses pour la semaine selon mon objectif')">Liste de courses</button>
               <button class="coach-chip" onclick="sendCoachMsg('Recette riche en protéines rapide')">Recette protéinée</button>
-              <button class="coach-chip" onclick="sendCoachMsg('On fait des burgers ce soir avec des potes, liste de courses ?')">Soirée burgers</button>
               <button class="coach-chip" onclick="sendCoachMsg('Je stagne, que faire pour progresser ?')">Je stagne</button>
             </div></details>
           </div>

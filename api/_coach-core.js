@@ -201,11 +201,15 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
     age: age > 0 ? age : null,
     display_name: normalizeText(profile.display_name || ""),
     current_streak: Number(profile.current_streak || 0) || null,
+    total_workouts: Number(profile.total_workouts || 0) || null,
     recent_sessions_7d: Number(profile.recent_sessions_7d || 0) || null,
     best_scan_score: Number(profile.best_scan_score || 0) || null,
     last_scan_summary: normalizeText(profile.last_scan_summary || ""),
     nutrition_summary: normalizeText(profile.nutrition_summary || ""),
-    recent_meal_pattern: normalizeText(profile.recent_meal_pattern || "")
+    recent_meal_pattern: normalizeText(profile.recent_meal_pattern || ""),
+    recent_workouts: Array.isArray(profile.recent_workouts) ? profile.recent_workouts.map((x) => normalizeText(x)).filter(Boolean).slice(0, 4) : [],
+    today_kcal: Number(profile.today_kcal || 0) || null,
+    today_protein: Number(profile.today_protein || 0) || null
   };
 }
 
@@ -348,7 +352,9 @@ RÈGLES:
 - Questions simples → réponse courte mais percutante (2-4 phrases max).
 - Questions complexes → structure explicite: Réponse directe / Pourquoi / Action du jour.
 - Quand l'utilisateur parle de flemme, fatigue ou manque d'envie: reconnais l'état, protège son élan, puis réduis la friction avec une micro-action immédiate.
-- Utilise si pertinent le streak, le dernier scan et la nutrition pour rendre la réponse personnelle.
+- Utilise si pertinent le streak, les dernières séances, le dernier scan et la nutrition pour rendre la réponse personnelle.
+- Si l'utilisateur semble dispersé, recentre-le sur UNE seule priorité concrète.
+- Évite les slogans de motivation creux. Préfère une relance précise, réaliste et tenable aujourd'hui.
 - Puces (2-4 max) uniquement si ça aide vraiment la lisibilité.
 - Pas de JSON. Pas de programme complet sauf si explicitement demandé.
 - Ne jamais parler de serveur, timeout, fallback ou de technique.
@@ -670,9 +676,10 @@ Action du jour: Fais 5 à 10 minutes de mobilité ce soir et garde la séance lo
   if (intent === "motivation_question") {
     const streakNote = p.current_streak ? `Tu as déjà ${p.current_streak} jour(s) de régularité en jeu.` : "Tu n'as pas besoin d'une énorme séance pour rester dans le rythme.";
     const scanNote = p.last_scan_summary ? `Ton dernier scan rappelle déjà l'axe prioritaire: ${p.last_scan_summary}.` : "";
-    return `Réponse directe: Avoir la flemme est normal — le vrai sujet, c'est de ne pas casser l'élan pour autant.
-Pourquoi: ${streakNote} ${scanNote}`.trim() + `
-Action du jour: On coupe la résistance: mets ta tenue maintenant, fais 6 à 8 minutes de marche active ou 2 mouvements simples, puis décide seulement après. L'objectif du jour, ce n'est pas la perf — c'est de ne pas casser ton élan.`;
+    const sessionNote = p.recent_sessions_7d ? `Tu as déjà bougé ${p.recent_sessions_7d} fois cette semaine.` : "";
+    return `Réponse directe: Avoir la flemme est normal — on ne cherche pas l'héroïsme, on protège l'élan.
+Pourquoi: ${[streakNote, sessionNote, scanNote].filter(Boolean).join(' ')}`.trim() + `
+Action du jour: Mets ta tenue maintenant. Fais 6 minutes de marche active ou 2 mouvements faciles. Si l'énergie remonte, tu prolonges 10 minutes. Si non, tu as quand même gagné ta journée de discipline.`;
   }
   if (intent === "progress_question") {
     return `Réponse directe: Regarde d'abord régularité, qualité technique et charge ou reps sur tes mouvements clés.
