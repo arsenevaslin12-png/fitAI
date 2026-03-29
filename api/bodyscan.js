@@ -1,7 +1,7 @@
 "use strict";
 
-const TIMEOUT_GEMINI_MS = 3000;
-const TIMEOUT_STORAGE_MS = 2500;
+const TIMEOUT_GEMINI_MS = 6500;
+const TIMEOUT_STORAGE_MS = 8000;
 
 const {
   DEFAULT_MODEL: MODEL,
@@ -305,24 +305,33 @@ Compare avec ce scan et note les progrès ou régressions.
 `;
   }
 
-  return `Tu es un coach fitness premium spécialisé en analyse corporelle visuelle.
-Analyse cette photo avec franchise, précision et standards élevés.
+  return `Tu es un coach fitness spécialisé en analyse corporelle visuelle.
+Analyse cette photo avec franchise absolue et des standards exigeants.
+Ton analyse doit être SPÉCIFIQUE à cette photo précise — décris ce que tu vois réellement (zones, proportions, masses musculaires visibles), pas des formules génériques. Les champs "body_composition", "muscle_definition_text" et "motivational_feedback" doivent être uniques à cette personne.
 
-CONSIGNES IMPORTANTES:
-1. Sois encourageant mais strict: n'adoucis jamais artificiellement les défauts visibles
-2. Ne fais JAMAIS de diagnostic médical
-3. Base ton analyse uniquement sur ce qui est visible sur la photo
-4. Si la qualité photo est insuffisante, indique-le clairement et pénalise les scores
-5. Utilise une calibration sévère et réaliste:
-   - 40-55 = base faible ou peu athlétique
-   - 56-68 = niveau récréatif correct mais ordinaire visuellement
-   - 69-79 = bon niveau, propre, déjà sérieux
-   - 80-88 = physique athlétique, sec ou très au-dessus de la moyenne
-   - 89+ = exceptionnel, rare, à réserver aux physiques vraiment marquants
-6. Un physique simplement propre ne doit presque jamais dépasser 68-72
-7. Une posture faible, peu de définition, ou un bodyfat élevé doivent faire baisser franchement la note
-8. Si la personne paraît très sèche avec bonne définition, taille fine et vraie présence athlétique, la note doit monter nettement
-9. Évite les mêmes conseils génériques: sois spécifique au visuel observé
+CALIBRATION STRICTE — respecte impérativement ces fourchettes:
+- 15-30 : personne sédentaire, peu ou pas d'activité visible sur le physique
+- 31-45 : base faible, excès de masse grasse visible ou manque total de tonus
+- 46-55 : niveau ordinaire, ni athlétique ni sédentaire
+- 56-65 : pratiquant régulier mais sans définition marquée (la grande majorité des gens actifs)
+- 66-72 : bon niveau, propre, masse grasse raisonnable, tonus visible — Ryan Reynolds dans la vie de tous les jours est vers 68-70
+- 73-80 : physique athlétique réel, sec, ou présence musculaire clairement visible
+- 81-88 : élite visuel — compétiteur, ou physique très sec avec vraie densité musculaire
+- 89-94 : exceptionnel, moins de 1% de la population, bodybuilder en condition ou athlète de haut niveau
+- 95-100 : IMPOSSIBLE sur une photo normale — réservé au niveau pro en compétition
+
+ERREURS À ÉVITER ABSOLUMENT:
+- Ne jamais donner 62+ à quelqu'un sans définition musculaire visible
+- Ne jamais donner 70+ sans sécheresse et tonus réels
+- Ne jamais donner 80+ sans critères élite évidents
+- Un physique "propre mais ordinaire" = 56-64, pas 70+
+- La générosité fausse les données futures et détruit la crédibilité du score
+
+AUTRES RÈGLES:
+- Ne fais jamais de diagnostic médical
+- Base-toi uniquement sur ce qui est visible sur la photo
+- Si la qualité photo est insuffisante (flou, mauvais cadrage, vêtements masquant le corps), indique-le et pénalise le score
+- Sois spécifique: nomme les zones précises observées
 
 ${historyContext}
 
@@ -379,8 +388,8 @@ async function analyzeImage({ apiKey, b64, mime, previousAnalysis = null }) {
       { text: prompt },
       { inlineData: { data: b64, mimeType: mime } }
     ],
-    temperature: 0.3,
-    maxOutputTokens: 1500,
+    temperature: 0.6,
+    maxOutputTokens: 1600,
     timeoutMs: TIMEOUT_GEMINI_MS,
     retries: 0
   });
@@ -468,14 +477,36 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
   const nutritionFocus = uniqStrings([...toArray(reco.nutrition), ...derivedReco.nutrition], 3);
   const exerciseExamples = uniqStrings([...toArray(reco.exercise_examples), ...derivedReco.exercise_examples], 4);
 
+  // ── Build ai_feedback using Gemini's actual personalized text ────────────────
+  // Gemini generates specific descriptions per photo — use them as the backbone.
+  const geminiComposition = String(p.body_composition || "").trim();
+  const geminiDefinition  = String(p.muscle_definition_text || "").trim();
+  const geminiMotivation  = String(p.motivational_feedback || "").trim();
+
   const feedbackParts = [];
-  if (p.analysis_quality === "poor") feedbackParts.push("⚠️ Qualité photo limitée. Les constats restent prudents: refais un scan avec lumière frontale, corps entier visible et angle stable.");
-  feedbackParts.push(`Score honnête et calibré: ${calibratedPhysical}/100. ${derivedReco.rationale}`);
-  if (strengths.length) feedbackParts.push(`✅ Ce qui ressort vraiment: ${strengths.join(", ")}.`);
-  if (improvements.length) feedbackParts.push(`🎯 Ce qui limite réellement le score: ${improvements.join(", ")}.`);
-  if (trainingFocus.length) feedbackParts.push(`🏋️ Focus entraînement: ${trainingFocus.join(", ")}.`);
-  if (nutritionFocus.length) feedbackParts.push(`🥗 Ajustements utiles: ${nutritionFocus.join(", ")}.`);
-  if (exerciseExamples.length) feedbackParts.push(`📌 Exemples concrets: ${exerciseExamples.join(", ")}.`);
+
+  if (p.analysis_quality === "poor") {
+    feedbackParts.push("⚠️ Qualité photo limitée — les constats sont prudents. Refais un scan avec lumière frontale, corps entier visible sur fond neutre et angle stable.");
+  }
+
+  // Score line + Gemini's composition & definition texts (specific to this photo)
+  let scoreLine = `Score calibré : ${calibratedPhysical}/100.`;
+  if (geminiComposition) scoreLine += `\n${geminiComposition}`;
+  if (geminiDefinition)  scoreLine += `\n${geminiDefinition}`;
+  if (!geminiComposition && !geminiDefinition) scoreLine += ` ${derivedReco.rationale}`;
+  feedbackParts.push(scoreLine);
+
+  if (strengths.length)        feedbackParts.push(`✅ Points forts : ${strengths.join(" · ")}.`);
+  if (improvements.length)     feedbackParts.push(`🎯 Ce qui limite le score : ${improvements.join(" · ")}.`);
+  if (trainingFocus.length)    feedbackParts.push(`🏋️ Focus entraînement : ${trainingFocus.join(", ")}.`);
+  if (nutritionFocus.length)   feedbackParts.push(`🥗 Ajustements nutrition : ${nutritionFocus.join(", ")}.`);
+  if (exerciseExamples.length) feedbackParts.push(`📌 Exercices clés : ${exerciseExamples.join(", ")}.`);
+
+  // Gemini's motivational message — unique per photo, use it if quality is sufficient
+  if (geminiMotivation && geminiMotivation.length > 15) {
+    feedbackParts.push(`💪 ${geminiMotivation.replace(/^💪\s*/u, "")}`);
+  }
+
   feedbackParts.push(`📅 ${reco.frequency_suggestion || derivedReco.frequency_suggestion}`);
 
   return {
@@ -501,6 +532,7 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
       estimated_metrics: p.estimated_metrics || null,
       body_composition: p.body_composition || null,
       muscle_definition_text: p.muscle_definition_text || null,
+      motivational_feedback: p.motivational_feedback || null,
       personalized_recommendations: {
         training_focus: trainingFocus,
         training: trainingFocus,
@@ -640,12 +672,20 @@ async function saveBodyScanResult(sb, { user_id, image_path, normalized }) {
   return { ok: true, mode: "insert" };
 }
 
+const { checkRateLimit, getIp } = require("./_coach-core");
+
 module.exports = async function(req, res) {
   cors(res);
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
   if (req.method !== "POST") return json(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", id: requestId });
+
+  const limit = checkRateLimit("bodyscan", getIp(req), 6, 60_000);
+  if (!limit.ok) {
+    res.setHeader("Retry-After", String(limit.retryAfterSec));
+    return json(res, 429, { ok: false, error: `Trop de scans. Réessayez dans ${limit.retryAfterSec}s.`, id: requestId });
+  }
 
   const SB_URL = process.env.SUPABASE_URL;
   const SB_SRV = process.env.SUPABASE_SERVICE_ROLE_KEY;

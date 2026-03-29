@@ -221,11 +221,11 @@ function buildContextSnapshot(p) {
 }
 
 function historyBlock(history = []) {
-  const items = Array.isArray(history) ? history.slice(-6) : [];
+  const items = Array.isArray(history) ? history.slice(-12) : [];
   if (!items.length) return "";
   return items.map((item) => {
     const role = normalizeRole(item.role) === "assistant" ? "Coach" : "Utilisateur";
-    return `${role}: ${sanitizeInput(String(item.content || ""), 280)}`;
+    return `${role}: ${sanitizeInput(String(item.content || ""), 350)}`;
   }).join("\n");
 }
 
@@ -252,6 +252,7 @@ ${message}
 
 RÈGLES ABSOLUES:
 - Respecte les blessures et contraintes.
+- ÉQUIPEMENT STRICT: ${/halt[eè]re|barre|salle|machine|kettlebell|banc/i.test(p.equipment || "") ? `Utilise UNIQUEMENT: ${p.equipment}. N'ajoute pas d'équipement non mentionné.` : "POIDS DU CORPS UNIQUEMENT — INTERDIT: haltères, barres, kettlebell, machines, câbles, poulies. Chaque exercice doit être réalisable sans aucun matériel."}
 - Adapte l'intensité si sommeil < 6h ou récupération <= 5/10 ou humeur "Épuisé"/"Fatigué".
 - Si humeur "Épuisé": séance très légère, récupération active, mobilité seulement.
 - Si humeur "Fatigué": intensité réduite (-30%), durée courte, pas de HIIT.
@@ -309,44 +310,51 @@ function buildConversationPrompt(intent, message, history, profile, goalContext)
       ? "6 à 10 lignes organisées"
       : "3 à 7 lignes utiles";
 
-  return `Tu es un coach fitness premium pour application SaaS. Réponds en français avec un ton humain, clair, motivant et expert.
+  // Detect low-motivation / stagnation keywords for extra context injection
+  const msgLow = message.toLowerCase();
+  const isLowMotivation = /flemme|pas envie|j.ai pas|j.ai la|motivation|paresseux|peux pas me motiv/.test(msgLow);
+  const isStagnating    = /stagne|plateau|progresse plus|j.avance pas|bloqué|plus de résultat|résultats nuls|progres/.test(msgLow);
+  const isFatigue       = /fatigue|épuisé|epuise|crevé|creve|nul ce soir|claqué|claque/.test(msgLow);
 
-Profil utilisateur:
-- Objectif: ${p.goal}
-- Niveau: ${p.level}
+  let extraCtx = "";
+  if (isLowMotivation) extraCtx += "\nCONTEXTE FLEMME/DÉMOTIVATION: Ne pas donner une liste de conseils génériques. Reconnaître honnêtement l'état, identifier une cause probable (routine, fatigue, manque de résultats), et proposer UNE seule action concrète faisable dans les 5 prochaines minutes. Ton direct, humain, pas de blabla.";
+  if (isFatigue)       extraCtx += "\nCONTEXTE FATIGUE: Si humeur Épuisé ou mention fatigue sévère: ne proposer que repos actif, mobilité légère ou rien. Si fatigue modérée: séance courte, intensité -30%, pas de HIIT. Protège la récupération.";
+  if (isStagnating)    extraCtx += `\nCONTEXTE STAGNATION: Analyser la cause probable parmi: volume insuffisant, pas de surcharge progressive, récupération insuffisante, nutrition inadaptée. Streak actuel: ${p.current_streak || 0}j, séances récentes: ${p.recent_sessions_7d || 0}/7j. Proposer un ajustement précis et immédiat.`;
+  if (p.current_streak && p.current_streak >= 3 && !isLowMotivation) extraCtx += `\nCONTEXTE STREAK: L'utilisateur a un streak de ${p.current_streak} jours — valorise cet élan et aide à le maintenir plutôt que de tout remettre en question.`;
+
+  return `Tu es un coach fitness premium. Tu parles en français, directement, comme un coach qui suit cette personne depuis plusieurs semaines.
+
+PROFIL:
+- Objectif: ${p.goal} (${getGoalDescription(p.goal)})
+- Niveau: ${p.level} (${getLevelDescription(p.level)})
 - Équipement: ${p.equipment}
 - Contraintes / blessures: ${p.constraints}
 - Humeur du jour: ${p.mood || "non renseignée"}
-- Sommeil moyen: ${p.sleep || "non renseigné"} h
-- Récupération: ${p.recovery || "non renseignée"}/10
+- Sommeil: ${p.sleep ? `${p.sleep}h` : "non renseigné"} | Récupération: ${p.recovery ? `${p.recovery}/10` : "non renseignée"}
 ${p.display_name ? `- Prénom: ${p.display_name}` : ""}
 
-Historique récent:
-${historyBlock(history) || "Aucun."}
-
-Contexte avancé disponible:
+CONTEXTE SUIVI:
 ${buildContextSnapshot(p)}
+${extraCtx}
 
-Consignes absolues:
+HISTORIQUE CONVERSATION:
+${historyBlock(history) || "— Début de conversation —"}
+
+RÈGLES:
 - ${intentGuide}.
-- Longueur idéale: ${lengthGuide}.
-- Ne sois jamais vague ni générique.
-- Utilise le contexte dispo pour personnaliser: objectif, niveau, humeur, récupération, scans, nutrition, rythme récent.
-- Si l'utilisateur parle de flemme, fatigue ou démotivation: normalise l'état, réduis la friction et propose une mini-action réaliste immédiatement faisable.
-- Si le contexte montre une bonne régularité ou un streak en cours, protège cet élan au lieu de proposer de tout sauter.
-- Si le dernier scan ou la nutrition donnent un axe clair, relie explicitement ton conseil à cet axe.
-- Donne d'abord la réponse utile, ensuite une analyse courte si nécessaire, puis une action simple à faire ensuite.
-- Quand la question est simple: réponse courte.
-- Quand la question est plus complexe: structure avec ces libellés exacts si utile:
-  Réponse directe: ...
-  Pourquoi: ...
-  Action du jour: ...
-- Pas de JSON.
-- Pas de programme complet d'exercices sauf si explicitement demandé.
-- Tu peux utiliser 2 à 4 puces maximum si ça aide.
-- Tu peux encourager, recadrer ou simplifier, mais jamais noyer l'utilisateur.
+- Longueur: ${lengthGuide}.
+- Jamais vague ni générique: utilise le profil, le contexte, l'historique.
+- Donne d'abord la réponse utile. Ensuite l'analyse si nécessaire. Ensuite l'action.
+- Questions simples → réponse courte mais percutante (2-4 phrases max).
+- Questions complexes → structure explicite: Réponse directe / Pourquoi / Action du jour.
+- Quand l'utilisateur parle de flemme, fatigue ou manque d'envie: reconnais l'état, protège son élan, puis réduis la friction avec une micro-action immédiate.
+- Utilise si pertinent le streak, le dernier scan et la nutrition pour rendre la réponse personnelle.
+- Puces (2-4 max) uniquement si ça aide vraiment la lisibilité.
+- Pas de JSON. Pas de programme complet sauf si explicitement demandé.
+- Ne jamais parler de serveur, timeout, fallback ou de technique.
+- Ne jamais dire "Je suis une IA" ou se décrire comme un assistant.
 
-Message utilisateur:
+MESSAGE:
 ${message}`;
 }
 
@@ -478,7 +486,7 @@ function fallbackMealPlan(profile, goalContext) {
 async function generateShoppingList({ apiKey, message, profile, goalContext }) {
   const prompt = buildShoppingListPrompt(message, profile, goalContext);
   try {
-    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 800, timeoutMs: 3400, retries: 1 });
+    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 8000, retries: 1 });
     const parsed = extractJSON(result.text);
     if (!parsed || !Array.isArray(parsed.categories)) throw new Error("INVALID_SHOPPING_JSON");
     return { ok: true, data: parsed, fallback: false };
@@ -490,7 +498,7 @@ async function generateShoppingList({ apiKey, message, profile, goalContext }) {
 async function generateMealPlan({ apiKey, message, profile, goalContext }) {
   const prompt = buildMealPlanPrompt(message, profile, goalContext);
   try {
-    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 800, timeoutMs: 3400, retries: 1 });
+    const result = await callGemini(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 900, timeoutMs: 8000, retries: 1 });
     const parsed = extractJSON(result.text);
     if (!parsed || !Array.isArray(parsed.meals)) throw new Error("INVALID_MEAL_PLAN_JSON");
     return { ok: true, data: parsed, fallback: false };
@@ -664,7 +672,7 @@ Action du jour: Fais 5 à 10 minutes de mobilité ce soir et garde la séance lo
     const scanNote = p.last_scan_summary ? `Ton dernier scan rappelle déjà l'axe prioritaire: ${p.last_scan_summary}.` : "";
     return `Réponse directe: Avoir la flemme est normal — le vrai sujet, c'est de ne pas casser l'élan pour autant.
 Pourquoi: ${streakNote} ${scanNote}`.trim() + `
-Action du jour: Réduis la friction au maximum: mets une tenue, lance 8 minutes de marche active ou 2 exercices très simples. Si l'énergie revient, tu continues. Sinon, tu as quand même protégé ta discipline.`;
+Action du jour: On coupe la résistance: mets ta tenue maintenant, fais 6 à 8 minutes de marche active ou 2 mouvements simples, puis décide seulement après. L'objectif du jour, ce n'est pas la perf — c'est de ne pas casser ton élan.`;
   }
   if (intent === "progress_question") {
     return `Réponse directe: Regarde d'abord régularité, qualité technique et charge ou reps sur tes mouvements clés.
@@ -870,7 +878,7 @@ async function generateWithRetry(apiKey, prompt, options = {}) {
 async function generateWorkoutPlan({ apiKey, message, history, profile, goalContext }) {
   const prompt = buildWorkoutPrompt(message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.3, maxOutputTokens: 950, timeoutMs: 3400, retries: 1 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.3, maxOutputTokens: 1200, timeoutMs: 8000, retries: 1 });
     const parsed = extractJSON(result.text);
     // Accept new exercises[] format OR legacy sessions[] format
     const hasExercises = parsed && Array.isArray(parsed.exercises) && parsed.exercises.length > 0;
@@ -888,7 +896,7 @@ async function generateWorkoutPlan({ apiKey, message, history, profile, goalCont
 async function generateConversationReply({ apiKey, intent, message, history, profile, goalContext }) {
   const prompt = buildConversationPrompt(intent, message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.55, maxOutputTokens: 650, timeoutMs: 3400, retries: 1 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.55, maxOutputTokens: 1000, timeoutMs: 8000, retries: 1 });
     const text = String(result.text || "").replace(/^```[\w-]*\s*/g, "").replace(/```$/g, "").trim();
     if (!text) throw new Error("EMPTY_CONVERSATION");
     return { ok: true, message: text, model: result.model, fallback: false };
@@ -900,7 +908,7 @@ async function generateConversationReply({ apiKey, intent, message, history, pro
 async function generateRecipeJson({ apiKey, message, profile, goalContext }) {
   const prompt = buildRecipePrompt(message, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 850, timeoutMs: 3400, retries: 1 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1000, timeoutMs: 8000, retries: 1 });
     const parsed = extractJSON(result.text);
     if (!parsed || !parsed.name) throw new Error("INVALID_RECIPE_JSON");
     return { ok: true, data: parsed, model: result.model, fallback: false };
@@ -975,5 +983,7 @@ module.exports = {
   fallbackConversation,
   fallbackRecipe,
   fallbackShoppingList,
-  fallbackMealPlan
+  fallbackMealPlan,
+  getGoalDescription,
+  getLevelDescription
 };

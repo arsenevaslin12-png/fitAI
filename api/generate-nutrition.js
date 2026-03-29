@@ -17,7 +17,7 @@ const {
   normalizeGeminiError
 } = require("./_gemini");
 
-const GEMINI_TIMEOUT_MS = 3200;
+const GEMINI_TIMEOUT_MS = 15000;
 const rateLimitBuckets = new Map();
 
 function setCors(res) {

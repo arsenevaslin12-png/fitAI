@@ -11,8 +11,11 @@ const {
   normalizeGeminiError
 } = require("./_gemini");
 const { assertEnv, validateBody, RecipeBodySchema } = require("./_env");
+const { checkRateLimit, getIp } = require("./_coach-core");
 
-const GEMINI_TIMEOUT_MS = 3400;
+// Timeout calibré pour que 2 modèles × 1 tentative (retries: 0) reste sous les 30s maxDuration Vercel.
+// 2 × 12s = 24s < 30s. Le catch retourne toujours un fallback si Gemini est trop lent.
+const GEMINI_TIMEOUT_MS = 18000; // 18s × 1 model × 0 retries = 18s max, well under Vercel 30s limit
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -54,20 +57,33 @@ const GOAL_LABELS = {
   seche:         "repas de sèche (peu calorique, riche en protéines)"
 };
 
+const COOKING_STYLES = [
+  "mariné puis poêlé", "sauté à feu vif", "mijoté doucement", "cuit vapeur",
+  "rôti au four", "grillé", "en one-pan", "façon bowl", "en sauce légère"
+];
+
 function buildRecipePrompt(ingredients, goal, targetKcal) {
   const goalLabel = GOAL_LABELS[goal] || "repas équilibré";
-  return `Tu es un nutritionniste sportif expert en cuisine fitness.
-Crée une recette avec ces ingrédients: ${ingredients}.
+  // Derive a style from the ingredients string for variety without randomness
+  const styleIdx = ingredients.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) % COOKING_STYLES.length;
+  const cookingStyle = COOKING_STYLES[styleIdx];
+  return `Tu es un chef nutritionniste sportif créatif.
+Crée une recette fitness ORIGINALE avec ces ingrédients disponibles: ${ingredients}.
 Objectif: ${goalLabel}, environ ${targetKcal} kcal.
+Style de cuisson suggéré (adapte si besoin): ${cookingStyle}.
 
-RÈGLES ABSOLUES:
-- utilise uniquement les ingrédients fournis
-- donne le nom, les étapes courtes, les macros précises
-- réponds UNIQUEMENT en JSON strict, sans aucun texte autour
-- aucun markdown (pas de \`\`\`), aucune explication
+RÈGLES:
+- Utilise les ingrédients fournis (tu peux ne pas tous les utiliser)
+- Donne un NOM DE PLAT spécifique et appétissant (pas "Recette poulet" — sois précis)
+- Étapes détaillées, concrètes, jamais vagues: cite l'ingrédient, l'action, l'ordre et si possible le temps ou le repère visuel
+- Interdiction de dire simplement "cuire les légumes" ou "cuire la protéine" sans préciser comment
+- Chaque étape doit faire comprendre exactement quoi faire à un débutant
+- Macros précises et cohérentes avec les ingrédients
+- Le champ "tips" doit être un conseil technique utile lié à cette recette précise
+- Réponds UNIQUEMENT en JSON valide, sans texte ni markdown autour
 
-FORMAT UNIQUE (respecte exactement cette structure):
-{"name":"Nom du plat","steps":["Étape 1","Étape 2","Étape 3"],"prep_time":"15 min","calories":500,"protein":35,"carbs":50,"fat":15,"tips":"Conseil pratique court"}`;
+FORMAT (structure exacte):
+{"name":"Nom précis du plat","steps":["Étape 1 détaillée","Étape 2 détaillée","Étape 3 détaillée"],"prep_time":"15 min","calories":500,"protein":35,"carbs":50,"fat":15,"tips":"Conseil technique spécifique à cette recette"}`;
 }
 
 function validateRecipe(raw) {
@@ -92,10 +108,11 @@ function fallbackRecipe(ingredients, goal) {
   return {
     name:      `Recette ${goalLabel}`,
     steps: [
-      `Préparez vos ingrédients: ${ingredientPreview}`,
-      "Faites cuire les protéines à feu moyen (10-15 min)",
-      "Ajoutez les légumes et faites revenir 5 min",
-      "Assaisonnez selon vos goûts et servez chaud"
+      `Préparez et découpez clairement les ingrédients utiles: ${ingredientPreview}.`,
+      "Saisis la protéine principale 2 à 3 minutes par face ou jusqu'à coloration nette, puis baisse légèrement le feu pour finir la cuisson sans la dessécher.",
+      "Ajoute ensuite les légumes les plus fermes d'abord, puis les plus tendres 2 à 3 minutes plus tard pour garder texture et couleur.",
+      "Monte le plat avec la base glucidique, la protéine cuite et les légumes, puis termine par l'assaisonnement et un dernier mélange hors du feu.",
+      "Goûte, ajuste le sel ou les épices, puis sers immédiatement pour garder le contraste chaud/croquant."
     ],
     prep_time: "20 min",
     calories:  450,
@@ -115,6 +132,12 @@ module.exports = async function handler(req, res) {
 
   if (req.method !== "POST") {
     return sendJson(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", requestId });
+  }
+
+  const limit = checkRateLimit("generate-recipe", getIp(req), 10, 60_000);
+  if (!limit.ok) {
+    res.setHeader("Retry-After", String(limit.retryAfterSec));
+    return sendJson(res, 429, { ok: false, error: `Trop de requêtes. Réessayez dans ${limit.retryAfterSec}s.`, requestId });
   }
 
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
@@ -140,7 +163,16 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 401, { ok: false, error: "INVALID_TOKEN", requestId });
   }
 
-  const rawBody = parseBody(req);
+  let rawBody = parseBody(req);
+  // Async body fallback — Vercel may not pre-populate req.body for all runtimes
+  if (!rawBody.ingredients && !rawBody.message) {
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (raw) rawBody = JSON.parse(raw);
+    } catch { /* keep rawBody as-is */ }
+  }
   // Normalize body for Zod (handle legacy field names)
   const normalizedBody = {
     ingredients: String(rawBody.ingredients || rawBody.message || "").trim(),
@@ -168,19 +200,18 @@ module.exports = async function handler(req, res) {
       const result = await callGeminiText({
         apiKey: GEMINI_API_KEY,
         prompt: buildRecipePrompt(ingredients, goal, targetKcal),
-        temperature: 0.65,
+        temperature: 0.75,
         maxOutputTokens: 900,
         timeoutMs: GEMINI_TIMEOUT_MS,
-        retries: 1
+        retries: 0,
+        mimeType: "application/json"  // forces Gemini to output valid JSON, no code fences
       });
 
       recipe = validateRecipe(extractJson(result.text));
 
       if (!recipe) {
-        // Gemini responded but JSON was malformed — use fallback but keep the model's text as a tip
+        // Gemini responded but JSON was malformed — pure fallback, no raw text exposure
         recipe = fallbackRecipe(ingredients, goal);
-        const rawText = String(result.text || "").slice(0, 200);
-        recipe.tips = rawText || "Recette générée en mode secours.";
         usedFallback = true;
       }
     } else {

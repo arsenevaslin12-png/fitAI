@@ -1,5 +1,6 @@
 "use strict";
 
+const { createClient } = require("@supabase/supabase-js");
 const {
   sendJson,
   setCors,
@@ -7,8 +8,7 @@ const {
   sanitizeInput,
   getIp,
   checkRateLimit,
-  generateWorkoutPlan,
-  strictWorkoutPayloadFromPlan
+  generateWorkoutPlan
 } = require("./_coach-core");
 const {
   DEFAULT_MODEL,
@@ -16,14 +16,27 @@ const {
   normalizeGeminiError
 } = require("./_gemini");
 
-function toApiWorkoutPayload(plan) {
-  return strictWorkoutPayloadFromPlan(plan);
-}
-
 module.exports = async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
   if (req.method !== "POST") return sendJson(res, 405, { ok: false, error: "Méthode non autorisée" });
+
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return sendJson(res, 500, { ok: false, error: "SUPABASE config manquante" });
+  }
+
+  const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return sendJson(res, 401, { ok: false, error: "Bearer token requis" });
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) return sendJson(res, 401, { ok: false, error: "Token invalide" });
+  } catch {
+    return sendJson(res, 401, { ok: false, error: "AUTH_FAILED" });
+  }
 
   const limit = checkRateLimit("workout", getIp(req), 8, 60_000);
   if (!limit.ok) {
@@ -47,20 +60,17 @@ module.exports = async function handler(req, res) {
   };
 
   try {
-    const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
     const result = await generateWorkoutPlan({
-      apiKey,
+      apiKey: String(process.env.GEMINI_API_KEY || "").trim(),
       message,
       history: Array.isArray(body.history) ? body.history : [],
       profile,
       goalContext: body.goalContext || {}
     });
 
-    const apiPayload = toApiWorkoutPayload(result.data);
     return sendJson(res, 200, {
       ok: true,
-      ...apiPayload,
-      data: { ...result.data, ...apiPayload },
+      data: result.data,
       fallback: !!result.fallback,
       meta: result.error ? { note: result.error } : undefined,
       model_default: DEFAULT_MODEL,

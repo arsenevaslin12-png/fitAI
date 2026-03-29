@@ -1,52 +1,126 @@
-# FitAI Pro
+# FitAI Pro v2.0
 
-Application SaaS fitness en JavaScript vanilla avec API serverless Vercel, Supabase et modules IA pour coach, nutrition et body scan.
+Application de coaching fitness alimentée par l'IA.
 
-## Ce que fait vraiment le projet
-- Dashboard fitness avec objectif, séance du jour, défis et progression
-- Coach IA avec réponses conversationnelles, séances, recettes, listes de courses et plans repas
-- Nutrition avec macros, plan du jour, hydratation, recettes et fallback local premium
-- Body Scan avec analyse photo, score calibré, recommandations entraînement/nutrition et historique
-- Communauté, amis, profil, humeur du jour et suivi des séances
+## 🚀 Fonctionnalités
 
-## Stack
-- Frontend : HTML / CSS / JavaScript vanilla dans `public/`
-- Backend : fonctions serverless Vercel dans `api/`
-- Données / auth / storage : Supabase
-- IA : Gemini avec timeouts courts + fallbacks défensifs
+### Coach IA Amélioré
+- Génération de programmes personnalisés selon objectif, niveau, équipement
+- Prise en compte des blessures et limitations
+- Alternatives pour chaque exercice
+- Structure détaillée: échauffement, corps principal, récupération
 
-## Lancer le projet
-1. Copier `env.example` vers vos variables d'environnement Vercel/locales
-2. Installer les dépendances : `npm install`
-3. Appliquer le schéma principal : `supabase/schema.sql`
-4. Si besoin, appliquer aussi les migrations complémentaires du dossier `supabase/`
-5. Vérifier la syntaxe : `npm run verify`
-6. Lancer en local : `npm run dev`
+### Body Scan Enrichi
+- Score physique global (0-100)
+- Analyse posture détaillée
+- Équilibre musculaire (points forts/faibles)
+- Recommandations personnalisées
+- Suivi de progression vs scans précédents
 
-## Variables importantes
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY` ou `SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` pour les routes serveur qui écrivent en base/storage
-- `GEMINI_API_KEY` pour activer les réponses IA complètes
+### Communauté v2
+- Système de commentaires
+- Kudos sécurisés (anti-double)
+- Système de streaks automatique
+- Différents types de posts (texte, workout, transformation)
 
-Le projet reste utilisable en mode dégradé sur les modules coach, nutrition, recette et body scan même si Gemini est indisponible.
+### Nutrition
+- Tracking des macros quotidiens
+- Objectifs personnalisés
+- Progression visuelle
 
-## Structure utile
-- `public/index.html` : structure UI et styles principaux
-- `public/app.js` : logique SPA, rendu des onglets, coach, nutrition, body scan, progrès
-- `api/_coach-core.js` : normalisation des réponses coach / workout / shopping list
-- `api/_gemini.js` : wrapper Gemini avec timeout, retry minimal et extraction JSON
-- `api/coach.js` : endpoint coach principal
-- `api/generate-nutrition.js` : endpoint nutrition premium + fallback
-- `api/bodyscan.js` : endpoint analyse photo + calibration score
-- `supabase/schema.sql` : schéma consolidé
+## 📦 Stack technique
 
-## État actuel
-- APIs critiques défensives
-- Frontend avec fallbacks sur les états vides
-- Coach et nutrition utilisables même sans IA
-- Body scan calibré mais dépendant de la qualité photo
-- Certains modules optionnels, comme `daily_moods`, nécessitent les migrations associées pour supprimer les warnings Supabase
+- **Frontend**: Vanilla JS, HTML, CSS
+- **Backend**: Vercel Serverless Functions
+- **Database**: Supabase (PostgreSQL + Auth + Storage)
+- **AI**: Google Gemini 2.0 Flash
 
-## Vérification
-`npm run verify` lance un check de syntaxe sur le frontend et les routes API critiques.
+## 🔧 Installation
+
+### 1. Cloner et déployer sur Vercel
+
+```bash
+git clone <repo>
+cd fitai-pro
+vercel deploy
+```
+
+### 2. Configurer Supabase
+
+1. Créer un projet sur [supabase.com](https://supabase.com)
+2. Exécuter `supabase/schema.sql` dans le SQL Editor
+3. Créer le bucket `user_uploads` dans Storage (privé)
+4. Configurer Authentication → URL Configuration:
+   - Site URL: `https://votre-app.vercel.app`
+   - Redirect URLs: `https://votre-app.vercel.app/**`
+
+### 3. Variables d'environnement Vercel
+
+Dans Vercel Dashboard → Settings → Environment Variables:
+
+| Variable | Description |
+|----------|-------------|
+| `SUPABASE_URL` | `https://xxxxx.supabase.co` |
+| `SUPABASE_ANON_KEY` | Clé publique (anon) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Clé service (pour API) |
+| `GEMINI_API_KEY` | Clé Google AI Studio |
+| `ALLOWED_ORIGIN` | (optionnel) Domaine autorisé |
+
+### 4. Redéployer
+
+```bash
+vercel --prod
+```
+
+## 📁 Structure
+
+```
+fitai-pro/
+├── api/
+│   ├── config.js      # Config endpoint
+│   ├── workout.js     # Coach IA
+│   └── bodyscan.js    # Body Scan IA
+├── lib/
+│   └── logger.js      # Structured logging
+├── public/
+│   ├── index.html     # SPA
+│   └── app.js         # Frontend logic
+├── supabase/
+│   └── schema.sql     # Database schema
+├── vercel.json        # Vercel config
+└── package.json
+```
+
+## 🔒 Sécurité
+
+- Row Level Security (RLS) sur toutes les tables
+- Validation des tokens côté API
+- Input sanitization
+- CORS restrictif en production
+- Headers de sécurité (X-Frame-Options, CSP, etc.)
+- Fonction RPC sécurisée pour kudos (anti-exploit)
+
+## 🎯 Roadmap
+
+### Phase 1 ✅ (actuel)
+- [x] Coach IA amélioré
+- [x] Body Scan enrichi
+- [x] Système de commentaires
+- [x] Streaks automatiques
+- [x] Sécurité renforcée
+
+### Phase 2 (à venir)
+- [ ] Posts avec images
+- [ ] Leaderboard streaks
+- [ ] Achievements/badges
+- [ ] Export PDF des programmes
+
+### Phase 3 (futur)
+- [ ] PWA + notifications
+- [ ] Mode offline
+- [ ] Multi-langue
+- [ ] Intégration wearables
+
+## 📄 Licence
+
+Propriétaire - Tous droits réservés
