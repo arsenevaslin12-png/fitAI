@@ -672,12 +672,20 @@ async function saveBodyScanResult(sb, { user_id, image_path, normalized }) {
   return { ok: true, mode: "insert" };
 }
 
+const { checkRateLimit, getIp } = require("./_coach-core");
+
 module.exports = async function(req, res) {
   cors(res);
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
   if (req.method !== "POST") return json(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", id: requestId });
+
+  const limit = checkRateLimit("bodyscan", getIp(req), 6, 60_000);
+  if (!limit.ok) {
+    res.setHeader("Retry-After", String(limit.retryAfterSec));
+    return json(res, 429, { ok: false, error: `Trop de scans. Réessayez dans ${limit.retryAfterSec}s.`, id: requestId });
+  }
 
   const SB_URL = process.env.SUPABASE_URL;
   const SB_SRV = process.env.SUPABASE_SERVICE_ROLE_KEY;

@@ -166,12 +166,20 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+const { checkRateLimit, getIp } = require("./_coach-core");
+
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
   if (req.method !== "POST") { res.statusCode = 405; return res.end(); }
+
+  const limit = checkRateLimit("analyze-food", getIp(req), 20, 60_000);
+  if (!limit.ok) {
+    res.setHeader("Retry-After", String(limit.retryAfterSec));
+    return sendJson(res, 429, { ok: false, error: `Trop de requêtes. Réessayez dans ${limit.retryAfterSec}s.` });
+  }
 
   let body = {};
   try {

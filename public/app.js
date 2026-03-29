@@ -186,7 +186,7 @@ async function boot() {
 
   // 5. Écouter les changements d'authentification
   SB.auth.onAuthStateChange((event, session) => {
-    console.log("[Auth]", event, session?.user?.email || "no user");
+    if (typeof window !== "undefined" && window.__FITAI_DEBUG__) console.log("[Auth]", event, session?.user?.email || "no user");
 
     if (event === "TOKEN_REFRESHED") {
       AUTH_ERROR_COUNT = 0;

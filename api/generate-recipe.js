@@ -11,6 +11,7 @@ const {
   normalizeGeminiError
 } = require("./_gemini");
 const { assertEnv, validateBody, RecipeBodySchema } = require("./_env");
+const { checkRateLimit, getIp } = require("./_coach-core");
 
 // Timeout calibré pour que 2 modèles × 1 tentative (retries: 0) reste sous les 30s maxDuration Vercel.
 // 2 × 12s = 24s < 30s. Le catch retourne toujours un fallback si Gemini est trop lent.
@@ -128,6 +129,12 @@ module.exports = async function handler(req, res) {
 
   if (req.method !== "POST") {
     return sendJson(res, 405, { ok: false, error: "METHOD_NOT_ALLOWED", requestId });
+  }
+
+  const limit = checkRateLimit("generate-recipe", getIp(req), 10, 60_000);
+  if (!limit.ok) {
+    res.setHeader("Retry-After", String(limit.retryAfterSec));
+    return sendJson(res, 429, { ok: false, error: `Trop de requêtes. Réessayez dans ${limit.retryAfterSec}s.`, requestId });
   }
 
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();

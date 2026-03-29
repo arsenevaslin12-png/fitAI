@@ -2,7 +2,7 @@
 
 const { callGeminiText } = require("./_gemini");
 const { assertEnv } = require("./_env");
-const { setCors, sendJson, parseBody } = require("./_coach-core");
+const { setCors, sendJson, parseBody, checkRateLimit, getIp } = require("./_coach-core");
 
 const FALLBACK = {
   score: 60, label: "Moyen",
@@ -21,6 +21,12 @@ module.exports = async function handler(req, res) {
   const authHeader = req.headers["authorization"] || "";
   if (!authHeader.startsWith("Bearer ")) {
     sendJson(res, 401, { error: "unauthorized" }); return;
+  }
+
+  const limit = checkRateLimit("check-recipe", getIp(req), 15, 60_000);
+  if (!limit.ok) {
+    res.setHeader("Retry-After", String(limit.retryAfterSec));
+    sendJson(res, 429, { error: `Trop de requêtes. Réessayez dans ${limit.retryAfterSec}s.` }); return;
   }
 
   if (assertEnv(res)) return;
