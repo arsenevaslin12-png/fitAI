@@ -1,7 +1,7 @@
 "use strict";
 
-const TIMEOUT_GEMINI_MS = 6500;
-const TIMEOUT_STORAGE_MS = 8000;
+const TIMEOUT_GEMINI_MS = 5600;
+const TIMEOUT_STORAGE_MS = 7000;
 
 const {
   DEFAULT_MODEL: MODEL,
@@ -70,32 +70,67 @@ function clampScore(value) {
   return Math.min(100, Math.max(0, Math.round(value)));
 }
 
+function scoreLabel(score) {
+  const s = Number(score || 0);
+  if (s >= 92) return "Exceptionnel";
+  if (s >= 86) return "Très athlétique";
+  if (s >= 78) return "Athlétique";
+  if (s >= 70) return "Bon niveau";
+  if (s >= 62) return "Actif régulier";
+  if (s >= 52) return "Base correcte";
+  return "Début de base";
+}
+
+function confidenceLabel(qualityIssues, analysisQuality) {
+  const count = Array.isArray(qualityIssues) ? qualityIssues.length : 0;
+  const q = String(analysisQuality || "acceptable");
+  if (q === "good" && count === 0) return "Lecture fiable";
+  if (q === "poor" || count >= 2) return "Lecture prudente";
+  return "Lecture correcte";
+}
+
+function buildComparison(previousScore, currentScore) {
+  const prev = Number(previousScore);
+  const next = Number(currentScore);
+  if (!Number.isFinite(prev) || !Number.isFinite(next)) return null;
+  const delta = Math.round(next - prev);
+  return {
+    previous_score: prev,
+    current_score: next,
+    delta_score: delta,
+    direction: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat',
+    label: delta > 0 ? `+${delta}` : `${delta}`,
+    summary: delta >= 3 ? 'progression visible' : delta <= -3 ? 'recul visible' : 'niveau global assez stable'
+  };
+}
+
 function scoreCapByProfile({ fitnessCategory, muscleMassLevel, bodyfatProxy, analysisQuality }) {
   const category = String(fitnessCategory || "").toLowerCase();
   const muscle = String(muscleMassLevel || "").toLowerCase();
-  let cap = 74;
-  if (category === "sedentary") cap = 48;
-  else if (category === "recreational") cap = 68;
-  else if (category === "athletic") cap = 86;
-  else if (category === "competitive") cap = 92;
+  let cap = 68;
+  if (category === "sedentary") cap = 38;
+  else if (category === "recreational") cap = 62;
+  else if (category === "athletic") cap = 82;
+  else if (category === "competitive") cap = 91;
 
-  if (muscle === "beginner") cap = Math.min(cap, 56);
-  else if (muscle === "intermediate") cap = Math.min(cap, 70);
-  else if (muscle === "advanced") cap = Math.max(cap, 82);
-  else if (muscle === "elite") cap = Math.max(cap, 90);
+  if (muscle === "beginner") cap = Math.min(cap, 49);
+  else if (muscle === "intermediate") cap = Math.min(cap, 64);
+  else if (muscle === "advanced") cap = Math.max(cap, 78);
+  else if (muscle === "elite") cap = Math.max(cap, 88);
 
   if (typeof bodyfatProxy === "number") {
-    if (bodyfatProxy >= 25) cap = Math.min(cap, 48);
-    else if (bodyfatProxy >= 21) cap = Math.min(cap, 57);
-    else if (bodyfatProxy >= 18) cap = Math.min(cap, 65);
-    else if (bodyfatProxy >= 15) cap = Math.min(cap, 74);
+    if (bodyfatProxy >= 24) cap = Math.min(cap, 44);
+    else if (bodyfatProxy >= 20) cap = Math.min(cap, 54);
+    else if (bodyfatProxy >= 17) cap = Math.min(cap, 63);
+    else if (bodyfatProxy >= 15) cap = Math.min(cap, 70);
     else if (bodyfatProxy <= 13) cap = Math.max(cap, 84);
     else if (bodyfatProxy <= 10) cap = Math.max(cap, 89);
+    else if (bodyfatProxy <= 8) cap = Math.max(cap, 92);
   }
 
   const quality = String(analysisQuality || "");
-  if (quality === "poor") cap = Math.min(cap, 55);
-  else if (quality === "acceptable") cap = Math.min(cap, Math.max(cap, 76));
+  if (quality === "poor") cap = Math.min(cap, 54);
+  else if (quality === "acceptable") cap = Math.max(34, cap - 3);
   return cap;
 }
 
@@ -420,20 +455,20 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
   const seed = makeSeed(JSON.stringify(rawScores), bodyfatProxy, JSON.stringify(qualityIssues), previousAnalysis?.physical_score || "", metaSeed, p.body_composition || "", p.muscle_definition_text || "", postureAnalysis?.overall || "", muscleBalance?.upper_lower_ratio || "");
 
   const penalties =
-    (p.analysis_quality === "poor" ? 18 : p.analysis_quality === "acceptable" ? 8 : 0)
-    + ((rawScores.posture || 70) < 62 ? 12 : (rawScores.posture || 70) < 68 ? 7 : (rawScores.posture || 70) < 74 ? 3 : 0)
-    + ((rawScores.symmetry || 70) < 62 ? 10 : (rawScores.symmetry || 70) < 68 ? 6 : (rawScores.symmetry || 70) < 74 ? 3 : 0)
-    + ((rawScores.muscle_definition || 66) < 56 ? 14 : (rawScores.muscle_definition || 66) < 64 ? 8 : (rawScores.muscle_definition || 66) < 72 ? 4 : 0)
-    + ((rawScores.body_composition || 66) < 56 ? 13 : (rawScores.body_composition || 66) < 64 ? 8 : (rawScores.body_composition || 66) < 72 ? 4 : 0)
-    + (qualityIssues.length >= 2 ? 6 : qualityIssues.length === 1 ? 3 : 0)
-    + (typeof bodyfatProxy === "number" && bodyfatProxy >= 24 ? 14 : typeof bodyfatProxy === "number" && bodyfatProxy >= 20 ? 10 : typeof bodyfatProxy === "number" && bodyfatProxy >= 17 ? 6 : 0);
+    (p.analysis_quality === "poor" ? 20 : p.analysis_quality === "acceptable" ? 8 : 0)
+    + ((rawScores.posture || 70) < 60 ? 13 : (rawScores.posture || 70) < 66 ? 8 : (rawScores.posture || 70) < 72 ? 4 : 0)
+    + ((rawScores.symmetry || 70) < 60 ? 12 : (rawScores.symmetry || 70) < 66 ? 7 : (rawScores.symmetry || 70) < 72 ? 4 : 0)
+    + ((rawScores.muscle_definition || 66) < 54 ? 18 : (rawScores.muscle_definition || 66) < 62 ? 11 : (rawScores.muscle_definition || 66) < 70 ? 5 : 0)
+    + ((rawScores.body_composition || 66) < 54 ? 17 : (rawScores.body_composition || 66) < 62 ? 11 : (rawScores.body_composition || 66) < 70 ? 5 : 0)
+    + (qualityIssues.length >= 2 ? 7 : qualityIssues.length === 1 ? 3 : 0)
+    + (typeof bodyfatProxy === "number" && bodyfatProxy >= 24 ? 16 : typeof bodyfatProxy === "number" && bodyfatProxy >= 20 ? 11 : typeof bodyfatProxy === "number" && bodyfatProxy >= 17 ? 6 : 0);
 
   const bonuses =
-    ((rawScores.posture || 0) >= 76 ? 4 : (rawScores.posture || 0) >= 70 ? 2 : 0)
-    + ((rawScores.symmetry || 0) >= 78 ? 5 : (rawScores.symmetry || 0) >= 72 ? 2 : 0)
-    + ((rawScores.muscle_definition || 0) >= 80 ? 9 : (rawScores.muscle_definition || 0) >= 72 ? 4 : 0)
-    + ((rawScores.body_composition || 0) >= 82 ? 8 : (rawScores.body_composition || 0) >= 74 ? 3 : 0)
-    + (typeof bodyfatProxy === "number" && bodyfatProxy <= 12 ? 6 : typeof bodyfatProxy === "number" && bodyfatProxy <= 15 ? 2 : 0);
+    ((rawScores.posture || 0) >= 78 ? 4 : (rawScores.posture || 0) >= 72 ? 2 : 0)
+    + ((rawScores.symmetry || 0) >= 80 ? 5 : (rawScores.symmetry || 0) >= 74 ? 2 : 0)
+    + ((rawScores.muscle_definition || 0) >= 82 ? 10 : (rawScores.muscle_definition || 0) >= 74 ? 4 : 0)
+    + ((rawScores.body_composition || 0) >= 82 ? 9 : (rawScores.body_composition || 0) >= 74 ? 4 : 0)
+    + (typeof bodyfatProxy === "number" && bodyfatProxy <= 12 ? 7 : typeof bodyfatProxy === "number" && bodyfatProxy <= 15 ? 2 : 0);
 
   const derivedScores = {
     symmetry: clampScore(rawScores.symmetry ?? 58),
@@ -443,7 +478,7 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
   };
 
   const basePhysical = rawScores.physical_score ?? avgScore ?? 56;
-  const weightedBase = Math.round(((derivedScores.symmetry * 0.17) + (derivedScores.posture * 0.16) + (derivedScores.muscle_definition * 0.35) + (derivedScores.body_composition * 0.32)));
+  const weightedBase = Math.round(((derivedScores.symmetry * 0.14) + (derivedScores.posture * 0.14) + (derivedScores.muscle_definition * 0.38) + (derivedScores.body_composition * 0.34)));
   const cap = scoreCapByProfile({
     fitnessCategory: p.estimated_metrics?.fitness_category,
     muscleMassLevel: p.estimated_metrics?.muscle_mass_level,
@@ -451,13 +486,34 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
     analysisQuality: p.analysis_quality
   });
   const qualityPenalty = qualityIssues.length ? 2 : 0;
-  let calibratedPhysical = clampScore(Math.round(((basePhysical * 0.22) + (weightedBase * 0.78)) - (penalties * 0.78) - qualityPenalty + bonuses)) ?? 54;
-  calibratedPhysical = Math.min(calibratedPhysical, cap);
-  if ((p.estimated_metrics?.fitness_category === "athletic" || p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 14 && (derivedScores.muscle_definition || 0) >= 72 && (derivedScores.body_composition || 0) >= 74) {
-    calibratedPhysical = Math.max(calibratedPhysical, 76);
+  let calibratedPhysical = clampScore(Math.round(((basePhysical * 0.14) + (weightedBase * 0.86)) - (penalties * 0.88) - qualityPenalty + bonuses)) ?? 53;
+
+  if ((derivedScores.muscle_definition || 0) < 60 || (derivedScores.body_composition || 0) < 60) {
+    calibratedPhysical = Math.min(calibratedPhysical, 60);
+  } else if ((derivedScores.muscle_definition || 0) < 68 || (derivedScores.body_composition || 0) < 68) {
+    calibratedPhysical = Math.min(calibratedPhysical, 68);
+  } else if ((derivedScores.muscle_definition || 0) < 74 || (derivedScores.body_composition || 0) < 72) {
+    calibratedPhysical = Math.min(calibratedPhysical, 75);
   }
-  if ((p.estimated_metrics?.fitness_category === "athletic" || p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 11 && (derivedScores.muscle_definition || 0) >= 84 && (derivedScores.body_composition || 0) >= 82) {
-    calibratedPhysical = Math.max(calibratedPhysical, 86);
+
+  if (qualityIssues.length >= 2 || p.analysis_quality === "poor") {
+    calibratedPhysical = Math.min(calibratedPhysical, 61);
+  }
+
+  if (p.estimated_metrics?.fitness_category === "recreational" && typeof bodyfatProxy === "number" && bodyfatProxy >= 18) {
+    calibratedPhysical = Math.min(calibratedPhysical, 63);
+  }
+
+  calibratedPhysical = Math.min(calibratedPhysical, cap);
+
+  if ((p.estimated_metrics?.fitness_category === "athletic" || p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 13 && (derivedScores.muscle_definition || 0) >= 76 && (derivedScores.body_composition || 0) >= 78) {
+    calibratedPhysical = Math.max(calibratedPhysical, 80);
+  }
+  if ((p.estimated_metrics?.fitness_category === "athletic" || p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 11 && (derivedScores.muscle_definition || 0) >= 84 && (derivedScores.body_composition || 0) >= 82 && (derivedScores.posture || 0) >= 70) {
+    calibratedPhysical = Math.max(calibratedPhysical, 87);
+  }
+  if ((p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 9 && (derivedScores.muscle_definition || 0) >= 88 && (derivedScores.body_composition || 0) >= 86) {
+    calibratedPhysical = Math.max(calibratedPhysical, 91);
   }
 
   const strengths = uniqStrings([
@@ -507,6 +563,11 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
     feedbackParts.push(`💪 ${geminiMotivation.replace(/^💪\s*/u, "")}`);
   }
 
+  const comparison = buildComparison(previousAnalysis?.physical_score, calibratedPhysical);
+  if (comparison) {
+    feedbackParts.push(`📈 Par rapport au dernier scan: ${comparison.summary} (${comparison.label} point${Math.abs(comparison.delta_score) > 1 ? 's' : ''}).`);
+  }
+
   feedbackParts.push(`📅 ${reco.frequency_suggestion || derivedReco.frequency_suggestion}`);
 
   return {
@@ -542,7 +603,10 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
         priority_area: derivedReco.priority_area,
         rationale: derivedReco.rationale
       },
-      follow_up_in_weeks: p.follow_up_in_weeks || 4
+      comparison,
+      follow_up_in_weeks: p.follow_up_in_weeks || 4,
+      level_label: scoreLabel(calibratedPhysical),
+      confidence_label: confidenceLabel(qualityIssues, p.analysis_quality)
     }
   };
 }
@@ -612,7 +676,10 @@ function buildDegradedAnalysis(reason, previousAnalysis = null) {
         exercise_examples: exercises,
         frequency_suggestion: "Refaites un scan sous 1 à 2 semaines avec une photo plus propre pour obtenir une analyse plus précise."
       },
+      comparison: buildComparison(previousAnalysis?.physical_score, 48),
       follow_up_in_weeks: 2,
+      level_label: "Lecture prudente",
+      confidence_label: "Lecture prudente",
       error: message
     }
   };

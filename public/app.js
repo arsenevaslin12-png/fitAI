@@ -2222,16 +2222,100 @@ function handleFile(file) {
   reader.readAsDataURL(file);
 }
 
+function bodyScanLevelMeta(score) {
+  const s = Number(score || 0);
+  if (s >= 92) return { label: "Exceptionnel", hint: "niveau rarissime", tone: "elite" };
+  if (s >= 86) return { label: "Très athlétique", hint: "sec et dense", tone: "athletic" };
+  if (s >= 78) return { label: "Athlétique", hint: "niveau sportif net", tone: "strong" };
+  if (s >= 70) return { label: "Bon niveau", hint: "bonne base visible", tone: "good" };
+  if (s >= 62) return { label: "Actif régulier", hint: "correct mais perfectible", tone: "mid" };
+  if (s >= 52) return { label: "Base correcte", hint: "encore peu marquée", tone: "base" };
+  return { label: "Début de base", hint: "potentiel à construire", tone: "early" };
+}
+
+function bodyScanConfidenceMeta(ext) {
+  const quality = String(ext?.analysis_quality || "acceptable");
+  const count = Array.isArray(ext?.quality_issues) ? ext.quality_issues.length : 0;
+  if (quality === "good" && count === 0) return { label: "Lecture fiable", tone: "good" };
+  if (quality === "poor" || count >= 2) return { label: "Lecture prudente", tone: "warn" };
+  return { label: "Lecture correcte", tone: "mid" };
+}
+
+function bodyScanVerdict(ext, score) {
+  const level = bodyScanLevelMeta(score);
+  if (ext?.body_composition) return String(ext.body_composition);
+  if (level.tone === "athletic" || level.tone === "strong") return "Physique visiblement sportif avec des points encore perfectibles.";
+  if (level.tone === "good") return "Base sérieuse, mais il manque encore de la netteté ou du relief pour monter plus haut.";
+  if (level.tone === "mid") return "Tu es dans une zone active correcte, mais pas encore dans un rendu athlétique marqué.";
+  return "Base en construction. Le score peut grimper vite avec plus de régularité et une meilleure exécution.";
+}
+
+function bodyScanTrendMeta(ext) {
+  const cmp = ext?.comparison || null;
+  const delta = Number(cmp?.delta_score || 0);
+  if (!cmp || !Number.isFinite(delta) || cmp.previous_score == null) return null;
+  if (delta >= 6) return { label: `+${delta} nette progression`, tone: "up" };
+  if (delta >= 2) return { label: `+${delta} progression`, tone: "up" };
+  if (delta <= -6) return { label: `${delta} recul net`, tone: "down" };
+  if (delta <= -2) return { label: `${delta} léger recul`, tone: "down" };
+  return { label: "stable", tone: "flat" };
+}
+
+function bodyScanScoreRail(score) {
+  const s = Math.max(0, Math.min(100, Number(score || 0)));
+  const segments = [
+    { label: 'Base', limit: 52 },
+    { label: 'Actif', limit: 62 },
+    { label: 'Bon', limit: 70 },
+    { label: 'Athl.', limit: 78 },
+    { label: 'Très athl.', limit: 86 },
+    { label: 'Elite', limit: 100 }
+  ];
+  let left = 0;
+  return `<div class="scan-score-rail">${segments.map(seg => {
+    const width = seg.limit - left;
+    const active = s >= seg.limit;
+    const html = `<div class="scan-score-seg${active ? ' active' : ''}" style="width:${width}%"><span>${seg.label}</span></div>`;
+    left = seg.limit;
+    return html;
+  }).join('')}<div class="scan-score-marker" style="left:calc(${s}% - 8px)"></div></div>`;
+}
+
+function bodyScanLoadingCopy(progress) {
+  if (progress < 18) return { title: "Préparation du scan", sub: "On aligne la photo et on vérifie le cadrage." };
+  if (progress < 42) return { title: "Lecture de la posture", sub: "Symétrie, posture et appuis sont en cours d'estimation." };
+  if (progress < 68) return { title: "Analyse corporelle", sub: "On évalue la définition, la composition et le niveau perçu." };
+  if (progress < 90) return { title: "Synthèse coach", sub: "On prépare les axes prioritaires et les recommandations utiles." };
+  return { title: "Finalisation", sub: "Le score calibré et les conseils arrivent." };
+}
+
+function setBodyScanLoading(progress) {
+  const pct = Math.max(0, Math.min(100, Math.round(progress || 0)));
+  const fill = document.getElementById("scan-progress-fill");
+  const pctEl = document.getElementById("scan-progress-percent");
+  const titleEl = document.getElementById("scan-progress-title");
+  const subEl = document.getElementById("scan-progress-sub");
+  const copy = bodyScanLoadingCopy(pct);
+  if (fill) fill.style.width = `${pct}%`;
+  if (pctEl) pctEl.textContent = `${pct}%`;
+  if (titleEl) titleEl.textContent = copy.title;
+  if (subEl) subEl.textContent = copy.sub;
+}
+
 async function doScan() {
   if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
   if (!FILE) return toast("Sélectionnez une image.", "err");
 
   const btn = document.getElementById("btn-scan");
   const errEl = document.getElementById("scan-err");
-  if (errEl) errEl.style.display = "none";
+  if (errEl) {
+    errEl.textContent = "";
+    errEl.style.display = "none";
+  }
 
   const scanLoading = document.getElementById("scan-loading");
-  const scanProgressFill = document.getElementById("scan-progress-fill");
+  const scanPreview = document.getElementById("scan-preview");
+  let progressTimer = null;
 
   await withButton(btn, "Analyse…", async () => {
     const ext = (FILE.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").toLowerCase();
@@ -2239,9 +2323,14 @@ async function doScan() {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
-    // Show loading
     if (scanLoading) scanLoading.style.display = "block";
-    if (scanProgressFill) { scanProgressFill.style.width = "0%"; requestAnimationFrame(() => { scanProgressFill.style.width = "90%"; }); }
+    if (scanPreview) scanPreview.classList.add("scan-preview-loading");
+    let visualProgress = 6;
+    setBodyScanLoading(visualProgress);
+    progressTimer = setInterval(() => {
+      visualProgress = Math.min(92, visualProgress + (visualProgress < 40 ? 7 : visualProgress < 70 ? 4 : 2));
+      setBodyScanLoading(visualProgress);
+    }, 650);
 
     const upload = await SB.storage.from("user_uploads").upload(path, FILE, { contentType: FILE.type });
     if (upload.error) throw upload.error;
@@ -2257,18 +2346,27 @@ async function doScan() {
     const j = await safeResponseJson(r);
     if (!r.ok || !j.ok) throw new Error(j.error || `Erreur serveur (HTTP ${r.status})`);
 
-    if (scanProgressFill) scanProgressFill.style.width = "100%";
+    clearInterval(progressTimer);
+    setBodyScanLoading(100);
 
     FILE = null;
     const fileInput = document.getElementById("file-input");
-    const scanPreview = document.getElementById("scan-preview");
+    const scanImg = document.getElementById("scan-img");
     if (fileInput) fileInput.value = "";
-    if (scanPreview) scanPreview.style.display = "none";
-    if (scanLoading) scanLoading.style.display = "none";
+    if (scanImg) scanImg.src = "";
+    setTimeout(() => {
+      if (scanPreview) {
+        scanPreview.style.display = "none";
+        scanPreview.classList.remove("scan-preview-loading");
+      }
+      if (scanLoading) scanLoading.style.display = "none";
+    }, 420);
     toast("Analyse terminée ✓", "ok");
     await loadScans();
     checkAndAwardAchievements().catch(() => {});
   }).catch((e) => {
+    clearInterval(progressTimer);
+    if (scanPreview) scanPreview.classList.remove("scan-preview-loading");
     if (scanLoading) scanLoading.style.display = "none";
     if (errEl) {
       errEl.textContent = `Erreur: ${e.message}`;
@@ -2298,7 +2396,150 @@ function parseScanFeedback(text) {
   return { overview: overviewLines.join(" "), strengths, improvements, recommendations };
 }
 
+function scanRing(pct, color, label, valLabel) {
+  const r = 22;
+  const c = +(2 * Math.PI * r).toFixed(1);
+  const filled = +((Math.max(0, Math.min(100, pct || 0)) / 100) * c).toFixed(1);
+  return `<div class="ring-item">
+    <div style="position:relative;width:52px;height:52px">
+      <svg class="ring-svg" width="52" height="52" viewBox="0 0 52 52">
+        <circle class="ring-track" cx="26" cy="26" r="${r}"/>
+        <circle class="ring-fill" cx="26" cy="26" r="${r}" stroke="${color}" stroke-dasharray="${filled} ${c}"/>
+      </svg>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:900;color:${color}">${valLabel}</div>
+    </div>
+    <div class="ring-lbl">${label}</div>
+  </div>`;
+}
+
+function renderPendingScan(scan, date) {
+  return `<div class="scan-v2 scan-v2-pending">
+    <div class="scan-pending-shell">
+      <div class="scan-pending-figure">
+        <div class="scan-pending-grid scan-pending-grid-h"></div>
+        <div class="scan-pending-grid scan-pending-grid-v"></div>
+        <div class="scan-pending-avatar">
+          <span class="scan-pending-eye left"></span>
+          <span class="scan-pending-eye right"></span>
+        </div>
+        <div class="scan-pending-body"></div>
+        <div class="scan-pending-arm left"></div>
+        <div class="scan-pending-arm right"></div>
+        <div class="scan-pending-leg left"></div>
+        <div class="scan-pending-leg right"></div>
+      </div>
+      <div class="scan-pending-copy">
+        <div class="scan-pending-date">${date}</div>
+        <div class="scan-pending-title">Scan en cours d'analyse</div>
+        <div class="scan-pending-sub">La photo est bien reçue. L'IA prépare le score calibré, les points forts et les axes prioritaires.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:420px">
+          <div class="scan-v3-line">① Vérification cadrage</div>
+          <div class="scan-v3-line">② Lecture posture</div>
+          <div class="scan-v3-line">③ Composition / définition</div>
+          <div class="scan-v3-line">④ Synthèse coach</div>
+        </div>
+        <div class="scan-pending-chip">Analyse en cours</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderBodyScanCard(scan, imageUrl) {
+  const ext = scan.extended_analysis || {};
+  const extStrengths = Array.isArray(ext.strengths) ? ext.strengths : [];
+  const extImprovements = Array.isArray(ext.areas_for_improvement) ? ext.areas_for_improvement : [];
+  const extScores = ext.score_breakdown || {};
+  const parsed = extStrengths.length || extImprovements.length
+    ? { strengths: extStrengths, improvements: extImprovements, recommendations: [], overview: "" }
+    : parseScanFeedback(scan.ai_feedback || "");
+  const physScore = Number(scan.physical_score || 0);
+  const date = new Date(scan.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  const level = bodyScanLevelMeta(physScore);
+  const confidence = bodyScanConfidenceMeta(ext);
+  const verdict = bodyScanVerdict(ext, physScore);
+  const trend = bodyScanTrendMeta(ext);
+  const reco = ext.personalized_recommendations || {};
+  const scoreChips = [
+    scan.symmetry_score != null ? scanRing(scan.symmetry_score, "#60a5fa", "Sym.", scan.symmetry_score) : "",
+    extScores.muscle_definition != null ? scanRing(extScores.muscle_definition, "#22c55e", "Défin.", extScores.muscle_definition) : "",
+    extScores.body_composition != null ? scanRing(extScores.body_composition, "#a855f7", "Compo.", extScores.body_composition) : "",
+    scan.posture_score != null ? scanRing(scan.posture_score, "#06b6d4", "Post.", scan.posture_score) : ""
+  ].filter(Boolean).join("");
+  const bodyfat = ext?.estimated_metrics?.bodyfat_range || (scan.bodyfat_proxy != null ? `${scan.bodyfat_proxy}%` : null);
+  const trainingFocus = (reco.training_focus || reco.training || []).slice(0, 3);
+  const nutritionFocus = (reco.nutrition || []).slice(0, 2);
+  const exercises = (reco.exercise_examples || []).slice(0, 4);
+  const improvements = parsed.improvements.slice(0, 3);
+  const strengths = parsed.strengths.slice(0, 3);
+  const previousScore = ext?.comparison?.previous_score;
+
+  return `<div class="scan-v2">
+    <div class="scan-v2-top scan-v3-top">
+      <div class="scan-v2-photo scan-v3-photo">
+        ${imageUrl ? lazyImg(imageUrl, "Scan", "", "width:100%;height:100%;object-fit:cover;opacity:.96") : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">📷 Photo non disponible</div>`}
+        <div class="scan-v3-cross scan-v3-cross-h"></div>
+        <div class="scan-v3-cross scan-v3-cross-v"></div>
+        <div class="scan-v2-photo-overlay">
+          <span class="scan-v2-pill">${date}</span>
+          <span class="scan-v2-pill">${confidence.label}</span>
+          ${trend ? `<span class="scan-v2-pill" style="background:${trend.tone === 'up' ? 'rgba(34,197,94,.12)' : trend.tone === 'down' ? 'rgba(239,68,68,.12)' : 'rgba(255,255,255,.07)'};color:${trend.tone === 'up' ? '#4ade80' : trend.tone === 'down' ? '#fda4af' : 'var(--text2)'}">${trend.label}</span>` : ''}
+        </div>
+      </div>
+      <div class="scan-v2-right scan-v3-right">
+        <div class="scan-v3-scorecard">
+          <div>
+            <div class="scan-v3-label">Score calibré</div>
+            <div class="scan-v3-score">${physScore}<span>/100</span></div>
+            <div class="scan-v3-level">${level.label} · ${level.hint}</div>
+            ${bodyScanScoreRail(physScore)}
+          </div>
+          <div class="scan-v3-mini">
+            <div class="scan-v3-mini-row"><span>Bodyfat estimé</span><strong>${bodyfat || "—"}</strong></div>
+            <div class="scan-v3-mini-row"><span>Catégorie</span><strong>${ext?.estimated_metrics?.fitness_category ? escapeHtml(String(ext.estimated_metrics.fitness_category)) : "—"}</strong></div>
+            <div class="scan-v3-mini-row"><span>Scan précédent</span><strong>${previousScore != null ? `${previousScore}/100` : '—'}</strong></div>
+            <div class="scan-v3-mini-row"><span>Fiabilité</span><strong>${confidence.label}</strong></div>
+          </div>
+        </div>
+        ${scoreChips ? `<div class="rings-row scan-v3-rings">${scoreChips}</div>` : ""}
+        <div class="scan-v3-verdict">${escapeHtml(verdict)}</div>
+        <div class="scan-v2-2col scan-v3-columns">
+          <div class="scan-v2-strengths">
+            <div class="scan-v2-col-hdr scan-v2-str-hdr">Ce qui soutient la note</div>
+            ${strengths.length ? strengths.map(s => `<div class="scan-v2-pt scan-v2-str-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-str-pt">Base exploitable pour progresser si tu restes régulier.</div>`}
+          </div>
+          <div class="scan-v2-weaknesses">
+            <div class="scan-v2-col-hdr scan-v2-wk-hdr">Ce qui freine vraiment</div>
+            ${improvements.length ? improvements.map(s => `<div class="scan-v2-pt scan-v2-wk-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-wk-pt">Photo ou lecture trop moyenne pour aller plus haut.</div>`}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scan-v3-bottom">
+      <div class="scan-v3-block">
+        <div class="scan-v3-block-hdr">Priorité entraînement</div>
+        ${trainingFocus.length ? trainingFocus.map(item => `<div class="scan-v3-line">${escapeHtml(item)}</div>`).join("") : `<div class="scan-v3-line">Travail full body propre, posture et régularité.</div>`}
+      </div>
+      <div class="scan-v3-block">
+        <div class="scan-v3-block-hdr">Exercices utiles</div>
+        ${exercises.length ? exercises.map(item => `<div class="scan-v3-pill">${escapeHtml(item)}</div>`).join("") : `<div class="scan-v3-line">Pompes inclinées, rowing, hip hinge, gainage.</div>`}
+      </div>
+      <div class="scan-v3-block">
+        <div class="scan-v3-block-hdr">Nutrition / prochain scan</div>
+        ${nutritionFocus.length ? nutritionFocus.map(item => `<div class="scan-v3-line">${escapeHtml(item)}</div>`).join("") : ""}
+        <div class="scan-v3-line">${escapeHtml(String(reco.frequency_suggestion || "Refais un scan sous 4 à 6 semaines avec le même angle pour comparer proprement."))}</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;padding:8px 14px 10px;border-top:1px solid var(--border)">
+      <button onclick="deleteBodyScan('${scan.id}')" style="display:flex;align-items:center;gap:5px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:.74rem;font-weight:600;padding:5px 8px;border-radius:8px;transition:color .2s" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        Supprimer
+      </button>
+    </div>
+  </div>`;
+}
+
 async function loadScans() {
+
   if (!U) return;
   const el = document.getElementById("scans-list");
   if (!el) return;
@@ -2312,7 +2553,6 @@ async function loadScans() {
       return;
     }
 
-    // Resolve image_path → signed URLs (DB stores path, not full URL)
     const scanImageUrls = {};
     await Promise.all((data || []).map(async (scan) => {
       const path = scan.image_url || scan.image_path;
@@ -2321,126 +2561,13 @@ async function loadScans() {
       try {
         const { data: signed } = await SB.storage.from("user_uploads").createSignedUrl(path, 3600);
         if (signed?.signedUrl) scanImageUrls[scan.id] = signed.signedUrl;
-      } catch { /* show placeholder if URL fails */ }
+      } catch {}
     }));
 
     el.innerHTML = data.map((scan) => {
-      const done = Boolean(scan.ai_feedback);
-      const physScore = scan.physical_score;
       const date = new Date(scan.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
-
-      if (!done) {
-        return `<div class="scan-result-card">
-          <div class="scan-result-header">
-            <div><div class="scan-result-title">Analyse du ${date}</div><div style="font-size:.75rem;color:var(--muted);margin-top:3px">Upload effectué, analyse en cours…</div></div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span class="badge bg-orange">En attente</span>
-              <button onclick="deleteBodyScan('${scan.id}')" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;border-radius:8px;line-height:1;transition:color .2s" title="Supprimer" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
-              </button>
-            </div>
-          </div>
-          <div style="padding:24px;text-align:center;color:var(--muted);font-size:.84rem">L'analyse IA est en cours de traitement.</div>
-        </div>`;
-      }
-
-      // Prefer structured extended_analysis from AI, fall back to text parsing
-      const ext = scan.extended_analysis || {};
-      const extStrengths = Array.isArray(ext.strengths) ? ext.strengths : [];
-      const extImprovements = Array.isArray(ext.areas_for_improvement) ? ext.areas_for_improvement : [];
-      const extRecos = ext.personalized_recommendations
-        ? [].concat(ext.personalized_recommendations.training || [], ext.personalized_recommendations.nutrition || [], ext.personalized_recommendations.frequency_suggestion ? [ext.personalized_recommendations.frequency_suggestion] : [])
-        : [];
-      const extScores = ext.score_breakdown || {};
-      const parsed = extStrengths.length || extImprovements.length
-        ? { strengths: extStrengths, improvements: extImprovements, recommendations: extRecos, overview: "" }
-        : parseScanFeedback(scan.ai_feedback || "");
-      const hasStructure = parsed.strengths.length > 0 || parsed.improvements.length > 0;
-
-      // Zone analysis from extended data
-      const zones = ext.posture_analysis || ext.muscle_balance || null;
-      const zonesGrid = zones ? Object.entries(zones).slice(0, 3).map(([zone, desc]) => {
-        const icons = { upper: "💪", core: "🔥", lower: "🦵" };
-        const labels = { upper: "Haut du corps", core: "Core / Abdos", lower: "Bas du corps" };
-        const k = Object.keys(icons).find(k => zone.toLowerCase().includes(k)) || "upper";
-        return `<div class="scan-v2-zone-card"><div class="scan-v2-zone-ic">${icons[k]}</div><div class="scan-v2-zone-name">${labels[k]}</div><div class="scan-v2-zone-txt">${escapeHtml(String(desc || "").slice(0, 90))}</div></div>`;
-      }).join("") : "";
-
-      // Progress rings replacing raw score chips (Apple Watch style)
-      function scanRing(pct, color, label, valLabel) {
-        const r = 22; const c = +(2 * Math.PI * r).toFixed(1);
-        const filled = +((pct / 100) * c).toFixed(1);
-        return `<div class="ring-item">
-          <div style="position:relative;width:52px;height:52px">
-            <svg class="ring-svg" width="52" height="52" viewBox="0 0 52 52">
-              <circle class="ring-track" cx="26" cy="26" r="${r}"/>
-              <circle class="ring-fill" cx="26" cy="26" r="${r}" stroke="${color}" stroke-dasharray="${filled} ${c}"/>
-            </svg>
-            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:900;color:${color}">${valLabel}</div>
-          </div>
-          <div class="ring-lbl">${label}</div>
-        </div>`;
-      }
-      const scoreChips = [
-        scan.symmetry_score != null ? scanRing(scan.symmetry_score, "#00FFFF", "Sym.", scan.symmetry_score) : "",
-        extScores.muscle_definition != null ? scanRing(extScores.muscle_definition, "#22c55e", "Défin.", extScores.muscle_definition) : "",
-        extScores.body_composition != null ? scanRing(extScores.body_composition, "#a855f7", "Compo.", extScores.body_composition) : "",
-        scan.posture_score != null ? scanRing(scan.posture_score, "#06b6d4", "Post.", scan.posture_score) : "",
-        scan.bodyfat_proxy != null ? scanRing(Math.max(0, 100 - scan.bodyfat_proxy), "#f97316", "BF", scan.bodyfat_proxy + "%") : "",
-      ].filter(Boolean).join("");
-
-      const reco = ext.personalized_recommendations || {};
-      const trainingRecos = (reco.training_focus || reco.training || []).slice(0, 2);
-      const nutritionRecos = (reco.nutrition || []).slice(0, 1);
-      const exerciseExs = (reco.exercise_examples || []).slice(0, 3).join(", ");
-      const freqSugg = reco.frequency_suggestion || "";
-
-      const compRows = [
-        ext.body_composition ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Composition</div><div class="scan-v2-comp-val">${escapeHtml(String(ext.body_composition).slice(0,120))}</div></div>` : "",
-        ext.muscle_definition_text ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Définition musculaire</div><div class="scan-v2-comp-val">${escapeHtml(String(ext.muscle_definition_text).slice(0,120))}</div></div>` : "",
-        ext.estimated_metrics?.bodyfat_range ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Bodyfat estimé</div><div class="scan-v2-comp-val">${escapeHtml(ext.estimated_metrics.bodyfat_range)}</div></div>` : "",
-        ext.estimated_metrics?.fitness_category ? `<div class="scan-v2-comp-row"><div class="scan-v2-comp-lbl">Catégorie</div><div class="scan-v2-comp-val" style="text-transform:capitalize">${escapeHtml(ext.estimated_metrics.fitness_category)}</div></div>` : "",
-      ].filter(Boolean).join("");
-
-      return `<div class="scan-v2">
-        <div class="scan-v2-top">
-          <div class="scan-v2-photo">
-            ${scanImageUrls[scan.id] ? lazyImg(scanImageUrls[scan.id], "Scan", "", "width:100%;height:100%;object-fit:cover;opacity:.9") : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">📷 Photo non disponible</div>`}
-            <div class="scan-v2-photo-overlay">
-              <span class="scan-v2-pill">${date}</span>
-              ${physScore ? `<span class="scan-v2-pill" style="font-family:'Georgia',serif;font-size:1rem;font-weight:900">${physScore}/100</span>` : ""}
-            </div>
-          </div>
-          <div class="scan-v2-right">
-            ${scoreChips ? `<div class="rings-row" style="justify-content:flex-start;flex-wrap:wrap;margin-bottom:10px">${scoreChips}</div>` : ""}
-            <div class="scan-v2-comp">
-              <div class="scan-v2-comp-hdr">Composition corporelle</div>
-              ${compRows || `<div class="scan-v2-comp-val" style="opacity:.6;font-size:.75rem">Score global: ${physScore || "—"}/100</div>`}
-            </div>
-            ${hasStructure ? `<div class="scan-v2-2col">
-              <div class="scan-v2-strengths">
-                <div class="scan-v2-col-hdr scan-v2-str-hdr">Points forts</div>
-                ${parsed.strengths.slice(0, 3).map(s => `<div class="scan-v2-pt scan-v2-str-pt">${escapeHtml(s)}</div>`).join("")}
-              </div>
-              <div class="scan-v2-weaknesses">
-                <div class="scan-v2-col-hdr scan-v2-wk-hdr">À travailler</div>
-                ${parsed.improvements.slice(0, 3).map(s => `<div class="scan-v2-pt scan-v2-wk-pt">${escapeHtml(s)}</div>`).join("")}
-              </div>
-            </div>` : ""}
-          </div>
-        </div>
-        ${trainingRecos.length || nutritionRecos.length ? `<div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--border)">
-          ${trainingRecos.map((r, i) => `<div class="scan-v2-reco ${i===0?"scan-v2-reco-train":"scan-v2-reco-nutri"}"><div class="scan-v2-reco-top"><span class="scan-v2-reco-tag">${i===0?"Entraînement":"Focus"}</span><span class="scan-v2-reco-priority ${i===0?"scan-v2-pri-high":"scan-v2-pri-med"}">${i===0?"Prioritaire":"Moyen"}</span></div><div class="scan-v2-reco-title">${escapeHtml(String(r).slice(0,80))}</div>${exerciseExs&&i===0?`<div class="scan-v2-reco-desc">${escapeHtml(exerciseExs)}</div>`:""}</div>`).join("")}
-          ${nutritionRecos.map(r => `<div class="scan-v2-reco scan-v2-reco-nutri"><div class="scan-v2-reco-top"><span class="scan-v2-reco-tag">Nutrition</span><span class="scan-v2-reco-priority scan-v2-pri-med">Moyen</span></div><div class="scan-v2-reco-title">${escapeHtml(String(r).slice(0,80))}</div></div>`).join("")}
-        </div>` : freqSugg ? `<div style="padding:12px 16px;border-top:1px solid var(--border);font-size:.78rem;color:var(--text2)">${escapeHtml(freqSugg)}</div>` : ""}
-        ${zonesGrid ? `<div class="scan-v2-zones"><div class="scan-v2-zone-hdr">Analyse par zone</div><div class="scan-v2-zone-grid">${zonesGrid}</div></div>` : ""}
-        <div style="display:flex;justify-content:flex-end;padding:8px 14px 10px;border-top:1px solid var(--border)">
-          <button onclick="deleteBodyScan('${scan.id}')" style="display:flex;align-items:center;gap:5px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:.74rem;font-weight:600;padding:5px 8px;border-radius:8px;transition:color .2s" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-            Supprimer
-          </button>
-        </div>
-      </div>`;
+      if (!scan.ai_feedback) return renderPendingScan(scan, date);
+      return renderBodyScanCard(scan, scanImageUrls[scan.id]);
     }).join('<div style="height:16px"></div>');
     observeLazyImgs(el);
   } catch (e) {
@@ -2582,29 +2709,30 @@ function applyStats({ sessCount = 0, scansCount = 0, postsCount = 0 } = {}) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const DEFIS_LIST = [
-  // ── Séances ──
-  { id: "sessions_5",   icon: "🏃", title: "5 séances complétées",      desc: "Sauvegarde 5 séances d'entraînement",                      difficulty: "Facile",   xp: 250,  color: "#22c55e", target: 5,     unit: "séances",  metric: "sessions" },
-  { id: "sessions_10",  icon: "💪", title: "10 séances complétées",     desc: "Sauvegarde 10 séances — une vraie routine se forme",       difficulty: "Moyen",    xp: 500,  color: "#f97316", target: 10,    unit: "séances",  metric: "sessions" },
-  { id: "30sess",       icon: "🏋️", title: "30 séances d'entraînement", desc: "Complète 30 séances au total — athlète confirmé",          difficulty: "Difficile",xp: 1500, color: "#ef4444", target: 30,    unit: "séances",  metric: "sessions" },
-  // ── Streaks ──
-  { id: "streak_3",     icon: "⚡", title: "Streak 3 jours",            desc: "3 jours consécutifs d'entraînement",                       difficulty: "Facile",   xp: 150,  color: "#38bdf8", target: 3,     unit: "jours",    metric: "streak" },
-  { id: "7days",        icon: "🔥", title: "Streak 7 jours",            desc: "Entraîne-toi 7 jours de suite sans interruption",          difficulty: "Moyen",    xp: 500,  color: "#f97316", target: 7,     unit: "jours",    metric: "streak" },
-  { id: "streak_14",    icon: "🌟", title: "Streak 14 jours",           desc: "Deux semaines sans manquer un seul jour",                  difficulty: "Difficile",xp: 900,  color: "#a855f7", target: 14,    unit: "jours",    metric: "streak" },
-  { id: "streak_30",    icon: "👑", title: "Streak 30 jours",           desc: "Un mois entier de régularité absolue",                    difficulty: "Expert",   xp: 2500, color: "#eab308", target: 30,    unit: "jours",    metric: "streak" },
-  // ── Bodyscan ──
-  { id: "scans_1",      icon: "📸", title: "Premier bodyscan IA",       desc: "Réalise ton premier scan corporel avec l'IA",              difficulty: "Facile",   xp: 200,  color: "#0ea5e9", target: 1,     unit: "scans",    metric: "scans" },
-  { id: "scans_5",      icon: "🔬", title: "5 bodyscans réalisés",      desc: "Suis l'évolution de ton physique sur la durée",            difficulty: "Moyen",    xp: 600,  color: "#06b6d4", target: 5,     unit: "scans",    metric: "scans" },
-  // ── Communauté ──
-  { id: "social_1",     icon: "📣", title: "Premier post communautaire",desc: "Partage ta première photo ou message dans la communauté",  difficulty: "Facile",   xp: 150,  color: "#ec4899", target: 1,     unit: "posts",    metric: "posts" },
-  { id: "social_5",     icon: "🤝", title: "5 posts publiés",           desc: "Inspire la communauté avec 5 publications",               difficulty: "Moyen",    xp: 400,  color: "#f43f5e", target: 5,     unit: "posts",    metric: "posts" },
-  // ── Défis quotidiens ──
-  { id: "daily_7",      icon: "🎯", title: "7 journées de défis",       desc: "Accomplis tous les défis du jour à 7 reprises",            difficulty: "Moyen",    xp: 700,  color: "#84cc16", target: 7,     unit: "journées", metric: "daily_completions" },
-  { id: "daily_30",     icon: "🏅", title: "30 journées de défis",      desc: "Maîtrise quotidienne pendant un mois entier",             difficulty: "Expert",   xp: 2000, color: "#65a30d", target: 30,    unit: "journées", metric: "daily_completions" },
-  // ── Long terme ──
-  { id: "10kcal",       icon: "🔥", title: "10 000 calories brûlées",   desc: "Cumule 10 000 calories brûlées en séances sauvegardées",  difficulty: "Difficile",xp: 1000, color: "#eab308", target: 10000, unit: "kcal",     metric: "calories" },
-  { id: "5h_week",      icon: "⏱️", title: "5h d'entraînement/semaine", desc: "Totalise 5 heures de sport sur une même semaine",         difficulty: "Moyen",    xp: 600,  color: "#8b5cf6", target: 300,   unit: "minutes",  metric: "weekly_time" },
-  { id: "variety",      icon: "🌈", title: "Polyvalence totale",        desc: "3 types d'entraînement différents en une semaine",        difficulty: "Moyen",    xp: 400,  color: "#f97316", target: 3,     unit: "types",    metric: "variety" },
-  { id: "perfect_week", icon: "💎", title: "Semaine parfaite",          desc: "Entraînement + nutrition suivis 7/7 sur une semaine",     difficulty: "Expert",   xp: 2000, color: "#3b82f6", target: 7,     unit: "jours",    metric: "perfect" },
+  { id: "sessions_5",   icon: "🏃", title: "5 séances complétées",      desc: "Sauvegarde 5 séances d'entraînement",                      difficulty: "Facile",    xp: 250,  color: "#22c55e", target: 5,     unit: "séances",   metric: "sessions" },
+  { id: "sessions_10",  icon: "💪", title: "10 séances complétées",     desc: "Sauvegarde 10 séances — une vraie routine se forme",       difficulty: "Moyen",     xp: 500,  color: "#f97316", target: 10,    unit: "séances",   metric: "sessions" },
+  { id: "sessions_30",  icon: "🏋️", title: "30 séances d'entraînement", desc: "Complète 30 séances au total — athlète confirmé",          difficulty: "Difficile", xp: 1500, color: "#ef4444", target: 30,    unit: "séances",   metric: "sessions" },
+  { id: "streak_3",     icon: "⚡", title: "Streak 3 jours",            desc: "3 jours consécutifs d'entraînement",                       difficulty: "Facile",    xp: 150,  color: "#38bdf8", target: 3,     unit: "jours",     metric: "streak" },
+  { id: "streak_7",     icon: "🔥", title: "Streak 7 jours",            desc: "Entraîne-toi 7 jours de suite sans interruption",          difficulty: "Moyen",     xp: 500,  color: "#f97316", target: 7,     unit: "jours",     metric: "streak" },
+  { id: "streak_14",    icon: "🌟", title: "Streak 14 jours",           desc: "Deux semaines sans manquer un seul jour",                  difficulty: "Difficile", xp: 900,  color: "#a855f7", target: 14,    unit: "jours",     metric: "streak" },
+  { id: "streak_30",    icon: "👑", title: "Streak 30 jours",           desc: "Un mois entier de régularité absolue",                     difficulty: "Expert",    xp: 2500, color: "#eab308", target: 30,    unit: "jours",     metric: "streak" },
+  { id: "scans_1",      icon: "📸", title: "Premier body scan IA",      desc: "Réalise ton premier scan corporel avec l'IA",              difficulty: "Facile",    xp: 200,  color: "#0ea5e9", target: 1,     unit: "scans",     metric: "scans" },
+  { id: "scans_5",      icon: "🔬", title: "5 body scans réalisés",     desc: "Suis l'évolution de ton physique sur la durée",            difficulty: "Moyen",     xp: 600,  color: "#06b6d4", target: 5,     unit: "scans",     metric: "scans" },
+  { id: "scans_10",     icon: "🧬", title: "10 scans comparables",      desc: "Construis un vrai historique de transformation",           difficulty: "Difficile", xp: 1200, color: "#0891b2", target: 10,    unit: "scans",     metric: "scans" },
+  { id: "daily_7",      icon: "🎯", title: "7 journées de défis",       desc: "Accomplis tous les défis du jour à 7 reprises",            difficulty: "Moyen",     xp: 700,  color: "#84cc16", target: 7,     unit: "journées",  metric: "daily_completions" },
+  { id: "daily_30",     icon: "🏅", title: "30 journées de défis",      desc: "Maîtrise quotidienne pendant un mois entier",             difficulty: "Expert",    xp: 2000, color: "#65a30d", target: 30,    unit: "journées",  metric: "daily_completions" },
+  { id: "recipes_3",    icon: "🍳", title: "3 recettes IA",             desc: "Crée 3 recettes détaillées pour muscler ta cuisine",       difficulty: "Facile",    xp: 220,  color: "#f59e0b", target: 3,     unit: "recettes",  metric: "recipes" },
+  { id: "recipes_10",   icon: "🍽️", title: "10 recettes IA",            desc: "Constitue une vraie base de repas utiles",                difficulty: "Moyen",     xp: 650,  color: "#f97316", target: 10,    unit: "recettes",  metric: "recipes" },
+  { id: "nutrition_5",  icon: "🥗", title: "5 plans nutrition",         desc: "Teste et affine tes journées nutrition",                  difficulty: "Facile",    xp: 250,  color: "#84cc16", target: 5,     unit: "plans",     metric: "nutrition_plans" },
+  { id: "nutrition_20", icon: "📋", title: "20 plans nutrition",        desc: "Construis une vraie routine alimentaire",                 difficulty: "Difficile", xp: 1000, color: "#65a30d", target: 20,    unit: "plans",     metric: "nutrition_plans" },
+  { id: "water_7",      icon: "💧", title: "7 jours d'hydratation",      desc: "Atteins ton objectif eau 7 jours distincts",             difficulty: "Moyen",     xp: 320,  color: "#38bdf8", target: 7,     unit: "jours",     metric: "water_days" },
+  { id: "water_21",     icon: "🌊", title: "21 jours bien hydratés",     desc: "Reste propre sur l'hydratation pendant 3 semaines",       difficulty: "Difficile", xp: 900,  color: "#0ea5e9", target: 21,    unit: "jours",     metric: "water_days" },
+  { id: "social_1",     icon: "📣", title: "Premier post communautaire", desc: "Partage ta première photo ou message",                   difficulty: "Facile",    xp: 150,  color: "#ec4899", target: 1,     unit: "posts",     metric: "posts" },
+  { id: "social_5",     icon: "🤝", title: "5 posts publiés",           desc: "Inspire la communauté avec 5 publications",               difficulty: "Moyen",     xp: 400,  color: "#f43f5e", target: 5,     unit: "posts",     metric: "posts" },
+  { id: "10kcal",       icon: "🔥", title: "10 000 calories brûlées",   desc: "Cumule 10 000 kcal sur des séances sauvegardées",         difficulty: "Difficile", xp: 1000, color: "#eab308", target: 10000, unit: "kcal",      metric: "calories" },
+  { id: "5h_week",      icon: "⏱️", title: "5h d'entraînement/semaine", desc: "Totalise 5 heures de sport sur une même semaine",         difficulty: "Moyen",     xp: 600,  color: "#8b5cf6", target: 300,   unit: "minutes",   metric: "weekly_time" },
+  { id: "variety",      icon: "🌈", title: "Polyvalence totale",        desc: "3 types d'entraînement différents en une semaine",        difficulty: "Moyen",     xp: 400,  color: "#f97316", target: 3,     unit: "types",     metric: "variety" },
+  { id: "perfect_week", icon: "💎", title: "Semaine propre",            desc: "Entraînement + nutrition suivis 7/7 sur une semaine",     difficulty: "Expert",    xp: 2000, color: "#3b82f6", target: 7,     unit: "jours",     metric: "perfect" }
 ];
 
 function getDailyCompletionCount() {
@@ -2629,22 +2757,27 @@ async function loadDefis() {
   }, 60000);
 
   // Load all trackable metrics
-  let totalSessions = 0, currentStreak = 0, longestStreak = 0, totalScans = 0, totalPosts = 0;
+  let totalSessions = 0, currentStreak = 0, longestStreak = 0, totalScans = 0, totalPosts = 0, totalRecipes = 0;
   try {
-    const [sessRes, streakRes, scansRes, postsRes] = await Promise.all([
+    const [sessRes, streakRes, scansRes, postsRes, recipesRes] = await Promise.all([
       SB.from("workout_sessions").select("id", { count: "exact", head: true }).eq("user_id", U.id),
       SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle(),
       SB.from("body_scans").select("id", { count: "exact", head: true }).eq("user_id", U.id),
-      SB.from("community_posts").select("id", { count: "exact", head: true }).eq("user_id", U.id)
+      SB.from("community_posts").select("id", { count: "exact", head: true }).eq("user_id", U.id),
+      SB.from("saved_recipes").select("id", { count: "exact", head: true }).eq("user_id", U.id)
     ]);
     totalSessions   = sessRes.count   || 0;
     currentStreak   = streakRes.data?.current_streak  || 0;
     longestStreak   = streakRes.data?.longest_streak  || 0;
     totalScans      = scansRes.count  || 0;
     totalPosts      = postsRes.count  || 0;
+    totalRecipes    = recipesRes.count || 0;
   } catch (e) { console.error("[Defis] Stats error:", e); }
 
   const dailyCompletions = getDailyCompletionCount();
+  const nutritionPlans = getLocalMetric('fitai_nutrition_plans');
+  const waterGoalDays = getLocalMetric('fitai_water_goal_days');
+  const recipeCount = Math.max(totalRecipes, getLocalMetric('fitai_recipes_saved'));
 
   // Calculate progress for each defi
   const defisProgress = DEFIS_LIST.map(d => {
@@ -2654,6 +2787,9 @@ async function loadDefis() {
     else if (d.metric === "scans")             current = totalScans;
     else if (d.metric === "posts")             current = totalPosts;
     else if (d.metric === "daily_completions") current = dailyCompletions;
+    else if (d.metric === "recipes")           current = recipeCount;
+    else if (d.metric === "nutrition_plans")   current = nutritionPlans;
+    else if (d.metric === "water_days")        current = waterGoalDays;
     else current = 0; // calories, weekly_time, variety, perfect — non encore tracké
     const pct = Math.min(100, Math.round((current / d.target) * 100));
     const completed = current >= d.target;
@@ -3381,6 +3517,7 @@ async function generateNutrition() {
     }
 
     await loadNutritionTargets();
+    incrementLocalMetric('fitai_nutrition_plans', 1);
     if (j.fallback) {
       toast("Plan de secours appliqué (Gemini indisponible)", "warn");
     } else {
@@ -3504,6 +3641,7 @@ async function saveRecipeToHistory(recipe) {
       tips:      recipe.tips      || null,
       saved_at:  new Date().toISOString()
     }, { onConflict: "user_id,name" });
+    incrementLocalMetric('fitai_recipes_saved', 1);
     await loadRecipeHistory();
   } catch (err) { console.warn("[recipe-history] save failed:", err); }
 }
@@ -4233,7 +4371,10 @@ function _applyWaterCount(newCount, animIdx = -1) {
   d.count = Math.max(0, Math.min(target, newCount));
   try { localStorage.setItem(WATER_KEY, JSON.stringify(d)); } catch {}
   renderWater(animIdx);
-  if (d.count === target) toast(`💧 Objectif atteint ! ${glassesToL(target)}L bu.`, "ok");
+  if (d.count === target) {
+    bumpDailyMetricOnce('fitai_water_goal_days');
+    toast(`💧 Objectif atteint ! ${glassesToL(target)}L bu.`, "ok");
+  }
 }
 
 function adjustWater(delta) {
@@ -4292,28 +4433,93 @@ const DAILY_POOL = [
   { id: "plank_5min", title: "5 min de planche cumulative", desc: "Tiens la planche, cumule les séries", icon: "⚡", xp: 130, category: "Core" },
   { id: "run_5k", title: "Run 5km", desc: "En une seule sortie ou en plusieurs segments", icon: "🏃", xp: 200, category: "Cardio" },
   { id: "stretch_15", title: "15 min d'étirements", desc: "Flexibilité et récupération active", icon: "🧘", xp: 90, category: "Récup" },
-  { id: "pullups_30", title: "30 tractions", desc: "En autant de séries que nécessaire", icon: "💪", xp: 180, category: "Force" },
+  { id: "pullups_30", title: "30 tractions", desc: "En autant de séries que nécessaire", icon: "🧗", xp: 180, category: "Force" },
   { id: "burpees_50", title: "50 burpees", desc: "Full body, intensité maximale", icon: "🔥", xp: 200, category: "HIIT" },
   { id: "lunges_100", title: "100 fentes", desc: "50 par jambe, alterner", icon: "🦵", xp: 140, category: "Force" },
   { id: "no_sugar", title: "Zéro sucre ajouté", desc: "Pas de soda, bonbons, ou desserts sucrés aujourd'hui", icon: "🥗", xp: 100, category: "Nutrition" },
   { id: "sleep_8h", title: "8h de sommeil", desc: "Couche-toi tôt, récupère vraiment", icon: "😴", xp: 80, category: "Récup" },
   { id: "dips_50", title: "50 dips", desc: "Sur chaise, barre parallèle ou banc", icon: "💪", xp: 140, category: "Force" },
-  { id: "jump_200",      title: "200 sauts à la corde",        desc: "Ou 200 jumping jacks si pas de corde",               icon: "⚡", xp: 110, category: "Cardio" },
-  // ── 10 nouveaux ──
-  { id: "gainage_10",   title: "10 min de gainage",           desc: "Planches, gainage latéral, bird-dog — core béton",   icon: "🧱", xp: 120, category: "Core" },
-  { id: "diamond_50",   title: "50 pompes diamant",           desc: "Mains rapprochées pour cibler les triceps",          icon: "💎", xp: 160, category: "Force" },
-  { id: "walk_1h",      title: "1h de marche active",         desc: "Pas de course, allure soutenue, dos droit",          icon: "🚶", xp: 130, category: "Cardio" },
-  { id: "meditation",   title: "10 min de méditation",        desc: "Respiration, pleine conscience, récupération mentale",icon: "🧘", xp: 90,  category: "Mental" },
-  { id: "veggies_day",  title: "Légumes à chaque repas",      desc: "Au moins une portion de légumes par repas",          icon: "🥦", xp: 95,  category: "Nutrition" },
-  { id: "no_screen",    title: "Pas d'écran 1h avant de dormir",desc: "Favorise un meilleur sommeil et la récupération",   icon: "📵", xp: 80,  category: "Lifestyle" },
-  { id: "dips_3x20",    title: "3 × 20 dips",                 desc: "Sur chaise, barre parallèle ou barre de traction",   icon: "💪", xp: 155, category: "Force" },
-  { id: "run_3k_fast",  title: "3km en moins de 20 minutes",  desc: "Allure soutenue, bon échauffement",                  icon: "🏃", xp: 190, category: "Cardio" },
-  { id: "mountain_3x50",title: "3 × 50 mountain climbers",   desc: "Gainage + cardio combinés, enchaîner sans pause",    icon: "🔥", xp: 165, category: "HIIT" },
-  { id: "mobility_20",  title: "20 min de mobilité",          desc: "Hanches, épaules, chevilles — travail articulaire",  icon: "🤸", xp: 100, category: "Récup" },
+  { id: "jump_200", title: "200 sauts à la corde", desc: "Ou 200 jumping jacks si pas de corde", icon: "🪢", xp: 110, category: "Cardio" },
+  { id: "gainage_10", title: "10 min de gainage", desc: "Planches, gainage latéral, bird-dog — core béton", icon: "🧱", xp: 120, category: "Core" },
+  { id: "walk_1h", title: "1h de marche active", desc: "Allure soutenue, posture droite, respiration calme", icon: "🚶‍♂️", xp: 130, category: "Cardio" },
+  { id: "meditation", title: "10 min de respiration calme", desc: "Ralentis le mental et récupère mieux", icon: "🫁", xp: 90, category: "Mental" },
+  { id: "veggies_day", title: "Légumes à chaque repas", desc: "Ajoute du volume et des fibres à tes repas du jour", icon: "🥦", xp: 95, category: "Nutrition" },
+  { id: "no_screen", title: "Pas d'écran 1h avant de dormir", desc: "Favorise un meilleur sommeil et une meilleure récup", icon: "📵", xp: 80, category: "Lifestyle" },
+  { id: "mountain_3x50", title: "3 × 50 mountain climbers", desc: "Gainage + cardio combinés, enchaîner sans pause", icon: "🌋", xp: 165, category: "HIIT" },
+  { id: "mobility_20", title: "20 min de mobilité", desc: "Hanches, épaules, chevilles — travail articulaire", icon: "🤸", xp: 100, category: "Récup" },
+  { id: "stairs_sprint", title: "10 min d'escaliers", desc: "Escaliers ou step-ups, rythme franc mais propre", icon: "🪜", xp: 130, category: "Cardio" },
+  { id: "meal_prep", title: "Prépare ton repas de demain", desc: "Gagne une journée de discipline d'avance", icon: "🥡", xp: 110, category: "Nutrition" },
+  { id: "sunlight_15", title: "15 min dehors sans téléphone", desc: "Marche légère, lumière naturelle, tête vide", icon: "☀️", xp: 85, category: "Mental" },
+  { id: "protein_each_meal", title: "Protéines à chaque repas", desc: "Sécurise ta satiété et ta récupération sur toute la journée", icon: "🍳", xp: 115, category: "Nutrition" },
+  { id: "cold_finish", title: "30 sec d'eau fraîche en fin de douche", desc: "Petit défi mental, grand effet réveil", icon: "🧊", xp: 70, category: "Lifestyle" },
+  { id: "mobility_desk", title: "3 pauses mobilité de 3 min", desc: "Débloque dos, hanches et nuque dans la journée", icon: "🪑", xp: 90, category: "Récup" },
+  { id: "walk_call", title: "Passe un appel en marchant", desc: "Transforme une habitude passive en activité", icon: "📞", xp: 75, category: "Lifestyle" },
+  { id: "silent_meal", title: "Un repas sans écran", desc: "Mange lentement, pose les couverts, respire", icon: "🍽️", xp: 75, category: "Mental" },
+  { id: "farmer_carry", title: "4 x 40m de farmer carry", desc: "Sacs lourds ou haltères, gainage et grip", icon: "🛍️", xp: 140, category: "Force" },
+  { id: "dance_15", title: "15 min de cardio fun", desc: "Danse, shadow boxing ou corde — mais tu bouges", icon: "🕺", xp: 110, category: "HIIT" },
+  { id: "perfect_plate", title: "Une assiette propre et complète", desc: "Protéines + légumes + glucides utiles à au moins un repas", icon: "🍱", xp: 90, category: "Nutrition" },
+  { id: "recovery_walk", title: "20 min de marche récup", desc: "Après séance ou après repas, sans te cramer", icon: "🌿", xp: 85, category: "Récup" },
+  { id: "journal_3wins", title: "Écris 3 petites victoires", desc: "Même minuscules — on construit l'élan", icon: "✍️", xp: 70, category: "Mental" },
+  { id: "wall_sit", title: "3 min de chaise cumulée", desc: "Brûlure propre, posture stable, dos au mur", icon: "🪑", xp: 105, category: "Force" },
+  { id: "scan_posture", title: "Refais ta posture 2 fois", desc: "2 mini checks : épaules basses, nuque longue, bassin neutre", icon: "🪞", xp: 75, category: "Lifestyle" },
+  { id: "social_support", title: "Envoie ton objectif du jour à quelqu'un", desc: "La discipline aime la responsabilité", icon: "🤝", xp: 65, category: "Mental" },
+  { id: "hiit_7", title: "7 min de HIIT express", desc: "Court, propre, sans négociation", icon: "⏳", xp: 115, category: "HIIT" },
+  { id: "glutes_activation", title: "5 min d'activation fessiers", desc: "Ponts, abductions, bird-dogs avant ta séance", icon: "🍑", xp: 85, category: "Récup" },
+  { id: "fruit_instead", title: "Dessert fruit au lieu d'un snack", desc: "Swap simple qui compte vraiment", icon: "🍎", xp: 70, category: "Nutrition" }
 ];
 
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getLocalMetric(key) {
+  try { return Number(localStorage.getItem(key) || '0') || 0; } catch { return 0; }
+}
+
+function incrementLocalMetric(key, delta = 1) {
+  try {
+    const next = Math.max(0, getLocalMetric(key) + Number(delta || 0));
+    localStorage.setItem(key, String(next));
+    return next;
+  } catch { return 0; }
+}
+
+function bumpDailyMetricOnce(key) {
+  const today = getTodayKey();
+  const markerKey = `${key}:last`;
+  try {
+    if (localStorage.getItem(markerKey) === today) return false;
+    localStorage.setItem(markerKey, today);
+    incrementLocalMetric(key, 1);
+    return true;
+  } catch { return false; }
+}
+
+function pickDailyChallengeMix(pool, count = 4) {
+  const buckets = [
+    ["Force", "Cardio", "HIIT", "Core"],
+    ["Nutrition"],
+    ["Récup", "Mental", "Lifestyle"],
+    []
+  ];
+  const source = Array.isArray(pool) ? pool.slice() : [];
+  const used = new Set();
+  const picks = [];
+  for (const bucket of buckets) {
+    const options = source.filter(ch => !used.has(ch.id) && (!bucket.length || bucket.includes(ch.category)));
+    if (!options.length) continue;
+    const picked = options[Math.floor(Math.random() * options.length)];
+    used.add(picked.id);
+    picks.push(picked.id);
+  }
+  while (picks.length < count) {
+    const remaining = source.filter(ch => !used.has(ch.id));
+    if (!remaining.length) break;
+    const picked = remaining[Math.floor(Math.random() * remaining.length)];
+    used.add(picked.id);
+    picks.push(picked.id);
+  }
+  return picks.slice(0, count);
 }
 
 function getDailyChallenges() {
@@ -4324,9 +4530,7 @@ function getDailyChallenges() {
   })();
 
   if (stored.date !== today) {
-    // New day — pick 3 random challenges
-    const shuffled = [...DAILY_POOL].sort(() => Math.random() - 0.5);
-    const picks = shuffled.slice(0, 3).map(c => c.id);
+    const picks = pickDailyChallengeMix(DAILY_POOL, 4);
     const fresh = { date: today, picks, done: [] };
     try { localStorage.setItem("fitai_daily", JSON.stringify(fresh)); } catch {}
     return fresh;
