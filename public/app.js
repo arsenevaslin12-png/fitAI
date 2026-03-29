@@ -2301,12 +2301,12 @@ function handleFile(file) {
 
 function bodyScanLevelMeta(score) {
   const s = Number(score || 0);
-  if (s >= 92) return { label: "Exceptionnel", hint: "niveau rarissime", tone: "elite" };
-  if (s >= 86) return { label: "Très athlétique", hint: "sec et dense", tone: "athletic" };
-  if (s >= 78) return { label: "Athlétique", hint: "niveau sportif net", tone: "strong" };
-  if (s >= 70) return { label: "Bon niveau", hint: "bonne base visible", tone: "good" };
-  if (s >= 62) return { label: "Actif régulier", hint: "correct mais perfectible", tone: "mid" };
-  if (s >= 52) return { label: "Base correcte", hint: "encore peu marquée", tone: "base" };
+  if (s >= 90) return { label: "Exceptionnel", hint: "niveau rarissime", tone: "elite" };
+  if (s >= 82) return { label: "Très athlétique", hint: "sec, dense, très net", tone: "athletic" };
+  if (s >= 74) return { label: "Athlétique", hint: "niveau sportif visible", tone: "strong" };
+  if (s >= 66) return { label: "Bon niveau", hint: "bonne base mais encore perfectible", tone: "good" };
+  if (s >= 58) return { label: "Actif régulier", hint: "actif sans rendu très athlétique", tone: "mid" };
+  if (s >= 48) return { label: "Base correcte", hint: "encore peu marquée", tone: "base" };
   return { label: "Début de base", hint: "potentiel à construire", tone: "early" };
 }
 
@@ -2359,11 +2359,11 @@ function bodyScanScoreRail(score) {
 }
 
 function bodyScanLoadingCopy(progress) {
-  if (progress < 18) return { title: "Préparation du scan", sub: "On aligne la photo et on vérifie le cadrage." };
-  if (progress < 42) return { title: "Lecture de la posture", sub: "Symétrie, posture et appuis sont en cours d'estimation." };
-  if (progress < 68) return { title: "Analyse corporelle", sub: "On évalue la définition, la composition et le niveau perçu." };
-  if (progress < 90) return { title: "Synthèse coach", sub: "On prépare les axes prioritaires et les recommandations utiles." };
-  return { title: "Finalisation", sub: "Le score calibré et les conseils arrivent." };
+  if (progress < 18) return { title: "Préparation du scan", sub: "On valide la photo, le cadrage et la lisibilité du corps entier." };
+  if (progress < 42) return { title: "Lecture posture / symétrie", sub: "On compare l'alignement, l'ouverture du buste et la stabilité générale." };
+  if (progress < 68) return { title: "Composition et relief", sub: "On estime la définition musculaire, la composition et le niveau visuel réel." };
+  if (progress < 90) return { title: "Calibration du score", sub: "Le score est plafonné ou renforcé selon la cohérence de la photo et du physique." };
+  return { title: "Synthèse coach", sub: "On prépare les points forts, les freins et la prochaine priorité utile." };
 }
 
 function setBodyScanLoading(progress) {
@@ -2549,6 +2549,10 @@ function renderBodyScanCard(scan, imageUrl) {
   const improvements = parsed.improvements.slice(0, 3);
   const strengths = parsed.strengths.slice(0, 3);
   const previousScore = ext?.comparison?.previous_score;
+  const scoreDrivers = Array.isArray(ext?.score_drivers) ? ext.score_drivers.slice(0, 3) : strengths;
+  const scoreBrakes = Array.isArray(ext?.score_brakes) ? ext.score_brakes.slice(0, 3) : improvements;
+  const confidencePct = Number(ext?.confidence_pct || 0);
+  const visualTier = String(ext?.visual_tier || '').replace(/_/g, ' ');
 
   return `<div class="scan-v2">
     <div class="scan-v2-top scan-v3-top">
@@ -2573,20 +2577,25 @@ function renderBodyScanCard(scan, imageUrl) {
           <div class="scan-v3-mini">
             <div class="scan-v3-mini-row"><span>Bodyfat estimé</span><strong>${bodyfat || "—"}</strong></div>
             <div class="scan-v3-mini-row"><span>Catégorie</span><strong>${ext?.estimated_metrics?.fitness_category ? escapeHtml(String(ext.estimated_metrics.fitness_category)) : "—"}</strong></div>
-            <div class="scan-v3-mini-row"><span>Scan précédent</span><strong>${previousScore != null ? `${previousScore}/100` : '—'}</strong></div>
-            <div class="scan-v3-mini-row"><span>Fiabilité</span><strong>${confidence.label}</strong></div>
+            <div class="scan-v3-mini-row"><span>Niveau lu</span><strong>${visualTier ? escapeHtml(visualTier) : level.label}</strong></div>
+            <div class="scan-v3-mini-row"><span>Fiabilité</span><strong>${confidence.label}${confidencePct ? ` · ${confidencePct}%` : ''}</strong></div>
           </div>
         </div>
         ${scoreChips ? `<div class="rings-row scan-v3-rings">${scoreChips}</div>` : ""}
         <div class="scan-v3-verdict">${escapeHtml(verdict)}</div>
+        <div class="scan-v3-recap">
+          ${trend ? `<div class="scan-v3-recap-card"><span>Écart vs précédent</span><strong>${escapeHtml(trend.label)}</strong></div>` : ''}
+          <div class="scan-v3-recap-card"><span>Ce qui aide la note</span><strong>${escapeHtml((scoreDrivers[0] || strengths[0] || 'Base exploitable'))}</strong></div>
+          <div class="scan-v3-recap-card"><span>Ce qui freine la note</span><strong>${escapeHtml((scoreBrakes[0] || improvements[0] || 'Lisibilité moyenne de la photo'))}</strong></div>
+        </div>
         <div class="scan-v2-2col scan-v3-columns">
           <div class="scan-v2-strengths">
             <div class="scan-v2-col-hdr scan-v2-str-hdr">Ce qui soutient la note</div>
-            ${strengths.length ? strengths.map(s => `<div class="scan-v2-pt scan-v2-str-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-str-pt">Base exploitable pour progresser si tu restes régulier.</div>`}
+            ${scoreDrivers.length ? scoreDrivers.map(s => `<div class="scan-v2-pt scan-v2-str-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-str-pt">Base exploitable pour progresser si tu restes régulier.</div>`}
           </div>
           <div class="scan-v2-weaknesses">
-            <div class="scan-v2-col-hdr scan-v2-wk-hdr">Ce qui freine vraiment</div>
-            ${improvements.length ? improvements.map(s => `<div class="scan-v2-pt scan-v2-wk-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-wk-pt">Photo ou lecture trop moyenne pour aller plus haut.</div>`}
+            <div class="scan-v2-col-hdr scan-v2-wk-hdr">Ce qui bloque vraiment</div>
+            ${scoreBrakes.length ? scoreBrakes.map(s => `<div class="scan-v2-pt scan-v2-wk-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-wk-pt">Photo ou lecture trop moyenne pour aller plus haut.</div>`}
           </div>
         </div>
       </div>

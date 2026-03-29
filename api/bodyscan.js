@@ -104,6 +104,66 @@ function buildComparison(previousScore, currentScore) {
   };
 }
 
+function deriveVisualTier(scores, bodyfatProxy, qualityIssues, metrics) {
+  const def = Number(scores?.muscle_definition || 0);
+  const comp = Number(scores?.body_composition || 0);
+  const post = Number(scores?.posture || 0);
+  const sym = Number(scores?.symmetry || 0);
+  const avg = Math.round((def + comp + post + sym) / 4);
+  const qPenalty = Array.isArray(qualityIssues) ? qualityIssues.length : 0;
+  const cat = String(metrics?.fitness_category || '').toLowerCase();
+
+  if (qPenalty >= 2) return 'prudence';
+  if (def >= 88 && comp >= 86 && post >= 72 && sym >= 76 && typeof bodyfatProxy === 'number' && bodyfatProxy <= 9) return 'elite';
+  if (def >= 82 && comp >= 80 && post >= 68 && sym >= 72 && typeof bodyfatProxy === 'number' && bodyfatProxy <= 12) return 'very_athletic';
+  if (def >= 74 && comp >= 72 && avg >= 72 && typeof bodyfatProxy === 'number' && bodyfatProxy <= 15) return 'athletic';
+  if (def >= 66 && comp >= 66 && avg >= 66 && (bodyfatProxy == null || bodyfatProxy <= 18)) return 'good';
+  if (avg >= 58 && (bodyfatProxy == null || bodyfatProxy <= 22)) return 'active';
+  if (cat === 'sedentary' || (typeof bodyfatProxy === 'number' && bodyfatProxy >= 24)) return 'base';
+  return 'regular';
+}
+
+function scoreFloorByTier(tier) {
+  if (tier === 'elite') return 88;
+  if (tier === 'very_athletic') return 80;
+  if (tier === 'athletic') return 72;
+  if (tier === 'good') return 64;
+  if (tier === 'active') return 56;
+  if (tier === 'regular') return 50;
+  return 42;
+}
+
+function buildScoreReasons(scores, bodyfatProxy, qualityIssues, postureAnalysis, muscleBalance) {
+  const reasons = [];
+  const brakes = [];
+  const def = Number(scores?.muscle_definition || 0);
+  const comp = Number(scores?.body_composition || 0);
+  const post = Number(scores?.posture || 0);
+  const sym = Number(scores?.symmetry || 0);
+
+  if (def >= 74) reasons.push('Relief musculaire visible sur plusieurs zones');
+  else if (def >= 66) reasons.push('Tonus visible mais encore modéré');
+  else brakes.push('Relief musculaire encore trop discret pour monter plus haut');
+
+  if (comp >= 74 && typeof bodyfatProxy === 'number' && bodyfatProxy <= 15) reasons.push('Composition corporelle assez nette visuellement');
+  else if (typeof bodyfatProxy === 'number' && bodyfatProxy >= 18) brakes.push('La composition corporelle limite encore la lecture athlétique');
+
+  if (post >= 72) reasons.push('Posture globalement propre sur la prise de vue');
+  else if (post <= 64) brakes.push('La posture fait baisser la lecture générale du physique');
+
+  if (sym >= 72) reasons.push('Symétrie correcte sur la photo');
+  else if (sym <= 64 || String(muscleBalance?.left_right_symmetry || '') === 'noticeable_imbalance') brakes.push('Légère asymétrie ou équilibre visuel encore irrégulier');
+
+  if (String(postureAnalysis?.shoulder_alignment || '') === 'rounded') brakes.push('Épaules enroulées : la silhouette paraît moins ouverte');
+  if (String(postureAnalysis?.head_position || '') === 'forward_head') brakes.push('Tête projetée vers l’avant sur la pose');
+  if (Array.isArray(qualityIssues) && qualityIssues.length) brakes.push('La qualité de photo réduit la fiabilité et plafonne le score');
+
+  return {
+    score_drivers: uniqStrings(reasons, 4),
+    score_brakes: uniqStrings(brakes, 4)
+  };
+}
+
 function scoreCapByProfile({ fitnessCategory, muscleMassLevel, bodyfatProxy, analysisQuality }) {
   const category = String(fitnessCategory || "").toLowerCase();
   const muscle = String(muscleMassLevel || "").toLowerCase();
@@ -349,16 +409,17 @@ CALIBRATION STRICTE — respecte impérativement ces fourchettes:
 - 31-45 : base faible, excès de masse grasse visible ou manque total de tonus
 - 46-55 : niveau ordinaire, ni athlétique ni sédentaire
 - 56-65 : pratiquant régulier mais sans définition marquée (la grande majorité des gens actifs)
-- 66-72 : bon niveau, propre, masse grasse raisonnable, tonus visible — Ryan Reynolds dans la vie de tous les jours est vers 68-70
-- 73-80 : physique athlétique réel, sec, ou présence musculaire clairement visible
-- 81-88 : élite visuel — compétiteur, ou physique très sec avec vraie densité musculaire
+- 66-70 : bon niveau, propre, tonus visible mais sans rendu vraiment athlétique
+- 71-78 : physique athlétique réel, sec, ou présence musculaire clairement visible
+- 79-88 : très athlétique à élite visuel — physique sec avec vraie densité musculaire
 - 89-94 : exceptionnel, moins de 1% de la population, bodybuilder en condition ou athlète de haut niveau
 - 95-100 : IMPOSSIBLE sur une photo normale — réservé au niveau pro en compétition
 
 ERREURS À ÉVITER ABSOLUMENT:
 - Ne jamais donner 62+ à quelqu'un sans définition musculaire visible
-- Ne jamais donner 70+ sans sécheresse et tonus réels
-- Ne jamais donner 80+ sans critères élite évidents
+- Ne jamais donner 70+ sans sécheresse, tonus réel et cohérence globale
+- Ne jamais donner 78+ sans critères athlétiques nets
+- Ne jamais donner 85+ sans critères élite évidents
 - Un physique "propre mais ordinaire" = 56-64, pas 70+
 - La générosité fausse les données futures et détruit la crédibilité du score
 
@@ -506,15 +567,23 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
 
   calibratedPhysical = Math.min(calibratedPhysical, cap);
 
-  if ((p.estimated_metrics?.fitness_category === "athletic" || p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 13 && (derivedScores.muscle_definition || 0) >= 76 && (derivedScores.body_composition || 0) >= 78) {
-    calibratedPhysical = Math.max(calibratedPhysical, 80);
+  const visualTier = deriveVisualTier(derivedScores, bodyfatProxy, qualityIssues, p.estimated_metrics || {});
+  const tierFloor = scoreFloorByTier(visualTier);
+  if ((visualTier === "athletic" || visualTier === "very_athletic" || visualTier === "elite") && p.analysis_quality !== "poor") {
+    calibratedPhysical = Math.max(calibratedPhysical, tierFloor);
   }
-  if ((p.estimated_metrics?.fitness_category === "athletic" || p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 11 && (derivedScores.muscle_definition || 0) >= 84 && (derivedScores.body_composition || 0) >= 82 && (derivedScores.posture || 0) >= 70) {
-    calibratedPhysical = Math.max(calibratedPhysical, 87);
+  if (visualTier === "prudence") {
+    calibratedPhysical = Math.min(calibratedPhysical, 58);
   }
-  if ((p.estimated_metrics?.fitness_category === "competitive") && typeof bodyfatProxy === "number" && bodyfatProxy <= 9 && (derivedScores.muscle_definition || 0) >= 88 && (derivedScores.body_composition || 0) >= 86) {
-    calibratedPhysical = Math.max(calibratedPhysical, 91);
-  }
+  calibratedPhysical = Math.min(calibratedPhysical, cap);
+
+  const confidencePct = Math.max(42, Math.min(96,
+    92
+    - (p.analysis_quality === "poor" ? 24 : p.analysis_quality === "acceptable" ? 8 : 0)
+    - (qualityIssues.length * 8)
+  ));
+
+  const scoreReasons = buildScoreReasons(derivedScores, bodyfatProxy, qualityIssues, postureAnalysis, muscleBalance);
 
   const strengths = uniqStrings([
     ...toArray(p.strengths),
@@ -606,7 +675,11 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
       comparison,
       follow_up_in_weeks: p.follow_up_in_weeks || 4,
       level_label: scoreLabel(calibratedPhysical),
-      confidence_label: confidenceLabel(qualityIssues, p.analysis_quality)
+      confidence_label: confidenceLabel(qualityIssues, p.analysis_quality),
+      confidence_pct: confidencePct,
+      visual_tier: visualTier,
+      score_drivers: scoreReasons.score_drivers,
+      score_brakes: scoreReasons.score_brakes
     }
   };
 }
@@ -680,6 +753,10 @@ function buildDegradedAnalysis(reason, previousAnalysis = null) {
       follow_up_in_weeks: 2,
       level_label: "Lecture prudente",
       confidence_label: "Lecture prudente",
+      confidence_pct: 48,
+      visual_tier: "prudence",
+      score_drivers: strengths,
+      score_brakes: improvements,
       error: message
     }
   };
