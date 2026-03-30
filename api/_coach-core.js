@@ -247,9 +247,9 @@ function historyBlock(history = []) {
 
 function buildWorkoutPrompt(message, history, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
-  return `Tu es un préparateur physique expert. Tu réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
+  return `Tu es un préparateur physique expert, orienté coaching premium. Tu réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
 
-Profil:
+Profil utilisateur:
 - Objectif: ${p.goal} (${getGoalDescription(p.goal)})
 - Niveau: ${p.level} (${getLevelDescription(p.level)})
 - Équipement: ${p.equipment}
@@ -260,6 +260,9 @@ Profil:
 - Sommeil moyen: ${p.sleep || "non renseigné"} h
 - Récupération ressentie /10: ${p.recovery || "non renseignée"}
 
+Contexte avancé à utiliser VRAIMENT:
+${buildContextSnapshot(p)}
+
 Historique récent:
 ${historyBlock(history) || "Aucun historique utile."}
 
@@ -267,17 +270,19 @@ Demande de l'utilisateur:
 ${message}
 
 RÈGLES ABSOLUES:
-- Respecte les blessures et contraintes.
+- La séance doit être PERSONNALISÉE au profil, pas une routine générique.
+- Utilise le contexte avancé: streak, séances récentes, scan, nutrition, récupération.
+- Si la récup est basse, baisse l'intensité ou bascule sur une séance plus technique / plus courte.
+- Si le niveau est débutant, simplifie les patterns et rends les consignes très claires.
+- Si l'utilisateur a déjà beaucoup travaillé un pattern récemment, varie intelligemment les exercices.
+- Respecte strictement les contraintes et l'équipement.
 - ÉQUIPEMENT STRICT: ${/halt[eè]re|barre|salle|machine|kettlebell|banc/i.test(p.equipment || "") ? `Utilise UNIQUEMENT: ${p.equipment}. N'ajoute pas d'équipement non mentionné.` : "POIDS DU CORPS UNIQUEMENT — INTERDIT: haltères, barres, kettlebell, machines, câbles, poulies. Chaque exercice doit être réalisable sans aucun matériel."}
-- Adapte l'intensité si sommeil < 6h ou récupération <= 5/10 ou humeur "Épuisé"/"Fatigué".
-- Si humeur "Épuisé": séance très légère, récupération active, mobilité seulement.
-- Si humeur "Fatigué": intensité réduite (-30%), durée courte, pas de HIIT.
-- Si humeur "En forme": propose une séance plus intense que d'habitude.
-- Niveau débutant = exercices simples et explications claires.
+- Adapte l'intensité si sommeil < 6h ou récupération <= 5/10 ou humeur basse.
 - Commence toujours par l'échauffement, termine par le retour au calme.
 - Réponds en français.
+- Les exercices doivent pouvoir être joués en séance guidée avec timer.
 
-FORMAT JSON OBLIGATOIRE (aucun texte avant ni après, aucun markdown):
+FORMAT JSON OBLIGATOIRE:
 {
   "title": "Nom de la séance",
   "duration": 45,
@@ -287,23 +292,27 @@ FORMAT JSON OBLIGATOIRE (aucun texte avant ni après, aucun markdown):
       "name": "Nom de l'exercice",
       "sets": 3,
       "reps": "10-12",
-      "duration": 0,
-      "rest": 60,
-      "description": "Conseil technique court et actionnable.",
+      "duration": 40,
+      "rest": 20,
+      "description": "Consigne technique courte et actionnable.",
       "muscle": "Groupe musculaire cible",
       "difficulty": "facile|moyen|difficile",
-      "equipment": "Aucun"
+      "equipment": "Aucun",
+      "personalWhy": "Pourquoi cet exercice est pertinent pour cet utilisateur aujourd'hui",
+      "targetGoal": "prise_de_masse|perte_de_poids|remise_en_forme|endurance|force"
     }
   ]
 }
 
 STRUCTURE exercises[] requise:
-1. Échauffement — 2 à 3 exercices légers (sets:1, reps:"1×" ou "30s", rest:0, difficulty:"facile").
+1. Échauffement — 2 à 3 exercices légers, 25 à 35 secondes chacun, repos 0 à 15 secondes.
 2. Corps principal — 4 à 7 exercices progressifs adaptés au profil.
-3. Retour au calme — 2 à 3 étirements (sets:1, reps:"30-45s", rest:0, difficulty:"facile").
-- "duration" = durée en secondes si exercice chronométré, sinon 0.
-- "rest" = repos en secondes entre les séries (0 pour échauffement/cooldown).
-- "description" = instruction pratique courte, jamais vide.`;
+3. Retour au calme — 2 à 3 étirements ou mobilités, 25 à 40 secondes.
+- Préfère des exercices chronométrés et guidables plutôt qu'une simple logique 4x18.
+- "duration" = durée en secondes du bloc d'effort quand pertinent.
+- "rest" = repos en secondes entre les blocs.
+- "description" ne doit jamais être vide.
+- "personalWhy" doit expliquer brièvement pourquoi l'exercice a été choisi pour CE profil.`;
 }
 
 function buildConversationPrompt(intent, message, history, profile, goalContext) {
@@ -605,62 +614,50 @@ function seededIndex(seed, length, offset) {
 function fallbackWorkout(message, profile = {}, goalContext = {}) {
   const p = makeProfileSummary(profile, goalContext);
   const duration = guessDurationFromMessage(message, 45);
-  const lowered = String(message || "").toLowerCase();
-  const focus = lowered.includes("hiit") ? "Conditioning" : lowered.includes("jamb") ? "Lower Body" : lowered.includes("haut") ? "Upper Body" : "Full Body";
-  const intensityBias = (p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 5) ? "low" : "medium";
+  const lowered = String(message || '').toLowerCase();
+  const focus = lowered.includes('hiit') ? 'Conditioning' : lowered.includes('jamb') ? 'Lower Body' : lowered.includes('haut') ? 'Upper Body' : 'Full Body';
+  const lowRecovery = (p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 5) || /fatigu|epuis|mal dormi/.test(String(p.mood || '').toLowerCase());
+  const intensityBias = lowRecovery ? 'low' : p.goal === 'prise_de_masse' ? 'medium' : p.goal === 'perte_de_poids' ? 'medium' : 'medium';
   const pools = pickExercisePool(p.goal, p.level, p.equipment, intensityBias);
-  const seed = `${message}|${p.goal}|${p.level}|${new Date().toISOString().slice(0, 10)}`;
+  const seed = `${message}|${p.goal}|${p.level}|${new Date().toISOString().slice(0, 10)}|${(p.recent_workouts || []).join('|')}`;
 
   const upper1 = pools.upper[seededIndex(seed, pools.upper.length, 1)];
   const upper2 = pools.upper[seededIndex(seed, pools.upper.length, 2)];
   const lower1 = pools.lower[seededIndex(seed, pools.lower.length, 3)];
   const lower2 = pools.lower[seededIndex(seed, pools.lower.length, 4)];
   const cardio = pools.cardio[seededIndex(seed, pools.cardio.length, 5)];
+  const avoidRecent = (name) => !(p.recent_workouts || []).some((x) => String(x || '').toLowerCase().includes(String(name || '').toLowerCase().slice(0, 5)));
 
-  const sessions = focus === "Upper Body"
-    ? [{
-        day: "Monday",
-        focus,
-        duration_min: duration,
-        intensity: intensityBias,
-        warmup: ["3 min cardio léger", "Mobilité épaules", "Activation scapulaire"],
-        exercises: [
-          { name: upper1, sets: 4, reps: "8-10", rest_sec: 75, notes: "Garde 1-2 reps en réserve" },
-          { name: upper2, sets: 3, reps: "10-12", rest_sec: 60, notes: "Amplitude contrôlée" },
-          { name: "Gainage latéral", sets: 3, reps: "30s/side", rest_sec: 30, notes: "Tronc solide" }
-        ],
-        cooldown: ["Étirement pectoraux 45s", "Respiration nasale 2 min"]
-      }]
-    : [{
-        day: "Monday",
-        focus,
-        duration_min: duration,
-        intensity: intensityBias,
-        warmup: ["5 min cardio léger", "Mobilité hanches + épaules", "1 série technique sur chaque pattern"],
-        exercises: [
-          { name: lower1, sets: 4, reps: "8-10", rest_sec: 75, notes: "Descente contrôlée" },
-          { name: upper1, sets: 4, reps: "8-10", rest_sec: 75, notes: "Technique propre avant charge" },
-          { name: lower2, sets: 3, reps: "10-12", rest_sec: 60, notes: "Amplitude complète" },
-          { name: upper2, sets: 3, reps: "10-12", rest_sec: 60, notes: "Rythme régulier" },
-          { name: cardio, sets: 1, reps: "8 min", rest_sec: 0, notes: intensityBias === "low" ? "Rythme confortable" : "Alterne 30s vite / 60s facile" }
-        ],
-        cooldown: ["Étirement hanches 45s", "Étirement dorsaux 45s", "Respiration 2 min"]
-      }];
+  const workSecMain = lowRecovery ? 30 : p.goal === 'endurance' ? 45 : p.goal === 'perte_de_poids' ? 40 : 42;
+  const restMain = lowRecovery ? 25 : p.goal === 'prise_de_masse' ? 25 : 20;
+  const title = lowRecovery ? `Séance ${focus} allégée et guidée` : `Séance ${focus} personnalisée et guidée`;
+
+  const warmup = [
+    { name: 'Respiration + ouverture thoracique', sets: 1, reps: '1 bloc', duration: 30, rest: 10, description: 'Détends les épaules et cale ta respiration avant d’accélérer.', muscle: 'Mobilité', difficulty: 'facile', equipment: 'Aucun', personalWhy: 'On prépare ton corps sans te fatiguer inutilement.', targetGoal: p.goal },
+    { name: 'Mobilité hanches et chevilles', sets: 1, reps: '1 bloc', duration: 30, rest: 10, description: 'Cherche de l’amplitude propre, pas de vitesse.', muscle: 'Mobilité', difficulty: 'facile', equipment: 'Aucun', personalWhy: 'Ça améliore ta qualité de mouvement sur toute la séance.', targetGoal: p.goal }
+  ];
+
+  const main = [];
+  if (focus !== 'Upper Body') main.push({ name: avoidRecent(lower1) ? lower1 : 'Split squats contrôlés', sets: 1, reps: 'bloc guidé', duration: workSecMain, rest: restMain, description: 'Rythme propre, genoux alignés, amplitude régulière.', muscle: 'Jambes / fessiers', difficulty: p.level === 'beginner' ? 'facile' : 'moyen', equipment: /halt|salle|machine|barre|kettlebell|banc/i.test(p.equipment || '') ? p.equipment : 'Aucun', personalWhy: lowRecovery ? 'On stimule le bas du corps sans te cramer nerveusement.' : 'Bloc clé pour construire une base solide selon ton objectif.', targetGoal: p.goal });
+  if (focus !== 'Lower Body') main.push({ name: avoidRecent(upper1) ? upper1 : 'Pompes tempo', sets: 1, reps: 'bloc guidé', duration: workSecMain, rest: restMain, description: 'Cherche une poussée propre, poitrine ouverte et tronc gainé.', muscle: 'Pectoraux / épaules', difficulty: p.level === 'beginner' ? 'facile' : 'moyen', equipment: /halt|salle|machine|barre|kettlebell|banc/i.test(p.equipment || '') ? p.equipment : 'Aucun', personalWhy: 'On garde un mouvement de poussée rentable et lisible pour progresser sans confusion.', targetGoal: p.goal });
+  main.push({ name: avoidRecent(lower2) ? lower2 : 'Hip hinge contrôlé', sets: 1, reps: 'bloc guidé', duration: workSecMain, rest: restMain, description: 'Hanches en arrière, dos long, contrôle total.', muscle: 'Chaîne postérieure', difficulty: p.level === 'beginner' ? 'facile' : 'moyen', equipment: /halt|salle|machine|barre|kettlebell|banc/i.test(p.equipment || '') ? p.equipment : 'Aucun', personalWhy: 'Ce pattern améliore puissance, posture et transfert sur beaucoup de mouvements.', targetGoal: p.goal });
+  main.push({ name: avoidRecent(upper2) ? upper2 : 'Rowing contrôlé', sets: 1, reps: 'bloc guidé', duration: workSecMain, rest: restMain, description: 'Tire sans hausser les épaules, poitrine sortie.', muscle: 'Dos / bras', difficulty: p.level === 'beginner' ? 'facile' : 'moyen', equipment: /halt|salle|machine|barre|kettlebell|banc/i.test(p.equipment || '') ? p.equipment : 'Aucun', personalWhy: 'On équilibre la posture et le haut du corps pour une séance plus complète.', targetGoal: p.goal });
+  if (p.goal === 'perte_de_poids' || p.goal === 'endurance') main.push({ name: cardio, sets: 1, reps: 'bloc guidé', duration: lowRecovery ? 35 : 45, rest: 20, description: lowRecovery ? 'Rythme régulier et respirable.' : 'Monte le cardio sans te désunir techniquement.', muscle: 'Cardio', difficulty: lowRecovery ? 'facile' : 'moyen', equipment: /halt|salle|machine|barre|kettlebell|banc/i.test(p.equipment || '') ? p.equipment : 'Aucun', personalWhy: 'Tu as besoin d’un bloc de densité pour coller à ton objectif actuel.', targetGoal: p.goal });
+  else main.push({ name: 'Gainage actif', sets: 1, reps: 'bloc guidé', duration: 35, rest: 18, description: 'Reste compact, zéro relâchement du tronc.', muscle: 'Core', difficulty: 'facile', equipment: 'Aucun', personalWhy: 'On finit par un bloc qui stabilise tout le reste sans te détruire.', targetGoal: p.goal });
+
+  const cooldown = [
+    { name: 'Respiration guidée', sets: 1, reps: '1 bloc', duration: 30, rest: 0, description: 'Ralentis la respiration et fais redescendre le rythme.', muscle: 'Récupération', difficulty: 'facile', equipment: 'Aucun', personalWhy: 'Ta récupération fait partie de la progression.', targetGoal: p.goal },
+    { name: 'Étirements ciblés', sets: 1, reps: '1 bloc', duration: 30, rest: 0, description: 'Ouvre les zones qui ont le plus travaillé sans forcer.', muscle: focus === 'Upper Body' ? 'Haut du corps' : focus === 'Lower Body' ? 'Bas du corps' : 'Full Body', difficulty: 'facile', equipment: 'Aucun', personalWhy: 'On clôt la séance proprement pour que tu repartes plus mobile et plus frais.', targetGoal: p.goal }
+  ];
 
   return {
-    title: `Plan ${focus} intelligent`,
-    goal: p.goal,
-    duration_weeks: 8,
-    progression: {
-      weeks_1_3: "Ajoute 1 rep par série ou 2 à 5 % de charge si tout est propre.",
-      week_4_deload: "Réduis le volume d'environ 35 % et garde une intensité modérée.",
-      weeks_5_8: "Repars sur le volume normal et progresse à nouveau sur la charge ou les reps."
-    },
-    recovery_advice: intensityBias === "low" ? "Récupération basse: garde une séance contrôlée et dors plus ce soir." : "Hydratation, 7 à 8h de sommeil et marche légère le lendemain.",
-    nutrition_advice: p.goal === "prise_de_masse" ? "Ajoute un repas protéiné post-séance avec glucides digestes." : p.goal === "perte_de_poids" ? "Vise protéines hautes et garde le déficit léger pour tenir la progression." : "Mets 25 à 35 g de protéines après la séance et hydrate-toi.",
-    sessions
+    title,
+    duration,
+    calories: Math.round(duration * (lowRecovery ? 5.2 : p.goal === 'perte_de_poids' ? 7.5 : 6.6)),
+    exercises: [...warmup, ...main, ...cooldown]
   };
 }
+
 
 function fallbackConversation(intent, message, profile = {}, goalContext = {}) {
   const p = makeProfileSummary(profile, goalContext);

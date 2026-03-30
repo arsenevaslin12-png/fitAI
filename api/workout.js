@@ -55,8 +55,21 @@ module.exports = async function handler(req, res) {
     injuries: sanitizeInput(body.injuries || body.goalContext?.constraints || "", 300),
     weight: Number(body.weight || 0) || null,
     height: Number(body.height || 0) || null,
+    age: Number(body.age || 0) || null,
     sleep_hours: Number(body.sleep_hours || 0) || null,
-    recovery_score: Number(body.recovery_score || 0) || null
+    recovery_score: Number(body.recovery_score || 0) || null,
+    mood_today: sanitizeInput(body.mood_today || "", 40),
+    current_streak: Number(body.current_streak || 0) || null,
+    total_workouts: Number(body.total_workouts || 0) || null,
+    recent_sessions_7d: Number(body.recent_sessions_7d || 0) || null,
+    best_scan_score: Number(body.best_scan_score || 0) || null,
+    last_scan_summary: sanitizeInput(body.last_scan_summary || "", 220),
+    nutrition_summary: sanitizeInput(body.nutrition_summary || "", 220),
+    recent_meal_pattern: sanitizeInput(body.recent_meal_pattern || "", 280),
+    recent_workouts: Array.isArray(body.recent_workouts) ? body.recent_workouts.map((x) => sanitizeInput(x, 120)).filter(Boolean).slice(0, 6) : [],
+    today_kcal: Number(body.today_kcal || 0) || null,
+    today_protein: Number(body.today_protein || 0) || null,
+    coach_tone: sanitizeInput(body.coach_tone || "balanced", 20)
   };
 
   try {
