@@ -75,13 +75,15 @@ Style de cuisson suggéré (adapte si besoin): ${cookingStyle}.
 RÈGLES:
 - Utilise les ingrédients fournis (tu peux ne pas tous les utiliser)
 - Donne un NOM DE PLAT spécifique et appétissant (pas "Recette poulet" — sois précis)
-- Étapes courtes et actionnables (max 6)
+- Étapes détaillées, concrètes, jamais vagues: cite l'ingrédient, l'action, l'ordre et si possible le temps ou le repère visuel
+- Interdiction de dire simplement "cuire les légumes" ou "cuire la protéine" sans préciser comment
+- Chaque étape doit faire comprendre exactement quoi faire à un débutant
 - Macros précises et cohérentes avec les ingrédients
 - Le champ "tips" doit être un conseil technique utile lié à cette recette précise
 - Réponds UNIQUEMENT en JSON valide, sans texte ni markdown autour
 
 FORMAT (structure exacte):
-{"name":"Nom précis du plat","steps":["Étape 1","Étape 2","Étape 3"],"prep_time":"15 min","calories":500,"protein":35,"carbs":50,"fat":15,"tips":"Conseil technique spécifique à cette recette"}`;
+{"name":"Nom précis du plat","steps":["Étape 1 détaillée","Étape 2 détaillée","Étape 3 détaillée"],"prep_time":"15 min","calories":500,"protein":35,"carbs":50,"fat":15,"tips":"Conseil technique spécifique à cette recette"}`;
 }
 
 function validateRecipe(raw) {
@@ -106,10 +108,11 @@ function fallbackRecipe(ingredients, goal) {
   return {
     name:      `Recette ${goalLabel}`,
     steps: [
-      `Préparez vos ingrédients: ${ingredientPreview}`,
-      "Faites cuire les protéines à feu moyen (10-15 min)",
-      "Ajoutez les légumes et faites revenir 5 min",
-      "Assaisonnez selon vos goûts et servez chaud"
+      `Préparez et découpez clairement les ingrédients utiles: ${ingredientPreview}.`,
+      "Saisis la protéine principale 2 à 3 minutes par face ou jusqu'à coloration nette, puis baisse légèrement le feu pour finir la cuisson sans la dessécher.",
+      "Ajoute ensuite les légumes les plus fermes d'abord, puis les plus tendres 2 à 3 minutes plus tard pour garder texture et couleur.",
+      "Monte le plat avec la base glucidique, la protéine cuite et les légumes, puis termine par l'assaisonnement et un dernier mélange hors du feu.",
+      "Goûte, ajuste le sel ou les épices, puis sers immédiatement pour garder le contraste chaud/croquant."
     ],
     prep_time: "20 min",
     calories:  450,

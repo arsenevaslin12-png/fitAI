@@ -90,6 +90,7 @@ function checkRateLimit(bucket, key, limit = 12, windowMs = 60000) {
 
 function detectIntent(message, responseMode) {
   if (responseMode === "recipe_json") return "recipe_request";
+  if (responseMode === "workout_json") return "workout_request";
   if (responseMode === "shopping_list") return "shopping_list";
   if (responseMode === "meal_plan") return "meal_plan";
   const text = String(message || "").toLowerCase();
@@ -201,11 +202,16 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
     age: age > 0 ? age : null,
     display_name: normalizeText(profile.display_name || ""),
     current_streak: Number(profile.current_streak || 0) || null,
+    total_workouts: Number(profile.total_workouts || 0) || null,
     recent_sessions_7d: Number(profile.recent_sessions_7d || 0) || null,
     best_scan_score: Number(profile.best_scan_score || 0) || null,
     last_scan_summary: normalizeText(profile.last_scan_summary || ""),
     nutrition_summary: normalizeText(profile.nutrition_summary || ""),
-    recent_meal_pattern: normalizeText(profile.recent_meal_pattern || "")
+    recent_meal_pattern: normalizeText(profile.recent_meal_pattern || ""),
+    recent_workouts: Array.isArray(profile.recent_workouts) ? profile.recent_workouts.map((x) => normalizeText(x)).filter(Boolean).slice(0, 4) : [],
+    today_kcal: Number(profile.today_kcal || 0) || null,
+    today_protein: Number(profile.today_protein || 0) || null,
+    coach_tone: normalizeText(profile.coach_tone || 'balanced') || 'balanced'
   };
 }
 
@@ -217,7 +223,17 @@ function buildContextSnapshot(p) {
   if (p.last_scan_summary) lines.push(`- Dernier scan: ${p.last_scan_summary}`);
   if (p.nutrition_summary) lines.push(`- Nutrition cible: ${p.nutrition_summary}`);
   if (p.recent_meal_pattern) lines.push(`- Repas récents: ${p.recent_meal_pattern}`);
+  if (p.coach_tone) lines.push(`- Ton attendu du coach: ${p.coach_tone}`);
   return lines.length ? lines.join("\n") : "- Contexte avancé indisponible";
+}
+
+
+function coachToneGuide(tone) {
+  const t = String(tone || 'balanced').toLowerCase();
+  if (t === 'supportive') return "Ton attendu: chaleureux, rassurant, motivant, sans mollesse. Tu aides l'utilisateur à repartir sans culpabiliser.";
+  if (t === 'direct') return "Ton attendu: franc, net, sans détour. Tu vas droit au point utile sans être froid.";
+  if (t === 'strict') return "Ton attendu: exigeant, cadrant, discipliné. Tu recadres vite mais toujours de façon utile et respectueuse.";
+  return "Ton attendu: équilibré, premium, humain, clair et pragmatique.";
 }
 
 function historyBlock(history = []) {
@@ -231,9 +247,9 @@ function historyBlock(history = []) {
 
 function buildWorkoutPrompt(message, history, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
-  return `Tu es un préparateur physique expert. Tu réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
+  return `Tu es un préparateur physique expert, orienté coaching premium. Tu réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
 
-Profil:
+Profil utilisateur:
 - Objectif: ${p.goal} (${getGoalDescription(p.goal)})
 - Niveau: ${p.level} (${getLevelDescription(p.level)})
 - Équipement: ${p.equipment}
@@ -244,6 +260,9 @@ Profil:
 - Sommeil moyen: ${p.sleep || "non renseigné"} h
 - Récupération ressentie /10: ${p.recovery || "non renseignée"}
 
+Contexte avancé à utiliser VRAIMENT:
+${buildContextSnapshot(p)}
+
 Historique récent:
 ${historyBlock(history) || "Aucun historique utile."}
 
@@ -251,17 +270,19 @@ Demande de l'utilisateur:
 ${message}
 
 RÈGLES ABSOLUES:
-- Respecte les blessures et contraintes.
+- La séance doit être PERSONNALISÉE au profil, pas une routine générique.
+- Utilise le contexte avancé: streak, séances récentes, scan, nutrition, récupération.
+- Si la récup est basse, baisse l'intensité ou bascule sur une séance plus technique / plus courte.
+- Si le niveau est débutant, simplifie les patterns et rends les consignes très claires.
+- Si l'utilisateur a déjà beaucoup travaillé un pattern récemment, varie intelligemment les exercices.
+- Respecte strictement les contraintes et l'équipement.
 - ÉQUIPEMENT STRICT: ${/halt[eè]re|barre|salle|machine|kettlebell|banc/i.test(p.equipment || "") ? `Utilise UNIQUEMENT: ${p.equipment}. N'ajoute pas d'équipement non mentionné.` : "POIDS DU CORPS UNIQUEMENT — INTERDIT: haltères, barres, kettlebell, machines, câbles, poulies. Chaque exercice doit être réalisable sans aucun matériel."}
-- Adapte l'intensité si sommeil < 6h ou récupération <= 5/10 ou humeur "Épuisé"/"Fatigué".
-- Si humeur "Épuisé": séance très légère, récupération active, mobilité seulement.
-- Si humeur "Fatigué": intensité réduite (-30%), durée courte, pas de HIIT.
-- Si humeur "En forme": propose une séance plus intense que d'habitude.
-- Niveau débutant = exercices simples et explications claires.
+- Adapte l'intensité si sommeil < 6h ou récupération <= 5/10 ou humeur basse.
 - Commence toujours par l'échauffement, termine par le retour au calme.
 - Réponds en français.
+- Les exercices doivent pouvoir être joués en séance guidée avec timer.
 
-FORMAT JSON OBLIGATOIRE (aucun texte avant ni après, aucun markdown):
+FORMAT JSON OBLIGATOIRE:
 {
   "title": "Nom de la séance",
   "duration": 45,
@@ -271,23 +292,27 @@ FORMAT JSON OBLIGATOIRE (aucun texte avant ni après, aucun markdown):
       "name": "Nom de l'exercice",
       "sets": 3,
       "reps": "10-12",
-      "duration": 0,
-      "rest": 60,
-      "description": "Conseil technique court et actionnable.",
+      "duration": 40,
+      "rest": 20,
+      "description": "Consigne technique courte et actionnable.",
       "muscle": "Groupe musculaire cible",
       "difficulty": "facile|moyen|difficile",
-      "equipment": "Aucun"
+      "equipment": "Aucun",
+      "personalWhy": "Pourquoi cet exercice est pertinent pour cet utilisateur aujourd'hui",
+      "targetGoal": "prise_de_masse|perte_de_poids|remise_en_forme|endurance|force"
     }
   ]
 }
 
 STRUCTURE exercises[] requise:
-1. Échauffement — 2 à 3 exercices légers (sets:1, reps:"1×" ou "30s", rest:0, difficulty:"facile").
+1. Échauffement — 2 à 3 exercices légers, 25 à 35 secondes chacun, repos 0 à 15 secondes.
 2. Corps principal — 4 à 7 exercices progressifs adaptés au profil.
-3. Retour au calme — 2 à 3 étirements (sets:1, reps:"30-45s", rest:0, difficulty:"facile").
-- "duration" = durée en secondes si exercice chronométré, sinon 0.
-- "rest" = repos en secondes entre les séries (0 pour échauffement/cooldown).
-- "description" = instruction pratique courte, jamais vide.`;
+3. Retour au calme — 2 à 3 étirements ou mobilités, 25 à 40 secondes.
+- Préfère des exercices chronométrés et guidables plutôt qu'une simple logique 4x18.
+- "duration" = durée en secondes du bloc d'effort quand pertinent.
+- "rest" = repos en secondes entre les blocs.
+- "description" ne doit jamais être vide.
+- "personalWhy" doit expliquer brièvement pourquoi l'exercice a été choisi pour CE profil.`;
 }
 
 function buildConversationPrompt(intent, message, history, profile, goalContext) {
@@ -332,6 +357,7 @@ PROFIL:
 - Humeur du jour: ${p.mood || "non renseignée"}
 - Sommeil: ${p.sleep ? `${p.sleep}h` : "non renseigné"} | Récupération: ${p.recovery ? `${p.recovery}/10` : "non renseignée"}
 ${p.display_name ? `- Prénom: ${p.display_name}` : ""}
+- Préférence de ton: ${coachToneGuide(p.coach_tone)}
 
 CONTEXTE SUIVI:
 ${buildContextSnapshot(p)}
@@ -345,11 +371,18 @@ RÈGLES:
 - Longueur: ${lengthGuide}.
 - Jamais vague ni générique: utilise le profil, le contexte, l'historique.
 - Donne d'abord la réponse utile. Ensuite l'analyse si nécessaire. Ensuite l'action.
-- Questions simples → réponse courte (2-3 phrases max).
-- Questions complexes → structure: **Réponse directe** / **Pourquoi** / **Action du jour**.
+- Questions simples → réponse courte mais percutante (2-4 phrases max).
+- Questions complexes → structure explicite: Réponse directe / Pourquoi / Action du jour.
+- Quand l'utilisateur parle de flemme, fatigue ou manque d'envie: reconnais l'état, protège son élan, puis réduis la friction avec une micro-action immédiate.
+- Utilise si pertinent le streak, les dernières séances, le dernier scan et la nutrition pour rendre la réponse personnelle.
+- Si l'utilisateur semble dispersé, recentre-le sur UNE seule priorité concrète.
+- Évite les slogans de motivation creux. Préfère une relance précise, réaliste et tenable aujourd'hui.
 - Puces (2-4 max) uniquement si ça aide vraiment la lisibilité.
 - Pas de JSON. Pas de programme complet sauf si explicitement demandé.
+- Ne jamais parler de serveur, timeout, fallback ou de technique.
 - Ne jamais dire "Je suis une IA" ou se décrire comme un assistant.
+- Respecte la préférence de ton sans tomber dans la caricature.
+- Si l'utilisateur veut une séance, commence par un cadrage court puis donne un plan exploitable, sans transformer la réponse en pavé confus.
 
 MESSAGE:
 ${message}`;
@@ -581,68 +614,58 @@ function seededIndex(seed, length, offset) {
 function fallbackWorkout(message, profile = {}, goalContext = {}) {
   const p = makeProfileSummary(profile, goalContext);
   const duration = guessDurationFromMessage(message, 45);
-  const lowered = String(message || "").toLowerCase();
-  const focus = lowered.includes("hiit") ? "Conditioning" : lowered.includes("jamb") ? "Lower Body" : lowered.includes("haut") ? "Upper Body" : "Full Body";
-  const intensityBias = (p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 5) ? "low" : "medium";
+  const lowered = String(message || '').toLowerCase();
+  const focus = lowered.includes('hiit') ? 'Conditioning' : lowered.includes('jamb') ? 'Lower Body' : lowered.includes('haut') ? 'Upper Body' : 'Full Body';
+  const lowRecovery = (p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 5) || /fatigu|epuis|mal dormi/.test(String(p.mood || '').toLowerCase());
+  const intensityBias = lowRecovery ? 'low' : p.goal === 'prise_de_masse' ? 'medium' : p.goal === 'perte_de_poids' ? 'medium' : 'medium';
   const pools = pickExercisePool(p.goal, p.level, p.equipment, intensityBias);
-  const seed = `${message}|${p.goal}|${p.level}|${new Date().toISOString().slice(0, 10)}`;
+  const seed = `${message}|${p.goal}|${p.level}|${new Date().toISOString().slice(0, 10)}|${(p.recent_workouts || []).join('|')}`;
 
   const upper1 = pools.upper[seededIndex(seed, pools.upper.length, 1)];
   const upper2 = pools.upper[seededIndex(seed, pools.upper.length, 2)];
   const lower1 = pools.lower[seededIndex(seed, pools.lower.length, 3)];
   const lower2 = pools.lower[seededIndex(seed, pools.lower.length, 4)];
   const cardio = pools.cardio[seededIndex(seed, pools.cardio.length, 5)];
+  const avoidRecent = (name) => !(p.recent_workouts || []).some((x) => String(x || '').toLowerCase().includes(String(name || '').toLowerCase().slice(0, 5)));
 
-  const sessions = focus === "Upper Body"
-    ? [{
-        day: "Monday",
-        focus,
-        duration_min: duration,
-        intensity: intensityBias,
-        warmup: ["3 min cardio léger", "Mobilité épaules", "Activation scapulaire"],
-        exercises: [
-          { name: upper1, sets: 4, reps: "8-10", rest_sec: 75, notes: "Garde 1-2 reps en réserve" },
-          { name: upper2, sets: 3, reps: "10-12", rest_sec: 60, notes: "Amplitude contrôlée" },
-          { name: "Gainage latéral", sets: 3, reps: "30s/side", rest_sec: 30, notes: "Tronc solide" }
-        ],
-        cooldown: ["Étirement pectoraux 45s", "Respiration nasale 2 min"]
-      }]
-    : [{
-        day: "Monday",
-        focus,
-        duration_min: duration,
-        intensity: intensityBias,
-        warmup: ["5 min cardio léger", "Mobilité hanches + épaules", "1 série technique sur chaque pattern"],
-        exercises: [
-          { name: lower1, sets: 4, reps: "8-10", rest_sec: 75, notes: "Descente contrôlée" },
-          { name: upper1, sets: 4, reps: "8-10", rest_sec: 75, notes: "Technique propre avant charge" },
-          { name: lower2, sets: 3, reps: "10-12", rest_sec: 60, notes: "Amplitude complète" },
-          { name: upper2, sets: 3, reps: "10-12", rest_sec: 60, notes: "Rythme régulier" },
-          { name: cardio, sets: 1, reps: "8 min", rest_sec: 0, notes: intensityBias === "low" ? "Rythme confortable" : "Alterne 30s vite / 60s facile" }
-        ],
-        cooldown: ["Étirement hanches 45s", "Étirement dorsaux 45s", "Respiration 2 min"]
-      }];
+  const workSecMain = lowRecovery ? 30 : p.goal === 'endurance' ? 45 : p.goal === 'perte_de_poids' ? 40 : 42;
+  const restMain = lowRecovery ? 25 : p.goal === 'prise_de_masse' ? 25 : 20;
+  const title = lowRecovery ? `Séance ${focus} allégée et guidée` : `Séance ${focus} personnalisée et guidée`;
+
+  const warmup = [
+    { name: 'Respiration + ouverture thoracique', sets: 1, reps: '1 bloc', duration: 30, rest: 10, description: 'Détends les épaules et cale ta respiration avant d’accélérer.', muscle: 'Mobilité', difficulty: 'facile', equipment: 'Aucun', personalWhy: 'On prépare ton corps sans te fatiguer inutilement.', targetGoal: p.goal },
+    { name: 'Mobilité hanches et chevilles', sets: 1, reps: '1 bloc', duration: 30, rest: 10, description: 'Cherche de l’amplitude propre, pas de vitesse.', muscle: 'Mobilité', difficulty: 'facile', equipment: 'Aucun', personalWhy: 'Ça améliore ta qualité de mouvement sur toute la séance.', targetGoal: p.goal }
+  ];
+
+  const main = [];
+  if (focus !== 'Upper Body') main.push({ name: avoidRecent(lower1) ? lower1 : 'Split squats contrôlés', sets: 1, reps: 'bloc guidé', duration: workSecMain, rest: restMain, description: 'Rythme propre, genoux alignés, amplitude régulière.', muscle: 'Jambes / fessiers', difficulty: p.level === 'beginner' ? 'facile' : 'moyen', equipment: /halt|salle|machine|barre|kettlebell|banc/i.test(p.equipment || '') ? p.equipment : 'Aucun', personalWhy: lowRecovery ? 'On stimule le bas du corps sans te cramer nerveusement.' : 'Bloc clé pour construire une base solide selon ton objectif.', targetGoal: p.goal });
+  if (focus !== 'Lower Body') main.push({ name: avoidRecent(upper1) ? upper1 : 'Pompes tempo', sets: 1, reps: 'bloc guidé', duration: workSecMain, rest: restMain, description: 'Cherche une poussée propre, poitrine ouverte et tronc gainé.', muscle: 'Pectoraux / épaules', difficulty: p.level === 'beginner' ? 'facile' : 'moyen', equipment: /halt|salle|machine|barre|kettlebell|banc/i.test(p.equipment || '') ? p.equipment : 'Aucun', personalWhy: 'On garde un mouvement de poussée rentable et lisible pour progresser sans confusion.', targetGoal: p.goal });
+  main.push({ name: avoidRecent(lower2) ? lower2 : 'Hip hinge contrôlé', sets: 1, reps: 'bloc guidé', duration: workSecMain, rest: restMain, description: 'Hanches en arrière, dos long, contrôle total.', muscle: 'Chaîne postérieure', difficulty: p.level === 'beginner' ? 'facile' : 'moyen', equipment: /halt|salle|machine|barre|kettlebell|banc/i.test(p.equipment || '') ? p.equipment : 'Aucun', personalWhy: 'Ce pattern améliore puissance, posture et transfert sur beaucoup de mouvements.', targetGoal: p.goal });
+  main.push({ name: avoidRecent(upper2) ? upper2 : 'Rowing contrôlé', sets: 1, reps: 'bloc guidé', duration: workSecMain, rest: restMain, description: 'Tire sans hausser les épaules, poitrine sortie.', muscle: 'Dos / bras', difficulty: p.level === 'beginner' ? 'facile' : 'moyen', equipment: /halt|salle|machine|barre|kettlebell|banc/i.test(p.equipment || '') ? p.equipment : 'Aucun', personalWhy: 'On équilibre la posture et le haut du corps pour une séance plus complète.', targetGoal: p.goal });
+  if (p.goal === 'perte_de_poids' || p.goal === 'endurance') main.push({ name: cardio, sets: 1, reps: 'bloc guidé', duration: lowRecovery ? 35 : 45, rest: 20, description: lowRecovery ? 'Rythme régulier et respirable.' : 'Monte le cardio sans te désunir techniquement.', muscle: 'Cardio', difficulty: lowRecovery ? 'facile' : 'moyen', equipment: /halt|salle|machine|barre|kettlebell|banc/i.test(p.equipment || '') ? p.equipment : 'Aucun', personalWhy: 'Tu as besoin d’un bloc de densité pour coller à ton objectif actuel.', targetGoal: p.goal });
+  else main.push({ name: 'Gainage actif', sets: 1, reps: 'bloc guidé', duration: 35, rest: 18, description: 'Reste compact, zéro relâchement du tronc.', muscle: 'Core', difficulty: 'facile', equipment: 'Aucun', personalWhy: 'On finit par un bloc qui stabilise tout le reste sans te détruire.', targetGoal: p.goal });
+
+  const cooldown = [
+    { name: 'Respiration guidée', sets: 1, reps: '1 bloc', duration: 30, rest: 0, description: 'Ralentis la respiration et fais redescendre le rythme.', muscle: 'Récupération', difficulty: 'facile', equipment: 'Aucun', personalWhy: 'Ta récupération fait partie de la progression.', targetGoal: p.goal },
+    { name: 'Étirements ciblés', sets: 1, reps: '1 bloc', duration: 30, rest: 0, description: 'Ouvre les zones qui ont le plus travaillé sans forcer.', muscle: focus === 'Upper Body' ? 'Haut du corps' : focus === 'Lower Body' ? 'Bas du corps' : 'Full Body', difficulty: 'facile', equipment: 'Aucun', personalWhy: 'On clôt la séance proprement pour que tu repartes plus mobile et plus frais.', targetGoal: p.goal }
+  ];
 
   return {
-    title: `Plan ${focus} intelligent`,
-    goal: p.goal,
-    duration_weeks: 8,
-    progression: {
-      weeks_1_3: "Ajoute 1 rep par série ou 2 à 5 % de charge si tout est propre.",
-      week_4_deload: "Réduis le volume d'environ 35 % et garde une intensité modérée.",
-      weeks_5_8: "Repars sur le volume normal et progresse à nouveau sur la charge ou les reps."
-    },
-    recovery_advice: intensityBias === "low" ? "Récupération basse: garde une séance contrôlée et dors plus ce soir." : "Hydratation, 7 à 8h de sommeil et marche légère le lendemain.",
-    nutrition_advice: p.goal === "prise_de_masse" ? "Ajoute un repas protéiné post-séance avec glucides digestes." : p.goal === "perte_de_poids" ? "Vise protéines hautes et garde le déficit léger pour tenir la progression." : "Mets 25 à 35 g de protéines après la séance et hydrate-toi.",
-    sessions
+    title,
+    duration,
+    calories: Math.round(duration * (lowRecovery ? 5.2 : p.goal === 'perte_de_poids' ? 7.5 : 6.6)),
+    exercises: [...warmup, ...main, ...cooldown]
   };
 }
+
 
 function fallbackConversation(intent, message, profile = {}, goalContext = {}) {
   const p = makeProfileSummary(profile, goalContext);
   const lowRecovery = (p.sleep && p.sleep < 6) || (p.recovery && p.recovery <= 5);
+  const tone = String(p.coach_tone || 'balanced').toLowerCase();
+  const intro = tone === 'strict' ? 'On coupe le bruit et on agit.' : tone === 'direct' ? 'On va droit au plus rentable.' : tone === 'supportive' ? 'On garde l\'élan sans se juger.' : 'On reste simple et utile.';
   if (intent === "greeting") {
-    return `Réponse directe: Salut ${p.display_name || "champion"} 👋
+    return `Réponse directe: Salut ${p.display_name || "champion"} 👋 ${intro}
 Pourquoi: Je peux te guider vite sur une séance, une journée alimentaire, une recette ou une stratégie récupération sans te noyer dans le blabla.
 Action du jour: Donne-moi ton besoin exact en une phrase, par exemple « séance full body 40 min », « idée repas sèche » ou « j'ai mal dormi, j'adapte comment ? ». `;
   }
@@ -657,26 +680,27 @@ Action du jour: Sur ton prochain repas, vise légumes + protéines + une portion
   }
   if (intent === "recovery_question") {
     return lowRecovery
-      ? `Réponse directe: Aujourd'hui, je baisserais l'intensité.
+      ? `Réponse directe: ${tone === 'strict' ? "Aujourd'hui on n'ego pas : on baisse l'intensité." : "Aujourd'hui, je baisserais l'intensité."}
 Pourquoi: Avec peu de sommeil ou une récupération basse, forcer plus fort te coûte souvent plus qu'il ne te rapporte.
 Action du jour: Fais 10 à 20 min de mobilité, une marche active ou une séance technique très propre, puis couche-toi plus tôt ce soir.`
-      : `Réponse directe: Ta récup passera surtout par sommeil, hydratation et charge bien dosée.
+      : `Réponse directe: ${intro} Ta récup passera surtout par sommeil, hydratation et charge bien dosée.
 Pourquoi: C'est le trio qui protège ta progression sans casser le rythme.
 Action du jour: Fais 5 à 10 minutes de mobilité ce soir et garde la séance lourde seulement si les courbatures baissent nettement demain.`;
   }
   if (intent === "motivation_question") {
     const streakNote = p.current_streak ? `Tu as déjà ${p.current_streak} jour(s) de régularité en jeu.` : "Tu n'as pas besoin d'une énorme séance pour rester dans le rythme.";
     const scanNote = p.last_scan_summary ? `Ton dernier scan rappelle déjà l'axe prioritaire: ${p.last_scan_summary}.` : "";
-    return `Réponse directe: Avoir la flemme est normal — le vrai sujet, c'est de ne pas casser l'élan pour autant.
-Pourquoi: ${streakNote} ${scanNote}`.trim() + `
-Action du jour: Réduis la friction au maximum: mets une tenue, lance 8 minutes de marche active ou 2 exercices très simples. Si l'énergie revient, tu continues. Sinon, tu as quand même protégé ta discipline.`;
+    const sessionNote = p.recent_sessions_7d ? `Tu as déjà bougé ${p.recent_sessions_7d} fois cette semaine.` : "";
+    return `Réponse directe: ${intro} Avoir la flemme est normal — on ne cherche pas l'héroïsme, on protège l'élan.
+Pourquoi: ${[streakNote, sessionNote, scanNote].filter(Boolean).join(' ')}`.trim() + `
+Action du jour: Mets ta tenue maintenant. Fais 6 minutes de marche active ou 2 mouvements faciles. Si l'énergie remonte, tu prolonges 10 minutes. Si non, tu as quand même gagné ta journée de discipline.`;
   }
   if (intent === "progress_question") {
     return `Réponse directe: Regarde d'abord régularité, qualité technique et charge ou reps sur tes mouvements clés.
 Pourquoi: Si un seul de ces marqueurs monte proprement, tu avances déjà.
 Action du jour: Choisis un mini-objectif mesurable pour la prochaine séance: +1 rep, meilleure exécution ou tempo plus propre.`;
   }
-  return `Réponse directe: Pour ton objectif ${p.goal.replaceAll("_", " ")}, on va chercher l'action la plus rentable aujourd'hui, pas la réponse la plus théorique.
+  return `Réponse directe: ${intro} Pour ton objectif ${p.goal.replaceAll("_", " ")}, on va chercher l'action la plus rentable aujourd'hui, pas la réponse la plus théorique.
 Pourquoi: Tu progresses surtout quand tes choix collent à ton niveau réel, à ton énergie et à ce que tu tiens dans la durée.${p.best_scan_score ? ` Ton meilleur repère récent est ${p.best_scan_score}/100, donc on ajuste sans perdre le fil.` : ""}
 Action du jour: Donne-moi ton contexte exact — temps dispo, matériel, fatigue du jour — et je te répondrai avec une action courte, précise et applicable maintenant.`;
 }

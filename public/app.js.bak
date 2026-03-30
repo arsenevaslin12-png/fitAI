@@ -141,55 +141,6 @@ function detectCoachModeClient(prompt) {
   return 'advice';
 }
 
-
-function isCoachWorkoutPrompt(prompt) {
-  const t = String(prompt || '').toLowerCase();
-  return /séance|seance|workout|full body|upper body|lower body|prise de masse|hypertroph|musculation|fais-moi une vraie séance|adapte ma séance|entrainement|entraînement|cardio|jambes|pecs|dos|abdos|push|pull/.test(t);
-}
-
-async function requestWorkoutPlanDirect(prompt, token, coachProfile, goalContext, historyForApi) {
-  const payload = {
-    prompt,
-    message: prompt,
-    history: historyForApi,
-    goalContext,
-    goal: goalContext?.type || coachProfile?.goal || '',
-    level: coachProfile?.level || goalContext?.level || 'beginner',
-    equipment: coachProfile?.equipment || 'poids du corps',
-    injuries: coachProfile?.injuries || goalContext?.constraints || '',
-    weight: coachProfile?.weight || null,
-    height: coachProfile?.height || null,
-    age: coachProfile?.age || null,
-    sleep_hours: coachProfile?.sleep_hours || null,
-    recovery_score: coachProfile?.recovery_score || null,
-    mood_today: coachProfile?.mood_today || '',
-    current_streak: coachProfile?.current_streak || 0,
-    total_workouts: coachProfile?.total_workouts || 0,
-    recent_sessions_7d: coachProfile?.recent_sessions_7d || 0,
-    best_scan_score: coachProfile?.best_scan_score || 0,
-    last_scan_summary: coachProfile?.last_scan_summary || '',
-    nutrition_summary: coachProfile?.nutrition_summary || '',
-    recent_meal_pattern: coachProfile?.recent_meal_pattern || '',
-    recent_workouts: Array.isArray(coachProfile?.recent_workouts) ? coachProfile.recent_workouts : [],
-    today_kcal: coachProfile?.today_kcal || 0,
-    today_protein: coachProfile?.today_protein || 0,
-    coach_tone: coachProfile?.coach_tone || getCoachTonePreference()
-  };
-  const { response } = await fetchJsonWithTimeout('/api/workout', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify(payload)
-  }, 12000);
-  return response;
-}
-
-function ensureCoachPlanPlacement() {
-  const anchor = document.getElementById('coach-plan-anchor');
-  const planCard = document.getElementById('plan-card');
-  if (!anchor || !planCard) return;
-  if (planCard.parentElement !== anchor) anchor.appendChild(planCard);
-}
-
 function coachToneLabel(val) {
   return { balanced: 'Équilibré', supportive: 'Bienveillant', direct: 'Direct', strict: 'Exigeant' }[String(val || 'balanced')] || 'Équilibré';
 }
@@ -1180,22 +1131,13 @@ async function sendCoachMsg(quickMsg) {
     }));
 
     const responseMode = detectCoachModeClient(prompt);
-    let { response: j } = await fetchJsonWithTimeout("/api/coach", {
+    const { response: j } = await fetchJsonWithTimeout("/api/coach", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ message: prompt, responseMode, history: historyForApi, profile: coachProfile, goalContext })
     }, 12000);
 
     if (requestId !== COACH_REQUEST_SEQ) return;
-
-    if (isCoachWorkoutPrompt(prompt) && (!j || j.type !== 'workout')) {
-      try {
-        const direct = await requestWorkoutPlanDirect(prompt, token, coachProfile, goalContext, historyForApi);
-        if (direct?.data?.exercises?.length) {
-          j = { ok: true, type: 'workout', data: direct.data, fallback: !!direct.fallback };
-        }
-      } catch {}
-    }
 
     const thinkEl = document.getElementById("coach-thinking");
     if (thinkEl) thinkEl.remove();
@@ -1315,117 +1257,21 @@ function exerciseCuePack(ex = {}) {
   };
 }
 
-function _exerciseDemoSvg(label = '') {
-  const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-
-  function frame(body, accent = '#60a5fa', accent2 = '#22d3ee', arrow = '') {
-    return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 240" width="100%" height="100%">
-      <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#0b1220"/>
-          <stop offset="100%" stop-color="#111c34"/>
-        </linearGradient>
-        <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${accent}" stop-opacity=".30"/>
-          <stop offset="100%" stop-color="${accent2}" stop-opacity=".12"/>
-        </linearGradient>
-        <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#020617" flood-opacity=".45"/></filter>
-        <filter id="soft"><feGaussianBlur stdDeviation="10"/></filter>
-      </defs>
-      <rect x="10" y="10" width="260" height="220" rx="28" fill="url(#bg)" stroke="rgba(255,255,255,.08)"/>
-      <circle cx="54" cy="42" r="54" fill="${accent}" opacity=".14" filter="url(#soft)"/>
-      <circle cx="218" cy="185" r="60" fill="${accent2}" opacity=".12" filter="url(#soft)"/>
-      <rect x="26" y="26" width="228" height="188" rx="24" fill="url(#glow)"/>
-      <ellipse cx="140" cy="192" rx="70" ry="15" fill="${accent2}" opacity=".18" filter="url(#soft)"/>
-      ${arrow}
-      ${body}
-    </svg>`;
-  }
-
-  function motionArrow(path, accent = '#22d3ee') {
-    return `<path d="${path}" fill="none" stroke="${accent}" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 8" opacity=".95">
-      <animate attributeName="stroke-dashoffset" from="0" to="-36" dur="1.4s" repeatCount="indefinite"/>
-    </path>
-    <path d="M208 86 l14 -4 l-6 14" fill="none" stroke="${accent}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>`;
-  }
-
-  function coachFigure(parts, accent = '#60a5fa', accent2 = '#22d3ee') {
-    return `<g filter="url(#shadow)">
-      <circle cx="140" cy="56" r="19" fill="#f8fafc"/>
-      <path d="M122 78 Q140 70 158 78 L162 132 Q140 142 118 132 Z" fill="#f8fafc" opacity=".98"/>
-      <path d="M127 80 Q140 74 153 80" fill="none" stroke="${accent2}" stroke-width="2.2" opacity=".95"/>
-      <circle cx="140" cy="56" r="23" fill="none" stroke="${accent}" stroke-width="1.4" opacity=".28"/>
-      <circle cx="140" cy="56" r="27" fill="none" stroke="${accent2}" stroke-width="1.1" opacity=".16"/>
-      ${parts}
-      <ellipse cx="140" cy="194" rx="58" ry="10" fill="${accent2}" opacity=".12"/>
-    </g>`;
-  }
-
-  function limbSet({armL1, armL2, armR1, armR2, legL1, legL2, legR1, legR2, accent='#60a5fa'}) {
-    const near = `stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"`;
-    const far = `stroke="rgba(241,245,249,.58)" stroke-width="5.4" stroke-linecap="round" fill="none"`;
-    return `
-      <path d="${armL1}" ${far}/><path d="${armL2}" ${far}/>
-      <path d="${armR1}" ${near}/><path d="${armR2}" ${near}/>
-      <path d="${legL1}" ${far}/><path d="${legL2}" ${far}/>
-      <path d="${legR1}" ${near}/><path d="${legR2}" ${near}/>
-      <circle cx="112" cy="94" r="5" fill="${accent}" opacity=".95"/>
-      <circle cx="168" cy="94" r="5" fill="${accent}" opacity=".95"/>
-      <circle cx="120" cy="140" r="5" fill="${accent}" opacity=".95"/>
-      <circle cx="160" cy="140" r="5" fill="${accent}" opacity=".95"/>`;
-  }
-
-  const variants = [
-    { rx: /squat|chair|leg press|wall sit/, accent:'#f59e0b', accent2:'#f97316', arrow:'M206 64 C232 92 232 128 206 156', limbs: { armL1:'M122 92 Q110 106 98 116', armL2:'M98 116 Q92 124 88 138', armR1:'M158 92 Q172 104 186 112', armR2:'M186 112 Q194 118 200 132', legL1:'M126 132 Q112 146 104 162', legL2:'M104 162 Q98 174 102 188', legR1:'M154 132 Q168 146 176 162', legR2:'M176 162 Q182 174 178 188' } },
-    { rx: /lunge|fente|split squat|step-up/, accent:'#8b5cf6', accent2:'#22d3ee', arrow:'M80 176 C126 166 170 150 210 120', limbs: { armL1:'M122 92 Q114 106 108 118', armL2:'M108 118 Q104 126 100 138', armR1:'M158 92 Q168 104 176 118', armR2:'M176 118 Q184 126 190 138', legL1:'M126 132 Q116 150 114 172', legL2:'M114 172 Q114 184 104 190', legR1:'M154 132 Q170 146 188 156', legR2:'M188 156 Q202 164 210 186' } },
-    { rx: /pompe|push|bench|developpe|dips/, accent:'#22c55e', accent2:'#06b6d4', arrow:'M214 104 C230 118 230 138 214 154', limbs: { armL1:'M122 94 Q104 114 94 132', armL2:'M94 132 Q90 144 88 154', armR1:'M158 94 Q174 112 186 126', armR2:'M186 126 Q194 136 198 150', legL1:'M126 132 Q118 154 120 178', legL2:'M120 178 Q122 188 112 194', legR1:'M154 132 Q162 154 160 178', legR2:'M160 178 Q158 188 168 194' } },
-    { rx: /row|tirage|traction|pull|curl/, accent:'#38bdf8', accent2:'#818cf8', arrow:'M82 102 C118 90 160 90 198 102', limbs: { armL1:'M122 92 Q108 104 96 110', armL2:'M96 110 Q88 114 82 106', armR1:'M158 92 Q172 104 184 110', armR2:'M184 110 Q192 114 198 106', legL1:'M126 132 Q120 156 122 184', legL2:'M122 184 Q124 192 116 198', legR1:'M154 132 Q160 156 158 184', legR2:'M158 184 Q156 192 164 198' } },
-    { rx: /deadlift|souleve|hinge|hip thrust|bridge|pont/, accent:'#ef4444', accent2:'#f59e0b', arrow:'M72 154 C110 128 158 120 212 126', limbs: { armL1:'M122 92 Q110 104 102 120', armL2:'M102 120 Q98 128 96 138', armR1:'M158 92 Q170 104 178 120', armR2:'M178 120 Q182 128 184 138', legL1:'M126 132 Q116 150 112 170', legL2:'M112 170 Q108 182 100 192', legR1:'M154 132 Q164 150 168 170', legR2:'M168 170 Q172 182 180 192' } },
-    { rx: /plank|gainage|abdo|hollow|mountain|russian twist|twist/, accent:'#22d3ee', accent2:'#a78bfa', arrow:'M76 138 C112 148 164 148 204 136', limbs: { armL1:'M122 94 Q110 108 98 120', armL2:'M98 120 Q90 128 82 136', armR1:'M158 94 Q170 108 182 120', armR2:'M182 120 Q190 128 198 136', legL1:'M126 132 Q118 154 108 170', legL2:'M108 170 Q98 182 86 186', legR1:'M154 132 Q162 154 172 170', legR2:'M172 170 Q182 182 194 186' } },
-    { rx: /jump|burpee|high knees|run|cardio|jack/, accent:'#f472b6', accent2:'#fb7185', arrow:'M204 70 C228 92 228 130 202 156', limbs: { armL1:'M122 92 Q104 82 92 70', armL2:'M92 70 Q82 60 74 54', armR1:'M158 92 Q176 82 188 70', armR2:'M188 70 Q198 60 206 54', legL1:'M126 132 Q112 150 104 172', legL2:'M104 172 Q94 186 88 198', legR1:'M154 132 Q168 150 176 172', legR2:'M176 172 Q186 186 192 198' } },
-    { rx: /press|military|shoulder/, accent:'#14b8a6', accent2:'#60a5fa', arrow:'M138 42 C138 24 138 20 138 12', limbs: { armL1:'M122 92 Q108 76 104 56', armL2:'M104 56 Q102 40 108 24', armR1:'M158 92 Q172 76 176 56', armR2:'M176 56 Q178 40 172 24', legL1:'M126 132 Q120 156 122 184', legL2:'M122 184 Q124 192 116 198', legR1:'M154 132 Q160 156 158 184', legR2:'M158 184 Q156 192 164 198' } },
-  ];
-  const picked = variants.find(v => v.rx.test(t)) || variants[0];
-  return frame(
-    coachFigure(limbSet({...picked.limbs, accent:picked.accent}), picked.accent, picked.accent2),
-    picked.accent,
-    picked.accent2,
-    motionArrow(picked.arrow, picked.accent2)
-  );
-}
-
-function _exerciseDemoDataUri(label = '') {
-  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(_exerciseDemoSvg(label));
-}
-
-function _exerciseDisplay(ex = {}) {
-  return typeof _normalizeGuidedExercise === 'function' ? _normalizeGuidedExercise(ex, 0) : ex;
-}
-
 function exerciseVisualHtml(ex = {}) {
-  const safe = _exerciseDisplay(ex);
-  const name = safe.name || safe.n || safe.muscle || '';
-  return `<div class="ex-visual-stack"><div class="ex-figure"><div class="ex-figure-tag">Démo mouvement</div><img class="ex-demo-gif" src="${_exerciseDemoDataUri(name)}" alt="Démo ${escapeHtml(name)}"/></div><div class="ex-muscle-map"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(safe.muscle || safe.name || '')}</div></div>`;
+  return `<div class="ex-visual-stack"><div class="ex-figure">${_stickFigureSVG(ex.name || "")}</div><div class="ex-muscle-map">${_muscleSVG(ex.muscle || ex.name || "")}</div></div>`;
 }
 
 function exerciseHowToHtml(ex = {}) {
-  const safe = _exerciseDisplay(ex);
-  const cue = exerciseCuePack(safe);
-  const detail = safe.guideSeconds ? `Bloc guidé de ${safe.guideSeconds}s puis ${safe.restSeconds || 20}s de pause.` : (safe.sets ? `${safe.sets} séries` : 'Exécution continue.');
-  const errorTip = _getExerciseTip(safe.name || safe.n || '') || 'Évite l’élan et garde une amplitude propre.';
-  return `<div class="ex-howto"><div class="ex-howto-item"><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div class="ex-howto-item"><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div class="ex-howto-item"><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div class="ex-howto-item"><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div><div class="ex-howto-item"><span>Rythme</span><p>${escapeHtml(detail)}</p></div><div class="ex-howto-item"><span>Erreur à éviter</span><p>${escapeHtml(errorTip)}</p></div></div>`;
+  const cue = exerciseCuePack(ex);
+  return `<div class="ex-howto"><div class="ex-howto-item"><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div class="ex-howto-item"><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div class="ex-howto-item"><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div class="ex-howto-item"><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div></div>`;
 }
 
 function renderExerciseCard(ex, idx) {
-  ex = _exerciseDisplay(ex);
-
   const badges = [];
   if (ex.sets && ex.sets > 0) badges.push(`<span class="ex-badge sets">${ex.sets} séries</span>`);
-  if (ex.guideSeconds) badges.push(`<span class="ex-badge dur">${ex.guideSeconds}s effort</span>`);
-  else if (ex.reps && ex.reps !== "0") badges.push(`<span class="ex-badge reps">${escapeHtml(String(ex.reps))} reps</span>`);
-  if (ex.restSeconds) badges.push(`<span class="ex-badge rest">${ex.restSeconds}s pause</span>`);
-  else if (ex.rest && ex.rest > 0) badges.push(`<span class="ex-badge rest">${ex.rest}s repos</span>`);
+  if (ex.reps && ex.reps !== "0") badges.push(`<span class="ex-badge reps">${escapeHtml(String(ex.reps))} reps</span>`);
+  if (ex.duration && ex.duration > 0) badges.push(`<span class="ex-badge dur">${ex.duration}s</span>`);
+  if (ex.rest && ex.rest > 0) badges.push(`<span class="ex-badge rest">${ex.rest}s repos</span>`);
   if (ex.muscle) badges.push(`<span class="ex-badge muscle">${escapeHtml(ex.muscle)}</span>`);
   if (ex.equipment) badges.push(`<span class="ex-badge equip">${escapeHtml(ex.equipment)}</span>`);
 
@@ -1546,8 +1392,8 @@ function renderPlan(plan) {
   }
 
   const planCard = document.getElementById("plan-card");
-  ensureCoachPlanPlacement();
   if (planCard) planCard.style.display = "block";
+  if (planCard) setTimeout(() => planCard.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
 }
 
 async function saveSession() {
@@ -2455,12 +2301,12 @@ function handleFile(file) {
 
 function bodyScanLevelMeta(score) {
   const s = Number(score || 0);
-  if (s >= 92) return { label: "Exceptionnel", hint: "niveau rarissime", tone: "elite" };
-  if (s >= 86) return { label: "Très athlétique", hint: "sec et dense", tone: "athletic" };
-  if (s >= 78) return { label: "Athlétique", hint: "niveau sportif net", tone: "strong" };
-  if (s >= 70) return { label: "Bon niveau", hint: "bonne base visible", tone: "good" };
-  if (s >= 62) return { label: "Actif régulier", hint: "correct mais perfectible", tone: "mid" };
-  if (s >= 52) return { label: "Base correcte", hint: "encore peu marquée", tone: "base" };
+  if (s >= 90) return { label: "Exceptionnel", hint: "niveau rarissime", tone: "elite" };
+  if (s >= 82) return { label: "Très athlétique", hint: "sec, dense, très net", tone: "athletic" };
+  if (s >= 74) return { label: "Athlétique", hint: "niveau sportif visible", tone: "strong" };
+  if (s >= 66) return { label: "Bon niveau", hint: "bonne base mais encore perfectible", tone: "good" };
+  if (s >= 58) return { label: "Actif régulier", hint: "actif sans rendu très athlétique", tone: "mid" };
+  if (s >= 48) return { label: "Base correcte", hint: "encore peu marquée", tone: "base" };
   return { label: "Début de base", hint: "potentiel à construire", tone: "early" };
 }
 
@@ -2513,11 +2359,11 @@ function bodyScanScoreRail(score) {
 }
 
 function bodyScanLoadingCopy(progress) {
-  if (progress < 18) return { title: "Préparation du scan", sub: "On aligne la photo et on vérifie le cadrage." };
-  if (progress < 42) return { title: "Lecture de la posture", sub: "Symétrie, posture et appuis sont en cours d'estimation." };
-  if (progress < 68) return { title: "Analyse corporelle", sub: "On évalue la définition, la composition et le niveau perçu." };
-  if (progress < 90) return { title: "Synthèse coach", sub: "On prépare les axes prioritaires et les recommandations utiles." };
-  return { title: "Finalisation", sub: "Le score calibré et les conseils arrivent." };
+  if (progress < 18) return { title: "Préparation du scan", sub: "On valide la photo, le cadrage et la lisibilité du corps entier." };
+  if (progress < 42) return { title: "Lecture posture / symétrie", sub: "On compare l'alignement, l'ouverture du buste et la stabilité générale." };
+  if (progress < 68) return { title: "Composition et relief", sub: "On estime la définition musculaire, la composition et le niveau visuel réel." };
+  if (progress < 90) return { title: "Calibration du score", sub: "Le score est plafonné ou renforcé selon la cohérence de la photo et du physique." };
+  return { title: "Synthèse coach", sub: "On prépare les points forts, les freins et la prochaine priorité utile." };
 }
 
 function setBodyScanLoading(progress) {
@@ -2703,6 +2549,10 @@ function renderBodyScanCard(scan, imageUrl) {
   const improvements = parsed.improvements.slice(0, 3);
   const strengths = parsed.strengths.slice(0, 3);
   const previousScore = ext?.comparison?.previous_score;
+  const scoreDrivers = Array.isArray(ext?.score_drivers) ? ext.score_drivers.slice(0, 3) : strengths;
+  const scoreBrakes = Array.isArray(ext?.score_brakes) ? ext.score_brakes.slice(0, 3) : improvements;
+  const confidencePct = Number(ext?.confidence_pct || 0);
+  const visualTier = String(ext?.visual_tier || '').replace(/_/g, ' ');
 
   return `<div class="scan-v2">
     <div class="scan-v2-top scan-v3-top">
@@ -2727,20 +2577,25 @@ function renderBodyScanCard(scan, imageUrl) {
           <div class="scan-v3-mini">
             <div class="scan-v3-mini-row"><span>Bodyfat estimé</span><strong>${bodyfat || "—"}</strong></div>
             <div class="scan-v3-mini-row"><span>Catégorie</span><strong>${ext?.estimated_metrics?.fitness_category ? escapeHtml(String(ext.estimated_metrics.fitness_category)) : "—"}</strong></div>
-            <div class="scan-v3-mini-row"><span>Scan précédent</span><strong>${previousScore != null ? `${previousScore}/100` : '—'}</strong></div>
-            <div class="scan-v3-mini-row"><span>Fiabilité</span><strong>${confidence.label}</strong></div>
+            <div class="scan-v3-mini-row"><span>Niveau lu</span><strong>${visualTier ? escapeHtml(visualTier) : level.label}</strong></div>
+            <div class="scan-v3-mini-row"><span>Fiabilité</span><strong>${confidence.label}${confidencePct ? ` · ${confidencePct}%` : ''}</strong></div>
           </div>
         </div>
         ${scoreChips ? `<div class="rings-row scan-v3-rings">${scoreChips}</div>` : ""}
         <div class="scan-v3-verdict">${escapeHtml(verdict)}</div>
+        <div class="scan-v3-recap">
+          ${trend ? `<div class="scan-v3-recap-card"><span>Écart vs précédent</span><strong>${escapeHtml(trend.label)}</strong></div>` : ''}
+          <div class="scan-v3-recap-card"><span>Ce qui aide la note</span><strong>${escapeHtml((scoreDrivers[0] || strengths[0] || 'Base exploitable'))}</strong></div>
+          <div class="scan-v3-recap-card"><span>Ce qui freine la note</span><strong>${escapeHtml((scoreBrakes[0] || improvements[0] || 'Lisibilité moyenne de la photo'))}</strong></div>
+        </div>
         <div class="scan-v2-2col scan-v3-columns">
           <div class="scan-v2-strengths">
             <div class="scan-v2-col-hdr scan-v2-str-hdr">Ce qui soutient la note</div>
-            ${strengths.length ? strengths.map(s => `<div class="scan-v2-pt scan-v2-str-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-str-pt">Base exploitable pour progresser si tu restes régulier.</div>`}
+            ${scoreDrivers.length ? scoreDrivers.map(s => `<div class="scan-v2-pt scan-v2-str-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-str-pt">Base exploitable pour progresser si tu restes régulier.</div>`}
           </div>
           <div class="scan-v2-weaknesses">
-            <div class="scan-v2-col-hdr scan-v2-wk-hdr">Ce qui freine vraiment</div>
-            ${improvements.length ? improvements.map(s => `<div class="scan-v2-pt scan-v2-wk-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-wk-pt">Photo ou lecture trop moyenne pour aller plus haut.</div>`}
+            <div class="scan-v2-col-hdr scan-v2-wk-hdr">Ce qui bloque vraiment</div>
+            ${scoreBrakes.length ? scoreBrakes.map(s => `<div class="scan-v2-pt scan-v2-wk-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-wk-pt">Photo ou lecture trop moyenne pour aller plus haut.</div>`}
           </div>
         </div>
       </div>
@@ -4137,185 +3992,189 @@ window.woToggle = woToggle;
 
 let WO_STATE = null; // { exercises[], currentIdx, timerInterval, secondsLeft, phase:"work"|"rest", running }
 
-function _parseRepTarget(raw) {
-  const txt = String(raw || '').trim();
-  const nums = txt.match(/\d+/g);
-  if (!nums || !nums.length) return 10;
-  const ints = nums.map(n => parseInt(n, 10)).filter(Boolean);
-  if (!ints.length) return 10;
-  return Math.round(ints.reduce((a, b) => a + b, 0) / ints.length);
-}
-
-function _deriveGuidedWorkSeconds(ex) {
-  const name = String(ex.name || ex.n || '').toLowerCase();
-  if (Number(ex.duration) > 0) return Math.max(20, Math.min(75, Number(ex.duration)));
-  if (/planche|plank|gainage|hollow|wall sit/.test(name)) return 35;
-  if (/burpee|mountain|jump|sprint|corde|hiit/.test(name)) return 30;
-  const reps = _parseRepTarget(ex.reps || ex.r);
-  const tempo = /squat|fente|rowing|tirage|souleve|thrust/.test(name) ? 3.6 : /pompe|dip|developpe/.test(name) ? 3.2 : 2.8;
-  return Math.max(25, Math.min(60, Math.round(reps * tempo + 8)));
-}
-
-function _deriveGuidedRestSeconds(ex) {
-  const given = Number(ex.rest || ex.rest_sec || 0);
-  if (given > 0) return Math.max(15, Math.min(45, given));
-  const name = String(ex.name || ex.n || '').toLowerCase();
-  if (/burpee|mountain|jump|sprint|hiit/.test(name)) return 25;
-  if (/squat|souleve|hip thrust|fente/.test(name)) return 30;
-  return 20;
-}
-
-function _normalizeGuidedExercise(ex, idx) {
-  const name = ex.name || ex.n || `Exercice ${idx + 1}`;
-  const muscle = ex.muscle || ex.m || '';
-  const sets = Number(ex.sets || 0) || 0;
-  const reps = ex.reps || ex.r || '';
-  const legacyPrescription = [sets > 0 ? `${sets} séries` : '', reps ? `${reps} reps` : ''].filter(Boolean).join(' • ');
-  const lowered = String(name).toLowerCase();
-  const guideSeconds = _deriveGuidedWorkSeconds(ex);
-  const restSeconds = _deriveGuidedRestSeconds(ex);
-  let personalWhy = ex.personalWhy || ex.description || '';
-  if (!personalWhy) {
-    if (/squat|fente|step|leg|jamb/.test(lowered)) personalWhy = 'On te met du bas du corps pour construire une base solide et utile au quotidien.';
-    else if (/pompe|press|developpe|dips/.test(lowered)) personalWhy = 'Mouvement choisi pour pousser proprement sans te griller trop vite.';
-    else if (/row|tirage|traction|pull/.test(lowered)) personalWhy = 'On équilibre le haut du corps et la posture avec un tirage contrôlé.';
-    else if (/gainage|planche|abdo|twist/.test(lowered)) personalWhy = 'Ce bloc sécurise ton tronc et rend le reste de la séance plus propre.';
-    else personalWhy = 'Bloc choisi pour ton objectif, ton niveau et ton état du jour.';
-  }
-  return {
-    ...ex,
-    name,
-    n: name,
-    muscle,
-    m: muscle,
-    targetGoal: ex.targetGoal || ex.goal || '',
-    guideSeconds,
-    restSeconds,
-    personalWhy,
-    legacyPrescription,
-    hydrationCue: /burpee|mountain|jump|sprint|hiit|high knees/.test(lowered) ? '💧 Bois 2-3 gorgées et reprends ton souffle.' : '💧 Bois quelques gorgées et prépare le prochain mouvement.'
-  };
-}
-
-function _buildGuidedTimeline(exercises, durationMin) {
-  const base = (exercises || []).map((ex, idx) => ({
-    ex,
-    blockIdx: idx,
-    workSeconds: Math.max(20, Number(ex.guideSeconds || 40)),
-    restSeconds: Math.max(10, Number(ex.restSeconds || 20))
-  }));
-  if (!base.length) return [];
-
-  const baseCycle = base.reduce((sum, item) => sum + item.workSeconds + item.restSeconds, 0);
-  const explicitTarget = Math.max(0, Math.round(Number(durationMin || 0) * 60));
-  const target = explicitTarget > 0 ? explicitTarget : baseCycle;
-
-  const floorRounds = Math.max(1, Math.floor(target / baseCycle));
-  const ceilRounds = Math.max(1, Math.ceil(target / baseCycle));
-  const floorDiff = Math.abs(baseCycle * floorRounds - target);
-  const ceilDiff = Math.abs(baseCycle * ceilRounds - target);
-  const rounds = Math.min(8, floorDiff <= ceilDiff ? floorRounds : ceilRounds);
-
-  const scaledTotal = baseCycle * rounds;
-  const scale = explicitTarget > 0 ? Math.max(0.82, Math.min(1.18, target / Math.max(1, scaledTotal))) : 1;
-
-  const timeline = [];
-  for (let round = 1; round <= rounds; round += 1) {
-    base.forEach((item) => {
-      timeline.push({
-        ex: {
-          ...item.ex,
-          guideSeconds: Math.max(20, Math.round(item.workSeconds * scale)),
-          restSeconds: Math.max(10, Math.round(item.restSeconds * scale))
-        },
-        round,
-        blockIndex: timeline.length,
-        totalBlocks: rounds * base.length,
-        roundBlocks: base.length
-      });
-    });
-  }
-  if (timeline.length) {
-    timeline[timeline.length - 1].ex.restSeconds = 0;
-  }
-  return timeline;
-}
-
-function _wtCurrentBlock() {
-  return _wtTimeline[_wtTimelineIdx] || null;
-}
-
-function _wtSetSessionMeta(block, phaseSeconds) {
-  const totalRemainEl = document.getElementById('wt-total-remaining');
-  const blockEl = document.getElementById('wt-block-progress');
-  const roundEl = document.getElementById('wt-round-chip');
-  const phaseEl = document.getElementById('wt-phase-chip');
-  const total = Math.max(0, _wtWorkoutTargetSeconds - _wtElapsedSeconds + (phaseSeconds > 0 ? 0 : 0));
-  if (totalRemainEl) totalRemainEl.textContent = `Temps restant · ${_wtFormatClock(total)}`;
-  if (blockEl) blockEl.textContent = block ? `Bloc ${_wtTimelineIdx + 1}/${_wtTimeline.length}` : 'Bloc 0/0';
-  if (roundEl) roundEl.textContent = block ? `Tour ${block.round}` : 'Tour —';
-  if (phaseEl) {
-    const map = { ready: 'Préparation', work: 'Effort', rest: 'Pause' };
-    phaseEl.textContent = map[_wtPhase] || 'Guidé';
-  }
-  const fillEl = document.getElementById('wt-progress-fill');
-  if (fillEl && _wtWorkoutTargetSeconds > 0) {
-    fillEl.style.width = Math.min(100, Math.round((_wtElapsedSeconds / _wtWorkoutTargetSeconds) * 100)) + '%';
-  }
-}
-
-function _wtStartReadyCountdown(seconds) {
-  const block = _wtCurrentBlock();
-  if (!block) return;
-  const ex = block.ex;
-  _wtPhase = 'ready';
-  _wtSecondsLeft = Math.max(2, Number(seconds || 3));
-  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
-  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
-  _wtSetPrimaryLabel('⏸ Pause');
-  _wtUpdateStage({
-    phase: 'ready',
-    kicker: 'Préparation',
-    title: `On lance ${ex.n} dans ${_wtSecondsLeft}s`,
-    sub: 'Place-toi, regarde la démo et laisse la séance dérouler automatiquement comme une vidéo guidée.',
-    timer: _wtFormatClock(_wtSecondsLeft)
-  });
-  _wtSetSessionMeta(block, _wtSecondsLeft);
-  _wtReadyTimer = setInterval(() => {
-    _wtSecondsLeft = Math.max(0, _wtSecondsLeft - 1);
-    _wtUpdateStage({
-      phase: 'ready',
-      kicker: 'Préparation',
-      title: _wtSecondsLeft > 0 ? `On lance ${ex.n} dans ${_wtSecondsLeft}s` : `C'est parti pour ${ex.n}`,
-      sub: _wtSecondsLeft > 0 ? 'Prépare ton amplitude et ton rythme.' : 'Suis la démo et garde le mouvement propre.',
-      timer: _wtFormatClock(_wtSecondsLeft)
-    });
-    _wtSetSessionMeta(block, _wtSecondsLeft);
-    if (_wtSecondsLeft <= 0) {
-      clearInterval(_wtReadyTimer); _wtReadyTimer = null;
-      _wtStartWork(false);
-    }
-  }, 1000);
-}
-
 function startWorkoutSession() {
   if (!PLAN || !Array.isArray(PLAN.exercises) || !PLAN.exercises.length) {
     return toast("Aucune séance à démarrer.", "err");
   }
-  const exs = PLAN.exercises.map((ex, idx) => _normalizeGuidedExercise(ex, idx));
-  startWorkout(PLAN.title || 'Séance coach', exs, { guided: true, durationMin: Number(PLAN.duration || 0) || 0 });
+  WO_STATE = {
+    exercises: PLAN.exercises,
+    currentIdx: 0,
+    timerInterval: null,
+    secondsLeft: 0,
+    phase: "work",
+    running: false
+  };
+  const overlay = document.getElementById("workout-overlay");
+  if (overlay) overlay.classList.add("on");
+  const planTitleEl = document.getElementById("wo-plan-title");
+  if (planTitleEl) planTitleEl.textContent = PLAN.title || "Séance";
+  woRenderExercise();
+  document.body.style.overflow = "hidden";
 }
 
 function closeWorkoutSession() {
-  closeWorkoutTimer();
+  if (WO_STATE?.timerInterval) clearInterval(WO_STATE.timerInterval);
+  WO_STATE = null;
+  const overlay = document.getElementById("workout-overlay");
+  if (overlay) overlay.classList.remove("on");
+  document.body.style.overflow = "";
 }
 
-function woRenderExercise() {}
-function woUpdateTimerDisplay() {}
-function woToggle() { startWorkoutSession(); }
-function woStartRest() {}
-function woStopTimer() {}
-function woNav(dir) { if (dir > 0) nextWtExercise(); else prevWtExercise(); }
+function woRenderExercise() {
+  if (!WO_STATE) return;
+  const ex = WO_STATE.exercises[WO_STATE.currentIdx];
+  const total = WO_STATE.exercises.length;
+  const idx = WO_STATE.currentIdx;
+
+  // Progress
+  const progFill = document.getElementById("wo-progress-fill");
+  const progText = document.getElementById("wo-progress-text");
+  if (progFill) progFill.style.width = `${Math.round(((idx + 1) / total) * 100)}%`;
+  if (progText) progText.textContent = `Exercice ${idx + 1} / ${total}`;
+
+  // Exercise info
+  const labelEl = document.getElementById("wo-ex-label");
+  const nameEl = document.getElementById("wo-ex-name");
+  const metaEl = document.getElementById("wo-ex-meta");
+  const descEl = document.getElementById("wo-desc");
+  if (labelEl) labelEl.textContent = `EXERCICE ${idx + 1}`;
+  if (nameEl) nameEl.textContent = ex.name || "Exercice";
+
+  // Badges
+  const badges = [];
+  if (ex.sets > 0) badges.push(`🔁 ${ex.sets} séries`);
+  if (ex.reps && ex.reps !== "0") badges.push(`✕ ${ex.reps} reps`);
+  if (ex.duration > 0) badges.push(`⏱ ${ex.duration}s`);
+  if (ex.rest > 0) badges.push(`💤 ${ex.rest}s repos`);
+  if (ex.muscle) badges.push(`💪 ${ex.muscle}`);
+  if (metaEl) metaEl.innerHTML = badges.map(b => `<span class="workout-ex-badge">${escapeHtml(b)}</span>`).join("");
+
+  // Description
+  if (descEl) {
+    if (ex.description) { descEl.textContent = ex.description; descEl.style.display = "block"; }
+    else descEl.style.display = "none";
+  }
+
+  // Timer setup
+  woStopTimer();
+  WO_STATE.phase = "work";
+  WO_STATE.running = false;
+  // Default: use duration if set, otherwise just show sets/reps (no countdown)
+  WO_STATE.secondsLeft = ex.duration > 0 ? ex.duration : 0;
+  woUpdateTimerDisplay();
+
+  // Reset start button
+  const btn = document.getElementById("wo-start-btn");
+  if (btn) btn.textContent = WO_STATE.secondsLeft > 0 ? "▶ Démarrer" : "✓ Suivant";
+}
+
+function woUpdateTimerDisplay() {
+  if (!WO_STATE) return;
+  const timerEl = document.getElementById("wo-timer");
+  const labelEl = document.getElementById("wo-timer-label");
+  if (!timerEl || !labelEl) return;
+
+  if (WO_STATE.phase === "rest") {
+    const m = Math.floor(WO_STATE.secondsLeft / 60);
+    const s = WO_STATE.secondsLeft % 60;
+    timerEl.textContent = WO_STATE.secondsLeft > 0 ? `${m}:${String(s).padStart(2, "0")}` : "Prêt";
+    timerEl.style.color = "var(--teal)";
+    labelEl.textContent = "REPOS";
+    labelEl.className = "workout-timer-label workout-timer-rest";
+  } else if (WO_STATE.secondsLeft > 0) {
+    const m = Math.floor(WO_STATE.secondsLeft / 60);
+    const s = WO_STATE.secondsLeft % 60;
+    timerEl.textContent = `${m}:${String(s).padStart(2, "0")}`;
+    timerEl.style.color = "var(--orange)";
+    labelEl.textContent = WO_STATE.running ? "EN COURS" : "PRÊT";
+    labelEl.className = "workout-timer-label workout-timer-work";
+  } else {
+    // No duration — sets/reps based
+    const ex = WO_STATE.exercises[WO_STATE.currentIdx];
+    timerEl.textContent = ex.sets > 1 ? `${ex.sets}×${ex.reps}` : (ex.reps || "—");
+    timerEl.style.color = "var(--text)";
+    labelEl.textContent = "SÉRIES / REPS";
+    labelEl.className = "workout-timer-label";
+  }
+}
+
+function woToggle() {
+  if (!WO_STATE) return;
+  const ex = WO_STATE.exercises[WO_STATE.currentIdx];
+
+  // No duration — just advance to next
+  if (WO_STATE.secondsLeft === 0 && WO_STATE.phase === "work") {
+    return woStartRest();
+  }
+
+  if (WO_STATE.running) {
+    woStopTimer();
+    WO_STATE.running = false;
+    const btn = document.getElementById("wo-start-btn");
+    if (btn) btn.textContent = "▶ Reprendre";
+    return;
+  }
+
+  WO_STATE.running = true;
+  const btn = document.getElementById("wo-start-btn");
+  if (btn) btn.textContent = "⏸ Pause";
+
+  WO_STATE.timerInterval = setInterval(() => {
+    if (!WO_STATE) return;
+    WO_STATE.secondsLeft = Math.max(0, WO_STATE.secondsLeft - 1);
+    woUpdateTimerDisplay();
+    if (WO_STATE.secondsLeft === 0) {
+      woStopTimer();
+      WO_STATE.running = false;
+      if (WO_STATE.phase === "work") {
+        woStartRest();
+      } else {
+        // Rest done — go to next
+        woNav(1);
+      }
+    }
+  }, 1000);
+}
+
+function woStartRest() {
+  if (!WO_STATE) return;
+  const ex = WO_STATE.exercises[WO_STATE.currentIdx];
+  const restSec = ex.rest > 0 ? ex.rest : 0;
+  if (restSec === 0) {
+    return woNav(1);
+  }
+  WO_STATE.phase = "rest";
+  WO_STATE.secondsLeft = restSec;
+  WO_STATE.running = false;
+  woUpdateTimerDisplay();
+  const btn = document.getElementById("wo-start-btn");
+  if (btn) btn.textContent = "▶ Démarrer repos";
+  toast(`Repos ${restSec}s ⏸`, "ok");
+}
+
+function woStopTimer() {
+  if (WO_STATE?.timerInterval) {
+    clearInterval(WO_STATE.timerInterval);
+    WO_STATE.timerInterval = null;
+  }
+}
+
+function woNav(dir) {
+  if (!WO_STATE) return;
+  woStopTimer();
+  const next = WO_STATE.currentIdx + dir;
+  if (next < 0) return;
+  if (next >= WO_STATE.exercises.length) {
+    // Session complete
+    closeWorkoutSession();
+    toast("🎉 Séance terminée ! N'oubliez pas de sauvegarder.", "ok");
+    return;
+  }
+  WO_STATE.currentIdx = next;
+  WO_STATE.phase = "work";
+  WO_STATE.running = false;
+  woRenderExercise();
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SVG CHART ENGINE — pure SVG, no library
@@ -5428,49 +5287,25 @@ let _wtSetsTotal = 0;   // total sets for current exercise
 let _wtRestTimer = null; // interval id
 let _wtRestLeft = 0;
 
-function _wtFormatClock(seconds) {
-  const s = Math.max(0, Math.round(seconds || 0));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${String(r).padStart(2, '0')}`;
-}
-
-let _wtPhase = "ready"; // ready | work | rest
-let _wtPhaseTimer = null;
-let _wtSecondsLeft = 0;
-let _wtCurrentDone = false;
-let _wtAutoKickoff = null;
-let _wtTimeline = [];
-let _wtTimelineIdx = 0;
-let _wtWorkoutTargetSeconds = 0;
-let _wtElapsedSeconds = 0;
-let _wtReadyTimer = null;
-
 function startWorkout(dayLabel, exercises, params) {
-  params = params || {};
-  _wtExercises = (exercises || []).map((ex, idx) => _normalizeGuidedExercise(ex, idx));
-  _wtTimeline = _buildGuidedTimeline(_wtExercises, Number(params.durationMin || params.duration || 0));
-  _wtTimelineIdx = 0;
+  _wtExercises = exercises;
   _wtExIdx = 0;
-  _wtElapsedSeconds = 0;
-  _wtWorkoutTargetSeconds = _wtTimeline.reduce((sum, block) => sum + Number(block.ex.guideSeconds || 0) + Number(block.ex.restSeconds || 0), 0);
-  _wtPhase = 'ready';
-  _wtSecondsLeft = 0;
-  _wtCurrentDone = false;
-  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
-  if (_wtAutoKickoff) { clearTimeout(_wtAutoKickoff); _wtAutoKickoff = null; }
-  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
+  _wtSetsDone = 0;
+  _wtSetsTotal = params.sets || 3;
 
   const overlay = document.getElementById("wt-overlay");
   const titleEl = document.getElementById("wt-title");
   const phaseEl = document.getElementById("wt-phase-label");
-  if (titleEl) titleEl.textContent = dayLabel || 'Séance guidée';
-  if (phaseEl) phaseEl.textContent = `${Math.max(1, Math.round(_wtWorkoutTargetSeconds / 60))} min guidées • auto-run • effort/pause/hydratation`;
+  if (titleEl) titleEl.textContent = dayLabel;
+  if (phaseEl) {
+    const phase = PROG_PHASES[(_progWeek || 1) - 1];
+    phaseEl.textContent = phase ? `${phase.name} · RPE ${phase.rpe}` : "";
+  }
   if (overlay) overlay.classList.add("open");
   _wtRenderExercise();
-  _wtStartReadyCountdown(3);
 }
 
+// ── Muscle body diagram SVG ───────────────────────────────────────────────────
 function _muscleSVG(muscle) {
   const m = (muscle || "").toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -6066,70 +5901,6 @@ function _stickFigureSVG(name) {
       close;
   }
 
-  // ── Step-up — drive knee on bench / box ───────────────────────────────
-  if (/step.?up|montee.?banc|bench.?step/.test(nm)) {
-    return open + FLR +
-      `<rect x="48" y="52" width="20" height="8" rx="3" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.18)" stroke-width="1"/>` +
-      MUSCLE(42,48,"#f97316") +
-      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
-      LMF([[32,21,26,36],[32,21,26,32],[32,21,26,36],[32,21,26,32]],"1.2s") +
-      LM([[50,21,56,36],[50,21,56,32],[50,21,56,36],[50,21,56,32]],"1.2s") +
-      LMF([[34,46,26,62],[34,46,26,62],[34,46,28,58],[34,46,28,58]],"1.2s") +
-      LMF([[26,62,20,76],[26,62,20,76],[28,58,24,76],[28,58,24,76]],"1.2s") +
-      LM([[48,46,56,58],[48,46,56,52],[48,46,56,58],[48,46,56,52]],"1.2s") +
-      LM([[56,58,62,52],[56,52,62,46],[56,58,62,52],[56,52,62,46]],"1.2s") + close;
-  }
-
-  // ── Dips — bench dip bodyweight, side / 3-4 view ───────────────────────
-  if (/dip|dips|bench.?dip/.test(nm)) {
-    return open +
-      `<rect x="12" y="54" width="16" height="6" rx="2" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.18)" stroke-width="1"/>` +
-      `<line x1="4" y1="66" x2="76" y2="66" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
-      MUSCLE(34,36,"#60a5fa") +
-      HEAD(52,28) +
-      `<line x1="46" y1="34" x2="28" y2="40" ${stM}/>` +
-      `<line x1="28" y1="40" x2="20" y2="56" ${stF}><animate attributeName="y2" values="56;62;56" dur="1.2s" ${KS2}/></line>` +
-      `<line x1="32" y1="38" x2="28" y2="56" ${st}><animate attributeName="y2" values="56;62;56" dur="1.2s" ${KS2}/></line>` +
-      `<line x1="46" y1="34" x2="60" y2="56" ${stF}/>` +
-      `<line x1="46" y1="34" x2="68" y2="54" ${st}/>` +
-      close;
-  }
-
-  // ── High knees — alternating drive ──────────────────────────────────────
-  if (/high.?knees|montee.?genou/.test(nm)) {
-    return open + FLR +
-      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
-      MUSCLE(42,50,"#f97316") +
-      LMF([[32,21,24,34],[32,21,28,30],[32,21,24,34],[32,21,28,30]],"0.8s") +
-      LM([[50,21,58,34],[50,21,54,30],[50,21,58,34],[50,21,54,30]],"0.8s") +
-      LMF([[34,46,26,60],[34,46,38,50],[34,46,26,60],[34,46,38,50]],"0.8s") +
-      LM([[48,46,56,60],[48,46,42,50],[48,46,56,60],[48,46,42,50]],"0.8s") + close;
-  }
-
-  // ── Russian twist / seated core rotation ────────────────────────────────
-  if (/russian.?twist|twist|rotation/.test(nm)) {
-    return open +
-      `<line x1="4" y1="66" x2="76" y2="66" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
-      MUSCLE(38,46,"#f97316") +
-      CM([30,30,30,30],[42,42,42,42],6,"1.3s") +
-      LM([[30,48,46,40],[30,48,42,44],[30,48,18,44],[30,48,46,40]],"1.3s") +
-      LMF([[28,52,22,66],[28,52,24,66],[28,52,22,66],[28,52,24,66]],"1.3s") +
-      LM([[40,52,52,66],[40,52,48,66],[40,52,52,66],[40,52,48,66]],"1.3s") +
-      ARRUP(58,32) + ARRDN(14,32) + close;
-  }
-
-  // ── Mollets / calf raises ───────────────────────────────────────────────
-  if (/mollet|calf/.test(nm)) {
-    return open + FLR +
-      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
-      MUSCLE(42,68,"#22c55e") +
-      LMF([[32,21,28,38],[32,21,28,38],[32,21,28,38],[32,21,28,38]],"1.1s") +
-      LM([[50,21,54,38],[50,21,54,38],[50,21,54,38],[50,21,54,38]],"1.1s") +
-      LMF([[34,46,30,68],[34,46,30,64],[34,46,30,68],[34,46,30,64]],"1.1s") +
-      LM([[48,46,52,68],[48,46,52,64],[48,46,52,68],[48,46,52,64]],"1.1s") +
-      close;
-  }
-
   // ── Étirement / Stretch — slow arm reach + torso tilt, 3/4 view ─────
   if (/etir|stretch|mobilit|yoga|souplesse/.test(nm)) {
     const sYs=[21,21,21,21], hYs=[46,46,46,46];
@@ -6243,214 +6014,186 @@ function _getExerciseTip(exName) {
   return "";
 }
 
-function _wtSetPrimaryLabel(label) {
-  const btn = document.getElementById('wt-set-btn');
-  if (btn) btn.textContent = label;
-}
-
-function _wtUpdateStage(opts) {
-  const card = document.getElementById('wt-stage-card');
-  const kicker = document.getElementById('wt-stage-kicker');
-  const title = document.getElementById('wt-stage-title');
-  const sub = document.getElementById('wt-stage-sub');
-  const timer = document.getElementById('wt-stage-timer');
-  if (!card || !kicker || !title || !sub || !timer) return;
-  card.classList.toggle('resting', opts.phase === 'rest');
-  card.classList.toggle('paused', !!opts.paused);
-  kicker.textContent = opts.kicker || 'Exécution guidée';
-  title.textContent = opts.title || '';
-  sub.textContent = opts.sub || '';
-  timer.textContent = opts.timer || '0:00';
-}
-
 function _wtRenderExercise() {
-  const block = _wtCurrentBlock();
-  const ex = block?.ex;
+  const ex = _wtExercises[_wtExIdx];
   if (!ex) { closeWorkoutTimer(); return; }
 
-  _wtExIdx = block.blockIndex;
-  const total = _wtTimeline.length || 1;
+  const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
+  _wtSetsTotal = ex.sets || params.sets || 3;
+
+  const total = _wtExercises.length;
+  const pct = Math.round((_wtExIdx / total) * 100);
+
   const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  setEl('wt-ex-num', `Bloc ${_wtTimelineIdx + 1} / ${total}`);
-  setEl('wt-ex-name', ex.n || '—');
-  setEl('wt-ex-muscle', ex.m || 'Mouvement guidé');
-  setEl('wt-ex-detail', `${ex.guideSeconds}s d'effort • ${ex.restSeconds || 0}s de pause` + (block.round ? ` • Tour ${block.round}` : '') + (ex.targetGoal ? ` • objectif ${ex.targetGoal}` : '') + (ex.legacyPrescription ? ` • repère ${ex.legacyPrescription}` : ''));
-  _wtSetSessionMeta(block, ex.guideSeconds);
+  setEl("wt-ex-num", `Exercice ${_wtExIdx + 1} / ${total}`);
+  setEl("wt-ex-name", ex.n || "—");
+  setEl("wt-ex-muscle", ex.m || "");
+  const detail = ex.r || `${params.sets}×${params.reps}${params.rest ? " · " + params.rest + "s repos" : ""}`;
+  setEl("wt-ex-detail", detail);
 
-  const imgWrap = document.getElementById('wt-ex-img-wrap');
-  if (imgWrap) {
-    imgWrap.innerHTML = `<div class="wt-visual-main"><div class="ex-figure-tag">Démo mouvement</div><img class="wt-demo-gif" src="${_exerciseDemoDataUri(ex.n || '')}" alt="Démo ${escapeHtml(ex.n || '')}"/></div><div class="wt-visual-muscle"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(ex.m || ex.n || '')}</div>`;
-  }
+  // Premium visual: animated figure + target map
+  const imgWrap = document.getElementById("wt-ex-img-wrap");
+  if (imgWrap) imgWrap.innerHTML = `<div class="wt-visual-main">${_stickFigureSVG(ex.n || "")}</div><div class="wt-visual-muscle">${_muscleSVG(ex.m || ex.n || "")}</div>`;
 
-  const cue = exerciseCuePack({ name: ex.n || '', muscle: ex.m || '' });
-  const tip = _getExerciseTip(ex.n || '');
-  const tipEl = document.getElementById('wt-ex-tip');
+  // Technique guide
+  const tipEl = document.getElementById("wt-ex-tip");
+  const tip = _getExerciseTip(ex.n || "");
+  const cue = exerciseCuePack({ name: ex.n || "", muscle: ex.m || "" });
   if (tipEl) {
-    tipEl.innerHTML = `<div class="wt-tip-grid"><div><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div><div><span>Tempo</span><p>${ex.guideSeconds}s guidées, avec rythme calé sur ton niveau du jour.</p></div><div><span>Erreur à éviter</span><p>${escapeHtml((tip || cue.breathe).replace(/^Inspire/i, 'Ne te précipite pas. Inspire'))}</p></div><div><span>Pourquoi toi</span><p>${escapeHtml(ex.personalWhy || 'Sélectionné pour ton objectif, ton niveau et ton état de récupération.')}</p></div></div>`;
+    tipEl.innerHTML = `<div class="wt-tip-grid"><div><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div><span>Repère</span><p>${escapeHtml(tip || cue.breathe)}</p></div></div>`;
+    tipEl.style.display = "";
   }
 
-  const restArea = document.getElementById('wt-rest-area');
-  if (restArea) restArea.style.display = 'none';
-  const setsRow = document.getElementById('wt-sets-row');
-  if (setsRow) setsRow.style.display = 'none';
-  _wtPhase = 'ready';
-  _wtSecondsLeft = ex.guideSeconds;
-  _wtCurrentDone = false;
-  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
-  _wtUpdateStage({
-    phase: 'ready',
-    kicker: 'Préparation',
-    title: `Démo ${ex.n}`,
-    sub: 'Le mouvement démarre tout seul après le petit compte à rebours, puis la pause hydratation enchaîne automatiquement.',
-    timer: _wtFormatClock(ex.guideSeconds)
-  });
-  _wtSetPrimaryLabel('⏸ Pause');
-  const prevBtn = document.getElementById('wt-prev-btn');
-  const nextBtn = document.getElementById('wt-next-btn');
-  if (prevBtn) prevBtn.disabled = _wtTimelineIdx === 0;
-  if (nextBtn) nextBtn.disabled = _wtTimelineIdx >= total - 1;
-}
+  const fillEl = document.getElementById("wt-progress-fill");
+  if (fillEl) fillEl.style.width = pct + "%";
 
-function _wtStartWork(resume) {
-  const block = _wtCurrentBlock();
-  const ex = block?.ex;
-  if (!ex) return;
-  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
-  if (!resume) _wtSecondsLeft = ex.guideSeconds;
-  _wtPhase = 'work';
-  _wtSetPrimaryLabel('⏸ Pause');
-  _wtUpdateStage({ phase: 'work', kicker: 'Exercice en cours', title: ex.n, sub: 'Suis la démo, garde l’amplitude propre et laisse le timer enchaîner la récupération.', timer: _wtFormatClock(_wtSecondsLeft) });
-  _wtSetSessionMeta(block, _wtSecondsLeft);
-  if (_wtPhaseTimer) clearInterval(_wtPhaseTimer);
-  _wtPhaseTimer = setInterval(() => {
-    _wtSecondsLeft = Math.max(0, _wtSecondsLeft - 1);
-    _wtElapsedSeconds += 1;
-    _wtUpdateStage({ phase: 'work', kicker: 'Exercice en cours', title: ex.n, sub: 'Continue. Qualité > vitesse.', timer: _wtFormatClock(_wtSecondsLeft) });
-    _wtSetSessionMeta(block, _wtSecondsLeft);
-    if (_wtSecondsLeft <= 0) {
-      clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; _wtCurrentDone = true;
-      if ((ex.restSeconds || 0) > 0) {
-        _startRestTimer(ex.restSeconds, () => {
-          _wtTimelineIdx += 1;
-          if (_wtTimelineIdx >= _wtTimeline.length) { closeWorkoutTimer(); toast('🎉 Séance terminée !', 'ok'); return; }
-          _wtRenderExercise();
-          _wtStartReadyCountdown(2);
-        });
-      } else {
-        _wtTimelineIdx += 1;
-        if (_wtTimelineIdx >= _wtTimeline.length) { closeWorkoutTimer(); toast('🎉 Séance terminée !', 'ok'); return; }
-        _wtRenderExercise();
-        _wtStartReadyCountdown(2);
-      }
-    }
-  }, 1000);
+  // Set bubbles
+  const row = document.getElementById("wt-sets-row");
+  if (row) {
+    row.innerHTML = Array.from({ length: _wtSetsTotal }, (_, i) => {
+      const cls = i < _wtSetsDone ? "done" : i === _wtSetsDone ? "current" : "";
+      return `<div class="wt-set-bubble ${cls}" onclick="wtClickSet(${i})">${i + 1}</div>`;
+    }).join("");
+  }
+
+  // Prev/next buttons
+  const prevBtn = document.getElementById("wt-prev-btn");
+  const nextBtn = document.getElementById("wt-next-btn");
+  if (prevBtn) prevBtn.disabled = _wtExIdx === 0;
+  if (nextBtn) nextBtn.disabled = _wtExIdx >= total - 1;
+
+  // Hide rest area
+  const restArea = document.getElementById("wt-rest-area");
+  if (restArea) restArea.style.display = "none";
+  const setBtn = document.getElementById("wt-set-btn");
+  if (setBtn) { setBtn.style.display = ""; setBtn.disabled = false; }
 }
 
 function wtDoneSet() {
-  const block = _wtCurrentBlock();
-  const ex = block?.ex;
-  if (!ex) return;
-  if (_wtPhase === 'ready') {
-    if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
-    return _wtStartWork(false);
+  _wtSetsDone++;
+  const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
+  const restSec = params.rest || 90;
+
+  // Update bubbles
+  const row = document.getElementById("wt-sets-row");
+  if (row) {
+    row.innerHTML = Array.from({ length: _wtSetsTotal }, (_, i) => {
+      const cls = i < _wtSetsDone ? "done" : i === _wtSetsDone ? "current" : "";
+      return `<div class="wt-set-bubble ${cls}" onclick="wtClickSet(${i})">${i + 1}</div>`;
+    }).join("");
   }
-  if (_wtPhase === 'work') {
-    if (_wtPhaseTimer) {
-      clearInterval(_wtPhaseTimer); _wtPhaseTimer = null;
-      _wtUpdateStage({ phase: 'work', paused: true, kicker: 'Pause exercice', title: ex.n, sub: 'Respire, replace-toi puis reprends quand tu veux.', timer: _wtFormatClock(_wtSecondsLeft) });
-      return _wtSetPrimaryLabel('▶ Reprendre');
-    }
-    return _wtStartWork(true);
+
+  if (_wtSetsDone >= _wtSetsTotal) {
+    // All sets done for this exercise — auto-advance after rest
+    _startRestTimer(restSec, () => {
+      _wtSetsDone = 0;
+      _wtExIdx = Math.min(_wtExIdx + 1, _wtExercises.length - 1);
+      if (_wtExIdx >= _wtExercises.length - 1 && _wtSetsDone >= _wtSetsTotal) {
+        closeWorkoutTimer();
+        toast("🎉 Séance terminée ! Bravo !", "ok");
+        return;
+      }
+      _wtRenderExercise();
+    });
+  } else {
+    // Start rest timer between sets
+    _startRestTimer(restSec, () => {
+      _wtRenderExercise();
+    });
   }
-  if (_wtPhase === 'rest') return skipRestTimer();
 }
 
-function wtClickSet(idx) { return; }
+function wtClickSet(idx) {
+  // Allow clicking a bubble to mark sets done up to that index
+  if (idx >= _wtSetsDone) { _wtSetsDone = idx + 1; _wtRenderExercise(); }
+}
 
 function _startRestTimer(seconds, onDone) {
-  const block = _wtCurrentBlock();
-  const ex = block?.ex;
-  _wtPhase = 'rest';
-  _wtSecondsLeft = seconds;
-  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
-  const restArea = document.getElementById('wt-rest-area');
-  const countdown = document.getElementById('wt-rest-countdown');
-  const restMsg = document.getElementById('wt-rest-msg');
-  const imgWrap = document.getElementById('wt-ex-img-wrap');
-  if (restArea) restArea.style.display = 'block';
+  _wtRestLeft = seconds;
+  if (_wtRestTimer) clearInterval(_wtRestTimer);
+
+  const restArea  = document.getElementById("wt-rest-area");
+  const countdown = document.getElementById("wt-rest-countdown");
+  const restMsg   = document.getElementById("wt-rest-msg");
+  const setBtn    = document.getElementById("wt-set-btn");
+  const imgWrap   = document.getElementById("wt-ex-img-wrap");
+
+  if (restArea) restArea.style.display = "block";
+  if (setBtn) setBtn.style.display = "none";
+
+  // Show drinking figure in the small imgWrap (supplementary)
   if (imgWrap) imgWrap.innerHTML = _stickFigureDrinking();
-  if (restMsg) restMsg.textContent = ex?.hydrationCue || '💧 Bois quelques gorgées et respire.';
-  _wtSetPrimaryLabel('⏭ Passer la pause');
-  _wtUpdateStage({ phase: 'rest', kicker: 'Pause / hydratation', title: 'Récupère avant le prochain exercice', sub: 'Bois, relâche les épaules et prépare la transition.', timer: _wtFormatClock(seconds) });
-  _wtSetSessionMeta(block, seconds);
-  let breathToggle = false;
-  const breathLabel = document.getElementById('wt-breath-label');
-  if (breathLabel) breathLabel.textContent = 'Expire…';
-  if (window._breathLabelTimer) clearInterval(window._breathLabelTimer);
-  window._breathLabelTimer = setInterval(() => {
-    breathToggle = !breathToggle;
-    if (breathLabel) breathLabel.textContent = breathToggle ? 'Inspire…' : 'Expire…';
-  }, 2000);
+
+  // Rotating hydration messages
+  const msgs = ["💧 Hydrate-toi !", "😮‍💨 Récupère…", "💧 Bois de l'eau", "🌬️ Respire bien", "💪 Tu assures !"];
+  if (restMsg) restMsg.textContent = msgs[Math.floor(Math.random() * msgs.length)];
+
+  // Animate "Inspire / Expire" label in sync with the 4s breathing ring
+  const breathLabel = document.getElementById("wt-breath-label");
+  let _breathPhase = false;
+  if (breathLabel) {
+    breathLabel.textContent = "Expire…";
+    if (window._breathLabelTimer) clearInterval(window._breathLabelTimer);
+    window._breathLabelTimer = setInterval(() => {
+      _breathPhase = !_breathPhase;
+      if (breathLabel) breathLabel.textContent = _breathPhase ? "Inspire…" : "Expire…";
+    }, 2000);
+  }
+
   const updateCountdown = (t) => {
-    if (countdown) countdown.textContent = t;
-    _wtUpdateStage({ phase: 'rest', kicker: 'Pause / hydratation', title: 'Récupère avant le prochain exercice', sub: t > 6 ? 'Bois et replace-toi.' : 'On repart dans quelques secondes…', timer: _wtFormatClock(t) });
-    _wtSetSessionMeta(block, t);
+    if (!countdown) return;
+    countdown.textContent = t;
+    countdown.style.color = t <= 5 ? "#f87171" : t <= 10 ? "#fb923c" : "#38bdf8";
   };
   updateCountdown(seconds);
-  _wtPhaseTimer = setInterval(() => {
-    _wtSecondsLeft = Math.max(0, _wtSecondsLeft - 1);
-    _wtElapsedSeconds += 1;
-    updateCountdown(_wtSecondsLeft);
-    if (_wtSecondsLeft <= 0) {
-      clearInterval(_wtPhaseTimer); _wtPhaseTimer = null;
+
+  _wtRestTimer = setInterval(() => {
+    _wtRestLeft--;
+    updateCountdown(_wtRestLeft);
+    if (_wtRestLeft <= 0) {
+      clearInterval(_wtRestTimer);
+      _wtRestTimer = null;
       if (window._breathLabelTimer) { clearInterval(window._breathLabelTimer); window._breathLabelTimer = null; }
-      if (restArea) restArea.style.display = 'none';
+      if (restArea) restArea.style.display = "none";
+      if (setBtn) setBtn.style.display = "";
+      if (countdown) countdown.style.color = "";
       if (onDone) onDone();
     }
   }, 1000);
 }
 
 function skipRestTimer() {
-  if (_wtPhase !== 'rest') return;
-  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
+  if (_wtRestTimer) { clearInterval(_wtRestTimer); _wtRestTimer = null; }
   if (window._breathLabelTimer) { clearInterval(window._breathLabelTimer); window._breathLabelTimer = null; }
-  const restArea = document.getElementById('wt-rest-area');
-  if (restArea) restArea.style.display = 'none';
-  _wtTimelineIdx += 1;
-  if (_wtTimelineIdx >= _wtTimeline.length) { closeWorkoutTimer(); toast('🎉 Séance terminée !', 'ok'); return; }
+  const restArea = document.getElementById("wt-rest-area");
+  const setBtn = document.getElementById("wt-set-btn");
+  if (restArea) restArea.style.display = "none";
+  if (setBtn) setBtn.style.display = "";
+  // If all sets done, advance to next exercise
+  if (_wtSetsDone >= _wtSetsTotal) {
+    _wtSetsDone = 0;
+    _wtExIdx = Math.min(_wtExIdx + 1, _wtExercises.length);
+    if (_wtExIdx >= _wtExercises.length) { closeWorkoutTimer(); toast("🎉 Séance terminée !", "ok"); return; }
+  }
   _wtRenderExercise();
-  _wtStartReadyCountdown(2);
 }
 
 function prevWtExercise() {
-  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
-  if (_wtAutoKickoff) { clearTimeout(_wtAutoKickoff); _wtAutoKickoff = null; }
-  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
-  const restArea = document.getElementById('wt-rest-area');
-  if (restArea) restArea.style.display = 'none';
-  _wtTimelineIdx = Math.max(0, _wtTimelineIdx - 1);
+  if (_wtRestTimer) { clearInterval(_wtRestTimer); _wtRestTimer = null; }
+  _wtSetsDone = 0;
+  _wtExIdx = Math.max(0, _wtExIdx - 1);
   _wtRenderExercise();
-  _wtStartReadyCountdown(2);
 }
 
 function nextWtExercise() {
-  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
-  if (_wtAutoKickoff) { clearTimeout(_wtAutoKickoff); _wtAutoKickoff = null; }
-  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
-  const restArea = document.getElementById('wt-rest-area');
-  if (restArea) restArea.style.display = 'none';
-  _wtTimelineIdx = Math.min(_wtTimeline.length - 1, _wtTimelineIdx + 1);
+  if (_wtRestTimer) { clearInterval(_wtRestTimer); _wtRestTimer = null; }
+  _wtSetsDone = 0;
+  _wtExIdx = Math.min(_wtExercises.length - 1, _wtExIdx + 1);
   _wtRenderExercise();
-  _wtStartReadyCountdown(2);
 }
 
 function closeWorkoutTimer() {
-  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
   if (_wtRestTimer) { clearInterval(_wtRestTimer); _wtRestTimer = null; }
-  if (_wtAutoKickoff) { clearTimeout(_wtAutoKickoff); _wtAutoKickoff = null; }
-  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
-  if (window._breathLabelTimer) { clearInterval(window._breathLabelTimer); window._breathLabelTimer = null; }
-  _wtPhase = 'ready';
   const overlay = document.getElementById("wt-overlay");
   if (overlay) overlay.classList.remove("open");
 }
