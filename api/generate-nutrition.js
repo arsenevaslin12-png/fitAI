@@ -217,6 +217,92 @@ function makeMeal(name, time, calories, protein, items, extra = {}) {
   };
 }
 
+function groceryCategoryFor(label) {
+  const item = sanitizeValue(label).toLowerCase();
+  if (!item) return null;
+  if (/(poulet|dinde|boeuf|steak|saumon|thon|poisson|oeuf|tofu|tempeh|skyr|yaourt|fromage blanc|whey|shake|lait|truite)/.test(item)) return "Protéines";
+  if (/(riz|pomme de terre|quinoa|pâtes|semoule|pain|avoine|granola|galettes|crackers|muesli|féculent)/.test(item)) return "Glucides utiles";
+  if (/(banane|pomme|poire|kiwi|orange|fruits rouges|fruit|légumes|brocoli|salade|courgette|haricots|avocat|compote)/.test(item)) return "Fruits & légumes";
+  if (/(huile|amande|amandes|noix|graines|beurre d'amande|chocolat|olive)/.test(item)) return "Extras intelligents";
+  if (/(yaourt|skyr|fromage blanc|lait)/.test(item)) return "Laitages";
+  return "Bases";
+}
+
+function qtyHintFor(label) {
+  const item = sanitizeValue(label).toLowerCase();
+  if (/(oeuf|oeufs)/.test(item)) return "6 à 12";
+  if (/(poulet|dinde|boeuf|saumon|poisson|tofu|tempeh)/.test(item)) return "2 à 3 portions";
+  if (/(riz|pâtes|quinoa|semoule|avoine|granola)/.test(item)) return "1 sachet / 500 g";
+  if (/(pomme de terre)/.test(item)) return "1 à 2 kg";
+  if (/(skyr|yaourt|fromage blanc)/.test(item)) return "2 à 4 pots";
+  if (/(fruit|banane|pomme|poire|kiwi|orange|fruits rouges|avocat)/.test(item)) return "4 à 8 unités";
+  if (/(légumes|brocoli|salade|courgette|haricots)/.test(item)) return "2 à 4 portions";
+  if (/(huile|amandes|noix|graines|beurre d'amande)/.test(item)) return "1 paquet / 1 flacon";
+  return "1 à 2 unités";
+}
+
+function buildShoppingListFromMeals(meals, substitutions = [], goal = "maintenance", dayType = "training") {
+  const bucket = new Map();
+  const add = (entry) => {
+    const name = sanitizeValue(entry);
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (!bucket.has(key)) {
+      bucket.set(key, {
+        name,
+        category: groceryCategoryFor(name) || "Bases",
+        qty: qtyHintFor(name)
+      });
+    }
+  };
+  (Array.isArray(meals) ? meals : []).forEach((meal) => {
+    sanitizeArray(meal?.items || [], 8).forEach(add);
+    sanitizeArray(meal?.swap_options || [], 4).forEach((swap) => add(String(swap).split(/[↔>/]/)[0]));
+  });
+  sanitizeArray(substitutions || [], 6).forEach((swap) => add(String(swap).split(/[↔>/]/)[0]));
+  const categories = ["Protéines", "Glucides utiles", "Fruits & légumes", "Laitages", "Extras intelligents", "Bases"]
+    .map((label) => ({
+      title: label,
+      items: [...bucket.values()].filter((item) => item.category === label).slice(0, 8)
+    }))
+    .filter((group) => group.items.length);
+  return {
+    title: dayType === "training" ? "Liste de courses — journée entraînement" : "Liste de courses — journée repos",
+    prep_tips: [
+      goal === "prise_de_masse"
+        ? "Pré-cuis 2 bases glucidiques pour ne pas louper le surplus les jours chargés."
+        : goal === "perte_de_poids"
+          ? "Commence par les protéines et les légumes: c'est ce qui rend le plan facile à tenir."
+          : "Prépare 1 protéine, 1 féculent et 1 légume d'avance pour simplifier toute la journée.",
+      dayType === "training"
+        ? "Garde la collation et la boisson à portée pour mieux placer l'énergie autour de la séance."
+        : "Sur jour calme, vise surtout une cuisine simple et répétable pour limiter les écarts."
+    ],
+    quick_swaps: sanitizeArray(substitutions || [], 5),
+    categories
+  };
+}
+
+function normalizeShoppingList(raw, fallback) {
+  if (!raw || typeof raw !== "object") return fallback;
+  const categories = Array.isArray(raw.categories) ? raw.categories.slice(0, 6).map((group) => ({
+    title: sanitizeValue(group.title || group.name || "Courses"),
+    items: (Array.isArray(group.items) ? group.items : []).slice(0, 10).map((item) => {
+      if (item && typeof item === 'object') {
+        return { name: sanitizeValue(item.name || item.label || ""), qty: sanitizeValue(item.qty || item.quantity || "") };
+      }
+      const name = sanitizeValue(item);
+      return { name, qty: qtyHintFor(name) };
+    }).filter((item) => item.name)
+  })).filter((group) => group.title && group.items.length) : [];
+  return {
+    title: sanitizeValue(raw.title, fallback.title) || fallback.title,
+    prep_tips: sanitizeArray(raw.prep_tips, 4).length ? sanitizeArray(raw.prep_tips, 4) : fallback.prep_tips,
+    quick_swaps: sanitizeArray(raw.quick_swaps, 5).length ? sanitizeArray(raw.quick_swaps, 5) : fallback.quick_swaps,
+    categories: categories.length ? categories : fallback.categories
+  };
+}
+
 function buildMealVariants(nutrition, goal, dayType) {
   const isCut = goal === "perte_de_poids";
   const isBulk = goal === "prise_de_masse";
@@ -347,6 +433,13 @@ function buildFallbackPlan(nutrition, goal = "maintenance", activity = "moderate
     pickVariant(variants.dinner, seed, 3)
   ].filter(Boolean);
 
+  const shoppingList = buildShoppingListFromMeals(planMeals, [
+    "Poulet ↔ dinde, thon, tofu ferme ou tempeh.",
+    "Riz ↔ pommes de terre, semoule, pâtes complètes ou quinoa.",
+    "Skyr / yaourt grec ↔ fromage blanc 0% ou shake protéiné.",
+    "Fruits rouges ↔ banane, pomme, kiwi selon la saison et le budget."
+  ], goal, dayType);
+
   return {
     title: "Plan nutrition du jour",
     day_type: dayType,
@@ -374,6 +467,8 @@ function buildFallbackPlan(nutrition, goal = "maintenance", activity = "moderate
       "Skyr / yaourt grec ↔ fromage blanc 0% ou shake protéiné.",
       "Fruits rouges ↔ banane, pomme, kiwi selon la saison et le budget."
     ],
+    shopping_list: shoppingList,
+    meal_prep: buildMealPrepPlan(planMeals, goal, dayType),
     notes: `${objectiveSummary(goal, dayType)} ${coachNote(goal, dayType)}`
   };
 }
@@ -407,7 +502,40 @@ function normalizeMeal(meal, idx, nutrition, fallbackPlan) {
   };
 }
 
+function buildMealPrepPlan(meals, goal = "maintenance", dayType = "training") {
+  const proteins = [];
+  const carbs = [];
+  const veg = [];
+  (Array.isArray(meals) ? meals : []).forEach((meal) => {
+    (Array.isArray(meal.items) ? meal.items : []).forEach((item) => {
+      const t = String(item || "").toLowerCase();
+      if (/(poulet|dinde|boeuf|thon|saumon|oeuf|skyr|fromage blanc|tofu|tempeh|whey)/.test(t)) proteins.push(item);
+      else if (/(riz|quinoa|semoule|p[âa]tes|pommes de terre|avoine|pain)/.test(t)) carbs.push(item);
+      else if (/(brocoli|courgette|salade|légumes|haricots|tomate|fruit|banane|pomme|kiwi)/.test(t)) veg.push(item);
+    });
+  });
+  const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
+  return {
+    title: "Meal prep express",
+    batch_cook: [
+      proteins.length ? `Cuire 2 à 3 portions de ${uniq(proteins).slice(0,2).join(' / ')} en avance.` : "Prépare une base protéinée simple à l'avance.",
+      carbs.length ? `Préparer une base de ${uniq(carbs).slice(0,2).join(' / ')} pour 2 repas.` : "Prépare un glucide simple dosable pour la journée.",
+      veg.length ? `Laver / couper ${uniq(veg).slice(0,2).join(' / ')} pour réduire la friction.` : "Prépare légumes ou fruits à portée de main."
+    ],
+    packing_tips: [
+      dayType === 'training' ? "Garde une collation protéinée facile à emporter autour de la séance." : "Prévois un repas simple et rassasiant pour éviter le grignotage.",
+      goal === 'prise_de_masse' ? "Ajoute un extra calorique simple : huile d'olive, pain, fruits secs ou laitage." : goal === 'perte_de_poids' ? "Mets d'abord la protéine et le volume (légumes/fruits) dans la box." : "Dose les portions une fois, puis évite de renégocier chaque repas."
+    ],
+    containers: [
+      "1 box protéine + glucide pour le repas principal",
+      "1 collation rapide prête à attraper",
+      "1 bouteille d'eau déjà préparée"
+    ]
+  };
+}
+
 function validatePlan(raw, nutrition, goal, activity, dayType, weight) {
+
   const fallback = buildFallbackPlan(nutrition, goal, activity, dayType, weight);
   const candidate = raw && typeof raw === "object"
     ? (raw.plan && typeof raw.plan === "object" ? raw.plan : raw)
@@ -427,6 +555,14 @@ function validatePlan(raw, nutrition, goal, activity, dayType, weight) {
     notes: sanitizeValue(candidate.notes, nutrition.notes) || nutrition.notes,
     meals: rawMeals.map((meal, idx) => normalizeMeal(meal, idx, nutrition, fallback))
   };
+  plan.shopping_list = normalizeShoppingList(candidate.shopping_list, buildShoppingListFromMeals(plan.meals, plan.substitutions, goal, plan.day_type));
+  const rawPrep = candidate.meal_prep && typeof candidate.meal_prep === "object" ? candidate.meal_prep : {};
+  plan.meal_prep = {
+    title: sanitizeValue(rawPrep.title, (fallback.meal_prep && fallback.meal_prep.title) || "Meal prep express"),
+    batch_cook: sanitizeArray(rawPrep.batch_cook, 4).length ? sanitizeArray(rawPrep.batch_cook, 4) : ((fallback.meal_prep && fallback.meal_prep.batch_cook) || []),
+    packing_tips: sanitizeArray(rawPrep.packing_tips, 4).length ? sanitizeArray(rawPrep.packing_tips, 4) : ((fallback.meal_prep && fallback.meal_prep.packing_tips) || []),
+    containers: sanitizeArray(rawPrep.containers, 4).length ? sanitizeArray(rawPrep.containers, 4) : ((fallback.meal_prep && fallback.meal_prep.containers) || [])
+  };
   if (plan.meals.length < 3) return fallback;
   return plan;
 }
@@ -442,7 +578,7 @@ RÈGLES:
 - Différencie clairement ${goalLabel(profile.goal)} et ${dayTypeLabel(profile.day_type)}.
 - Les calories, protéines, glucides et lipides doivent être cohérents.
 - 4 repas, simples à faire en vraie vie, zéro aliment exotique.
-- Ajoute des substitutions simples et des conseils d'adhérence.
+- Ajoute des substitutions simples, des conseils d'adhérence et une mini stratégie de meal prep.
 - Ton premium, pratique, pas robotique.
 - Réponse courte mais utile.
 
@@ -465,6 +601,23 @@ FORMAT JSON OBLIGATOIRE:
     "training_note": "Note autour de la séance ou du repos",
     "tips": ["...", "...", "..."],
     "substitutions": ["...", "...", "..."],
+    "shopping_list": {
+      "title": "Liste de courses de la journée",
+      "prep_tips": ["...", "..."],
+      "quick_swaps": ["...", "..."],
+      "categories": [
+        {
+          "title": "Protéines",
+          "items": [{ "name": "Poulet", "qty": "2 à 3 portions" }]
+        }
+      ]
+    },
+    "meal_prep": {
+      "title": "Meal prep express",
+      "batch_cook": ["...", "..."],
+      "packing_tips": ["...", "..."],
+      "containers": ["...", "..."]
+    },
     "meals": [
       {
         "name": "Petit déjeuner",

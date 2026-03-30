@@ -287,6 +287,11 @@ FORMAT JSON OBLIGATOIRE:
   "title": "Nom de la séance",
   "duration": 45,
   "calories": 350,
+  "daily_focus": "priorité du jour en une phrase",
+  "intensity_reason": "pourquoi cette intensité est adaptée aujourd'hui",
+  "coach_note": "note coach courte et personnelle",
+  "session_style": "guidée, dense, fluide, recovery...",
+  "personalization": ["fait relié au contexte 1", "fait relié au contexte 2"],
   "exercises": [
     {
       "name": "Nom de l'exercice",
@@ -312,7 +317,8 @@ STRUCTURE exercises[] requise:
 - "duration" = durée en secondes du bloc d'effort quand pertinent.
 - "rest" = repos en secondes entre les blocs.
 - "description" ne doit jamais être vide.
-- "personalWhy" doit expliquer brièvement pourquoi l'exercice a été choisi pour CE profil.`;
+- "personalWhy" doit expliquer brièvement pourquoi l'exercice a été choisi pour CE profil.
+- "daily_focus", "intensity_reason" et "coach_note" doivent être présents et cohérents avec le contexte du jour.`;
 }
 
 function buildConversationPrompt(intent, message, history, profile, goalContext) {
@@ -807,6 +813,11 @@ function normalizeWorkoutOutput(raw, profile = {}, goalContext = {}) {
       target_muscles:   muscles,
       equipment_needed: equip,
       notes:            String(source.notes || ""),
+      daily_focus:      normalizeText(source.daily_focus || ""),
+      intensity_reason: normalizeText(source.intensity_reason || ""),
+      coach_note:       normalizeText(source.coach_note || ""),
+      session_style:    normalizeText(source.session_style || ""),
+      personalization:  Array.isArray(source.personalization) ? source.personalization.map((x) => normalizeText(x)).filter(Boolean).slice(0, 4) : [],
       created_at:       new Date().toISOString(),
       blocks,
       exercises
@@ -826,6 +837,11 @@ function normalizeWorkoutOutput(raw, profile = {}, goalContext = {}) {
       target_muscles:   Array.isArray(source.target_muscles) ? source.target_muscles : [],
       equipment_needed: Array.isArray(source.equipment_needed) ? source.equipment_needed : [],
       notes:            String(source.notes || ""),
+      daily_focus:      normalizeText(source.daily_focus || ""),
+      intensity_reason: normalizeText(source.intensity_reason || ""),
+      coach_note:       normalizeText(source.coach_note || ""),
+      session_style:    normalizeText(source.session_style || ""),
+      personalization:  Array.isArray(source.personalization) ? source.personalization.map((x) => normalizeText(x)).filter(Boolean).slice(0, 4) : [],
       created_at:       new Date().toISOString(),
       blocks:           source.blocks,
       exercises:        [],
@@ -874,6 +890,11 @@ function normalizeWorkoutOutput(raw, profile = {}, goalContext = {}) {
     target_muscles:   [String(session.focus || "Full Body")],
     equipment_needed: [],
     notes,
+    daily_focus:      "remettre du mouvement propre dans la semaine",
+    intensity_reason: p.recovery && p.recovery <= 5 ? "intensité allégée pour respecter la récupération" : "intensité standard pour relancer la progression",
+    coach_note:       "Reste propre sur les mouvements clés avant de chercher plus d'intensité.",
+    session_style:    "guidée progressive",
+    personalization:  [],
     created_at:       new Date().toISOString(),
     blocks,
     exercises:        legacyExercises,
