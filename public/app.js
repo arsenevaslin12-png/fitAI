@@ -3387,14 +3387,6 @@ async function generateRecipe() {
   const errEl = document.getElementById("recipe-err");
   if (errEl) errEl.style.display = "none";
 
-  const goalLabels = {
-    equilibre: "repas équilibré",
-    hyperproteine: "repas hyperprotéiné (max de protéines)",
-    low_carb: "repas low carb (très peu de glucides)",
-    prise_de_masse: "repas prise de masse (calorique et protéiné)",
-    seche: "repas de sèche (peu calorique, riche en protéines)"
-  };
-
   const btn = document.getElementById("btn-recipe");
   // Clear previous result immediately so there's no ambiguous stale state during generation
   if (resultEl) {
@@ -4988,8 +4980,6 @@ function _muscleSVG(muscle) {
   const dim  = "rgba(255,255,255,.07)";
   const hi   = "#6366f1";
   const hiM  = "rgba(99,102,241,.55)";
-  const hi2  = "#4ade80";
-
   const chest    = /pec|poitrine/.test(m);
   const shoulder = /epaule|delt/.test(m) && !/arriere/.test(m);
   const rearDelt = /arriere|oiseau|face.pull/.test(m);
@@ -4999,7 +4989,6 @@ function _muscleSVG(muscle) {
   const core     = /core|abdo|obliqu|gainage|crunch|hollow|planche/.test(m);
   const glute    = /fess|glute|hip|hanche/.test(m);
   const quad     = /quad|jamb|squat/.test(m) && !glute;
-  const hamstr   = /ischio|hamilton/.test(m);
   const calf     = /mollet/.test(m);
   const cardio   = /cardio|full|hiit/.test(m);
   const arms     = bicep || tricep || /bras/.test(m);
@@ -5014,7 +5003,6 @@ function _muscleSVG(muscle) {
   const glU = C(glute, hi);
   const qd  = C(quad || (cardio && !glute), hi, cardio);
   const cl  = C(calf, hi, quad || cardio);
-  const bck = C(back || rearDelt, hi);
   const frm = C(arms, null, true); // forearms dim when arms highlighted
 
   const glow = (c) => c !== dim ? `filter:drop-shadow(0 0 5px ${c})` : "";
@@ -5068,22 +5056,6 @@ function _stickFigureSVG(name) {
   const open  = `<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;overflow:visible">${DEFS}<g filter="url(#sf)">`;
   const close = `</g></svg>`;
 
-  // ── Equipment SVG shapes ───────────────────────────────────────────────────
-  const DB = (x=62,y=72,op=".5") =>
-    `<g opacity="${op}">` +
-    `<rect x="${x-5}" y="${y-1.5}" width="10" height="3" rx="1" fill="rgba(255,255,255,.7)"/>` +
-    `<rect x="${x-7}" y="${y-3.5}" width="2.5" height="7" rx=".8" fill="white"/>` +
-    `<rect x="${x+4.5}" y="${y-3.5}" width="2.5" height="7" rx=".8" fill="white"/>` +
-    `</g>`;
-  const BB = (x=40,y=72,op=".5") =>
-    `<g opacity="${op}">` +
-    `<line x1="${x-16}" y1="${y}" x2="${x+16}" y2="${y}" stroke="rgba(255,255,255,.7)" stroke-width="2.4" stroke-linecap="round"/>` +
-    `<rect x="${x-19}" y="${y-4}" width="3" height="8" rx="1" fill="rgba(255,255,255,.8)"/>` +
-    `<rect x="${x-16}" y="${y-5.5}" width="3" height="11" rx="1" fill="rgba(255,255,255,.9)"/>` +
-    `<rect x="${x+13}" y="${y-5.5}" width="3" height="11" rx="1" fill="rgba(255,255,255,.9)"/>` +
-    `<rect x="${x+16}" y="${y-4}" width="3" height="8" rx="1" fill="rgba(255,255,255,.8)"/>` +
-    `</g>`;
-
   // MUSCLE(cx,cy,col): pulsing muscle group indicator dot
   const MUSCLE = (cx,cy,col="#f97316") =>
     `<circle cx="${cx}" cy="${cy}" r="4.5" fill="${col}" opacity=".22" stroke="${col}" stroke-width="1">` +
@@ -5091,8 +5063,6 @@ function _stickFigureSVG(name) {
     `<animate attributeName="opacity" values=".22;.04;.22" dur="1.8s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>` +
     `</circle>`;
 
-  const ARC = (d,col="rgba(99,102,241,.28)") =>
-    `<path d="${d}" stroke="${col}" stroke-width="1.5" fill="none" stroke-dasharray="3,2.5" stroke-linecap="round"/>`;
   const ARRUP = (x,y) => `<g stroke="rgba(255,255,255,.32)" stroke-width="1.3" stroke-linecap="round"><line x1="${x}" y1="${y+7}" x2="${x}" y2="${y}"/><line x1="${x-3.5}" y1="${y+3.5}" x2="${x}" y2="${y}"/><line x1="${x+3.5}" y1="${y+3.5}" x2="${x}" y2="${y}"/></g>`;
   const ARRDN = (x,y) => `<g stroke="rgba(255,255,255,.32)" stroke-width="1.3" stroke-linecap="round"><line x1="${x}" y1="${y}" x2="${x}" y2="${y+7}"/><line x1="${x-3.5}" y1="${y+3.5}" x2="${x}" y2="${y+7}"/><line x1="${x+3.5}" y1="${y+3.5}" x2="${x}" y2="${y+7}"/></g>`;
 
@@ -5151,24 +5121,6 @@ function _stickFigureSVG(name) {
     if(x2!==x2b) el+=`<animate attributeName="x2" values="${x2};${x2b};${x2}" dur="${d}" ${KS2}/>`;
     if(y2!==y2b) el+=`<animate attributeName="y2" values="${y2};${y2b};${y2}" dur="${d}" ${KS2}/>`;
     return el + `</line>`;
-  };
-
-  // C: animated circle (head/joint) — now uses HEAD for r>=6
-  const C = (cx,cy,r,cyB,d="1.5s") => {
-    if (r >= 6) {
-      // 3D head with vertical animation
-      const KS2h = 'calcMode="spline" keySplines="0.42 0 0.58 1; 0.42 0 0.58 1" repeatCount="indefinite"';
-      const headAnim = cy !== cyB
-        ? `<animate attributeName="cy" values="${cy};${cyB};${cy}" dur="${d}" ${KS2h}/>`
-        : "";
-      const hilAnim = cy !== cyB
-        ? `<animate attributeName="cy" values="${cy-r*.28};${cyB-r*.28};${cy-r*.28}" dur="${d}" ${KS2h}/>`
-        : "";
-      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1">${headAnim}</circle>` +
-        `<circle cx="${cx-r*.3}" cy="${cy-r*.28}" r="${r*.18}" fill="rgba(255,255,255,.42)">${hilAnim}</circle>`;
-    }
-    const anim = cy!==cyB ? `<animate attributeName="cy" values="${cy};${cyB};${cy}" dur="${d}" ${KS2}/>` : "";
-    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(200,215,255,.58)" stroke="rgba(255,255,255,.5)" stroke-width=".9">${anim}</circle>`;
   };
 
   // ── N-frame helpers — smooth multi-keyframe SMIL ──────────
@@ -5550,7 +5502,6 @@ function _stickFigureSVG(name) {
     const slKS = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite"';
     const hipY = `<animate attributeName="cy" values="42;38;42" dur="2.2s" ${slKS}/>`;
     const hipYl = `<animate attributeName="y1" values="42;38;42" dur="2.2s" ${slKS}/>`;
-    const hipYl2 = `<animate attributeName="y2" values="42;38;42" dur="2.2s" ${slKS}/>`;
     return open +
       `<line x1="4" y1="62" x2="76" y2="62" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
       MUSCLE(50,38,"#f97316") +
