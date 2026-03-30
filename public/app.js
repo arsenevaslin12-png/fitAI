@@ -674,7 +674,7 @@ function gotoTab(name) {
   if (name === "dashboard") loadDashboard();
   if (name === "goal") loadGoal();
   if (name === "coach") { loadCoachHistory(); loadHistory(); }
-  if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); loadCommunityRecipes(); }
+  if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); loadCommunityRecipes(); loadNutritionPlanFromStorage(); }
   if (name === "community") loadFeed();
   if (name === "friends") { loadFriends(); loadFriendRequests(); }
   if (name === "bodyscan") loadScans();
@@ -1317,82 +1317,86 @@ function exerciseCuePack(ex = {}) {
 
 function _exerciseDemoSvg(label = '') {
   const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-
-  function frame(body, accent = '#60a5fa', accent2 = '#22d3ee', arrow = '') {
-    return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 240" width="100%" height="100%">
-      <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#0b1220"/>
-          <stop offset="100%" stop-color="#111c34"/>
-        </linearGradient>
-        <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${accent}" stop-opacity=".30"/>
-          <stop offset="100%" stop-color="${accent2}" stop-opacity=".12"/>
-        </linearGradient>
-        <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#020617" flood-opacity=".45"/></filter>
-        <filter id="soft"><feGaussianBlur stdDeviation="10"/></filter>
-      </defs>
-      <rect x="10" y="10" width="260" height="220" rx="28" fill="url(#bg)" stroke="rgba(255,255,255,.08)"/>
-      <circle cx="54" cy="42" r="54" fill="${accent}" opacity=".14" filter="url(#soft)"/>
-      <circle cx="218" cy="185" r="60" fill="${accent2}" opacity=".12" filter="url(#soft)"/>
-      <rect x="26" y="26" width="228" height="188" rx="24" fill="url(#glow)"/>
-      <ellipse cx="140" cy="192" rx="70" ry="15" fill="${accent2}" opacity=".18" filter="url(#soft)"/>
-      ${arrow}
-      ${body}
-    </svg>`;
-  }
-
-  function motionArrow(path, accent = '#22d3ee') {
-    return `<path d="${path}" fill="none" stroke="${accent}" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 8" opacity=".95">
-      <animate attributeName="stroke-dashoffset" from="0" to="-36" dur="1.4s" repeatCount="indefinite"/>
-    </path>
-    <path d="M208 86 l14 -4 l-6 14" fill="none" stroke="${accent}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>`;
-  }
-
-  function coachFigure(parts, accent = '#60a5fa', accent2 = '#22d3ee') {
-    return `<g filter="url(#shadow)">
-      <circle cx="140" cy="56" r="19" fill="#f8fafc"/>
-      <path d="M122 78 Q140 70 158 78 L162 132 Q140 142 118 132 Z" fill="#f8fafc" opacity=".98"/>
-      <path d="M127 80 Q140 74 153 80" fill="none" stroke="${accent2}" stroke-width="2.2" opacity=".95"/>
-      <circle cx="140" cy="56" r="23" fill="none" stroke="${accent}" stroke-width="1.4" opacity=".28"/>
-      <circle cx="140" cy="56" r="27" fill="none" stroke="${accent2}" stroke-width="1.1" opacity=".16"/>
-      ${parts}
-      <ellipse cx="140" cy="194" rx="58" ry="10" fill="${accent2}" opacity=".12"/>
-    </g>`;
-  }
-
-  function limbSet({armL1, armL2, armR1, armR2, legL1, legL2, legR1, legR2, accent='#60a5fa'}) {
-    const near = `stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"`;
-    const far = `stroke="rgba(241,245,249,.58)" stroke-width="5.4" stroke-linecap="round" fill="none"`;
-    return `
-      <path d="${armL1}" ${far}/><path d="${armL2}" ${far}/>
-      <path d="${armR1}" ${near}/><path d="${armR2}" ${near}/>
-      <path d="${legL1}" ${far}/><path d="${legL2}" ${far}/>
-      <path d="${legR1}" ${near}/><path d="${legR2}" ${near}/>
-      <circle cx="112" cy="94" r="5" fill="${accent}" opacity=".95"/>
-      <circle cx="168" cy="94" r="5" fill="${accent}" opacity=".95"/>
-      <circle cx="120" cy="140" r="5" fill="${accent}" opacity=".95"/>
-      <circle cx="160" cy="140" r="5" fill="${accent}" opacity=".95"/>`;
-  }
-
   const variants = [
-    { rx: /squat|chair|leg press|wall sit/, accent:'#f59e0b', accent2:'#f97316', arrow:'M206 64 C232 92 232 128 206 156', limbs: { armL1:'M122 92 Q110 106 98 116', armL2:'M98 116 Q92 124 88 138', armR1:'M158 92 Q172 104 186 112', armR2:'M186 112 Q194 118 200 132', legL1:'M126 132 Q112 146 104 162', legL2:'M104 162 Q98 174 102 188', legR1:'M154 132 Q168 146 176 162', legR2:'M176 162 Q182 174 178 188' } },
-    { rx: /lunge|fente|split squat|step-up/, accent:'#8b5cf6', accent2:'#22d3ee', arrow:'M80 176 C126 166 170 150 210 120', limbs: { armL1:'M122 92 Q114 106 108 118', armL2:'M108 118 Q104 126 100 138', armR1:'M158 92 Q168 104 176 118', armR2:'M176 118 Q184 126 190 138', legL1:'M126 132 Q116 150 114 172', legL2:'M114 172 Q114 184 104 190', legR1:'M154 132 Q170 146 188 156', legR2:'M188 156 Q202 164 210 186' } },
-    { rx: /pompe|push|bench|developpe|dips/, accent:'#22c55e', accent2:'#06b6d4', arrow:'M214 104 C230 118 230 138 214 154', limbs: { armL1:'M122 94 Q104 114 94 132', armL2:'M94 132 Q90 144 88 154', armR1:'M158 94 Q174 112 186 126', armR2:'M186 126 Q194 136 198 150', legL1:'M126 132 Q118 154 120 178', legL2:'M120 178 Q122 188 112 194', legR1:'M154 132 Q162 154 160 178', legR2:'M160 178 Q158 188 168 194' } },
-    { rx: /row|tirage|traction|pull|curl/, accent:'#38bdf8', accent2:'#818cf8', arrow:'M82 102 C118 90 160 90 198 102', limbs: { armL1:'M122 92 Q108 104 96 110', armL2:'M96 110 Q88 114 82 106', armR1:'M158 92 Q172 104 184 110', armR2:'M184 110 Q192 114 198 106', legL1:'M126 132 Q120 156 122 184', legL2:'M122 184 Q124 192 116 198', legR1:'M154 132 Q160 156 158 184', legR2:'M158 184 Q156 192 164 198' } },
-    { rx: /deadlift|souleve|hinge|hip thrust|bridge|pont/, accent:'#ef4444', accent2:'#f59e0b', arrow:'M72 154 C110 128 158 120 212 126', limbs: { armL1:'M122 92 Q110 104 102 120', armL2:'M102 120 Q98 128 96 138', armR1:'M158 92 Q170 104 178 120', armR2:'M178 120 Q182 128 184 138', legL1:'M126 132 Q116 150 112 170', legL2:'M112 170 Q108 182 100 192', legR1:'M154 132 Q164 150 168 170', legR2:'M168 170 Q172 182 180 192' } },
-    { rx: /plank|gainage|abdo|hollow|mountain|russian twist|twist/, accent:'#22d3ee', accent2:'#a78bfa', arrow:'M76 138 C112 148 164 148 204 136', limbs: { armL1:'M122 94 Q110 108 98 120', armL2:'M98 120 Q90 128 82 136', armR1:'M158 94 Q170 108 182 120', armR2:'M182 120 Q190 128 198 136', legL1:'M126 132 Q118 154 108 170', legL2:'M108 170 Q98 182 86 186', legR1:'M154 132 Q162 154 172 170', legR2:'M172 170 Q182 182 194 186' } },
-    { rx: /jump|burpee|high knees|run|cardio|jack/, accent:'#f472b6', accent2:'#fb7185', arrow:'M204 70 C228 92 228 130 202 156', limbs: { armL1:'M122 92 Q104 82 92 70', armL2:'M92 70 Q82 60 74 54', armR1:'M158 92 Q176 82 188 70', armR2:'M188 70 Q198 60 206 54', legL1:'M126 132 Q112 150 104 172', legL2:'M104 172 Q94 186 88 198', legR1:'M154 132 Q168 150 176 172', legR2:'M176 172 Q186 186 192 198' } },
-    { rx: /press|military|shoulder/, accent:'#14b8a6', accent2:'#60a5fa', arrow:'M138 42 C138 24 138 20 138 12', limbs: { armL1:'M122 92 Q108 76 104 56', armL2:'M104 56 Q102 40 108 24', armR1:'M158 92 Q172 76 176 56', armR2:'M176 56 Q178 40 172 24', legL1:'M126 132 Q120 156 122 184', legL2:'M122 184 Q124 192 116 198', legR1:'M154 132 Q160 156 158 184', legR2:'M158 184 Q156 192 164 198' } },
+    { rx: /squat|chair|leg press|wall sit/, key: 'squat', accent: '#f59e0b', accent2: '#fb7185', label: 'jambes / fessiers' },
+    { rx: /lunge|fente|split squat|step-up/, key: 'lunge', accent: '#8b5cf6', accent2: '#22d3ee', label: 'jambes / stabilité' },
+    { rx: /pompe|push|bench|developpe|dips/, key: 'push', accent: '#22c55e', accent2: '#06b6d4', label: 'poussée haut du corps' },
+    { rx: /row|tirage|traction|pull|curl/, key: 'pull', accent: '#38bdf8', accent2: '#818cf8', label: 'tirage / dos' },
+    { rx: /deadlift|souleve|hinge|hip thrust|bridge|pont/, key: 'hinge', accent: '#ef4444', accent2: '#f59e0b', label: 'chaîne postérieure' },
+    { rx: /plank|gainage|abdo|hollow|mountain|russian twist|twist/, key: 'core', accent: '#22d3ee', accent2: '#a78bfa', label: 'core / stabilité' },
+    { rx: /jump|burpee|high knees|run|cardio|jack/, key: 'cardio', accent: '#f472b6', accent2: '#fb7185', label: 'cardio / densité' },
+    { rx: /press|military|shoulder/, key: 'press', accent: '#14b8a6', accent2: '#60a5fa', label: 'épaules / poussée' },
+    { rx: /calf|mollet/, key: 'calf', accent: '#fb923c', accent2: '#facc15', label: 'mollets / explosivité' },
+    { rx: /stretch|mobilite|rotation|respiration|yoga/, key: 'mobility', accent: '#4ade80', accent2: '#2dd4bf', label: 'mobilité / récupération' }
   ];
-  const picked = variants.find(v => v.rx.test(t)) || variants[0];
-  return frame(
-    coachFigure(limbSet({...picked.limbs, accent:picked.accent}), picked.accent, picked.accent2),
-    picked.accent,
-    picked.accent2,
-    motionArrow(picked.arrow, picked.accent2)
-  );
+  const picked = variants.find((v) => v.rx.test(t)) || variants[0];
+
+  const motionByKey = {
+    squat:   { path: 'M274 74 C300 112 300 154 272 188', head: 'M270 186 l16 -6 l-8 18' },
+    lunge:   { path: 'M92 212 C136 194 198 164 252 116', head: 'M250 114 l18 0 l-9 16' },
+    push:    { path: 'M288 110 C310 130 310 156 288 176', head: 'M286 174 l16 -6 l-7 16' },
+    pull:    { path: 'M96 116 C136 98 194 98 248 116',  head: 'M246 116 l-12 -8 l0 16' },
+    hinge:   { path: 'M92 178 C134 146 200 134 274 144', head: 'M272 144 l-14 -8 l2 18' },
+    core:    { path: 'M94 156 C136 166 202 166 250 152', head: 'M248 152 l-14 -8 l2 18' },
+    cardio:  { path: 'M266 68 C294 94 294 146 264 186',  head: 'M262 184 l16 -8 l-8 18' },
+    press:   { path: 'M180 48 C180 30 180 22 180 14',    head: 'M180 14 l-8 12 l16 0' },
+    calf:    { path: 'M254 156 C260 174 260 194 252 214', head: 'M252 212 l10 -10 l-2 16' },
+    mobility:{ path: 'M112 204 C150 186 210 186 250 204', head: 'M248 204 l-14 -8 l2 18' }
+  };
+
+  const highlightByKey = {
+    squat:   '<rect x="148" y="156" width="28" height="64" rx="12" fill="rgba(245,158,11,.25)"/><rect x="184" y="156" width="28" height="64" rx="12" fill="rgba(245,158,11,.25)"/>',
+    lunge:   '<rect x="150" y="156" width="26" height="64" rx="12" fill="rgba(139,92,246,.24)"/><rect x="186" y="156" width="26" height="64" rx="12" fill="rgba(34,211,238,.22)"/>',
+    push:    '<path d="M148 98 L212 98 L220 146 L140 146 Z" fill="rgba(34,197,94,.22)"/><ellipse cx="148" cy="104" rx="18" ry="12" fill="rgba(6,182,212,.18)"/><ellipse cx="212" cy="104" rx="18" ry="12" fill="rgba(6,182,212,.18)"/>',
+    pull:    '<path d="M148 98 L212 98 L204 152 L156 152 Z" fill="rgba(56,189,248,.2)"/><rect x="126" y="104" width="18" height="44" rx="9" fill="rgba(129,140,248,.14)"/><rect x="216" y="104" width="18" height="44" rx="9" fill="rgba(129,140,248,.14)"/>',
+    hinge:   '<path d="M148 152 Q180 170 212 152 L212 186 Q180 202 148 186 Z" fill="rgba(239,68,68,.18)"/><rect x="150" y="156" width="28" height="64" rx="12" fill="rgba(245,158,11,.16)"/><rect x="184" y="156" width="28" height="64" rx="12" fill="rgba(245,158,11,.16)"/>',
+    core:    '<rect x="156" y="144" width="48" height="46" rx="14" fill="rgba(34,211,238,.2)"/>',
+    cardio:  '<path d="M148 98 L212 98 L220 146 L140 146 Z" fill="rgba(244,114,182,.14)"/><rect x="150" y="156" width="28" height="64" rx="12" fill="rgba(251,113,133,.16)"/><rect x="184" y="156" width="28" height="64" rx="12" fill="rgba(251,113,133,.16)"/>',
+    press:   '<ellipse cx="148" cy="102" rx="18" ry="12" fill="rgba(20,184,166,.2)"/><ellipse cx="212" cy="102" rx="18" ry="12" fill="rgba(96,165,250,.2)"/>',
+    calf:    '<rect x="156" y="218" width="20" height="26" rx="9" fill="rgba(251,146,60,.22)"/><rect x="184" y="218" width="20" height="26" rx="9" fill="rgba(250,204,21,.2)"/>',
+    mobility:'<path d="M148 98 L212 98 L220 146 L140 146 Z" fill="rgba(74,222,128,.12)"/><rect x="150" y="156" width="28" height="64" rx="12" fill="rgba(45,212,191,.12)"/><rect x="184" y="156" width="28" height="64" rx="12" fill="rgba(45,212,191,.12)"/>'
+  };
+
+  const limbsByKey = {
+    squat:   '<path d="M152 112 Q134 128 122 144" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M122 144 Q114 152 106 168" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M208 112 Q228 128 242 142" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M242 142 Q252 150 258 168" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M162 156 Q146 172 138 196" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M138 196 Q136 214 146 236" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M198 156 Q214 172 222 196" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M222 196 Q224 214 214 236" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
+    lunge:   '<path d="M156 112 Q142 128 134 148" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M134 148 Q128 160 120 176" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q220 124 232 142" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M232 142 Q242 154 250 170" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q150 174 144 206" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M144 206 Q146 224 136 238" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q218 168 242 180" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M242 180 Q258 188 272 226" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
+    push:    '<path d="M156 112 Q136 130 124 150" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M124 150 Q116 162 108 176" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q224 130 236 150" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M236 150 Q244 162 252 176" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q156 182 160 212" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M160 212 Q164 230 152 238" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q204 182 200 212" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M200 212 Q196 230 208 238" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
+    pull:    '<path d="M156 112 Q136 126 122 134" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M122 134 Q110 138 100 128" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q224 126 238 134" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M238 134 Q250 138 260 128" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q160 184 162 220" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M162 220 Q162 234 152 240" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q200 184 198 220" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M198 220 Q198 234 208 240" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
+    hinge:   '<path d="M156 112 Q142 128 132 148" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M132 148 Q128 160 124 176" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q218 128 228 148" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M228 148 Q232 160 236 176" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q154 176 150 206" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M150 206 Q148 226 138 242" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q206 176 210 206" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M210 206 Q212 226 222 242" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
+    core:    '<path d="M156 112 Q138 128 126 146" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M126 146 Q116 154 108 164" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q222 128 234 146" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M234 146 Q244 154 252 164" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q160 184 162 220" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M162 220 Q162 234 152 240" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q200 184 198 220" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M198 220 Q198 234 208 240" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
+    cardio:  '<path d="M156 112 Q136 90 122 74" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M122 74 Q112 62 102 52" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q224 90 238 74" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M238 74 Q248 62 258 52" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q150 176 142 204" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M142 204 Q136 226 124 240" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q210 176 218 204" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M218 204 Q224 226 236 240" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
+    press:   '<path d="M156 112 Q140 92 134 70" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M134 70 Q130 48 138 28" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q220 92 226 70" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M226 70 Q230 48 222 28" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q160 184 162 220" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M162 220 Q162 234 152 240" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q200 184 198 220" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M198 220 Q198 234 208 240" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
+    calf:    '<path d="M156 112 Q140 128 128 146" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M128 146 Q118 154 110 164" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q220 128 232 146" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M232 146 Q242 154 250 164" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q160 188 166 220" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M166 220 Q166 236 156 244" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q200 188 194 220" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M194 220 Q194 236 204 244" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
+    mobility:'<path d="M156 112 Q138 128 124 146" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M124 146 Q114 156 102 170" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q222 128 236 146" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M236 146 Q246 156 258 170" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q154 180 150 212" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M150 212 Q148 230 138 240" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q206 180 210 212" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M210 212 Q212 230 222 240" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>'
+  };
+  const limbs = limbsByKey[picked.key] || limbsByKey.squat;
+  const motion = motionByKey[picked.key] || motionByKey.squat;
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 280" width="100%" height="100%">
+      <defs>
+        <linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#081122"/><stop offset="100%" stop-color="#13213b"/></linearGradient>
+        <linearGradient id="glow1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${picked.accent}" stop-opacity=".28"/><stop offset="100%" stop-color="${picked.accent2}" stop-opacity=".12"/></linearGradient>
+        <filter id="blurBig"><feGaussianBlur stdDeviation="18"/></filter>
+        <filter id="drop"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#020617" flood-opacity=".45"/></filter>
+        <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#dbeafe"/></linearGradient>
+      </defs>
+      <rect x="14" y="14" width="332" height="252" rx="30" fill="url(#bg1)" stroke="rgba(255,255,255,.08)"/>
+      <circle cx="70" cy="60" r="72" fill="${picked.accent}" opacity=".14" filter="url(#blurBig)"/>
+      <circle cx="280" cy="220" r="84" fill="${picked.accent2}" opacity=".12" filter="url(#blurBig)"/>
+      <rect x="28" y="28" width="304" height="224" rx="24" fill="url(#glow1)" opacity=".96"/>
+      <ellipse cx="180" cy="228" rx="72" ry="18" fill="rgba(0,0,0,.26)" filter="url(#blurBig)"/>
+      <path d="${motion.path}" fill="none" stroke="${picked.accent2}" stroke-width="5" stroke-linecap="round" stroke-dasharray="12 9" opacity=".95"><animate attributeName="stroke-dashoffset" from="0" to="-42" dur="1.35s" repeatCount="indefinite"/></path>
+      <path d="${motion.head}" fill="none" stroke="${picked.accent2}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>
+      ${(highlightByKey[picked.key] || '')}
+      <g filter="url(#drop)">
+        <circle cx="180" cy="68" r="22" fill="url(#skin)" stroke="rgba(255,255,255,.75)" stroke-width="1.2"/>
+        <path d="M158 94 Q180 82 202 94 L208 156 Q180 170 152 156 Z" fill="url(#skin)" opacity=".98"/>
+        <path d="M166 98 Q180 90 194 98" fill="none" stroke="${picked.accent2}" stroke-width="2.4" opacity=".95"/>
+        ${limbs}
+      </g>
+      <text x="34" y="46" fill="rgba(255,255,255,.52)" font-size="12" font-weight="800" letter-spacing="2.1">EXO GUIDÉ</text>
+      <text x="34" y="62" fill="rgba(255,255,255,.34)" font-size="10" font-weight="700" letter-spacing="1.4">${picked.label.toUpperCase()}</text>
+    </svg>`;
 }
 
 function _exerciseDemoDataUri(label = '') {
@@ -1472,8 +1476,13 @@ function renderPlan(plan) {
   }
 
   if (notes) {
-    notes.textContent = plan.notes || "";
-    notes.style.display = plan.notes ? "block" : "none";
+    const noteParts = [];
+    if (plan.daily_focus) noteParts.push(`Focus du jour : ${plan.daily_focus}`);
+    if (plan.intensity_reason) noteParts.push(plan.intensity_reason);
+    if (plan.coach_note) noteParts.push(plan.coach_note);
+    if (plan.notes) noteParts.push(plan.notes);
+    notes.innerHTML = noteParts.length ? noteParts.map((x, i) => `<div class="plan-note-line"><span>${i === 0 ? '🎯' : i === 1 ? '⚙️' : '💬'}</span><span>${escapeHtml(x)}</span></div>`).join('') : '';
+    notes.style.display = noteParts.length ? 'grid' : 'none';
   }
 
   if (blocks) {
@@ -1723,6 +1732,9 @@ async function loadMeals() {
 }
 
 let _nutrTargetsCache = null;
+let NUTRITION_REQUEST_SEQ = 0;
+let LAST_NUTRITION_PLAN = null;
+const NUTRITION_PLAN_STORAGE_KEY = "fitai_last_nutrition_plan_v2";
 
 async function _fetchNutritionTargets() {
   if (_nutrTargetsCache) return _nutrTargetsCache;
@@ -3208,6 +3220,22 @@ async function safeResponseJson(res) {
 }
 
 
+function normalizeNutritionError(msg, code) {
+  const m = String(msg || "").toLowerCase();
+  if (m.includes("timeout") || m.includes("abort") || m.includes("trop de temps")) {
+    return "La génération du plan a pris trop de temps. Réessaie dans quelques secondes.";
+  }
+  if (code === "RATE_LIMITED" || m.includes("429") || m.includes("rate limit") || m.includes("quota")) {
+    return "Le module nutrition est momentanément surchargé. Réessaie dans 30 secondes.";
+  }
+  if (m.includes("500") || m.includes("503") || m.includes("502") || m.includes("unavailable")) {
+    return "Le plan nutrition n'est pas disponible tout de suite. Réessaie dans un instant.";
+  }
+  if (m.includes("html au lieu de json")) return "Le serveur nutrition a renvoyé une réponse invalide. Réessaie dans un instant.";
+  const clean = String(msg || "").replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
+  return clean.length > 110 ? "Le plan nutrition n'a pas pu être généré. Réessaie dans un instant." : (clean || "Le plan nutrition n'a pas pu être généré.");
+}
+
 function normalizeCoachError(msg, code) {
   const m = String(msg || "").toLowerCase();
   // Vercel/infra errors — never leak raw infrastructure details to users
@@ -3234,7 +3262,7 @@ function normalizeCoachError(msg, code) {
   return clean.length > 80 ? "Le coach est momentanément indisponible. Réessaie dans un instant." : (clean || "Le coach est momentanément indisponible.");
 }
 
-async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000, errorMapper = normalizeCoachError) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -3247,7 +3275,7 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
     const json = await safeResponseJson(response);
     if (!response.ok || !json.ok) {
       const rawErr = json.error || `Erreur serveur (HTTP ${response.status})`;
-      const cleanErr = normalizeCoachError(rawErr, json.error_code);
+      const cleanErr = typeof errorMapper === "function" ? errorMapper(rawErr, json.error_code) : normalizeCoachError(rawErr, json.error_code);
       throw new Error(cleanErr);
     }
     return { response: json, status: response.status };
@@ -3717,6 +3745,326 @@ function sanitizeCoachHtml(html) {
   return root.innerHTML;
 }
 
+
+function nutritionGoalLabel(goal) {
+  return ({ maintenance: "Maintien", perte_de_poids: "Perte de poids", prise_de_masse: "Prise de masse" })[goal] || "Maintien";
+}
+
+function nutritionDayLabel(dayType) {
+  return dayType === 'rest' ? 'Jour calme' : 'Jour entraînement';
+}
+
+function normalizeNutritionPlanPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const nutrition = payload.nutrition || {};
+  const plan = payload.plan || {};
+  return {
+    goal: payload.goal || 'maintenance',
+    day_type: payload.day_type || plan.day_type || 'training',
+    fallback: !!payload.fallback,
+    nutrition: {
+      calories: Number(nutrition.calories || 0),
+      protein: Number(nutrition.protein || 0),
+      carbs: Number(nutrition.carbs || 0),
+      fats: Number(nutrition.fats || 0),
+      notes: String(nutrition.notes || '').trim()
+    },
+    plan: {
+      title: String(plan.title || 'Plan nutrition du jour').trim(),
+      summary: String(plan.summary || '').trim(),
+      hydration_liters: Number(plan.hydration_liters || payload.hydration_liters || 0),
+      coach_note: String(plan.coach_note || '').trim(),
+      training_note: String(plan.training_note || '').trim(),
+      tips: Array.isArray(plan.tips) ? plan.tips.filter(Boolean) : [],
+      substitutions: Array.isArray(plan.substitutions) ? plan.substitutions.filter(Boolean) : [],
+      meals: Array.isArray(plan.meals) ? plan.meals.filter(Boolean) : [],
+      shopping_list: plan.shopping_list && typeof plan.shopping_list === 'object' ? plan.shopping_list : null,
+      meal_prep: plan.meal_prep && typeof plan.meal_prep === 'object' ? plan.meal_prep : null
+    }
+  };
+}
+
+function buildNutritionShoppingList(plan) {
+  const raw = plan?.shopping_list;
+  if (raw && Array.isArray(raw.categories) && raw.categories.length) return raw;
+  const bucket = {};
+  const pushItem = (category, name, qty='1 à 2 portions') => {
+    if (!name) return;
+    bucket[category] ||= [];
+    if (!bucket[category].some((item) => item.name.toLowerCase() === name.toLowerCase())) {
+      bucket[category].push({ name, qty });
+    }
+  };
+  const classify = (label) => {
+    const t = String(label || '').toLowerCase();
+    if (/(poulet|dinde|boeuf|saumon|thon|oeuf|tofu|tempeh|skyr|yaourt|fromage blanc|whey|poisson)/.test(t)) return ['Protéines', /(oeuf)/.test(t) ? '6 à 12' : '2 à 3 portions'];
+    if (/(riz|quinoa|pâtes|semoule|avoine|granola|pain|galettes|pommes de terre)/.test(t)) return ['Glucides utiles', /(pommes de terre)/.test(t) ? '1 à 2 kg' : '1 sachet / 500 g'];
+    if (/(banane|pomme|poire|kiwi|orange|fruit|fruits rouges|légumes|brocoli|salade|courgette|avocat)/.test(t)) return ['Fruits & légumes', '4 à 8 unités'];
+    if (/(huile|amande|noix|graines|beurre d'amande|olive)/.test(t)) return ['Extras intelligents', '1 paquet / flacon'];
+    return ['Bases', '1 à 2 unités'];
+  };
+  (Array.isArray(plan?.meals) ? plan.meals : []).forEach((meal) => {
+    (Array.isArray(meal.items) ? meal.items : []).forEach((item) => {
+      const [cat, qty] = classify(item);
+      pushItem(cat, String(item).split(/[↔>/]/)[0].trim(), qty);
+    });
+    (Array.isArray(meal.swap_options) ? meal.swap_options : []).forEach((swap) => {
+      const base = String(swap).split(/[↔>/]/)[0].trim();
+      const [cat, qty] = classify(base);
+      pushItem(cat, base, qty);
+    });
+  });
+  return {
+    title: 'Liste de courses',
+    prep_tips: Array.isArray(plan?.tips) ? plan.tips.slice(0, 2) : [],
+    quick_swaps: Array.isArray(plan?.substitutions) ? plan.substitutions.slice(0, 3) : [],
+    categories: Object.entries(bucket).map(([title, items]) => ({ title, items }))
+  };
+}
+
+function mergeNutritionShoppingList(base, extra) {
+  const out = {
+    title: extra?.title || base?.title || 'Liste de courses',
+    prep_tips: [...(Array.isArray(base?.prep_tips) ? base.prep_tips : []), ...(Array.isArray(extra?.prep_tips) ? extra.prep_tips : [])],
+    quick_swaps: [...(Array.isArray(base?.quick_swaps) ? base.quick_swaps : []), ...(Array.isArray(extra?.quick_swaps) ? extra.quick_swaps : [])],
+    categories: []
+  };
+  const byTitle = new Map();
+  const pushGroup = (group) => {
+    const title = String(group?.title || 'Courses').trim();
+    if (!byTitle.has(title)) byTitle.set(title, []);
+    const arr = byTitle.get(title);
+    (Array.isArray(group?.items) ? group.items : []).forEach((item) => {
+      const name = String(item?.name || item || '').trim();
+      if (!name) return;
+      if (!arr.some((x) => String(x.name).toLowerCase() === name.toLowerCase())) arr.push({ name, qty: String(item?.qty || 'à prévoir') });
+    });
+  };
+  (Array.isArray(base?.categories) ? base.categories : []).forEach(pushGroup);
+  (Array.isArray(extra?.categories) ? extra.categories : []).forEach(pushGroup);
+  out.categories = Array.from(byTitle.entries()).map(([title, items]) => ({ title, items }));
+  out.prep_tips = Array.from(new Set(out.prep_tips.filter(Boolean))).slice(0, 6);
+  out.quick_swaps = Array.from(new Set(out.quick_swaps.filter(Boolean))).slice(0, 6);
+  return out;
+}
+
+function addRecipeToNutritionShoppingList() {
+  if (!window._lastRecipe) return toast('Aucune recette à ajouter.', 'err');
+  const payload = loadStoredNutritionPlanPayload();
+  if (!payload || !payload.plan) return toast('Génère d’abord un plan nutrition.', 'warn');
+  const recipeShopping = window._lastRecipe.shopping_list && typeof window._lastRecipe.shopping_list === 'object'
+    ? window._lastRecipe.shopping_list
+    : { title: 'Courses recette', categories: [{ title: 'Recette', items: (window._lastRecipe.ingredients_list || []).map((name) => ({ name, qty: 'à prévoir' })) }] };
+  payload.plan.shopping_list = mergeNutritionShoppingList(payload.plan.shopping_list || buildNutritionShoppingList(payload.plan), recipeShopping);
+  saveNutritionPlanPayload(payload);
+  renderNutritionPlanPayload(payload, { status: 'Liste de courses enrichie avec la recette.', statusType: 'ok' });
+  toast('Ingrédients ajoutés à la liste de courses ✓', 'ok');
+}
+
+function setNutritionGeneratedState({ loading = false, visible = false, status = '', statusType = '', payload = null } = {}) {
+  const shell = document.getElementById('nutrition-generated-card');
+  const loadingEl = document.getElementById('nutrition-plan-loading');
+  const grid = document.getElementById('nutrition-plan-grid');
+  const statusEl = document.getElementById('nutrition-plan-status');
+  const titleEl = document.getElementById('nutrition-plan-title');
+  const summaryEl = document.getElementById('nutrition-plan-summary');
+  const badgesEl = document.getElementById('nutrition-plan-badges');
+  const mealsEl = document.getElementById('nutrition-meals-compact');
+  const detailEl = document.getElementById('nutrition-details-body');
+  const sideEl = document.getElementById('nutrition-side-points');
+  const shopEl = document.getElementById('nutrition-shopping-body');
+  const prepEl = document.getElementById('nutrition-prep-body');
+  const snackEl = document.getElementById('nutrition-snack-body');
+  if (!shell) return;
+  shell.style.display = visible || loading ? 'grid' : 'none';
+  if (loadingEl) loadingEl.style.display = loading ? 'grid' : 'none';
+  if (grid) grid.style.display = loading ? 'none' : 'grid';
+  if (statusEl) {
+    statusEl.className = 'nutr-status';
+    statusEl.textContent = status || '';
+    if (status && statusType) statusEl.classList.add(statusType);
+  }
+  if (!payload) {
+    if (titleEl) titleEl.textContent = 'Plan nutrition du jour';
+    if (summaryEl) summaryEl.textContent = loading ? 'Préparation d’un plan plus propre et plus lisible…' : 'Aucun plan généré pour le moment.';
+    if (badgesEl) badgesEl.innerHTML = '';
+    if (mealsEl) mealsEl.innerHTML = '';
+    if (detailEl) detailEl.innerHTML = '';
+    if (sideEl) sideEl.innerHTML = '';
+    if (shopEl) shopEl.innerHTML = '';
+    if (prepEl) prepEl.innerHTML = '';
+    if (snackEl) snackEl.innerHTML = '';
+  }
+}
+
+function saveNutritionPlanPayload(payload) {
+  LAST_NUTRITION_PLAN = payload;
+  try { localStorage.setItem(NUTRITION_PLAN_STORAGE_KEY, JSON.stringify(payload)); } catch {}
+}
+
+function loadStoredNutritionPlanPayload() {
+  if (LAST_NUTRITION_PLAN) return LAST_NUTRITION_PLAN;
+  try {
+    const raw = localStorage.getItem(NUTRITION_PLAN_STORAGE_KEY);
+    if (!raw) return null;
+    LAST_NUTRITION_PLAN = JSON.parse(raw);
+    return LAST_NUTRITION_PLAN;
+  } catch { return null; }
+}
+
+function renderNutritionPlanPayload(payload, options = {}) {
+  const data = normalizeNutritionPlanPayload(payload);
+  if (!data) return setNutritionGeneratedState({ visible: false });
+  const shell = document.getElementById('nutrition-generated-card');
+  const titleEl = document.getElementById('nutrition-plan-title');
+  const summaryEl = document.getElementById('nutrition-plan-summary');
+  const badgesEl = document.getElementById('nutrition-plan-badges');
+  const mealsEl = document.getElementById('nutrition-meals-compact');
+  const detailEl = document.getElementById('nutrition-details-body');
+  const sideEl = document.getElementById('nutrition-side-points');
+  const shopEl = document.getElementById('nutrition-shopping-body');
+  const prepEl = document.getElementById('nutrition-prep-body');
+  const snackEl = document.getElementById('nutrition-snack-body');
+  const statusEl = document.getElementById('nutrition-plan-status');
+  setNutritionGeneratedState({ visible: true, loading: false, status: options.status || (data.fallback ? 'Plan de secours intelligent appliqué — utilisable tel quel.' : ''), statusType: options.statusType || (data.fallback ? 'warn' : ''), payload: data });
+  if (shell) shell.style.display = 'grid';
+  if (titleEl) titleEl.textContent = data.plan.title || 'Plan nutrition du jour';
+  if (summaryEl) summaryEl.textContent = data.plan.summary || data.nutrition.notes || 'Plan prêt à suivre aujourd’hui.';
+  if (badgesEl) {
+    badgesEl.innerHTML = [
+      `<span class="nutr-chip">🎯 ${escapeHtml(nutritionGoalLabel(data.goal))}</span>`,
+      `<span class="nutr-chip">⚡ ${escapeHtml(nutritionDayLabel(data.day_type))}</span>`,
+      `<span class="nutr-chip">🔥 ${Math.round(data.nutrition.calories || 0)} kcal</span>`,
+      `<span class="nutr-chip">💧 ${(Number(data.plan.hydration_liters || 0) || 0).toFixed(1)} L</span>`
+    ].join('');
+  }
+  const meals = Array.isArray(data.plan.meals) ? data.plan.meals : [];
+  if (mealsEl) {
+    mealsEl.innerHTML = meals.map((meal, idx) => `
+      <div class="nutr-meal-item">
+        <div class="nutr-meal-top">
+          <div>
+            <div class="nutr-meal-name">${escapeHtml(meal.name || `Repas ${idx + 1}`)}</div>
+            <div class="nutr-meal-meta">${escapeHtml(meal.time || '')} · ${Math.round(Number(meal.calories || 0))} kcal · ${Math.round(Number(meal.protein || 0))} g prot</div>
+          </div>
+          ${meal.focus ? `<span class="nutr-chip">${escapeHtml(meal.focus)}</span>` : ''}
+        </div>
+        <div class="nutr-meal-items">${(meal.items || []).slice(0,4).map((item) => `<span class="nutr-item-pill">${escapeHtml(item)}</span>`).join('')}</div>
+      </div>`).join('');
+  }
+  if (detailEl) {
+    detailEl.innerHTML = meals.map((meal, idx) => `
+      <div class="nutr-meal-item" style="margin-top:10px">
+        <div class="nutr-meal-top">
+          <div>
+            <div class="nutr-meal-name">${escapeHtml(meal.name || `Repas ${idx + 1}`)}</div>
+            <div class="nutr-meal-meta">${escapeHtml(meal.time || '')} · ${Math.round(Number(meal.calories || 0))} kcal · ${Math.round(Number(meal.protein || 0))} g protéines</div>
+          </div>
+        </div>
+        <div class="nutr-side-list">${(meal.items || []).map((item) => `<div class="nutr-side-point">${escapeHtml(item)}</div>`).join('')}</div>
+        ${meal.coach_tip ? `<div class="nutr-side-point" style="margin-top:8px">${escapeHtml(meal.coach_tip)}</div>` : ''}
+        ${(meal.swap_options || []).length ? `<div class="nutr-meal-items" style="margin-top:10px">${meal.swap_options.map((swap) => `<span class="nutr-item-pill">${escapeHtml(swap)}</span>`).join('')}</div>` : ''}
+      </div>`).join('');
+  }
+  if (sideEl) {
+    const points = [];
+    if (data.plan.coach_note) points.push(data.plan.coach_note);
+    if (data.plan.training_note) points.push(data.plan.training_note);
+    (data.plan.tips || []).slice(0, 3).forEach((tip) => points.push(tip));
+    if (!points.length && data.nutrition.notes) points.push(data.nutrition.notes);
+    sideEl.innerHTML = points.map((p) => `<div class="nutr-side-point">${escapeHtml(p)}</div>`).join('');
+  }
+  if (prepEl) {
+    const prep = data.plan.meal_prep || null;
+    prepEl.innerHTML = prep ? `
+      <div class="nutr-shopping-group">
+        <div class="nutr-shopping-title">${escapeHtml(prep.title || 'Meal prep express')}</div>
+        ${(prep.batch_cook || []).map((x) => `<div class="nutr-side-point">🍱 ${escapeHtml(x)}</div>`).join('')}
+      </div>
+      ${(prep.packing_tips || []).length ? `<div class="nutr-shopping-group"><div class="nutr-shopping-title">Organisation</div>${prep.packing_tips.map((x) => `<div class="nutr-side-point">${escapeHtml(x)}</div>`).join('')}</div>` : ''}
+      ${(prep.containers || []).length ? `<div class="nutr-shopping-group"><div class="nutr-shopping-title">À préparer</div><div class="nutr-meal-items">${prep.containers.map((x) => `<span class="nutr-item-pill">${escapeHtml(x)}</span>`).join('')}</div></div>` : ''}
+    ` : '<div class="nutr-side-point">Prépare 1 protéine, 1 glucide simple et une collation pratique pour gagner du temps.</div>';
+  }
+  if (snackEl) {
+    const rescueItems = buildSnackRescueItems(data.plan, data.goal, data.day_type);
+    snackEl.innerHTML = rescueItems.map((item) => `<div class="nutr-side-point">⚡ ${escapeHtml(item)}</div>`).join('') + `<div class="nutr-side-point">🕒 Garde 1 snack de secours dans ton sac ou ton bureau pour éviter le craquage improvisé.</div>`;
+  }
+  const shopping = buildNutritionShoppingList(data.plan);
+  if (shopEl) {
+    shopEl.innerHTML = (shopping.categories || []).map((group) => `
+      <div class="nutr-shopping-group">
+        <div class="nutr-shopping-title">${escapeHtml(group.title || 'Courses')}</div>
+        ${(group.items || []).map((item, idx) => `
+          <div class="nutr-shopping-item">
+            <label><input type="checkbox" data-shopping="${escapeHtml(item.name || '')}"/> <span>${escapeHtml(item.name || '')}</span></label>
+            <small>${escapeHtml(item.qty || '')}</small>
+          </div>`).join('')}
+      </div>`).join('') + ((shopping.prep_tips || []).length ? `<div class="nutr-shopping-group"><div class="nutr-shopping-title">Prep</div>${shopping.prep_tips.map((tip) => `<div class="nutr-side-point">${escapeHtml(tip)}</div>`).join('')}</div>` : '') + ((shopping.quick_swaps || []).length ? `<div class="nutr-shopping-group"><div class="nutr-shopping-title">Swaps</div><div class="nutr-meal-items">${shopping.quick_swaps.map((swap) => `<span class="nutr-item-pill">${escapeHtml(swap)}</span>`).join('')}</div></div>` : '');
+  }
+  saveNutritionPlanPayload(data);
+}
+
+function buildSnackRescueItems(plan, goal, dayType) {
+  const labels = [];
+  if (goal === 'prise_de_masse') {
+    labels.push('Skyr + banane + granola');
+    labels.push('Wrap dinde / fromage frais');
+    labels.push("Shake whey + flocons d'avoine");
+  } else if (goal === 'perte_de_poids') {
+    labels.push('Skyr + fruits rouges');
+    labels.push('Pomme + fromage blanc');
+    labels.push('Oeufs durs + crudités');
+  } else {
+    labels.push('Yaourt grec + fruit');
+    labels.push('Toast complet + œufs');
+    labels.push('Shake protéiné simple');
+  }
+  if (dayType === 'training') labels.push('Banane + whey juste après la séance');
+  return labels.slice(0, 4);
+}
+
+function copyNutritionShoppingList() {
+  const payload = loadStoredNutritionPlanPayload();
+  if (!payload?.plan) return toast('Aucune liste de courses à copier.', 'warn');
+  const shopping = buildNutritionShoppingList(payload.plan);
+  const lines = [];
+  (shopping.categories || []).forEach((group) => {
+    lines.push(group.title || 'Courses');
+    (group.items || []).forEach((item) => {
+      lines.push(`- ${item.name || ''}${item.qty ? ` — ${item.qty}` : ''}`);
+    });
+    lines.push('');
+  });
+  if ((shopping.prep_tips || []).length) {
+    lines.push('Prep');
+    shopping.prep_tips.forEach((tip) => lines.push(`- ${tip}`));
+    lines.push('');
+  }
+  if ((shopping.quick_swaps || []).length) {
+    lines.push('Swaps');
+    shopping.quick_swaps.forEach((tip) => lines.push(`- ${tip}`));
+  }
+  const text = lines.join('\n').trim();
+  if (!text) return toast('Liste vide.', 'warn');
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(() => toast('Liste copiée ✓', 'ok')).catch(() => toast('Copie impossible', 'err'));
+  } else {
+    toast('Copie non disponible sur cet appareil.', 'warn');
+  }
+}
+
+function toggleNutritionChecklist(checked) {
+  document.querySelectorAll('#nutrition-shopping-body input[type="checkbox"]').forEach((el) => { el.checked = !!checked; });
+}
+window.copyNutritionShoppingList = copyNutritionShoppingList;
+window.toggleNutritionChecklist = toggleNutritionChecklist;
+
+function loadNutritionPlanFromStorage() {
+  const payload = loadStoredNutritionPlanPayload();
+  if (payload) renderNutritionPlanPayload(payload, { status: 'Dernier plan enregistré', statusType: 'ok' });
+  else setNutritionGeneratedState({ visible: false });
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // GÉNÉRATION PLAN NUTRITION IA
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3728,17 +4076,16 @@ async function generateNutrition() {
   const actEl      = document.getElementById("nutr-gen-activity");
   const btn        = document.getElementById("btn-gen-nutrition");
   const errEl      = document.getElementById("nutrition-gen-err");
-  if (errEl) { errEl.textContent = ""; errEl.style.display = "none"; }
+  const reqSeq     = ++NUTRITION_REQUEST_SEQ;
 
-  // Grey out current values so user knows it's not the new plan yet
-  const nutrTargetsEl = document.getElementById("nutr-targets-card");
-  if (nutrTargetsEl) nutrTargetsEl.style.opacity = "0.35";
+  if (errEl) { errEl.textContent = ""; errEl.style.display = "none"; }
+  setNutritionGeneratedState({ loading: true, visible: true, status: '', statusType: '' });
 
   await withButton(btn, "Génération en cours…", async () => {
     const token = await getToken();
     if (!token) throw new Error("Session expirée. Reconnectez-vous.");
 
-    const r = await fetch("/api/generate-nutrition", {
+    const { response: j } = await fetchJsonWithTimeout("/api/generate-nutrition", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -3748,27 +4095,23 @@ async function generateNutrition() {
         goal:           goalEl?.value || "maintenance",
         activity_level: actEl?.value  || "moderate"
       })
+    }, 14000, normalizeNutritionError);
+
+    if (reqSeq !== NUTRITION_REQUEST_SEQ) return;
+
+    renderNutritionPlanPayload(j, {
+      status: j.fallback ? "Plan de secours intelligent généré — utilisable immédiatement." : "Nouveau plan généré pour aujourd’hui.",
+      statusType: j.fallback ? "warn" : "ok"
     });
-
-    const j = await safeResponseJson(r);
-
-    if (!r.ok || !j.ok) {
-      throw new Error(j.message || j.error || `Erreur serveur (HTTP ${r.status})`);
-    }
-
     await loadNutritionTargets();
     incrementLocalMetric('fitai_nutrition_plans', 1);
-    if (j.fallback) {
-      toast("Plan de secours appliqué (Gemini indisponible)", "warn");
-    } else {
-      toast("Plan nutrition généré ✓", "ok");
-    }
+    toast(j.fallback ? "Plan nutrition généré (fallback utile)" : "Plan nutrition généré ✓", j.fallback ? "warn" : "ok");
   }).catch((e) => {
+    if (reqSeq !== NUTRITION_REQUEST_SEQ) return;
     const msg = e.message || "Erreur génération";
+    setNutritionGeneratedState({ visible: false, loading: false });
     if (errEl) { errEl.textContent = `Erreur: ${msg}`; errEl.style.display = "block"; }
     toast(`Erreur: ${msg}`, "err");
-  }).finally(() => {
-    if (nutrTargetsEl) nutrTargetsEl.style.opacity = "";
   });
 }
 
@@ -3785,6 +4128,8 @@ async function generateRecipe() {
 
   const goal = document.getElementById("recipe-goal")?.value || "equilibre";
   const targetKcal = parseInt(document.getElementById("recipe-kcal")?.value || "500") || 500;
+  const servings = parseInt(document.getElementById("recipe-servings")?.value || "2") || 2;
+  const recipeStyle = document.getElementById("recipe-style")?.value || "fast";
   const resultEl = document.getElementById("recipe-result");
   const errEl = document.getElementById("recipe-err");
   if (errEl) errEl.style.display = "none";
@@ -3800,8 +4145,8 @@ async function generateRecipe() {
   const btn = document.getElementById("btn-recipe");
   // Clear previous result immediately so there's no ambiguous stale state during generation
   if (resultEl) {
-    resultEl.style.display = "none";
-    resultEl.innerHTML = "";
+    resultEl.style.display = "block";
+    resultEl.innerHTML = `<div class="recipe-v2"><div class="recipe-v2-tag">🍳 Génération</div><div class="recipe-v2-name">Je te prépare une version healthy et protéinée…</div><div class="recipe-v2-tip">Objectif: ${escapeHtml(goalLabels[goal] || 'repas équilibré')} · ${servings} portion(s)</div></div>`;
   }
   if (errEl) errEl.style.display = "none";
   await withButton(btn, "Génération…", async () => {
@@ -3811,7 +4156,7 @@ async function generateRecipe() {
     const { response: j } = await fetchJsonWithTimeout("/api/generate-recipe", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ingredients, goal, targetKcal })
+      body: JSON.stringify({ ingredients, goal, targetKcal, servings, recipeStyle })
     }, 28000);
 
     // Normalize response: /api/generate-recipe returns { recipe, data }
@@ -3838,10 +4183,17 @@ async function generateRecipe() {
       const stepsHtml = Array.isArray(recipe.steps)
         ? recipe.steps.map((s, i) => `<li class="recipe-v2-step"><div class="recipe-v2-step-n">${i + 1}</div><span>${escapeHtml(s)}</span></li>`).join("")
         : "";
+      const ingredientsHtml = Array.isArray(recipe.ingredients_list) && recipe.ingredients_list.length
+        ? `<div class="recipe-v2-block"><div class="recipe-v2-block-title">Ingrédients</div><div class="recipe-v2-ing-list">${recipe.ingredients_list.map((it) => `<span class="recipe-v2-ing">${escapeHtml(it)}</span>`).join('')}</div></div>`
+        : '';
+      const twistHtml = recipe.healthy_twist ? `<div class="recipe-v2-tip">✨ ${escapeHtml(recipe.healthy_twist)}</div>` : '';
+      const coachNoteHtml = recipe.coach_note ? `<div class="recipe-v2-coach">🧠 ${escapeHtml(recipe.coach_note)}</div>` : '';
+      const metaHtml = `<div class="recipe-v2-tip">👥 ${escapeHtml(String(recipe.servings || 2))} portions · 🎯 ${escapeHtml(recipe.best_for || 'Repas flexible')}</div>`;
+      const prepHtml = recipe.batch_prep ? `<div class="recipe-v2-tip">📦 ${escapeHtml(recipe.batch_prep)}</div>` : '';
       resultEl.innerHTML = `
         <div class="recipe-v2">
           <div class="recipe-v2-art">${foodArt}</div>
-          <div class="recipe-v2-tag">✦ Recette IA${recipe.prep_time ? ` · ⏱ ${escapeHtml(recipe.prep_time)}` : ""}</div>
+          <div class="recipe-v2-tag">${recipeRequestBadge(ingredients)}${recipe.prep_time ? ` · ⏱ ${escapeHtml(recipe.prep_time)}` : ""}</div>
           <div class="recipe-v2-name">${escapeHtml(name)}</div>
           <div class="recipe-pills">
             ${recipe.calories ? `<span class="macro-pill mp-kcal">🔥 ${recipe.calories} kcal</span>` : ""}
@@ -3849,9 +4201,16 @@ async function generateRecipe() {
             ${recipe.carbs ? `<span class="macro-pill mp-carb">🌾 ${recipe.carbs}g gluc.</span>` : ""}
             ${recipe.fat ? `<span class="macro-pill mp-fat">🥑 ${recipe.fat}g lip.</span>` : ""}
           </div>
+          ${twistHtml}
+          ${coachNoteHtml}
+          ${ingredientsHtml}
           ${stepsHtml ? `<ul class="recipe-v2-steps">${stepsHtml}</ul>` : ""}
+          ${recipe.batch_prep ? `<div class="recipe-v2-tip">📦 ${escapeHtml(recipe.batch_prep)}</div>` : ""}
           ${recipe.tips ? `<div class="recipe-v2-tip">💡 ${escapeHtml(recipe.tips)}</div>` : ""}
-          <button class="btn btn-p btn-sm btn-full" onclick="addRecipeAsMeal()">➕ Ajouter comme repas</button>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+            <button class="btn btn-p btn-sm btn-full" onclick="addRecipeAsMeal()">➕ Ajouter comme repas</button>
+            <button class="btn btn-g btn-sm btn-full" onclick="addRecipeToNutritionShoppingList()">🛒 Ajouter aux courses</button>
+          </div>
         </div>`;
       // Store recipe for "add as meal"
       window._lastRecipe = recipe;
@@ -3938,6 +4297,22 @@ function recipeFoodArt(name) {
   if (/smoothie|shake|protein/.test(n)) return "🥤";
   return "🍽️";
 }
+
+function recipeRequestBadge(text) {
+  const t = String(text || '').toLowerCase();
+  if (/(cr[eê]pes?|pancakes?)/.test(t)) return '🥞 Version healthy';
+  if (/(cookies?|brownie|muffins?|cake|dessert)/.test(t)) return '🍪 Version fit';
+  if (/(burger|pizza|tacos?|wrap)/.test(t)) return '🔥 Twist clean';
+  return '🍽️ Recette coach';
+}
+
+function setRecipeIdea(value) {
+  const input = document.getElementById('recipe-ingredients');
+  if (!input) return;
+  input.value = value;
+  input.focus();
+}
+window.setRecipeIdea = setRecipeIdea;
 
 function addRecipeAsMeal() {
   const r = window._lastRecipe;
@@ -4107,6 +4482,7 @@ window.saveProfile = saveProfile;
 window.deleteBodyScan = deleteBodyScan;
 window.generateRecipe    = generateRecipe;
 window.generateNutrition = generateNutrition;
+window.addRecipeToNutritionShoppingList = addRecipeToNutritionShoppingList;
 window.addRecipeAsMeal = addRecipeAsMeal;
 window.toggleComments = toggleComments;
 window.addComment = addComment;
@@ -4245,6 +4621,22 @@ function _wtCurrentBlock() {
   return _wtTimeline[_wtTimelineIdx] || null;
 }
 
+function _wtNextBlock() {
+  return _wtTimeline[_wtTimelineIdx + 1] || null;
+}
+
+function _wtRenderNextPreview() {
+  const wrap = document.getElementById('wt-next-preview');
+  if (!wrap) return;
+  const next = _wtNextBlock();
+  if (!next || !next.ex) {
+    wrap.innerHTML = '<div class="wt-next-empty">Dernier bloc de la séance — termine proprement.</div>';
+    return;
+  }
+  const ex = next.ex;
+  wrap.innerHTML = `<div class="wt-next-card"><div><div class="wt-next-kicker">Ensuite</div><div class="wt-next-name">${escapeHtml(ex.n || ex.name || 'Exercice')}</div><div class="wt-next-meta">${Math.max(20, Number(ex.guideSeconds || 0))}s effort · ${Math.max(0, Number(ex.restSeconds || 0))}s pause${next.round ? ` · Tour ${next.round}` : ''}</div></div><div class="wt-next-mini"><img class="wt-next-img" src="${_exerciseDemoDataUri(ex.n || ex.name || '')}" alt="Démo suivante"/></div></div>`;
+}
+
 function _wtSetSessionMeta(block, phaseSeconds) {
   const totalRemainEl = document.getElementById('wt-total-remaining');
   const blockEl = document.getElementById('wt-block-progress');
@@ -4303,7 +4695,7 @@ function startWorkoutSession() {
     return toast("Aucune séance à démarrer.", "err");
   }
   const exs = PLAN.exercises.map((ex, idx) => _normalizeGuidedExercise(ex, idx));
-  startWorkout(PLAN.title || 'Séance coach', exs, { guided: true, durationMin: Number(PLAN.duration || 0) || 0 });
+  startWorkout(PLAN.title || 'Séance coach', exs, { guided: true, durationMin: Number(PLAN.duration || 0) || 0, sessionStyle: PLAN.session_style || PLAN.daily_focus || '' });
 }
 
 function closeWorkoutSession() {
@@ -5465,7 +5857,7 @@ function startWorkout(dayLabel, exercises, params) {
   const titleEl = document.getElementById("wt-title");
   const phaseEl = document.getElementById("wt-phase-label");
   if (titleEl) titleEl.textContent = dayLabel || 'Séance guidée';
-  if (phaseEl) phaseEl.textContent = `${Math.max(1, Math.round(_wtWorkoutTargetSeconds / 60))} min guidées • auto-run • effort/pause/hydratation`;
+  if (phaseEl) phaseEl.textContent = `${Math.max(1, Math.round(_wtWorkoutTargetSeconds / 60))} min guidées • auto-run • effort/pause/hydratation${params.sessionStyle ? ` • ${params.sessionStyle}` : ''}`;
   if (overlay) overlay.classList.add("open");
   _wtRenderExercise();
   _wtStartReadyCountdown(3);
@@ -6274,8 +6666,9 @@ function _wtRenderExercise() {
   setEl('wt-ex-num', `Bloc ${_wtTimelineIdx + 1} / ${total}`);
   setEl('wt-ex-name', ex.n || '—');
   setEl('wt-ex-muscle', ex.m || 'Mouvement guidé');
-  setEl('wt-ex-detail', `${ex.guideSeconds}s d'effort • ${ex.restSeconds || 0}s de pause` + (block.round ? ` • Tour ${block.round}` : '') + (ex.targetGoal ? ` • objectif ${ex.targetGoal}` : '') + (ex.legacyPrescription ? ` • repère ${ex.legacyPrescription}` : ''));
+  setEl('wt-ex-detail', `${ex.guideSeconds}s d'effort • ${ex.restSeconds || 0}s de pause` + (block.round ? ` • Tour ${block.round}` : '') + (ex.targetGoal ? ` • objectif ${String(ex.targetGoal).replace(/_/g, ' ')}` : '') + (ex.legacyPrescription ? ` • repère ${ex.legacyPrescription}` : '') + (ex.sessionStyle ? ` • ${ex.sessionStyle}` : ''));
   _wtSetSessionMeta(block, ex.guideSeconds);
+  _wtRenderNextPreview();
 
   const imgWrap = document.getElementById('wt-ex-img-wrap');
   if (imgWrap) {
@@ -6286,7 +6679,7 @@ function _wtRenderExercise() {
   const tip = _getExerciseTip(ex.n || '');
   const tipEl = document.getElementById('wt-ex-tip');
   if (tipEl) {
-    tipEl.innerHTML = `<div class="wt-tip-grid"><div><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div><div><span>Tempo</span><p>${ex.guideSeconds}s guidées, avec rythme calé sur ton niveau du jour.</p></div><div><span>Erreur à éviter</span><p>${escapeHtml((tip || cue.breathe).replace(/^Inspire/i, 'Ne te précipite pas. Inspire'))}</p></div><div><span>Pourquoi toi</span><p>${escapeHtml(ex.personalWhy || 'Sélectionné pour ton objectif, ton niveau et ton état de récupération.')}</p></div></div>`;
+    tipEl.innerHTML = `<div class="wt-tip-grid"><div><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div><div><span>Tempo</span><p>${ex.guideSeconds}s guidées, avec rythme calé sur ton niveau du jour.</p></div><div><span>Erreur à éviter</span><p>${escapeHtml((tip || cue.breathe).replace(/^Inspire/i, 'Ne te précipite pas. Inspire'))}</p></div><div><span>Pourquoi toi</span><p>${escapeHtml(ex.personalWhy || 'Sélectionné pour ton objectif, ton niveau et ton état de récupération.')}</p></div><div><span>Cible</span><p>${escapeHtml(ex.targetGoal ? String(ex.targetGoal).replace(/_/g, ' ') : 'séance utile et tenable')}</p></div></div>`;
   }
 
   const restArea = document.getElementById('wt-rest-area');
@@ -6381,6 +6774,7 @@ function _startRestTimer(seconds, onDone) {
   if (imgWrap) imgWrap.innerHTML = _stickFigureDrinking();
   if (restMsg) restMsg.textContent = ex?.hydrationCue || '💧 Bois quelques gorgées et respire.';
   _wtSetPrimaryLabel('⏭ Passer la pause');
+  _wtRenderNextPreview();
   _wtUpdateStage({ phase: 'rest', kicker: 'Pause / hydratation', title: 'Récupère avant le prochain exercice', sub: 'Bois, relâche les épaules et prépare la transition.', timer: _wtFormatClock(seconds) });
   _wtSetSessionMeta(block, seconds);
   let breathToggle = false;

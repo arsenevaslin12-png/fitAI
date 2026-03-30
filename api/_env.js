@@ -26,7 +26,9 @@ const EnvSchema = z.object({
 const RecipeBodySchema = z.object({
   ingredients: z.string().min(2, "ingredients requis").max(2000),
   goal: z.enum(["equilibre", "hyperproteine", "low_carb", "prise_de_masse", "seche"]).default("equilibre"),
-  targetKcal: z.number().int().min(100).max(5000).default(500)
+  targetKcal: z.number().int().min(100).max(5000).default(500),
+  servings: z.number().int().min(1).max(6).default(2),
+  recipeStyle: z.enum(["fast", "comfort", "mealprep", "fresh"]).default("fast")
 }).strict();
 
 const BodyscanBodySchema = z.object({
