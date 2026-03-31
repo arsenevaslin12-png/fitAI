@@ -795,6 +795,21 @@ body.light .db-day-bar{background:rgba(15,23,42,.1)}
 .mood-start-btn{background:#fff;color:#020617;border:none;border-radius:999px;padding:13px 28px;font-weight:800;font-size:.88rem;cursor:pointer;transition:all .22s;font-family:inherit;flex-shrink:0;white-space:nowrap;box-shadow:0 2px 12px rgba(0,0,0,.25)}
 .mood-start-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,0,0,.3)}
 .mood-start-btn.active{background:#a3e635;color:#0a1a00;box-shadow:0 4px 20px rgba(163,230,53,.4)}
+/* Mood live label */
+.mood-label-tag{font-size:.78rem;font-weight:800;letter-spacing:.04em;color:#fff;min-height:18px;margin-top:6px;opacity:0;transform:translateY(6px);transition:opacity .25s,transform .25s}
+.mood-label-tag.visible{opacity:1;transform:translateY(0)}
+/* b-mood dynamic glow transition */
+.b-mood{transition:background .55s ease,border-color .55s ease}
+/* XP progress row */
+.xp-prog-row{display:flex;align-items:center;gap:10px;margin-top:10px}
+.xp-prog-bar{flex:1;height:7px;background:rgba(255,255,255,.09);border-radius:999px;overflow:hidden}
+.xp-prog-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#6366f1,#8b5cf6);transition:width .9s cubic-bezier(.4,0,.2,1)}
+.xp-prog-label{font-size:.7rem;font-weight:800;color:#818cf8;white-space:nowrap}
+/* Daily challenges container card wrapper */
+.daily-ch-card{background:rgba(15,23,42,.8);border:1px solid rgba(255,255,255,.07);border-radius:2rem;padding:20px;margin-top:14px;backdrop-filter:blur(12px);box-shadow:0 1px 0 rgba(255,255,255,.05) inset}
+/* Weekly plan card premium */
+.weekly-plan-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.weekly-plan-badge{font-size:.64rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:3px 10px;border-radius:999px;background:rgba(99,102,241,.15);color:#818cf8;border:1px solid rgba(99,102,241,.25)}
 
 /* ── NUTRITION MACRO BARS ── */
 .nutr-today-wrap{display:flex;align-items:center;gap:22px}
@@ -1595,11 +1610,12 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
             <div class="mood-inner">
               <div class="mood-text-block">
                 <div class="mood-tile-label">Humeur du jour</div>
-                <div class="mood-tile-title">Comment vous<br>sentez-vous ?</div>
+                <div class="mood-tile-title">Comment tu<br>te sens ?</div>
+                <div class="mood-label-tag" id="mood-label-tag"></div>
               </div>
               <div class="mood-faces-row">
-                <!-- Face 1: Épuisé (red/pink) -->
-                <button class="mood-face" data-v="1" onclick="selectMood(this,1)">
+                <!-- Face 1: Épuisé -->
+                <button class="mood-face" data-v="1" onclick="selectMood(this,1)" title="Épuisé">
                   <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <circle cx="20" cy="20" r="20" fill="#f87171"/>
                     <ellipse cx="13.5" cy="17.5" rx="2.5" ry="1.8" fill="rgba(0,0,0,.5)"/>
@@ -1607,19 +1623,24 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
                     <ellipse cx="26.5" cy="17.5" rx="2.5" ry="1.8" fill="rgba(0,0,0,.5)"/>
                     <rect x="24" y="15" width="5" height="2.2" rx="1.1" fill="#f87171"/>
                     <path d="M13 27 Q20 22.5 27 27" stroke="rgba(0,0,0,.5)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+                    <!-- Sweat drop -->
+                    <path d="M29 11 Q30.5 13.5 29 15 Q27.5 13.5 29 11Z" fill="rgba(255,255,255,.4)"/>
                   </svg>
                 </button>
-                <!-- Face 2: Fatigué (orange) -->
-                <button class="mood-face" data-v="2" onclick="selectMood(this,2)">
+                <!-- Face 2: Fatigué -->
+                <button class="mood-face" data-v="2" onclick="selectMood(this,2)" title="Fatigué">
                   <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <circle cx="20" cy="20" r="20" fill="#fb923c"/>
                     <circle cx="14" cy="17" r="2.6" fill="rgba(0,0,0,.5)"/>
                     <circle cx="26" cy="17" r="2.6" fill="rgba(0,0,0,.5)"/>
+                    <!-- Heavy eyelids -->
+                    <path d="M11.5 14.5 Q14 16 16.5 14.5" stroke="rgba(0,0,0,.45)" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+                    <path d="M23.5 14.5 Q26 16 28.5 14.5" stroke="rgba(0,0,0,.45)" stroke-width="1.8" fill="none" stroke-linecap="round"/>
                     <path d="M14.5 26.5 Q20 24 25.5 26.5" stroke="rgba(0,0,0,.5)" stroke-width="2" fill="none" stroke-linecap="round"/>
                   </svg>
                 </button>
-                <!-- Face 3: Neutre (yellow, largest) -->
-                <button class="mood-face" data-v="3" onclick="selectMood(this,3)">
+                <!-- Face 3: Neutre (largest) -->
+                <button class="mood-face" data-v="3" onclick="selectMood(this,3)" title="Neutre">
                   <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <circle cx="20" cy="20" r="20" fill="#fbbf24"/>
                     <circle cx="14" cy="17" r="2.8" fill="rgba(0,0,0,.5)"/>
@@ -1627,26 +1648,34 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
                     <line x1="14" y1="26.5" x2="26" y2="26.5" stroke="rgba(0,0,0,.5)" stroke-width="2.2" stroke-linecap="round"/>
                   </svg>
                 </button>
-                <!-- Face 4: Bien (green) -->
-                <button class="mood-face" data-v="4" onclick="selectMood(this,4)">
+                <!-- Face 4: Bien -->
+                <button class="mood-face" data-v="4" onclick="selectMood(this,4)" title="Bien">
                   <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <circle cx="20" cy="20" r="20" fill="#4ade80"/>
                     <circle cx="14" cy="17" r="2.6" fill="rgba(0,0,0,.5)"/>
                     <circle cx="26" cy="17" r="2.6" fill="rgba(0,0,0,.5)"/>
+                    <!-- Cheek blush -->
+                    <ellipse cx="11" cy="22" rx="3.5" ry="2" fill="rgba(0,0,0,.12)"/>
+                    <ellipse cx="29" cy="22" rx="3.5" ry="2" fill="rgba(0,0,0,.12)"/>
                     <path d="M14 24.5 Q20 29.5 26 24.5" stroke="rgba(0,0,0,.5)" stroke-width="2" fill="none" stroke-linecap="round"/>
                   </svg>
                 </button>
-                <!-- Face 5: En forme (blue) -->
-                <button class="mood-face" data-v="5" onclick="selectMood(this,5)">
+                <!-- Face 5: En forme -->
+                <button class="mood-face" data-v="5" onclick="selectMood(this,5)" title="En forme">
                   <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <circle cx="20" cy="20" r="20" fill="#60a5fa"/>
                     <circle cx="13.5" cy="16.5" r="3" fill="rgba(0,0,0,.5)"/>
                     <circle cx="26.5" cy="16.5" r="3" fill="rgba(0,0,0,.5)"/>
+                    <!-- Star sparkle -->
+                    <path d="M33 8 L34 11 L37 12 L34 13 L33 16 L32 13 L29 12 L32 11 Z" fill="rgba(255,255,255,.7)"/>
+                    <!-- Big smile -->
                     <path d="M12 23.5 Q20 31 28 23.5" stroke="rgba(0,0,0,.5)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+                    <ellipse cx="11.5" cy="23" rx="3.5" ry="2" fill="rgba(0,0,0,.1)"/>
+                    <ellipse cx="28.5" cy="23" rx="3.5" ry="2" fill="rgba(0,0,0,.1)"/>
                   </svg>
                 </button>
               </div>
-              <button class="mood-start-btn" id="mood-start-btn" onclick="startWithMood()">Commencer →</button>
+              <button class="mood-start-btn" id="mood-start-btn" onclick="startWithMood()">Lancer la séance →</button>
             </div>
           </div>
 
@@ -1818,14 +1847,19 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
         </div><!-- /bento -->
 
         <!-- Planning de la semaine -->
-        <div class="card" id="weekly-plan-card">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-            <div style="font-weight:800;font-size:.92rem">📅 Programme 8 semaines</div>
-            <button id="btn-gen-plan" class="btn btn-p btn-sm" onclick="generateWeeklyPlan()" style="font-size:.72rem;padding:5px 12px">Générer</button>
+        <div class="card" id="weekly-plan-card" style="border-radius:2rem;border-color:rgba(99,102,241,.18);background:rgba(10,16,32,.85)">
+          <div class="weekly-plan-header">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+                <div style="font-weight:800;font-size:.92rem">📅 Programme de la semaine</div>
+                <span class="weekly-plan-badge" id="plan-week-badge">Sem. —</span>
+              </div>
+              <div style="font-size:.72rem;color:var(--muted)" id="plan-week-label"></div>
+            </div>
+            <button id="btn-gen-plan" class="btn btn-p btn-sm" onclick="generateWeeklyPlan()" style="font-size:.72rem;padding:6px 14px;flex-shrink:0">⚡ Générer</button>
           </div>
-          <div style="font-size:.72rem;color:var(--muted);margin-bottom:2px" id="plan-week-label"></div>
           <div id="weekly-plan-grid"><div class="plan-grid" id="plan-day-grid"></div></div>
-          <div id="plan-empty" style="display:none;text-align:center;padding:14px 0;font-size:.8rem;color:var(--muted)">Aucun planning — appuie sur Générer pour créer ta semaine.</div>
+          <div id="plan-empty" style="display:none;text-align:center;padding:16px 0;font-size:.8rem;color:var(--muted);border:1px dashed rgba(255,255,255,.1);border-radius:1rem;margin-top:8px">Aucun programme — génère ta semaine avec l'IA ⚡</div>
         </div>
 
         <!-- Daily Challenges -->

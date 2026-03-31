@@ -758,12 +758,37 @@ const MOOD_COACH_MSGS = {
   5: "Je suis en pleine forme aujourd'hui ! Pousse-moi avec une séance intense selon mon objectif."
 };
 
+// Mood-level to card background glow (subtle tint)
+const MOOD_BG = {
+  1: "linear-gradient(145deg,rgba(248,113,113,.12),rgba(239,68,68,.04))",
+  2: "linear-gradient(145deg,rgba(251,146,60,.11),rgba(249,115,22,.04))",
+  3: "linear-gradient(145deg,rgba(251,191,36,.1),rgba(234,179,8,.04))",
+  4: "linear-gradient(145deg,rgba(74,222,128,.1),rgba(34,197,94,.04))",
+  5: "linear-gradient(145deg,rgba(96,165,250,.12),rgba(37,99,235,.05))"
+};
+const MOOD_BORDER = { 1:"rgba(248,113,113,.25)", 2:"rgba(251,146,60,.22)", 3:"rgba(251,191,36,.2)", 4:"rgba(74,222,128,.2)", 5:"rgba(96,165,250,.22)" };
+const MOOD_EMOJI  = { 1:"😩", 2:"😔", 3:"😐", 4:"😊", 5:"💪" };
+
 function selectMood(btn, level) {
   document.querySelectorAll(".mood-face").forEach(b => b.classList.remove("selected"));
   btn.classList.add("selected");
   const startBtn = document.getElementById("mood-start-btn");
   if (startBtn) startBtn.classList.add("active");
   const label = MOOD_LABELS[level] || "";
+
+  // Live label tag
+  const labelTag = document.getElementById("mood-label-tag");
+  if (labelTag) {
+    labelTag.textContent = (MOOD_EMOJI[level] || "") + " " + label;
+    labelTag.classList.add("visible");
+  }
+  // Dynamic card glow
+  const card = document.querySelector(".b-mood");
+  if (card) {
+    card.style.background = MOOD_BG[level] || "";
+    card.style.borderColor = MOOD_BORDER[level] || "";
+  }
+
   try {
     localStorage.setItem("fitai_mood", String(level));
     localStorage.setItem("fitai_mood_label", label);
@@ -793,11 +818,13 @@ function restoreMoodSelection() {
     const saved = localStorage.getItem("fitai_mood");
     const savedDate = localStorage.getItem("fitai_mood_date");
     if (saved && savedDate === new Date().toDateString()) {
+      const lvl = parseInt(saved);
       document.querySelectorAll(".mood-face").forEach(b => {
         if (b.dataset.v === saved) b.classList.add("selected");
       });
       const startBtn = document.getElementById("mood-start-btn");
       if (startBtn) startBtn.classList.add("active");
+      _applyMoodGlow(lvl);
     }
   } catch {}
   // Then sync from Supabase (persistent across devices)
@@ -806,18 +833,33 @@ function restoreMoodSelection() {
     SB.from("daily_moods").select("mood_level,mood_label").eq("user_id", U.id).eq("date", today).maybeSingle()
       .then(({ data }) => {
         if (!data) return;
+        const lvl = data.mood_level;
         document.querySelectorAll(".mood-face").forEach(b => b.classList.remove("selected"));
         document.querySelectorAll(".mood-face").forEach(b => {
-          if (b.dataset.v === String(data.mood_level)) b.classList.add("selected");
+          if (b.dataset.v === String(lvl)) b.classList.add("selected");
         });
         const startBtn = document.getElementById("mood-start-btn");
         if (startBtn) startBtn.classList.add("active");
+        _applyMoodGlow(lvl);
         try {
-          localStorage.setItem("fitai_mood", String(data.mood_level));
+          localStorage.setItem("fitai_mood", String(lvl));
           localStorage.setItem("fitai_mood_label", data.mood_label || "");
           localStorage.setItem("fitai_mood_date", new Date().toDateString());
         } catch {}
       }).catch((err) => console.warn("[mood] restore failed:", err));
+  }
+}
+
+function _applyMoodGlow(level) {
+  const labelTag = document.getElementById("mood-label-tag");
+  if (labelTag) {
+    labelTag.textContent = (MOOD_EMOJI[level] || "") + " " + (MOOD_LABELS[level] || "");
+    labelTag.classList.add("visible");
+  }
+  const card = document.querySelector(".b-mood");
+  if (card) {
+    card.style.background = MOOD_BG[level] || "";
+    card.style.borderColor = MOOD_BORDER[level] || "";
   }
 }
 
@@ -4482,10 +4524,11 @@ function renderWeeklyPlan(plan, weekNum, phase) {
     const end = new Date(d); end.setDate(d.getDate() + 6);
     const fmt = (dt) => dt.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
     let label = `Semaine du ${fmt(d)} au ${fmt(end)}`;
-    if (weekNum) label += ` · S${weekNum}/8`;
-    if (phase) label += ` ${phase}`;
+    if (phase) label += ` · ${phase}`;
     labelEl.textContent = label;
   }
+  const badgeEl = document.getElementById("plan-week-badge");
+  if (badgeEl) badgeEl.textContent = weekNum ? `Sem. ${weekNum}/8` : "Cette semaine";
 
   const today = getTodayDayOfWeek();
   const byDay = Object.fromEntries(plan.map(p => [p.day_of_week, p]));
@@ -5347,14 +5390,22 @@ function renderDailyChallengesSection() {
   // ── Dashboard widget ────────────────────────────────────────────────────────
   const dashEl = document.getElementById("daily-challenges-container");
   if (dashEl) {
-    dashEl.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    const totalXp   = challenges.reduce((s, c) => s + (c.xp || 0), 0);
+    const earnedXp  = challenges.filter(c => data.done.includes(c.id)).reduce((s, c) => s + (c.xp || 0), 0);
+    const xpPct     = totalXp > 0 ? Math.round((earnedXp / totalXp) * 100) : 0;
+    const xpLabel   = allDone ? `🏆 ${totalXp} XP gagnés !` : `${earnedXp} / ${totalXp} XP`;
+    dashEl.innerHTML = `<div class="daily-ch-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
         <div style="font-weight:800;font-size:.92rem;color:var(--text)">⚡ Défis du jour</div>
-        <div style="font-size:.72rem;color:var(--muted);font-weight:700">${doneCount}/${challenges.length} accomplis</div>
+        <div style="font-size:.7rem;color:${allDone ? "#4ade80" : "var(--muted)"};font-weight:700">${doneCount}/${challenges.length} accomplis</div>
       </div>
-      ${challenges.map(ch => _buildChallengeRowHtml(ch, data.done.includes(ch.id), "dash")).join("")}
-      ${allDone ? `<div style="text-align:center;padding:10px;font-size:.8rem;font-weight:700;color:#4ade80;background:rgba(34,197,94,.06);border-radius:10px;border:1px solid rgba(34,197,94,.2)">🏆 Parfait ! Tous les défis accomplis aujourd'hui.</div>` : ""}
-    `;
+      <div class="xp-prog-row">
+        <div class="xp-prog-bar"><div class="xp-prog-fill" style="width:${xpPct}%"></div></div>
+        <div class="xp-prog-label">${xpLabel}</div>
+      </div>
+      <div style="margin-top:12px">${challenges.map(ch => _buildChallengeRowHtml(ch, data.done.includes(ch.id), "dash")).join("")}</div>
+      ${allDone ? `<div style="text-align:center;padding:10px;font-size:.8rem;font-weight:700;color:#4ade80;background:rgba(34,197,94,.06);border-radius:12px;border:1px solid rgba(34,197,94,.2);margin-top:8px">🏆 Parfait ! Tous les défis accomplis aujourd'hui.</div>` : ""}
+    </div>`;
   }
 
   // ── Défis tab full panel ────────────────────────────────────────────────────
