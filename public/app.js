@@ -1495,7 +1495,7 @@ function _exerciseDemoSvg(label = '') {
 }
 
 function _exerciseDemoDataUri(label = '') {
-  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(_stickFigureSVG(label));
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(_exerciseDemoSvg(label));
 }
 
 function _exerciseDisplay(ex = {}) {
@@ -1866,13 +1866,15 @@ async function renderNutritionProgress(totals) {
     const targetCarb = t.carbs || 260;
     const targetFat = t.fats || 70;
 
-    // Calorie ring (SVG arc — circumference of r=46 is ≈ 289)
+    // Calorie ring (SVG arc — circumference of r=50 is ≈ 314)
     const pct = Math.max(0, Math.min(1, totals.kcal / targetCalories));
     const arc = document.getElementById("kcal-ring-arc");
     if (arc) {
-      const circ = 289;
+      const circ = 314;
       arc.setAttribute("stroke-dasharray", `${(pct * circ).toFixed(1)} ${circ}`);
-      arc.setAttribute("stroke", pct > 0.95 ? "#f87171" : pct > 0.7 ? "#fbbf24" : "#4ade80");
+      // Gradient via SVG defs; only override to red when over limit
+      if (pct > 1) arc.setAttribute("stroke", "#f87171");
+      else arc.setAttribute("stroke", "url(#kcalGrad)");
     }
 
     // Linear bar compat (if still exists)
@@ -4510,6 +4512,10 @@ function renderWeeklyPlan(plan, weekNum, phase) {
   const labelEl  = document.getElementById("plan-week-label");
   if (!grid) return;
 
+  // Remove existing focus card
+  const prevFocus = document.getElementById("plan-today-focus");
+  if (prevFocus) prevFocus.remove();
+
   if (!plan.length) {
     grid.innerHTML = "";
     if (emptyEl) emptyEl.style.display = "block";
@@ -4523,7 +4529,7 @@ function renderWeeklyPlan(plan, weekNum, phase) {
     const d = new Date(weekStart + "T00:00:00");
     const end = new Date(d); end.setDate(d.getDate() + 6);
     const fmt = (dt) => dt.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-    let label = `Semaine du ${fmt(d)} au ${fmt(end)}`;
+    let label = `du ${fmt(d)} au ${fmt(end)}`;
     if (phase) label += ` · ${phase}`;
     labelEl.textContent = label;
   }
@@ -4532,22 +4538,59 @@ function renderWeeklyPlan(plan, weekNum, phase) {
 
   const today = getTodayDayOfWeek();
   const byDay = Object.fromEntries(plan.map(p => [p.day_of_week, p]));
+  const DAY_FULL = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const INTENSITY_CLASS = { low: "intensity-low", easy: "intensity-low", medium: "intensity-medium", hard: "intensity-high", high: "intensity-high" };
 
   grid.innerHTML = Array.from({ length: 7 }, (_, i) => {
-    const day  = i + 1;
-    const item = byDay[day];
+    const day    = i + 1;
+    const item   = byDay[day];
     const isToday = day === today;
     const isRest  = !item || /repos|rest/i.test(item.workout_type || "");
     const ico     = item ? workoutIcon(item.workout_type) : "😴";
-    const intIco  = item ? (INTENSITY_ICONS[item.intensity] || "") : "";
-    const label   = item ? escapeHtml(item.workout_type.slice(0, 8)) : "Repos";
-    return `<div class="plan-day${isToday ? " today" : ""}${isRest ? " rest" : ""}" title="${item?.notes || ""}">
-      <div class="plan-day-lbl">${DAY_NAMES[i]}</div>
+    const intKey  = (item?.intensity || "").toLowerCase();
+    const intCls  = !isRest ? (INTENSITY_CLASS[intKey] || "") : "";
+    const label   = item ? escapeHtml(item.workout_type.slice(0, 9)) : "Repos";
+    return `<div class="plan-day${isToday ? " today" : ""}${isRest ? " rest" : ""}${intCls ? " " + intCls : ""}" title="${escapeHtml(item?.notes || "")}">
+      <div class="plan-day-lbl">${DAY_FULL[i]}</div>
       <div class="plan-day-ico">${ico}</div>
-      ${intIco ? `<div style="font-size:.5rem">${intIco}</div>` : ""}
       <div class="plan-day-txt">${label}</div>
+      <div class="plan-day-dot"></div>
     </div>`;
   }).join("");
+
+  // Today's focus card
+  const gridContainer = document.getElementById("weekly-plan-grid");
+  if (gridContainer) {
+    const todayItem = byDay[today];
+    const focusEl = document.createElement("div");
+    focusEl.id = "plan-today-focus";
+    const isRestToday = !todayItem || /repos|rest/i.test(todayItem?.workout_type || "");
+    if (!isRestToday && todayItem) {
+      const ico = workoutIcon(todayItem.workout_type);
+      const intLabelMap = { low: "Léger", easy: "Léger", medium: "Modéré", hard: "Intense", high: "Intense" };
+      const intLabel = intLabelMap[(todayItem.intensity || "").toLowerCase()] || "Modéré";
+      focusEl.innerHTML = `<div class="plan-today-focus">
+        <div class="plan-today-focus-kicker">Aujourd'hui</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:${todayItem.notes ? "7px" : "0"}">
+          <span style="font-size:1.5rem">${ico}</span>
+          <div>
+            <div class="plan-today-focus-type">${escapeHtml(todayItem.workout_type)}</div>
+            <span class="weekly-plan-badge">${intLabel}</span>
+          </div>
+        </div>
+        ${todayItem.notes ? `<div class="plan-today-focus-notes">${escapeHtml(todayItem.notes)}</div>` : ""}
+      </div>`;
+    } else {
+      focusEl.innerHTML = `<div class="plan-today-focus" style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:1.6rem">😴</span>
+        <div>
+          <div style="font-size:.82rem;font-weight:800;color:var(--text2)">Repos aujourd'hui</div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:2px">Récupère bien — tu reprends demain</div>
+        </div>
+      </div>`;
+    }
+    gridContainer.appendChild(focusEl);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
