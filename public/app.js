@@ -741,6 +741,7 @@ async function loadDashboard() {
     loadWeeklyPlan();
     loadScanMiniTile();
     restoreMoodSelection();
+    renderWeekActivity();
   } catch (e) {
     console.error("[Dashboard] Error:", e);
   }
@@ -817,6 +818,58 @@ function restoreMoodSelection() {
           localStorage.setItem("fitai_mood_date", new Date().toDateString());
         } catch {}
       }).catch((err) => console.warn("[mood] restore failed:", err));
+  }
+}
+
+// ── Dashboard ring animation ─────────────────────────────────────────────────
+function animateRing(id, value, max) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const r = parseFloat(el.getAttribute("r") || 20);
+  const circ = 2 * Math.PI * r;
+  const pct = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
+  el.setAttribute("stroke-dasharray", String(circ));
+  // Defer to next frame so CSS transition fires
+  requestAnimationFrame(() => {
+    el.style.strokeDashoffset = String(circ * (1 - pct));
+  });
+}
+
+// ── Dashboard week activity bars ─────────────────────────────────────────────
+async function renderWeekActivity() {
+  if (!U) return;
+  try {
+    const today = new Date();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    monday.setHours(0, 0, 0, 0);
+    const { data } = await SB.from("workout_sessions")
+      .select("created_at")
+      .eq("user_id", U.id)
+      .gte("created_at", monday.toISOString());
+
+    // Map session dates to day index (0=Mon … 6=Sun)
+    const DAY_HEIGHTS = [22, 28, 32, 26, 30, 34, 20]; // varied heights for active days
+    const activeDays = new Set((data || []).map(s => (new Date(s.created_at).getDay() + 6) % 7));
+    const todayIdx = (today.getDay() + 6) % 7;
+
+    const countEl = document.getElementById("db-week-count");
+    if (countEl) countEl.textContent = `${activeDays.size} / 7j`;
+
+    document.querySelectorAll(".db-week .db-day").forEach((el, i) => {
+      const isActive = activeDays.has(i);
+      const isToday = i === todayIdx;
+      el.classList.toggle("active", isActive);
+      el.classList.toggle("today", isToday && !isActive);
+      const bar = el.querySelector(".db-day-bar");
+      if (bar) {
+        const h = isActive ? DAY_HEIGHTS[i] : (isToday ? 14 : 5);
+        // Small delay so CSS transition fires
+        setTimeout(() => { bar.style.height = h + "px"; }, 80 + i * 40);
+      }
+    });
+  } catch (e) {
+    console.warn("[WeekActivity]", e.message);
   }
 }
 
@@ -1417,7 +1470,7 @@ function exerciseHowToHtml(ex = {}) {
   const safe = _exerciseDisplay(ex);
   const cue = exerciseCuePack(safe);
   const detail = safe.guideSeconds ? `Bloc guidé de ${safe.guideSeconds}s puis ${safe.restSeconds || 20}s de pause.` : (safe.sets ? `${safe.sets} séries` : 'Exécution continue.');
-  const errorTip = _getExerciseTip(safe.name || safe.n || '') || 'Évite l’élan et garde une amplitude propre.';
+  const errorTip = _getExerciseTip(safe.name || safe.n || '') || "Évite l'élan et garde une amplitude propre.";
   return `<div class="ex-howto"><div class="ex-howto-item"><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div class="ex-howto-item"><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div class="ex-howto-item"><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div class="ex-howto-item"><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div><div class="ex-howto-item"><span>Rythme</span><p>${escapeHtml(detail)}</p></div><div class="ex-howto-item"><span>Erreur à éviter</span><p>${escapeHtml(errorTip)}</p></div></div>`;
 }
 
@@ -1689,6 +1742,7 @@ async function loadMeals() {
     if (mKcal) mKcal.textContent = String(totals.kcal);
     const dbKcal = document.getElementById("db-kcal");
     if (dbKcal) dbKcal.textContent = String(totals.kcal);
+    animateRing("ring-kcal", totals.kcal, 2500);
     const mProt = document.getElementById("m-prot");
     if (mProt) mProt.textContent = `${totals.protein}g`;
     const mCarb = document.getElementById("m-carb");
@@ -2952,6 +3006,7 @@ function applyStats({ sessCount = 0, scansCount = 0, postsCount = 0 } = {}) {
   Object.entries(ids).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.textContent = val; });
   const totalSess = document.getElementById("db-total-sessions");
   if (totalSess) totalSess.textContent = sessCount;
+  animateRing("ring-sess", sessCount, 30);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3555,6 +3610,7 @@ async function loadStreak() {
 
     const dbStreak = document.getElementById("db-streak");
     if (dbStreak) dbStreak.textContent = streak.current_streak;
+    animateRing("ring-streak", streak.current_streak, 30);
 
     const longestEl = document.getElementById("st-longest");
     if (longestEl) longestEl.textContent = streak.longest_streak;
@@ -3850,16 +3906,16 @@ function mergeNutritionShoppingList(base, extra) {
 
 function addRecipeToNutritionShoppingList(idx = 0) {
   const recipe = (window._lastRecipes && window._lastRecipes[idx]) || window._lastRecipe;
-  if (!recipe) return toast(‘Aucune recette à ajouter.’, ‘err’);
+  if (!recipe) return toast('Aucune recette à ajouter.', 'err');
   const payload = loadStoredNutritionPlanPayload();
-  if (!payload || !payload.plan) return toast(‘Génère d’abord un plan nutrition.’, ‘warn’);
-  const recipeShopping = recipe.shopping_list && typeof recipe.shopping_list === ‘object’
+  if (!payload || !payload.plan) return toast("Génère d'abord un plan nutrition.", 'warn');
+  const recipeShopping = recipe.shopping_list && typeof recipe.shopping_list === 'object'
     ? recipe.shopping_list
-    : { title: ‘Courses recette’, categories: [{ title: ‘Recette’, items: (recipe.ingredients_list || []).map((name) => ({ name, qty: ‘à prévoir’ })) }] };
+    : { title: 'Courses recette', categories: [{ title: 'Recette', items: (recipe.ingredients_list || []).map((name) => ({ name, qty: 'à prévoir' })) }] };
   payload.plan.shopping_list = mergeNutritionShoppingList(payload.plan.shopping_list || buildNutritionShoppingList(payload.plan), recipeShopping);
   saveNutritionPlanPayload(payload);
-  renderNutritionPlanPayload(payload, { status: ‘Liste de courses enrichie avec la recette.’, statusType: ‘ok’ });
-  toast(‘Ingrédients ajoutés à la liste de courses ✓’, ‘ok’);
+  renderNutritionPlanPayload(payload, { status: 'Liste de courses enrichie avec la recette.', statusType: 'ok' });
+  toast('Ingrédients ajoutés à la liste de courses ✓', 'ok');
 }
 
 function setNutritionGeneratedState({ loading = false, visible = false, status = '', statusType = '', payload = null } = {}) {
@@ -3887,7 +3943,7 @@ function setNutritionGeneratedState({ loading = false, visible = false, status =
   }
   if (!payload) {
     if (titleEl) titleEl.textContent = 'Plan nutrition du jour';
-    if (summaryEl) summaryEl.textContent = loading ? 'Préparation d’un plan plus propre et plus lisible…' : 'Aucun plan généré pour le moment.';
+    if (summaryEl) summaryEl.textContent = loading ? "Préparation d'un plan plus propre et plus lisible…" : 'Aucun plan généré pour le moment.';
     if (badgesEl) badgesEl.innerHTML = '';
     if (mealsEl) mealsEl.innerHTML = '';
     if (detailEl) detailEl.innerHTML = '';
@@ -3930,7 +3986,7 @@ function renderNutritionPlanPayload(payload, options = {}) {
   setNutritionGeneratedState({ visible: true, loading: false, status: options.status || (data.fallback ? 'Plan de secours intelligent appliqué — utilisable tel quel.' : ''), statusType: options.statusType || (data.fallback ? 'warn' : ''), payload: data });
   if (shell) shell.style.display = 'grid';
   if (titleEl) titleEl.textContent = data.plan.title || 'Plan nutrition du jour';
-  if (summaryEl) summaryEl.textContent = data.plan.summary || data.nutrition.notes || 'Plan prêt à suivre aujourd’hui.';
+  if (summaryEl) summaryEl.textContent = data.plan.summary || data.nutrition.notes || "Plan prêt à suivre aujourd'hui.";
   if (badgesEl) {
     badgesEl.innerHTML = [
       `<span class="nutr-chip">🎯 ${escapeHtml(nutritionGoalLabel(data.goal))}</span>`,
@@ -4101,7 +4157,7 @@ async function generateNutrition() {
     if (reqSeq !== NUTRITION_REQUEST_SEQ) return;
 
     renderNutritionPlanPayload(j, {
-      status: j.fallback ? "Plan de secours intelligent généré — utilisable immédiatement." : "Nouveau plan généré pour aujourd’hui.",
+      status: j.fallback ? "Plan de secours intelligent généré — utilisable immédiatement." : "Nouveau plan généré pour aujourd'hui.",
       statusType: j.fallback ? "warn" : "ok"
     });
     await loadNutritionTargets();
@@ -6720,7 +6776,7 @@ function _wtStartWork(resume) {
   if (!resume) _wtSecondsLeft = ex.guideSeconds;
   _wtPhase = 'work';
   _wtSetPrimaryLabel('⏸ Pause');
-  _wtUpdateStage({ phase: 'work', kicker: 'Exercice en cours', title: ex.n, sub: 'Suis la démo, garde l’amplitude propre et laisse le timer enchaîner la récupération.', timer: _wtFormatClock(_wtSecondsLeft) });
+  _wtUpdateStage({ phase: 'work', kicker: 'Exercice en cours', title: ex.n, sub: "Suis la démo, garde l'amplitude propre et laisse le timer enchaîner la récupération.", timer: _wtFormatClock(_wtSecondsLeft) });
   _wtSetSessionMeta(block, _wtSecondsLeft);
   if (_wtPhaseTimer) clearInterval(_wtPhaseTimer);
   _wtPhaseTimer = setInterval(() => {
