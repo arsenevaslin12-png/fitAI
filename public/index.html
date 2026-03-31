@@ -516,14 +516,15 @@ body.light .friend-search-bar input{color:#0f172a}
 .ex-howto-item span{display:block;font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:4px}
 .ex-howto-item p{margin:0;font-size:.76rem;line-height:1.5;color:var(--text2)}
 
-.ex-demo-gif,.wt-demo-gif{width:100%;height:100%;object-fit:contain;display:block;filter:drop-shadow(0 18px 32px rgba(0,0,0,.36));transform:scale(1.05)}
+.ex-demo-gif,.wt-demo-gif,.wt-next-img{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+.ex-demo-gif svg,.wt-demo-gif svg,.wt-next-img svg{width:100%;height:100%;filter:drop-shadow(0 12px 28px rgba(0,0,0,.38));transform:scale(1.04)}
 .ex-figure,.wt-visual-main{position:relative;overflow:hidden}
 .ex-figure::after,.wt-visual-main::after{content:"";position:absolute;inset:auto 10% 8% 10%;height:22px;border-radius:999px;background:radial-gradient(circle,rgba(34,211,238,.18),transparent 70%);pointer-events:none}
 .ex-figure-tag,.ex-figure-tag-muscle{backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(2,6,23,.22)}
 .wt-visual-main{min-height:290px;padding:16px;border-radius:22px}
-.wt-demo-gif{max-height:260px}
+.wt-demo-gif{max-height:260px;min-height:200px}
 .ex-figure{min-height:220px;padding:14px;border-radius:20px}
-.ex-demo-gif{max-height:200px}
+.ex-demo-gif{max-height:200px;min-height:160px}
 
 .ex-figure-tag{position:absolute;top:10px;left:10px;font-size:.58rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.55)}
 .ex-figure-tag-muscle{color:rgba(96,165,250,.72)}
@@ -984,9 +985,7 @@ body.light .db-day-bar{background:rgba(15,23,42,.1)}
 /* prog ex checkbox */
 .prog-ex-check{width:18px;height:18px;border-radius:5px;border:1.5px solid rgba(255,255,255,.2);background:transparent;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .18s}
 .prog-ex-check.checked{background:#4ade80;border-color:#4ade80}
-/* Start workout button */
-.prog-start-btn{width:100%;margin-top:10px;padding:11px;font-size:.82rem;font-weight:800;background:linear-gradient(135deg,#4338ca,#7c3aed);border:none;border-radius:12px;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .2s}
-.prog-start-btn:hover{opacity:.88}
+/* Start workout button — see .prog-start-btn below */
 
 /* ── V2 SCAN IA MINI TILE ── */
 .scan-mini-label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(0,255,255,.6);margin-bottom:8px}
@@ -1086,14 +1085,19 @@ body.light .db-day-bar{background:rgba(15,23,42,.1)}
 .water-count-badge{background:rgba(56,189,248,.1);border:1.5px solid rgba(56,189,248,.25);border-radius:14px;padding:6px 14px;text-align:center;min-width:60px}
 .water-count-num{font-size:1.7rem;font-weight:900;color:#38bdf8;line-height:1;letter-spacing:-.03em}
 .water-count-lbl{font-size:.58rem;color:var(--muted);font-weight:700;margin-top:1px}
-.water-glasses-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
-.water-glass{aspect-ratio:1;border-radius:10px;border:1.5px solid rgba(56,189,248,.2);display:flex;align-items:center;justify-content:center;font-size:1.1rem;cursor:pointer;transition:all .2s;background:rgba(56,189,248,.03);position:relative;overflow:hidden}
-.water-glass::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(56,189,248,.15),rgba(14,165,233,.28));opacity:0;transition:opacity .2s;border-radius:inherit}
-.water-glass.filled{border-color:#38bdf8;background:rgba(56,189,248,.12)}
-.water-glass.filled::after{opacity:1}
-.water-glass:hover{border-color:rgba(56,189,248,.55);transform:scale(1.06)}
-.water-glass.done-pop{animation:waterPop .3s ease}
-@keyframes waterPop{0%{transform:scale(1)}50%{transform:scale(1.25)}100%{transform:scale(1)}}
+.water-glasses-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;align-items:end}
+.water-glass{aspect-ratio:3/5;border-radius:3px 3px 9px 9px;border:1.5px solid rgba(56,189,248,.22);cursor:pointer;transition:transform .15s,border-color .2s,box-shadow .2s;background:rgba(56,189,248,.02);position:relative;overflow:hidden}
+.water-glass:hover{transform:scale(1.08) translateY(-2px);border-color:rgba(56,189,248,.5)}
+.water-glass:active{transform:scale(.94)}
+.water-glass.filled{border-color:rgba(56,189,248,.75);box-shadow:0 0 8px rgba(56,189,248,.18)}
+.wg-water{position:absolute;bottom:0;left:0;right:0;height:0;background:linear-gradient(180deg,rgba(56,189,248,.52),rgba(14,165,233,.88));border-radius:0 0 7px 7px;transition:height .4s cubic-bezier(.34,1.56,.64,1)}
+.water-glass.filled .wg-water{height:72%}
+.water-glass.filled .wg-water::before{content:"";position:absolute;top:-5px;left:-60%;width:220%;height:10px;border-radius:50%;background:rgba(56,189,248,.5);animation:waterWave 2.4s linear infinite}
+@keyframes waterWave{from{transform:translateX(0)} to{transform:translateX(25%)}}
+.wg-shine{position:absolute;top:3px;left:2px;width:2px;height:28%;border-radius:2px;background:rgba(255,255,255,.28);pointer-events:none}
+.water-motivation{font-size:.7rem;font-weight:700;text-align:center;margin-top:7px;min-height:1.1em;letter-spacing:.01em;transition:color .35s}
+.water-glass.done-pop{animation:waterPop .32s ease}
+@keyframes waterPop{0%{transform:scale(1)}45%{transform:scale(1.2) translateY(-3px)}100%{transform:scale(1)}}
 .progress-text{margin-top:6px;font-size:.78rem;color:var(--muted);font-weight:700;text-align:right}
 /* ── Programme 8 semaines ── */
 .prog-phases-strip{display:flex;gap:6px;flex-wrap:wrap}
@@ -1118,6 +1122,20 @@ body.light .db-day-bar{background:rgba(15,23,42,.1)}
 .prog-week-nav-btn{padding:6px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:var(--text);font-size:.8rem;font-weight:700;cursor:pointer;transition:all .2s}
 .prog-week-nav-btn:hover{background:rgba(255,255,255,.12)}
 .prog-week-nav-btn:disabled{opacity:.35;cursor:default}
+.prog-phase-stats-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.prog-stat-pill{display:flex;flex-direction:column;align-items:center;padding:6px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);min-width:54px}
+.prog-stat-pill span{font-size:.55rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}
+.prog-stat-pill strong{font-size:.82rem;font-weight:900;color:var(--text);margin-top:1px}
+.prog-rest-msg{font-size:.76rem;color:var(--muted);padding:8px 0;line-height:1.5}
+.prog-ex-row.done{opacity:.45}
+.prog-ex-row.done .prog-ex-name{text-decoration:line-through}
+.prog-ex-muscle{font-size:.6rem;font-weight:700;padding:2px 5px;border-radius:5px;border:1px solid;white-space:nowrap}
+.prog-done-badge{font-size:.6rem;font-weight:800;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--muted);margin-left:6px}
+.prog-done-badge.complete{background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.3);color:#34d399}
+.prog-day-today .prog-day-exercises{border-top:1px solid rgba(37,99,235,.2);margin-top:10px;padding-top:10px}
+.prog-start-btn{display:block;width:100%;margin-top:12px;padding:11px;border-radius:12px;border:none;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;font-size:.82rem;font-weight:800;cursor:pointer;letter-spacing:.03em;transition:opacity .2s,transform .15s}
+.prog-start-btn:hover{opacity:.9;transform:translateY(-1px)}
+.prog-start-btn.prog-start-btn-dim{background:rgba(99,102,241,.28);color:rgba(255,255,255,.55)}
 
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar{width:6px}
@@ -1932,7 +1950,8 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               </div>
             </div>
             <div id="water-glasses" class="water-glasses-grid" style="grid-template-columns:repeat(8,1fr);gap:5px"></div>
-            <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+            <div id="water-motivation" class="water-motivation"></div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
               <button onclick="adjustWater(-1)" class="water-btn" style="width:36px;height:36px;font-size:1.2rem" aria-label="Retirer un verre">−</button>
               <div style="flex:1">
                 <div class="progress-track" style="height:6px">
@@ -2016,6 +2035,7 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               <button class="prog-week-nav-btn" onclick="progNextWeek()">→</button>
             </div>
           </div>
+          <div id="prog-phase-stats" class="prog-phase-stats-row"></div>
           <div id="prog-days-list" style="margin-top:12px"></div>
         </div>
 

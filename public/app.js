@@ -1467,6 +1467,22 @@ function _exerciseDemoSvg(label = '') {
   };
   const limbs = limbsByKey[picked.key] || limbsByKey.squat;
   const motion = motionByKey[picked.key] || motionByKey.squat;
+
+  // Per-exercise body animation (SMIL animateTransform works in inline SVG)
+  const bodyAnimByKey = {
+    squat:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,10;0,0" dur="1.35s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    lunge:    '<animateTransform attributeName="transform" type="translate" values="0,0;5,3;0,0" dur="1.2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    push:     '<animateTransform attributeName="transform" type="translate" values="0,0;-9,0;0,0" dur="1.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    pull:     '<animateTransform attributeName="transform" type="translate" values="0,0;-10,0;0,0" dur="1.3s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    hinge:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,11;0,0" dur="1.5s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    core:     '<animateTransform attributeName="transform" type="rotate" values="0 180 180;8 180 180;0 180 180" dur="2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    cardio:   '<animateTransform attributeName="transform" type="translate" values="0,0;0,-15;0,0" dur="0.7s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    press:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,-12;0,0" dur="1.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    calf:     '<animateTransform attributeName="transform" type="translate" values="0,0;0,-9;0,0" dur="1.1s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    mobility: '<animateTransform attributeName="transform" type="rotate" values="0 180 180;-5 180 180;5 180 180;0 180 180" dur="2s" repeatCount="indefinite"/>',
+  };
+  const bodyAnim = bodyAnimByKey[picked.key] || bodyAnimByKey.squat;
+
   return `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 280" width="100%" height="100%">
       <defs>
@@ -1485,6 +1501,7 @@ function _exerciseDemoSvg(label = '') {
       <path d="${motion.head}" fill="none" stroke="${picked.accent2}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>
       ${(highlightByKey[picked.key] || '')}
       <g filter="url(#drop)">
+        ${bodyAnim}
         <circle cx="180" cy="68" r="22" fill="url(#skin)" stroke="rgba(255,255,255,.75)" stroke-width="1.2"/>
         <path d="M158 94 Q180 82 202 94 L208 156 Q180 170 152 156 Z" fill="url(#skin)" opacity=".98"/>
         <path d="M166 98 Q180 90 194 98" fill="none" stroke="${picked.accent2}" stroke-width="2.4" opacity=".95"/>
@@ -1506,7 +1523,7 @@ function _exerciseDisplay(ex = {}) {
 function exerciseVisualHtml(ex = {}) {
   const safe = _exerciseDisplay(ex);
   const name = safe.name || safe.n || safe.muscle || '';
-  return `<div class="ex-visual-stack"><div class="ex-figure"><div class="ex-figure-tag">Démo mouvement</div><img class="ex-demo-gif" src="${_exerciseDemoDataUri(name)}" alt="Démo ${escapeHtml(name)}"/></div><div class="ex-muscle-map"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(safe.muscle || safe.name || '')}</div></div>`;
+  return `<div class="ex-visual-stack"><div class="ex-figure"><div class="ex-figure-tag">Démo mouvement</div><div class="ex-demo-gif">${_exerciseDemoSvg(name)}</div></div><div class="ex-muscle-map"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(safe.muscle || safe.name || '')}</div></div>`;
 }
 
 function exerciseHowToHtml(ex = {}) {
@@ -5147,7 +5164,7 @@ function _wtRenderNextPreview() {
     return;
   }
   const ex = next.ex;
-  wrap.innerHTML = `<div class="wt-next-card"><div><div class="wt-next-kicker">Ensuite</div><div class="wt-next-name">${escapeHtml(ex.n || ex.name || 'Exercice')}</div><div class="wt-next-meta">${Math.max(20, Number(ex.guideSeconds || 0))}s effort · ${Math.max(0, Number(ex.restSeconds || 0))}s pause${next.round ? ` · Tour ${next.round}` : ''}</div></div><div class="wt-next-mini"><img class="wt-next-img" src="${_exerciseDemoDataUri(ex.n || ex.name || '')}" alt="Démo suivante"/></div></div>`;
+  wrap.innerHTML = `<div class="wt-next-card"><div><div class="wt-next-kicker">Ensuite</div><div class="wt-next-name">${escapeHtml(ex.n || ex.name || 'Exercice')}</div><div class="wt-next-meta">${Math.max(20, Number(ex.guideSeconds || 0))}s effort · ${Math.max(0, Number(ex.restSeconds || 0))}s pause${next.round ? ` · Tour ${next.round}` : ''}</div></div><div class="wt-next-mini"><div class="wt-next-img">${_exerciseDemoSvg(ex.n || ex.name || '')}</div></div></div>`;
 }
 
 function _wtSetSessionMeta(block, phaseSeconds) {
@@ -5546,10 +5563,30 @@ function renderWater(newlyFilledIdx = -1) {
     const filled = i < count;
     const isNew  = i === newlyFilledIdx;
     return `<div class="water-glass${filled ? " filled" : ""}${isNew ? " done-pop" : ""}"
-      onclick="setWaterCount(${i + 1})" title="${filled ? "Retirer" : "Marquer bu"}">${filled ? "💧" : ""}</div>`;
+      onclick="setWaterCount(${i + 1})" title="${filled ? "Retirer" : "Marquer bu"}">
+      <div class="wg-water"></div>
+      <div class="wg-shine"></div>
+    </div>`;
   }).join("");
 
   const pct = Math.round((count / target) * 100);
+
+  // Motivational text
+  const motivEl = document.getElementById("water-motivation");
+  if (motivEl) {
+    const msgs = [
+      { t: "Commence à t'hydrater 💧",   c: "var(--muted)" },
+      { t: "Bon début, continue !",       c: "#38bdf8" },
+      { t: "Tu es sur la bonne voie 🌊",  c: "#38bdf8" },
+      { t: "Plus que la moitié ! 💪",     c: "#22d3ee" },
+      { t: "Presque au but ! 🏁",         c: "#34d399" },
+      { t: "Objectif atteint ! 🎉",       c: "#34d399" },
+    ];
+    const m = msgs[Math.min(5, Math.floor(pct / 20))];
+    motivEl.textContent = m.t;
+    motivEl.style.color = m.c;
+  }
+
   if (barEl)       barEl.style.width       = `${pct}%`;
   if (countEl)     countEl.textContent     = count;
   if (targetLblEl) targetLblEl.textContent = `/ ${target} verres`;
@@ -7189,7 +7226,7 @@ function _wtRenderExercise() {
 
   const imgWrap = document.getElementById('wt-ex-img-wrap');
   if (imgWrap) {
-    imgWrap.innerHTML = `<div class="wt-visual-main"><div class="ex-figure-tag">Démo mouvement</div><img class="wt-demo-gif" src="${_exerciseDemoDataUri(ex.n || '')}" alt="Démo ${escapeHtml(ex.n || '')}"/></div><div class="wt-visual-muscle"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(ex.m || ex.n || '')}</div>`;
+    imgWrap.innerHTML = `<div class="wt-visual-main"><div class="ex-figure-tag">Démo mouvement</div><div class="wt-demo-gif">${_exerciseDemoSvg(ex.n || '')}</div></div><div class="wt-visual-muscle"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(ex.m || ex.n || '')}</div>`;
   }
 
   const cue = exerciseCuePack({ name: ex.n || '', muscle: ex.m || '' });
@@ -7684,6 +7721,20 @@ function renderProgramme(weekNum) {
   if (sp) { sp.textContent = phase.name; sp.style.color = phase.color; }
   if (wd) wd.textContent = phase.desc;
 
+  // Phase stats strip
+  const statsEl = document.getElementById("prog-phase-stats");
+  if (statsEl) {
+    const restSec = params.rest;
+    const restStr = restSec >= 60 ? `${Math.floor(restSec / 60)}min${restSec % 60 ? (restSec % 60) + "s" : ""}` : `${restSec}s`;
+    statsEl.innerHTML = `
+      <div class="prog-stat-pill" style="border-color:${phase.color}22;color:${phase.color}"><span>RPE</span><strong>${phase.rpe}</strong></div>
+      <div class="prog-stat-pill"><span>Sets × Reps</span><strong>${params.sets}×${params.reps}</strong></div>
+      <div class="prog-stat-pill"><span>Repos</span><strong>${restStr}</strong></div>
+      <div class="prog-stat-pill"><span>Volume</span><strong>${phase.volume}%</strong></div>
+      <div class="prog-stat-pill"><span>Intensité</span><strong>${phase.intensity}%</strong></div>
+    `;
+  }
+
   // Days
   _renderProgDays(weekNum, params);
 }
@@ -7757,27 +7808,43 @@ function _renderProgDays(weekNum, params) {
     const exList  = (pooled.length >= 5 ? pooled : allEx).slice(0, 7);
 
     let exHtml = "";
+    const muscleColors = {
+      Pecs: "#3b82f6", "Pecs haut": "#60a5fa", Triceps: "#8b5cf6", "Deltoïdes": "#14b8a6",
+      Épaules: "#06b6d4", "Épaules arrière": "#0ea5e9", Dos: "#2563eb", Biceps: "#6366f1",
+      "Biceps/Avant-bras": "#818cf8", Ischio: "#f97316", Fessiers: "#f59e0b",
+      Quadriceps: "#eab308", Mollets: "#fb923c", Core: "#22d3ee", Abdos: "#34d399",
+      Gainage: "#4ade80", Lombaires: "#a78bfa", Fullbody: "#e879f9", HIIT: "#f472b6",
+    };
+    const doneCount = isRest ? 0 : exList.filter((_, ei) => doneSets[`${dayIdx}_${ei}`]).length;
     if (isRest) {
-      exHtml = `<div style="font-size:.76rem;color:var(--muted);padding:8px 0">😴 Repos complet — récupération musculaire et mentale. Hydratation, sommeil, étirements légers.</div>`;
+      exHtml = `<div class="prog-rest-msg">😴 Repos complet — récupération musculaire et mentale. Hydratation, sommeil, étirements légers.</div>`;
     } else {
       const needSets = !["hiit","cardio","mobilite","core"].includes(item.type);
       exHtml = exList.map((ex, exIdx) => {
         const detail = ex.r ? ex.r : (needSets ? params.sets + "×" + params.reps + (params.rest ? " · " + params.rest + "s repos" : "") : params.reps);
         const isDone = doneSets[`${dayIdx}_${exIdx}`];
-        return `<div class="prog-ex-row" style="${isDone ? "opacity:.5;" : ""}">
+        const mColor = muscleColors[ex.m] || "var(--muted)";
+        return `<div class="prog-ex-row${isDone ? " done" : ""}">
           <div class="prog-ex-check${isDone ? " checked" : ""}" onclick="progToggleExDone(event,${dayIdx},${exIdx})">${isDone ? "✓" : ""}</div>
-          <div class="prog-ex-name" style="${isDone ? "text-decoration:line-through;" : ""}">${ex.n}</div>
+          <div class="prog-ex-name">${ex.n}</div>
           <div class="prog-ex-detail">${detail}</div>
-          <div class="prog-ex-muscle">${ex.m}</div>
+          <div class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33">${ex.m}</div>
         </div>`;
       }).join("");
     }
 
     // Build JS array for timer
     const exForTimer = JSON.stringify(exList.map(ex => ({ n: ex.n, m: ex.m, r: ex.r || null })));
-    const startBtn = (!isRest && isToday)
-      ? `<button class="prog-start-btn" onclick="event.stopPropagation();progStartWorkout(${dayIdx})" data-exlist='${exForTimer}'>▶ Commencer la séance</button>`
-      : (!isRest ? `<button class="prog-start-btn" style="opacity:.5;background:rgba(99,102,241,.25)" onclick="event.stopPropagation();progStartWorkout(${dayIdx})" data-exlist='${exForTimer}'>▶ Lancer</button>` : "");
+    const startBtn = !isRest
+      ? `<button class="prog-start-btn${isToday ? "" : " prog-start-btn-dim"}" onclick="event.stopPropagation();progStartWorkout(${dayIdx})" data-exlist='${exForTimer}'>${isToday ? "▶ Commencer la séance" : "▶ Lancer quand même"}</button>`
+      : "";
+
+    const doneProgressBadge = (!isRest && exList.length)
+      ? `<span class="prog-done-badge${doneCount === exList.length ? " complete" : ""}">${doneCount}/${exList.length}</span>`
+      : "";
+
+    // Auto-expand today's card (empty = class display:flex applies; "display:none" = hidden)
+    const exStyle = isRest ? "margin-top:8px" : (isToday ? "" : "display:none");
 
     return `<div class="prog-day-card${isToday ? " prog-day-today" : ""}${isRest ? " prog-day-rest" : ""}"${isRest ? "" : ` onclick="progToggleDay(this)"`}>
       <div class="prog-day-header">
@@ -7785,11 +7852,10 @@ function _renderProgDays(weekNum, params) {
         <span class="prog-day-icon" style="margin-left:4px">${item.icon}</span>
         <span class="prog-day-label">${item.label}</span>
         ${isToday ? '<span class="prog-today-badge">Aujourd\'hui</span>' : ""}
-        ${!isRest ? '<span class="prog-expand-arrow" style="margin-left:auto;font-size:.6rem;color:var(--muted)">▼</span>' : ""}
+        ${doneProgressBadge}
+        ${!isRest ? `<span class="prog-expand-arrow" style="margin-left:auto;font-size:.6rem;color:var(--muted)">${isToday ? "▲" : "▼"}</span>` : ""}
       </div>
-      ${!isRest
-        ? `<div class="prog-day-exercises" style="display:none">${exHtml}${startBtn}</div>`
-        : `<div class="prog-day-exercises" style="margin-top:8px">${exHtml}</div>`}
+      <div class="prog-day-exercises" style="${exStyle}">${exHtml}${startBtn}</div>
     </div>`;
   }).join("");
 }
