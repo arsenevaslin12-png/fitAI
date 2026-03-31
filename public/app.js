@@ -685,6 +685,7 @@ function gotoTab(name) {
     loadProfile();
     loadStats();
     loadAchievements();
+    _updateProfileXpDisplay();
   }
 }
 
@@ -3036,7 +3037,86 @@ async function loadProfile() {
       setEl("p-bmi", "—");
     }
     if (data?.weight) { USER_WEIGHT = parseFloat(data.weight); renderWater(); }
+
+    // Update XP ring + level chip + trophy counts in profile
+    _updateProfileXpDisplay();
   } catch (e) { console.error("[Profile] Load error:", e); }
+}
+
+function _updateProfileXpDisplay() {
+  // Compute XP from completed DEFIS_LIST (uses locally cached metrics — fast)
+  const dailyCompletions = getDailyCompletionCount();
+  const nutritionPlans = getLocalMetric('fitai_nutrition_plans');
+  const recipeCount = getLocalMetric('fitai_recipes_saved');
+  // We can't get DB counts synchronously, so use what we know locally for fast render
+  const defisXP = DEFIS_LIST.reduce((sum, d) => {
+    let current = 0;
+    if (d.metric === "daily_completions") current = dailyCompletions;
+    else if (d.metric === "nutrition_plans") current = nutritionPlans;
+    else if (d.metric === "recipes") current = recipeCount;
+    return current >= d.target ? sum + d.xp : sum;
+  }, 0);
+  const wqXP = WEEKLY_QUESTS.filter(q => getWeeklyQuestData().done.includes(q.id)).reduce((s, q) => s + q.xp, 0);
+  const totalXP = defisXP + wqXP;
+  const level = Math.floor(totalXP / 1000) + 1;
+  const xpInLevel = totalXP % 1000;
+  const pct = xpInLevel / 1000;
+
+  const levelChip = document.getElementById("p-level-chip");
+  if (levelChip) levelChip.textContent = `Niv.${level}`;
+
+  const xpLabel = document.getElementById("profile-xp-label");
+  if (xpLabel) xpLabel.textContent = `${totalXP} XP`;
+
+  const xpBarFill = document.getElementById("profile-xp-bar-fill");
+  if (xpBarFill) xpBarFill.style.width = `${Math.round(pct * 100)}%`;
+
+  const xpArc = document.getElementById("profile-xp-arc");
+  if (xpArc) {
+    const circ = 226;
+    requestAnimationFrame(() => {
+      xpArc.setAttribute("stroke-dasharray", `${(pct * circ).toFixed(1)} ${circ}`);
+    });
+  }
+
+  // Trophy counts
+  const trophyCounts = { bronze: 0, silver: 0, gold: 0, platinum: 0 };
+  const completedTrophies = [];
+  DEFIS_LIST.forEach(d => {
+    let current = 0;
+    if (d.metric === "daily_completions") current = dailyCompletions;
+    else if (d.metric === "nutrition_plans") current = nutritionPlans;
+    else if (d.metric === "recipes") current = recipeCount;
+    if (current >= d.target && d.trophy) {
+      trophyCounts[d.trophy] = (trophyCounts[d.trophy] || 0) + 1;
+      completedTrophies.push(d);
+    }
+  });
+
+  const totalTrophies = completedTrophies.length;
+  const trophyCountEl = document.getElementById("p-trophy-count");
+  if (trophyCountEl) trophyCountEl.textContent = totalTrophies || "—";
+
+  const trophyRow = document.getElementById("profile-trophy-counts");
+  if (trophyRow) {
+    trophyRow.innerHTML = Object.entries(TROPHY_META).map(([key, m]) =>
+      `<div class="trophy-count-pill" style="border-color:${m.color}40;background:${m.bg}">
+        <span>${m.shield}</span>
+        <span style="font-weight:900;color:${m.color}">${trophyCounts[key] || 0}</span>
+        <span style="color:var(--muted)">${m.label}</span>
+      </div>`
+    ).join("");
+  }
+
+  // Achievements list: show completed trophies as cards, or locked if none
+  const achEl = document.getElementById("achievements-list");
+  if (achEl) {
+    if (completedTrophies.length) {
+      achEl.innerHTML = `<div class="trophy-grid">${completedTrophies.map(d => _buildTrophyCard({ ...d, pct: 100, current: d.target, completed: true }, "done")).join("")}</div>`;
+    } else {
+      achEl.innerHTML = `<div style="text-align:center;padding:20px 0;color:var(--muted);font-size:.82rem">Complète des défis pour débloquer des trophées 🏆</div>`;
+    }
+  }
 }
 
 async function saveProfile() {
@@ -4571,10 +4651,27 @@ async function generateRecipe() {
 
     if (resultEl) {
       resultEl.style.display = "block";
-      const header = recipes.length > 1
-        ? `<div style="font-size:.82rem;color:var(--txt-dim);margin-bottom:10px;text-align:center">✨ ${recipes.length} recettes générées — choisissez votre préférée</div>`
-        : '';
-      resultEl.innerHTML = header + recipes.map((r, i) => renderRecipeCard(r, i)).join('<div style="height:16px"></div>');
+      if (recipes.length > 1) {
+        // Tab carousel: show one recipe at a time
+        const tabsHtml = recipes.map((r, i) => {
+          const food = recipeFoodArt(r.name || "");
+          return `<button class="recipe-tab-btn${i === 0 ? " active" : ""}" onclick="switchRecipeTab(${i})" id="recipe-tab-btn-${i}" title="${escapeHtml(r.name || "")}">
+            <span class="recipe-tab-art">${food}</span>
+            <span class="recipe-tab-num">${i + 1}</span>
+          </button>`;
+        }).join("");
+        const panelsHtml = recipes.map((r, i) =>
+          `<div class="recipe-tab-panel${i === 0 ? " active" : ""}" id="recipe-panel-${i}">${renderRecipeCard(r, i)}</div>`
+        ).join("");
+        resultEl.innerHTML = `
+          <div class="recipe-tabs-header">
+            <div class="recipe-tabs-count">✨ ${recipes.length} recettes générées</div>
+            <div class="recipe-tabs-strip">${tabsHtml}</div>
+          </div>
+          <div class="recipe-tabs-body">${panelsHtml}</div>`;
+      } else {
+        resultEl.innerHTML = renderRecipeCard(recipes[0], 0);
+      }
     }
 
     // Store recipes for "add as meal" / "add to shopping list"
@@ -4679,6 +4776,12 @@ function setRecipeIdea(value) {
   input.focus();
 }
 window.setRecipeIdea = setRecipeIdea;
+
+function switchRecipeTab(idx) {
+  document.querySelectorAll(".recipe-tab-btn").forEach((b, i) => b.classList.toggle("active", i === idx));
+  document.querySelectorAll(".recipe-tab-panel").forEach((p, i) => p.classList.toggle("active", i === idx));
+}
+window.switchRecipeTab = switchRecipeTab;
 
 function addRecipeAsMeal(idx = 0) {
   const r = (window._lastRecipes && window._lastRecipes[idx]) || window._lastRecipe;

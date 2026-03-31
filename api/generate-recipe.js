@@ -155,39 +155,41 @@ function buildRecipePrompt(requestText, goal, targetKcal, servings = 2, recipeSt
 
   const recipeTemplate = `{"name":"Nom du plat","healthy_twist":"Pourquoi healthy/protéiné","ingredients_list":["120 g ...","1 ..."],"steps":["Étape 1 détaillée","Étape 2 détaillée","Étape 3"],"prep_time":"15 min","servings":${servings},"best_for":"Contexte d'usage","batch_prep":"Conseil batch","calories":${targetKcal},"protein":35,"carbs":50,"fat":15,"tips":"Conseil technique","coach_note":"Quand la manger"}`;
 
+  const r5 = Array(5).fill(recipeTemplate).join(",");
+
   if (ideaMode) {
     return `Tu es un chef nutritionniste sportif premium.
 L'utilisateur veut: ${cleanRequest}.
-Crée 3 versions différentes (légère, rapide, gourmande) de cette idée, toutes healthy et protéinées.
+Crée 5 versions DIFFÉRENTES de cette idée, toutes healthy et protéinées. Varie : légère, rapide, gourmande, meal-prep, originale.
 Objectif: ${goalLabel}. Calories visées: environ ${targetKcal} kcal par portion.
 Nombre de portions: ${servings}. Direction produit: ${style.styleHint}.
 
 RÈGLES:
-- Les 3 recettes doivent être distinctes (ingrédients, style de cuisson, texture différents).
+- Les 5 recettes doivent être distinctes (ingrédients, style de cuisson, texture différents).
 - Si la demande est plaisir/junk food, transforme chaque version en variante healthy crédible.
 - Ingrédients réalistes, faciles à trouver.
 - Étapes détaillées et pédagogiques — jamais "cuire" sans préciser comment ni combien de temps.
 - Réponds UNIQUEMENT en JSON valide, sans markdown.
 
 FORMAT EXACT:
-{"recipes":[${recipeTemplate},${recipeTemplate},${recipeTemplate}]}`;
+{"recipes":[${r5}]}`;
   }
 
   return `Tu es un chef nutritionniste sportif créatif.
 Base fournie par l'utilisateur: ${cleanRequest}.
-Crée 3 recettes FITNESS ORIGINALES et variées (styles de cuisson et profils différents) à partir de cette base.
+Crée 5 recettes FITNESS ORIGINALES et variées à partir de cette base. Varie les styles : sauté, cuit au four, cru/salade, soupe, wok, grillé.
 Objectif: ${goalLabel}, environ ${targetKcal} kcal par portion. Portions: ${servings}.
 Direction produit: ${style.styleHint}.
 
 RÈGLES:
-- Les 3 recettes doivent être vraiment différentes entre elles.
+- Les 5 recettes doivent être vraiment différentes entre elles (mode de cuisson, profil gustatif).
 - Ingrédients disponibles = base principale, complète avec d'autres ingrédients courants.
 - Noms de plats spécifiques et appétissants.
 - Étapes concrètes: cite l'ingrédient, l'action, l'ordre, le temps ou le repère visuel.
 - Réponds UNIQUEMENT en JSON valide, sans texte autour.
 
 FORMAT EXACT:
-{"recipes":[${recipeTemplate},${recipeTemplate},${recipeTemplate}]}`;
+{"recipes":[${r5}]}`;
 }
 
 function validateRecipe(raw) {
@@ -400,7 +402,7 @@ module.exports = async function handler(req, res) {
         apiKey: GEMINI_API_KEY,
         prompt: buildRecipePrompt(ingredients, goal, targetKcal, servings, recipeStyle),
         temperature: 0.75,
-        maxOutputTokens: 2400,
+        maxOutputTokens: 4000,
         timeoutMs: GEMINI_TIMEOUT_MS,
         retries: 0,
         mimeType: "application/json"
@@ -408,7 +410,7 @@ module.exports = async function handler(req, res) {
 
       const parsed = extractJson(result.text);
       if (parsed && Array.isArray(parsed.recipes) && parsed.recipes.length) {
-        recipes = parsed.recipes.map(validateRecipe).filter(Boolean).slice(0, 3);
+        recipes = parsed.recipes.map(validateRecipe).filter(Boolean).slice(0, 5);
       } else if (parsed) {
         const single = validateRecipe(parsed);
         if (single) recipes = [single];
