@@ -1135,6 +1135,71 @@ body.light .db-day-bar{background:rgba(15,23,42,.1)}
 .defi-tab{flex:1;padding:10px;background:none;border:none;color:var(--muted);font-weight:700;font-size:.85rem;cursor:pointer;border-radius:12px;font-family:inherit;transition:all .2s}
 .defi-tab.on{background:var(--surf2);color:var(--text)}
 
+/* ── TROPHY SYSTEM ── */
+.trophy-counts-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.trophy-count-pill{display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:999px;border:1px solid;font-size:.72rem;font-weight:800;flex:1;min-width:70px;justify-content:center}
+.trophy-section-title{font-size:.78rem;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px;display:flex;align-items:center;gap:8px}
+.trophy-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:6px}
+.trophy-card{background:rgba(15,22,38,.92);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:16px;transition:transform .2s,box-shadow .2s;position:relative;overflow:hidden}
+.trophy-card:hover{transform:translateY(-2px)}
+.trophy-done{background:linear-gradient(160deg,rgba(12,20,40,.98),rgba(8,14,28,.98))}
+.trophy-locked{filter:grayscale(.3)}
+.trophy-card-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:8px}
+.trophy-shield{width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0}
+.trophy-card-title{font-size:.86rem;font-weight:800;color:var(--text);line-height:1.3}
+.trophy-rarity-badge{display:inline-block;font-size:.6rem;font-weight:900;padding:2px 8px;border-radius:999px;letter-spacing:.05em;text-transform:uppercase;margin-top:3px}
+.trophy-xp-tag{font-size:.85rem;font-weight:900;color:#fbbf24;white-space:nowrap;margin-left:auto;flex-shrink:0}
+.trophy-card-desc{font-size:.7rem;color:var(--muted);line-height:1.45;margin-bottom:10px}
+.trophy-prog-row{display:flex;align-items:center;gap:8px}
+.trophy-prog-track{flex:1;height:5px;background:rgba(255,255,255,.07);border-radius:999px;overflow:hidden}
+.trophy-prog-fill{height:100%;border-radius:999px;transition:width 1s ease}
+.trophy-prog-label{font-size:.68rem;font-weight:800;white-space:nowrap}
+
+/* ── WEEKLY QUESTS ── */
+.wq-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
+.wq-title{font-size:.95rem;font-weight:900;color:var(--text)}
+.wq-sub{font-size:.7rem;color:var(--muted);margin-top:2px}
+.wq-stats{text-align:right}
+.wq-done-count{display:block;font-size:1.1rem;font-weight:900;color:#818cf8}
+.wq-xp-earned{font-size:.7rem;color:#fbbf24;font-weight:800}
+.wq-list{display:flex;flex-direction:column;gap:8px;margin-bottom:4px}
+.wq-row{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;transition:border-color .2s}
+.wq-done{background:rgba(34,197,94,.05);border-color:rgba(34,197,94,.2)}
+.wq-icon{font-size:1.3rem;min-width:28px;text-align:center;margin-top:1px}
+.wq-body{flex:1;min-width:0}
+.wq-name{font-size:.82rem;font-weight:800;color:var(--text);margin-bottom:2px}
+.wq-check{color:#4ade80;font-size:.8rem}
+.wq-desc{font-size:.7rem;color:var(--muted);margin-bottom:7px;line-height:1.4}
+.wq-prog-track{height:4px;background:rgba(255,255,255,.07);border-radius:999px;overflow:hidden;margin-bottom:3px}
+.wq-prog-fill{height:100%;border-radius:999px;transition:width .8s ease}
+.wq-prog-text{font-size:.65rem;font-weight:800}
+.wq-rewards{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0}
+.wq-trophy-badge{padding:3px 8px;border-radius:999px;font-size:.68rem;font-weight:900}
+.wq-xp{font-size:.82rem;font-weight:900;color:#fbbf24}
+/* Weekly quests wrapper card */
+#weekly-quests-list{background:linear-gradient(160deg,rgba(10,16,34,.96),rgba(8,12,28,.96));border:1px solid rgba(99,102,241,.16);border-radius:20px;padding:18px;margin-bottom:12px}
+
+/* ── TROPHY UNLOCK TOAST ── */
+.trophy-unlock-toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(120px);z-index:9999;pointer-events:none;transition:transform .45s cubic-bezier(.34,1.56,.64,1),opacity .45s ease;opacity:0;width:min(340px,90vw)}
+.trophy-unlock-toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+.trophy-unlock-inner{background:linear-gradient(135deg,rgba(15,22,44,.98),rgba(10,16,36,.98));border:1px solid rgba(167,139,250,.35);border-radius:20px;padding:16px 18px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 0 1px rgba(167,139,250,.1)}
+.trophy-unlock-icon{font-size:2.2rem;flex-shrink:0}
+.trophy-unlock-title{font-size:.65rem;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#818cf8;margin-bottom:2px}
+.trophy-unlock-name{font-size:.9rem;font-weight:900;color:#fff;margin-bottom:3px}
+.trophy-unlock-badge{font-size:.7rem;font-weight:800;color:#fbbf24}
+
+/* ── LEADERBOARD ── */
+.lb-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);transition:border-color .2s}
+.lb-row.lb-me{background:rgba(99,102,241,.09);border-color:rgba(99,102,241,.25)}
+.lb-rank{font-size:1rem;font-weight:900;min-width:28px;text-align:center}
+.lb-rank.gold{color:#ffd700}.lb-rank.silver{color:#b0bec5}.lb-rank.bronze{color:#cd7f32}
+.lb-avatar{width:36px;height:36px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:.9rem;font-weight:900;color:#fff;flex-shrink:0}
+.lb-info{flex:1;min-width:0}
+.lb-name{font-size:.84rem;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-streak{font-size:.68rem;color:var(--muted);margin-top:1px}
+.lb-xp{font-size:.95rem;font-weight:900;color:#fbbf24;white-space:nowrap}
+.lb-trophy-mini{font-size:.75rem;color:var(--muted);text-align:right;margin-top:2px}
+
 /* ── FEED PHOTO ── */
 .feed-img{width:100%;max-height:320px;object-fit:cover}
 .comment-btn{display:inline-flex;align-items:center;gap:5px;background:none;border:1.5px solid rgba(255,255,255,.1);color:var(--muted);padding:5px 14px;border-radius:20px;cursor:pointer;font-size:.78rem;font-weight:700;transition:all .22s;font-family:inherit}
@@ -2767,39 +2832,54 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           <div id="daily-defi-cards"></div>
         </div>
 
-        <!-- XP Level Header -->
+        <!-- XP Level Header (premium) -->
         <div class="defi-header">
           <div class="defi-level-badge" id="defi-level">1</div>
-          <div>
-            <div style="font-size:1.2rem;font-weight:900">Niveau <span id="defi-level-text">1</span></div>
-            <div class="meal-info" id="defi-completed">0/7 défis complétés</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:1.15rem;font-weight:900">Niveau <span id="defi-level-text">1</span></div>
+            <div class="meal-info" id="defi-completed">0 trophées</div>
+            <div style="margin-top:6px">
+              <div class="progress-track" style="height:6px"><div class="progress-fill" id="defi-progress-fill" style="width:0%;background:linear-gradient(90deg,#6366f1,#8b5cf6)"></div></div>
+              <div style="font-size:.65rem;color:var(--muted);margin-top:3px" id="defi-progress-text">0 / 1000 XP → Niveau 2</div>
+            </div>
           </div>
-          <div class="defi-header-stats">
-            <div class="defi-header-stat"><div class="defi-header-stat-v" style="color:var(--purple)">🏆</div><div class="defi-header-stat-l">Complétés</div></div>
-            <div class="defi-header-stat"><div class="defi-header-stat-v" style="color:var(--teal)">📊 0</div><div class="defi-header-stat-l">En cours</div></div>
-            <div class="defi-header-stat"><div class="defi-header-stat-v" style="color:var(--yellow)" id="defi-xp">0</div><div class="defi-header-stat-l">XP total</div></div>
+          <div style="text-align:right">
+            <div style="font-size:1.3rem;font-weight:900;color:#fbbf24" id="defi-xp">0 XP</div>
+            <div style="font-size:.6rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em">Total XP</div>
           </div>
         </div>
 
-        <div class="card" style="padding:12px">
-          <div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">Niveau 1</div>
-          <div class="progress-track" style="height:8px"><div class="progress-fill" id="defi-progress-fill" style="width:0%"></div></div>
-          <div class="meal-info" style="margin-top:4px" id="defi-progress-text">0 / 1000 XP pour atteindre le niveau 2</div>
-        </div>
+        <!-- Trophy rarity counts -->
+        <div class="trophy-counts-row" id="defi-trophy-counts"></div>
 
-        <div style="font-size:.9rem;font-weight:800;margin-top:6px">🔒 À DÉBLOQUER</div>
+        <!-- Weekly Quests -->
+        <div id="weekly-quests-list"></div>
 
-        <div class="defi-grid" id="defis-list">
-          <div class="empty"><span class="empty-ic">🏆</span>Chargement des défis…</div>
+        <!-- Trophies grid -->
+        <div id="defis-list">
+          <div class="empty"><span class="empty-ic">🏆</span>Chargement…</div>
         </div>
       </div>
 
-      <!-- PROFILE (Progrès) -->
-      <!-- FRIENDS -->
+      <!-- FRIENDS + LEADERBOARD -->
       <div class="tab" id="t-friends">
         <div class="page-header">
           <div class="page-title">👥 Amis</div>
-          <div class="page-sub">Connectez-vous avec votre cercle fitness</div>
+          <div class="page-sub">Connectez-vous et comparez vos performances</div>
+        </div>
+
+        <!-- XP Leaderboard -->
+        <div class="card" style="border-color:rgba(99,102,241,.18);background:linear-gradient(160deg,rgba(10,16,32,.98),rgba(8,12,28,.98))">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div>
+              <div class="card-title" style="margin:0">🏆 Classement XP</div>
+              <div style="font-size:.7rem;color:var(--muted);margin-top:2px">Toi + tes amis cette semaine</div>
+            </div>
+            <button class="btn btn-g btn-sm" onclick="loadLeaderboard()" style="font-size:.7rem">Rafraîchir</button>
+          </div>
+          <div id="leaderboard-list">
+            <div class="empty" style="font-size:.82rem;padding:8px 0">Ajoute des amis pour voir le classement</div>
+          </div>
         </div>
 
         <!-- Search card -->

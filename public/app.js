@@ -676,7 +676,7 @@ function gotoTab(name) {
   if (name === "coach") { loadCoachHistory(); loadHistory(); }
   if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); loadCommunityRecipes(); loadNutritionPlanFromStorage(); }
   if (name === "community") loadFeed();
-  if (name === "friends") { loadFriends(); loadFriendRequests(); }
+  if (name === "friends") { loadFriends(); loadFriendRequests(); loadLeaderboard(); }
   if (name === "bodyscan") loadScans();
   if (name === "progress") loadProgress();
   if (name === "defis") loadDefis();
@@ -1665,6 +1665,7 @@ async function saveSession() {
     await updateDailyStreak({ incrementWorkouts: true });
     await Promise.all([loadHistory(), loadStreak()]);
     checkAndAwardAchievements().catch(() => {});
+    incrementWeeklyQuestMetric("sessions_week", 1);
   }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
 }
 
@@ -2434,6 +2435,61 @@ async function removeFriend(friendshipId) {
   }).catch(e => toast(`Erreur: ${e.message}`, "err"));
 }
 
+async function loadLeaderboard() {
+  const el = document.getElementById("leaderboard-list");
+  if (!el || !U) return;
+  el.innerHTML = `<div class="empty" style="font-size:.82rem;padding:8px 0">Chargement…</div>`;
+  try {
+    // Get friend IDs
+    const { data: fships } = await SB.from("friendships")
+      .select("requester_id,addressee_id")
+      .eq("status", "accepted")
+      .or(`requester_id.eq.${U.id},addressee_id.eq.${U.id}`);
+    const friendIds = (fships || []).map(f => f.requester_id === U.id ? f.addressee_id : f.requester_id);
+    const allIds = [U.id, ...friendIds];
+
+    // Fetch streaks + profiles for all
+    const [streakRes, profileRes] = await Promise.all([
+      SB.from("user_streaks").select("user_id,current_streak,total_workouts").in("user_id", allIds),
+      SB.from("profiles").select("id,name,username").in("id", allIds)
+    ]);
+    const streakMap = Object.fromEntries((streakRes.data || []).map(r => [r.user_id, r]));
+    const profMap   = Object.fromEntries((profileRes.data || []).map(r => [r.id, r]));
+
+    // Build leaderboard entries — XP ≈ total_workouts * 50 + streak * 10
+    const entries = allIds.map(id => {
+      const s = streakMap[id] || {};
+      const p = profMap[id] || {};
+      const xp = (s.total_workouts || 0) * 50 + (s.current_streak || 0) * 10;
+      const name = p.name || p.username || (id === U.id ? "Toi" : "Ami");
+      const initial = (name[0] || "?").toUpperCase();
+      return { id, name, xp, streak: s.current_streak || 0, workouts: s.total_workouts || 0, initial, isMe: id === U.id };
+    }).sort((a, b) => b.xp - a.xp);
+
+    if (!entries.length) {
+      el.innerHTML = `<div class="empty" style="font-size:.82rem;padding:8px 0">Ajoute des amis pour voir le classement</div>`;
+      return;
+    }
+
+    const rankStyle = ["gold", "silver", "bronze"];
+    el.innerHTML = entries.map((e, i) => `
+      <div class="lb-row${e.isMe ? " lb-me" : ""}">
+        <div class="lb-rank ${rankStyle[i] || ""}">${i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "#" + (i + 1)}</div>
+        <div class="lb-avatar">${e.initial}</div>
+        <div class="lb-info">
+          <div class="lb-name">${escapeHtml(e.name)}${e.isMe ? " <span style='color:#818cf8;font-size:.68rem'>(toi)</span>" : ""}</div>
+          <div class="lb-streak">🔥 ${e.streak}j streak · ${e.workouts} séances</div>
+        </div>
+        <div style="text-align:right">
+          <div class="lb-xp">${e.xp.toLocaleString("fr-FR")} XP</div>
+        </div>
+      </div>`).join("");
+  } catch (e) {
+    console.warn("[leaderboard]", e);
+    el.innerHTML = `<div class="empty" style="font-size:.82rem;padding:8px 0;color:var(--red)">Erreur de chargement</div>`;
+  }
+}
+
 async function loadFriends() {
   const el = document.getElementById("friends-list");
   if (!el) return;
@@ -2678,6 +2734,7 @@ async function doScan() {
 
     const ins = await SB.from("body_scans").insert({ user_id: U.id, image_path: path });
     if (ins.error) throw ins.error;
+    incrementWeeklyQuestMetric("scan_week", 1);
 
     const r = await fetch("/api/bodyscan", {
       method: "POST",
@@ -3057,32 +3114,116 @@ function applyStats({ sessCount = 0, scansCount = 0, postsCount = 0 } = {}) {
 // DÉFIS & SUCCÈS
 // ══════════════════════════════════════════════════════════════════════════════
 
+// trophy rarity: "bronze" | "silver" | "gold" | "platinum"
 const DEFIS_LIST = [
-  { id: "sessions_5",   icon: "🏃", title: "5 séances complétées",      desc: "Sauvegarde 5 séances d'entraînement",                      difficulty: "Facile",    xp: 250,  color: "#22c55e", target: 5,     unit: "séances",   metric: "sessions" },
-  { id: "sessions_10",  icon: "💪", title: "10 séances complétées",     desc: "Sauvegarde 10 séances — une vraie routine se forme",       difficulty: "Moyen",     xp: 500,  color: "#f97316", target: 10,    unit: "séances",   metric: "sessions" },
-  { id: "sessions_30",  icon: "🏋️", title: "30 séances d'entraînement", desc: "Complète 30 séances au total — athlète confirmé",          difficulty: "Difficile", xp: 1500, color: "#ef4444", target: 30,    unit: "séances",   metric: "sessions" },
-  { id: "streak_3",     icon: "⚡", title: "Streak 3 jours",            desc: "3 jours consécutifs d'entraînement",                       difficulty: "Facile",    xp: 150,  color: "#38bdf8", target: 3,     unit: "jours",     metric: "streak" },
-  { id: "streak_7",     icon: "🔥", title: "Streak 7 jours",            desc: "Entraîne-toi 7 jours de suite sans interruption",          difficulty: "Moyen",     xp: 500,  color: "#f97316", target: 7,     unit: "jours",     metric: "streak" },
-  { id: "streak_14",    icon: "🌟", title: "Streak 14 jours",           desc: "Deux semaines sans manquer un seul jour",                  difficulty: "Difficile", xp: 900,  color: "#a855f7", target: 14,    unit: "jours",     metric: "streak" },
-  { id: "streak_30",    icon: "👑", title: "Streak 30 jours",           desc: "Un mois entier de régularité absolue",                     difficulty: "Expert",    xp: 2500, color: "#eab308", target: 30,    unit: "jours",     metric: "streak" },
-  { id: "scans_1",      icon: "📸", title: "Premier body scan IA",      desc: "Réalise ton premier scan corporel avec l'IA",              difficulty: "Facile",    xp: 200,  color: "#0ea5e9", target: 1,     unit: "scans",     metric: "scans" },
-  { id: "scans_5",      icon: "🔬", title: "5 body scans réalisés",     desc: "Suis l'évolution de ton physique sur la durée",            difficulty: "Moyen",     xp: 600,  color: "#06b6d4", target: 5,     unit: "scans",     metric: "scans" },
-  { id: "scans_10",     icon: "🧬", title: "10 scans comparables",      desc: "Construis un vrai historique de transformation",           difficulty: "Difficile", xp: 1200, color: "#0891b2", target: 10,    unit: "scans",     metric: "scans" },
-  { id: "daily_7",      icon: "🎯", title: "7 journées de défis",       desc: "Accomplis tous les défis du jour à 7 reprises",            difficulty: "Moyen",     xp: 700,  color: "#84cc16", target: 7,     unit: "journées",  metric: "daily_completions" },
-  { id: "daily_30",     icon: "🏅", title: "30 journées de défis",      desc: "Maîtrise quotidienne pendant un mois entier",             difficulty: "Expert",    xp: 2000, color: "#65a30d", target: 30,    unit: "journées",  metric: "daily_completions" },
-  { id: "recipes_3",    icon: "🍳", title: "3 recettes IA",             desc: "Crée 3 recettes détaillées pour muscler ta cuisine",       difficulty: "Facile",    xp: 220,  color: "#f59e0b", target: 3,     unit: "recettes",  metric: "recipes" },
-  { id: "recipes_10",   icon: "🍽️", title: "10 recettes IA",            desc: "Constitue une vraie base de repas utiles",                difficulty: "Moyen",     xp: 650,  color: "#f97316", target: 10,    unit: "recettes",  metric: "recipes" },
-  { id: "nutrition_5",  icon: "🥗", title: "5 plans nutrition",         desc: "Teste et affine tes journées nutrition",                  difficulty: "Facile",    xp: 250,  color: "#84cc16", target: 5,     unit: "plans",     metric: "nutrition_plans" },
-  { id: "nutrition_20", icon: "📋", title: "20 plans nutrition",        desc: "Construis une vraie routine alimentaire",                 difficulty: "Difficile", xp: 1000, color: "#65a30d", target: 20,    unit: "plans",     metric: "nutrition_plans" },
-  { id: "water_7",      icon: "💧", title: "7 jours d'hydratation",      desc: "Atteins ton objectif eau 7 jours distincts",             difficulty: "Moyen",     xp: 320,  color: "#38bdf8", target: 7,     unit: "jours",     metric: "water_days" },
-  { id: "water_21",     icon: "🌊", title: "21 jours bien hydratés",     desc: "Reste propre sur l'hydratation pendant 3 semaines",       difficulty: "Difficile", xp: 900,  color: "#0ea5e9", target: 21,    unit: "jours",     metric: "water_days" },
-  { id: "social_1",     icon: "📣", title: "Premier post communautaire", desc: "Partage ta première photo ou message",                   difficulty: "Facile",    xp: 150,  color: "#ec4899", target: 1,     unit: "posts",     metric: "posts" },
-  { id: "social_5",     icon: "🤝", title: "5 posts publiés",           desc: "Inspire la communauté avec 5 publications",               difficulty: "Moyen",     xp: 400,  color: "#f43f5e", target: 5,     unit: "posts",     metric: "posts" },
-  { id: "10kcal",       icon: "🔥", title: "10 000 calories brûlées",   desc: "Cumule 10 000 kcal sur des séances sauvegardées",         difficulty: "Difficile", xp: 1000, color: "#eab308", target: 10000, unit: "kcal",      metric: "calories" },
-  { id: "5h_week",      icon: "⏱️", title: "5h d'entraînement/semaine", desc: "Totalise 5 heures de sport sur une même semaine",         difficulty: "Moyen",     xp: 600,  color: "#8b5cf6", target: 300,   unit: "minutes",   metric: "weekly_time" },
-  { id: "variety",      icon: "🌈", title: "Polyvalence totale",        desc: "3 types d'entraînement différents en une semaine",        difficulty: "Moyen",     xp: 400,  color: "#f97316", target: 3,     unit: "types",     metric: "variety" },
-  { id: "perfect_week", icon: "💎", title: "Semaine propre",            desc: "Entraînement + nutrition suivis 7/7 sur une semaine",     difficulty: "Expert",    xp: 2000, color: "#3b82f6", target: 7,     unit: "jours",     metric: "perfect" }
+  { id: "sessions_5",   icon: "🏃", title: "5 séances complétées",       desc: "Sauvegarde 5 séances d'entraînement",                      difficulty: "Facile",    xp: 250,  color: "#22c55e", target: 5,     unit: "séances",   metric: "sessions",          trophy: "bronze"   },
+  { id: "sessions_10",  icon: "💪", title: "10 séances complétées",      desc: "Sauvegarde 10 séances — une vraie routine se forme",       difficulty: "Moyen",     xp: 500,  color: "#f97316", target: 10,    unit: "séances",   metric: "sessions",          trophy: "silver"   },
+  { id: "sessions_30",  icon: "🏋️", title: "30 séances d'entraînement",  desc: "Complète 30 séances au total — athlète confirmé",          difficulty: "Difficile", xp: 1500, color: "#ef4444", target: 30,    unit: "séances",   metric: "sessions",          trophy: "gold"     },
+  { id: "streak_3",     icon: "⚡", title: "Streak 3 jours",             desc: "3 jours consécutifs d'entraînement",                       difficulty: "Facile",    xp: 150,  color: "#38bdf8", target: 3,     unit: "jours",     metric: "streak",            trophy: "bronze"   },
+  { id: "streak_7",     icon: "🔥", title: "Streak 7 jours",             desc: "Entraîne-toi 7 jours de suite sans interruption",          difficulty: "Moyen",     xp: 500,  color: "#f97316", target: 7,     unit: "jours",     metric: "streak",            trophy: "silver"   },
+  { id: "streak_14",    icon: "🌟", title: "Streak 14 jours",            desc: "Deux semaines sans manquer un seul jour",                  difficulty: "Difficile", xp: 900,  color: "#a855f7", target: 14,    unit: "jours",     metric: "streak",            trophy: "gold"     },
+  { id: "streak_30",    icon: "👑", title: "Streak 30 jours",            desc: "Un mois entier de régularité absolue",                     difficulty: "Expert",    xp: 2500, color: "#eab308", target: 30,    unit: "jours",     metric: "streak",            trophy: "platinum" },
+  { id: "scans_1",      icon: "📸", title: "Premier body scan IA",       desc: "Réalise ton premier scan corporel avec l'IA",              difficulty: "Facile",    xp: 200,  color: "#0ea5e9", target: 1,     unit: "scans",     metric: "scans",             trophy: "bronze"   },
+  { id: "scans_5",      icon: "🔬", title: "5 body scans réalisés",      desc: "Suis l'évolution de ton physique sur la durée",            difficulty: "Moyen",     xp: 600,  color: "#06b6d4", target: 5,     unit: "scans",     metric: "scans",             trophy: "silver"   },
+  { id: "scans_10",     icon: "🧬", title: "10 scans comparables",       desc: "Construis un vrai historique de transformation",           difficulty: "Difficile", xp: 1200, color: "#0891b2", target: 10,    unit: "scans",     metric: "scans",             trophy: "gold"     },
+  { id: "daily_7",      icon: "🎯", title: "7 journées de défis",        desc: "Accomplis tous les défis du jour à 7 reprises",            difficulty: "Moyen",     xp: 700,  color: "#84cc16", target: 7,     unit: "journées",  metric: "daily_completions", trophy: "silver"   },
+  { id: "daily_30",     icon: "🏅", title: "30 journées de défis",       desc: "Maîtrise quotidienne pendant un mois entier",              difficulty: "Expert",    xp: 2000, color: "#65a30d", target: 30,    unit: "journées",  metric: "daily_completions", trophy: "platinum" },
+  { id: "recipes_3",    icon: "🍳", title: "3 recettes IA",              desc: "Crée 3 recettes détaillées pour muscler ta cuisine",       difficulty: "Facile",    xp: 220,  color: "#f59e0b", target: 3,     unit: "recettes",  metric: "recipes",           trophy: "bronze"   },
+  { id: "recipes_10",   icon: "🍽️", title: "10 recettes IA",             desc: "Constitue une vraie base de repas utiles",                 difficulty: "Moyen",     xp: 650,  color: "#f97316", target: 10,    unit: "recettes",  metric: "recipes",           trophy: "silver"   },
+  { id: "nutrition_5",  icon: "🥗", title: "5 plans nutrition",          desc: "Teste et affine tes journées nutrition",                   difficulty: "Facile",    xp: 250,  color: "#84cc16", target: 5,     unit: "plans",     metric: "nutrition_plans",   trophy: "bronze"   },
+  { id: "nutrition_20", icon: "📋", title: "20 plans nutrition",         desc: "Construis une vraie routine alimentaire",                  difficulty: "Difficile", xp: 1000, color: "#65a30d", target: 20,    unit: "plans",     metric: "nutrition_plans",   trophy: "gold"     },
+  { id: "water_7",      icon: "💧", title: "7 jours d'hydratation",       desc: "Atteins ton objectif eau 7 jours distincts",              difficulty: "Moyen",     xp: 320,  color: "#38bdf8", target: 7,     unit: "jours",     metric: "water_days",        trophy: "silver"   },
+  { id: "water_21",     icon: "🌊", title: "21 jours bien hydratés",      desc: "Reste propre sur l'hydratation pendant 3 semaines",       difficulty: "Difficile", xp: 900,  color: "#0ea5e9", target: 21,    unit: "jours",     metric: "water_days",        trophy: "gold"     },
+  { id: "social_1",     icon: "📣", title: "Premier post communautaire",  desc: "Partage ta première photo ou message",                    difficulty: "Facile",    xp: 150,  color: "#ec4899", target: 1,     unit: "posts",     metric: "posts",             trophy: "bronze"   },
+  { id: "social_5",     icon: "🤝", title: "5 posts publiés",            desc: "Inspire la communauté avec 5 publications",                difficulty: "Moyen",     xp: 400,  color: "#f43f5e", target: 5,     unit: "posts",     metric: "posts",             trophy: "silver"   },
+  { id: "10kcal",       icon: "🔥", title: "10 000 calories brûlées",    desc: "Cumule 10 000 kcal sur des séances sauvegardées",          difficulty: "Difficile", xp: 1000, color: "#eab308", target: 10000, unit: "kcal",      metric: "calories",          trophy: "gold"     },
+  { id: "5h_week",      icon: "⏱️", title: "5h d'entraînement/semaine",  desc: "Totalise 5 heures de sport sur une même semaine",          difficulty: "Moyen",     xp: 600,  color: "#8b5cf6", target: 300,   unit: "minutes",   metric: "weekly_time",       trophy: "silver"   },
+  { id: "variety",      icon: "🌈", title: "Polyvalence totale",         desc: "3 types d'entraînement différents en une semaine",         difficulty: "Moyen",     xp: 400,  color: "#f97316", target: 3,     unit: "types",     metric: "variety",           trophy: "silver"   },
+  { id: "perfect_week", icon: "💎", title: "Semaine parfaite",           desc: "Entraînement + nutrition suivis 7/7 sur une semaine",      difficulty: "Expert",    xp: 2000, color: "#3b82f6", target: 7,     unit: "jours",     metric: "perfect",           trophy: "platinum" }
 ];
+
+// ── WEEKLY QUESTS ──────────────────────────────────────────────────────────────
+const WEEKLY_QUESTS = [
+  { id: "wq_sessions", icon: "💪", title: "3 séances cette semaine",    desc: "Complète et sauvegarde 3 entraînements avant dimanche",    xp: 350,  trophy: "bronze", metric: "sessions_week", target: 3  },
+  { id: "wq_streak5",  icon: "🔥", title: "Streak de 5 jours",         desc: "Enchaîne 5 jours d'entraînement sans interruption",        xp: 600,  trophy: "silver", metric: "streak_week",   target: 5  },
+  { id: "wq_recipe",   icon: "🍳", title: "Chef de la semaine",         desc: "Génère 2 recettes IA cette semaine",                       xp: 250,  trophy: null,     metric: "recipes_week",  target: 2  },
+  { id: "wq_plan",     icon: "📅", title: "Programme établi",           desc: "Génère ton plan d'entraînement de la semaine",             xp: 200,  trophy: null,     metric: "plan_week",     target: 1  },
+  { id: "wq_nutrition",icon: "🥗", title: "Nutrition trackée",          desc: "Enregistre tes repas 3 jours dans la semaine",             xp: 300,  trophy: "bronze", metric: "nutrition_week", target: 3 },
+  { id: "wq_scan",     icon: "📸", title: "Bilan corporel",             desc: "Réalise un body scan IA cette semaine",                    xp: 200,  trophy: null,     metric: "scan_week",     target: 1  },
+];
+
+const TROPHY_META = {
+  bronze:   { label: "Bronze",   color: "#cd7f32", bg: "rgba(205,127,50,.12)",  glow: "rgba(205,127,50,.3)",  shield: "🥉" },
+  silver:   { label: "Argent",   color: "#b0bec5", bg: "rgba(176,190,197,.12)", glow: "rgba(176,190,197,.3)", shield: "🥈" },
+  gold:     { label: "Or",       color: "#ffd700", bg: "rgba(255,215,0,.12)",   glow: "rgba(255,215,0,.3)",   shield: "🥇" },
+  platinum: { label: "Platine",  color: "#a78bfa", bg: "rgba(167,139,250,.12)", glow: "rgba(167,139,250,.35)",shield: "💎" },
+};
+
+function getWeekKey() {
+  // Returns "YYYY-Www" to key localStorage per-week resets
+  const d = new Date();
+  const day = d.getDay() || 7;
+  const mon = new Date(d);
+  mon.setDate(d.getDate() - day + 1);
+  const y = mon.getFullYear();
+  const start = new Date(y, 0, 1);
+  const weekNum = Math.ceil(((mon - start) / 86400000 + start.getDay() + 1) / 7);
+  return `${y}-W${String(weekNum).padStart(2, "0")}`;
+}
+
+function getWeeklyQuestData() {
+  const key = `fitai_wq_${getWeekKey()}`;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { progress: {}, done: [] };
+}
+
+function saveWeeklyQuestData(data) {
+  const key = `fitai_wq_${getWeekKey()}`;
+  try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
+}
+
+// Call this whenever a relevant action happens (save workout, generate recipe, etc.)
+function incrementWeeklyQuestMetric(metric, amount = 1) {
+  const data = getWeeklyQuestData();
+  data.progress[metric] = (data.progress[metric] || 0) + amount;
+  // Check if any quest just completed
+  const newlyDone = [];
+  for (const q of WEEKLY_QUESTS) {
+    if (!data.done.includes(q.id) && (data.progress[q.metric] || 0) >= q.target) {
+      data.done.push(q.id);
+      newlyDone.push(q);
+    }
+  }
+  saveWeeklyQuestData(data);
+  for (const q of newlyDone) {
+    _showTrophyUnlock(q);
+  }
+}
+
+function _showTrophyUnlock(item) {
+  const trophy = item.trophy ? TROPHY_META[item.trophy] : null;
+  const shield = trophy ? trophy.shield : "⭐";
+  const label  = trophy ? trophy.label  : "Quête";
+  const el = document.createElement("div");
+  el.className = "trophy-unlock-toast";
+  el.innerHTML = `<div class="trophy-unlock-inner">
+    <div class="trophy-unlock-icon">${shield}</div>
+    <div>
+      <div class="trophy-unlock-title">Trophée débloqué !</div>
+      <div class="trophy-unlock-name">${escapeHtml(item.title)}</div>
+      <div class="trophy-unlock-badge">${label} · +${item.xp} XP</div>
+    </div>
+  </div>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => {
+    el.classList.remove("show");
+    setTimeout(() => el.remove(), 500);
+  }, 4000);
+}
 
 function getDailyCompletionCount() {
   try { return Number(localStorage.getItem("fitai_daily_completions") || "0"); }
@@ -3128,7 +3269,7 @@ async function loadDefis() {
   const waterGoalDays = getLocalMetric('fitai_water_goal_days');
   const recipeCount = Math.max(totalRecipes, getLocalMetric('fitai_recipes_saved'));
 
-  // Calculate progress for each defi
+  // Calculate progress for each trophy/defi
   const defisProgress = DEFIS_LIST.map(d => {
     let current = 0;
     if      (d.metric === "sessions")          current = totalSessions;
@@ -3139,17 +3280,23 @@ async function loadDefis() {
     else if (d.metric === "recipes")           current = recipeCount;
     else if (d.metric === "nutrition_plans")   current = nutritionPlans;
     else if (d.metric === "water_days")        current = waterGoalDays;
-    else current = 0; // calories, weekly_time, variety, perfect — non encore tracké
     const pct = Math.min(100, Math.round((current / d.target) * 100));
     const completed = current >= d.target;
     return { ...d, current, pct, completed };
   });
 
-  // Save XP locally
+  // XP + level
   const completedCount = defisProgress.filter(d => d.completed).length;
   const totalXP = defisProgress.filter(d => d.completed).reduce((a, d) => a + d.xp, 0);
-  const level = Math.floor(totalXP / 1000) + 1;
-  const xpInLevel = totalXP % 1000;
+  const wqData = getWeeklyQuestData();
+  const wqXP = WEEKLY_QUESTS.filter(q => wqData.done.includes(q.id)).reduce((s, q) => s + q.xp, 0);
+  const grandTotalXP = totalXP + wqXP;
+  const level = Math.floor(grandTotalXP / 1000) + 1;
+  const xpInLevel = grandTotalXP % 1000;
+
+  // Trophy counts by rarity
+  const trophyCounts = { bronze: 0, silver: 0, gold: 0, platinum: 0 };
+  defisProgress.filter(d => d.completed && d.trophy).forEach(d => { trophyCounts[d.trophy] = (trophyCounts[d.trophy] || 0) + 1; });
 
   // Update header stats
   const elLevel = document.getElementById("defi-level");
@@ -3160,41 +3307,136 @@ async function loadDefis() {
   if (elLevel) elLevel.textContent = level;
   const elLevelText = document.getElementById("defi-level-text");
   if (elLevelText) elLevelText.textContent = level;
-  if (elXP) elXP.textContent = totalXP;
-  if (elCompleted) elCompleted.textContent = `${completedCount}/${DEFIS_LIST.length}`;
+  if (elXP) elXP.textContent = grandTotalXP + " XP";
+  if (elCompleted) elCompleted.textContent = `${completedCount}/${DEFIS_LIST.length} trophées`;
   if (elProgress) elProgress.style.width = `${(xpInLevel / 1000) * 100}%`;
-  if (elProgressText) elProgressText.textContent = `${xpInLevel} / 1000 XP pour atteindre le niveau ${level + 1}`;
+  if (elProgressText) elProgressText.textContent = `${xpInLevel} / 1000 XP → Niveau ${level + 1}`;
 
-  const diffColors = { "Moyen": "var(--yellow)", "Difficile": "var(--red)", "Expert": "var(--accent)" };
+  // Render trophy counts row
+  const trophyRow = document.getElementById("defi-trophy-counts");
+  if (trophyRow) {
+    trophyRow.innerHTML = Object.entries(TROPHY_META).map(([key, m]) =>
+      `<div class="trophy-count-pill" style="border-color:${m.color}40;background:${m.bg}">
+        <span>${m.shield}</span>
+        <span style="font-weight:900;color:${m.color}">${trophyCounts[key] || 0}</span>
+        <span style="color:var(--muted)">${m.label}</span>
+      </div>`
+    ).join("");
+  }
 
-  el.innerHTML = defisProgress.map(d => `
-    <div class="defi-card" style="border-top:3px solid ${d.color};${d.completed ? "opacity:.92;box-shadow:0 0 0 1px " + d.color + "44" : ""}">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-        <span style="font-size:1.5rem">${d.icon}</span>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:800;font-size:.92rem;display:flex;align-items:center;gap:6px">
-            ${escapeHtml(d.title)}
-            ${d.completed ? `<span style="font-size:.7rem;background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3);border-radius:999px;padding:1px 7px;font-weight:700">✓ Complété</span>` : ""}
-          </div>
-          <div class="meal-info" style="margin-top:2px">${escapeHtml(d.desc)}</div>
+  // ── WEEKLY QUESTS rendering ──────────────────────────────────────────────
+  renderWeeklyQuests(totalSessions, currentStreak, recipeCount, totalScans, nutritionPlans);
+
+  // ── TROPHIES grid (replaces old defi-card list) ─────────────────────────
+  const completed = defisProgress.filter(d => d.completed);
+  const inProgress = defisProgress.filter(d => !d.completed && d.pct > 0).sort((a,b) => b.pct - a.pct);
+  const locked = defisProgress.filter(d => !d.completed && d.pct === 0);
+
+  el.innerHTML = "";
+
+  // In progress section
+  if (inProgress.length) {
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-section-title">🔄 En cours (${inProgress.length})</div>`);
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-grid">${inProgress.map(d => _buildTrophyCard(d, "progress")).join("")}</div>`);
+  }
+
+  // Unlocked section
+  if (completed.length) {
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-section-title">🏆 Débloqués (${completed.length})</div>`);
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-grid">${completed.map(d => _buildTrophyCard(d, "done")).join("")}</div>`);
+  }
+
+  // Locked section
+  if (locked.length) {
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-section-title">🔒 Verrouillés (${locked.length})</div>`);
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-grid">${locked.map(d => _buildTrophyCard(d, "locked")).join("")}</div>`);
+  }
+}
+
+function _buildTrophyCard(d, state) {
+  const trophy = d.trophy ? TROPHY_META[d.trophy] : null;
+  const isDone = state === "done";
+  const isLocked = state === "locked";
+  const tColor = trophy ? trophy.color : d.color;
+  const tBg = trophy ? trophy.bg : "rgba(255,255,255,.04)";
+  const tGlow = trophy && isDone ? `box-shadow:0 0 16px ${trophy.glow};` : "";
+  const shield = trophy ? trophy.shield : "🏅";
+  const rarity = trophy ? trophy.label : "";
+  return `<div class="trophy-card${isDone ? " trophy-done" : isLocked ? " trophy-locked" : ""}" style="border-color:${isDone ? tColor + "55" : "rgba(255,255,255,.07)"};${tGlow}${isLocked ? "opacity:.45;" : ""}">
+    <div class="trophy-card-top">
+      <div class="trophy-shield" style="background:${isDone ? tBg : "rgba(255,255,255,.04)"}${isDone ? ";border:1.5px solid " + tColor + "50" : ""}">${isDone ? shield : isLocked ? "🔒" : d.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div class="trophy-card-title">${escapeHtml(d.title)}</div>
+        ${rarity ? `<span class="trophy-rarity-badge" style="color:${tColor};background:${tBg};border:1px solid ${tColor}30">${rarity}</span>` : ""}
+      </div>
+      <div class="trophy-xp-tag">+${d.xp}<span style="font-size:.6rem;font-weight:600;opacity:.7"> XP</span></div>
+    </div>
+    <div class="trophy-card-desc">${escapeHtml(d.desc)}</div>
+    ${!isLocked ? `<div class="trophy-prog-row">
+      <div class="trophy-prog-track"><div class="trophy-prog-fill" style="width:${d.pct}%;background:${isDone ? tColor : d.color}${isDone ? "" : "cc"}"></div></div>
+      <span class="trophy-prog-label" style="color:${isDone ? "#4ade80" : "var(--muted)"}">${isDone ? "✓" : d.current + "/" + d.target}</span>
+    </div>` : `<div style="font-size:.68rem;color:var(--muted);margin-top:8px">${escapeHtml(d.desc.slice(0, 40))}…</div>`}
+  </div>`;
+}
+
+function renderWeeklyQuests(totalSessions, currentStreak, recipeCount, totalScans, nutritionPlans) {
+  const el = document.getElementById("weekly-quests-list");
+  if (!el) return;
+
+  const wqData = getWeeklyQuestData();
+  const p = wqData.progress;
+
+  // Auto-sync metrics we can infer
+  const weekStart = getWeekStart();
+  // sessions_week / streak_week can only be tracked by incrementWeeklyQuestMetric elsewhere
+  // Here we just render what we have
+
+  const quests = WEEKLY_QUESTS.map(q => {
+    const current = p[q.metric] || 0;
+    const pct = Math.min(100, Math.round((current / q.target) * 100));
+    const done = wqData.done.includes(q.id);
+    return { ...q, current, pct, done };
+  });
+
+  const doneCount = quests.filter(q => q.done).length;
+  const wqXP = quests.filter(q => q.done).reduce((s, q) => s + q.xp, 0);
+
+  const weekLabel = (() => {
+    const d = new Date(weekStart + "T00:00:00");
+    const end = new Date(d); end.setDate(d.getDate() + 6);
+    const fmt = dt => dt.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+    return `du ${fmt(d)} au ${fmt(end)}`;
+  })();
+
+  el.innerHTML = `<div class="wq-header">
+    <div>
+      <div class="wq-title">⚡ Quêtes de la semaine</div>
+      <div class="wq-sub">${weekLabel}</div>
+    </div>
+    <div class="wq-stats">
+      <span class="wq-done-count">${doneCount}/${quests.length}</span>
+      <span class="wq-xp-earned">${wqXP > 0 ? "+" + wqXP + " XP" : ""}</span>
+    </div>
+  </div>
+  <div class="wq-list">${quests.map(q => {
+    const trophy = q.trophy ? TROPHY_META[q.trophy] : null;
+    const tColor = trophy ? trophy.color : "#818cf8";
+    return `<div class="wq-row${q.done ? " wq-done" : ""}">
+      <div class="wq-icon">${q.icon}</div>
+      <div class="wq-body">
+        <div class="wq-name">${escapeHtml(q.title)}${q.done ? ` <span class="wq-check">✓</span>` : ""}</div>
+        <div class="wq-desc">${escapeHtml(q.desc)}</div>
+        <div class="wq-prog-track"><div class="wq-prog-fill" style="width:${q.pct}%;background:${q.done ? "#4ade80" : tColor}"></div></div>
+        <div class="wq-prog-text" style="color:${q.done ? "#4ade80" : "var(--muted)"}">
+          ${q.done ? "Accompli !" : q.current + " / " + q.target}
         </div>
       </div>
-      <div style="display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap">
-        <span class="badge" style="background:rgba(255,255,255,.06);color:${diffColors[d.difficulty] || "var(--muted)"}">${d.difficulty}</span>
-        <span class="badge" style="background:rgba(234,179,8,.1);color:var(--yellow)">+${d.xp} XP</span>
-        ${d.metric === "calories" || d.metric === "weekly_time" || d.metric === "variety" || d.metric === "perfect"
-          ? `<span class="badge" style="background:rgba(255,255,255,.04);color:var(--muted);font-size:.65rem" title="Suivi manuel">📋 Manuel</span>` : ""}
+      <div class="wq-rewards">
+        ${trophy ? `<span class="wq-trophy-badge" style="background:${TROPHY_META[q.trophy].bg};color:${TROPHY_META[q.trophy].color};border:1px solid ${TROPHY_META[q.trophy].color}40">${TROPHY_META[q.trophy].shield}</span>` : ""}
+        <span class="wq-xp">+${q.xp}</span>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;font-size:.78rem;margin-bottom:6px">
-        <span style="color:var(--muted)">Progression</span>
-        <span style="font-weight:700;color:${d.completed ? "#4ade80" : "var(--text)"}">${d.current} / ${d.target} ${d.unit}</span>
-      </div>
-      <div class="progress-track" style="height:6px">
-        <div class="progress-fill" style="width:${d.pct}%;background:${d.completed ? "#22c55e" : d.color}"></div>
-      </div>
-      <div style="font-size:.72rem;color:var(--muted);margin-top:4px">${d.completed ? "🏆 Défi accompli !" : d.pct + "% accompli"}</div>
-    </div>
-  `).join("");
+    </div>`;
+  }).join("")}</div>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3651,6 +3893,20 @@ async function loadStreak() {
     const { data, error } = await SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle();
     if (error) { console.warn("[Streak] Table may not exist:", error.message); return; }
     const streak = data || { current_streak: 0, longest_streak: 0, total_workouts: 0 };
+
+    // Update weekly streak quest progress (set to current streak value — clamped to target)
+    const wqData = getWeeklyQuestData();
+    const streakTarget = WEEKLY_QUESTS.find(q => q.id === "wq_streak5")?.target || 5;
+    if ((wqData.progress.streak_week || 0) < streak.current_streak) {
+      wqData.progress.streak_week = Math.min(streak.current_streak, streakTarget);
+      if (!wqData.done.includes("wq_streak5") && streak.current_streak >= streakTarget) {
+        wqData.done.push("wq_streak5");
+        saveWeeklyQuestData(wqData);
+        _showTrophyUnlock(WEEKLY_QUESTS.find(q => q.id === "wq_streak5"));
+      } else {
+        saveWeeklyQuestData(wqData);
+      }
+    }
 
     const dbStreak = document.getElementById("db-streak");
     if (dbStreak) dbStreak.textContent = streak.current_streak;
@@ -4206,6 +4462,7 @@ async function generateNutrition() {
     });
     await loadNutritionTargets();
     incrementLocalMetric('fitai_nutrition_plans', 1);
+    incrementWeeklyQuestMetric("nutrition_week", 1);
     toast(j.fallback ? "Plan nutrition généré (fallback utile)" : "Plan nutrition généré ✓", j.fallback ? "warn" : "ok");
   }).catch((e) => {
     if (reqSeq !== NUTRITION_REQUEST_SEQ) return;
@@ -4349,6 +4606,7 @@ async function saveRecipeToHistory(recipe) {
       saved_at:  new Date().toISOString()
     }, { onConflict: "user_id,name" });
     incrementLocalMetric('fitai_recipes_saved', 1);
+    incrementWeeklyQuestMetric("recipes_week", 1);
     await loadRecipeHistory();
   } catch (err) { console.warn("[recipe-history] save failed:", err); }
 }
@@ -4484,6 +4742,7 @@ async function generateWeeklyPlan() {
     if (!r.ok || !j.ok) throw new Error(j.error || `Erreur (HTTP ${r.status})`);
     const phaseLabel = j.phase ? ` — Phase ${j.phase}` : "";
     toast(`Semaine ${j.week_number || "?"}/8 générée${phaseLabel} ✓`, "ok");
+    incrementWeeklyQuestMetric("plan_week", 1);
     renderWeeklyPlan(j.plan || [], j.week_number, j.phase);
   } catch (e) {
     toast(`Erreur planning : ${e.message}`, "err");
@@ -4642,6 +4901,7 @@ window.loadFeed = loadFeed;
 window.generateWeeklyPlan = generateWeeklyPlan;
 window.confirmOk     = confirmOk;
 window.confirmCancel = confirmCancel;
+window.loadLeaderboard = loadLeaderboard;
 // New
 window.searchUsers = searchUsers;
 window.sendFriendRequest = sendFriendRequest;
@@ -4852,11 +5112,7 @@ function closeWorkoutSession() {
   closeWorkoutTimer();
 }
 
-function woRenderExercise() {}
-function woUpdateTimerDisplay() {}
 function woToggle() { startWorkoutSession(); }
-function woStartRest() {}
-function woStopTimer() {}
 function woNav(dir) { if (dir > 0) nextWtExercise(); else prevWtExercise(); }
 
 // ══════════════════════════════════════════════════════════════════════════════
