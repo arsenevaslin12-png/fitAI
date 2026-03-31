@@ -1,12 +1,13 @@
 "use strict";
 
+const { createClient } = require("@supabase/supabase-js");
 const {
   setCors,
   parseBody,
   sanitizeInput,
+  detectIntent,
+  buildConversationPrompt,
   makeProfileSummary,
-  getGoalDescription,
-  getLevelDescription,
   getIp,
   checkRateLimit
 } = require("./_coach-core");
@@ -53,11 +54,19 @@ module.exports = async function handler(req, res) {
       return sseDone(res);
     }
 
-    const authHeader = req.headers.authorization || "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (!token) {
-      sseWrite(res, { error: "Non authentifié." });
-      return sseDone(res);
+    // ── Auth réelle ────────────────────────────────────────────────────────
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+    if (!token) { sseWrite(res, { error: "Non authentifié." }); return sseDone(res); }
+    if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+        const { data: { user }, error } = await sb.auth.getUser(token);
+        if (error || !user) { sseWrite(res, { error: "Token invalide." }); return sseDone(res); }
+      } catch {
+        sseWrite(res, { error: "Erreur d'authentification." }); return sseDone(res);
+      }
     }
 
     // Parse body: try req.body (Vercel pre-parsed) then fallback to stream reading
@@ -71,56 +80,15 @@ module.exports = async function handler(req, res) {
       } catch { /* keep body as-is */ }
     }
     const rawMessage = sanitizeInput(String(body.message || ""), 1000);
-    if (!rawMessage) {
-      sseWrite(res, { error: "Message vide." });
-      return sseDone(res);
-    }
+    if (!rawMessage) { sseWrite(res, { error: "Message vide." }); return sseDone(res); }
 
     const profile = body.profile || {};
     const history = Array.isArray(body.history) ? body.history : [];
     const goalCtx = body.goalContext || {};
 
-    const p = makeProfileSummary(profile, goalCtx);
-    const goalDesc = getGoalDescription(p.goal);
-    const levelDesc = getLevelDescription(p.level);
-
-    const equipMap = { halteres:"haltères", barre:"barre + disques", salle:"salle de sport complète", kettlebell:"kettlebell", elastiques:"élastiques" };
-    const equipLabel = equipMap[p.equipment] || p.equipment || "poids du corps uniquement";
-
-    // Contextual data from profile
-    const streak         = Number(profile.streak) || 0;
-    const totalWorkouts  = Number(profile.total_workouts) || 0;
-    const recentWorkouts = Array.isArray(profile.recent_workouts) ? profile.recent_workouts : [];
-    const lastScanScore  = profile.last_scan_score ? Number(profile.last_scan_score) : null;
-    const todayKcal      = profile.today_kcal ? Number(profile.today_kcal) : 0;
-    const todayProtein   = profile.today_protein ? Number(profile.today_protein) : 0;
-
-    // Mood rule (compact)
-    let moodRule = "";
-    if (p.mood === "Épuisé")       moodRule = "⚠️ ÉPUISÉ: repos/mobilité uniquement, aucune intensité.";
-    else if (p.mood === "Fatigué") moodRule = "⚠️ Fatigué: intensité -30%, séance courte.";
-    else if (p.mood === "En forme") moodRule = "💪 En forme: pousse l'intensité.";
-
-    const msgLower = rawMessage.toLowerCase();
-    let extra = "";
-    if (/flemme|pas envie|motivation/.test(msgLower)) extra = "\n→ Manque de motivation: UNE seule action simple tout de suite, ton humain.";
-    if (/stagne|plateau|progresse plus/.test(msgLower)) extra = `\n→ Stagnation: analyse cause (volume? charge? récup? nutrition?) et propose ajustement concret.`;
-
-    const histBlk = formatHistory(history);
-    const isBodyweight = !p.equipment || !/halt[eè]re|barre|salle|machine|kettlebell|banc/i.test(p.equipment);
-    const equipRule = isBodyweight
-      ? "\n⚠️ ÉQUIPEMENT: POIDS DU CORPS UNIQUEMENT — n'utilise pas d'haltères, barres, machines ou kettlebell dans tes suggestions."
-      : "";
-
-    const prompt = `Tu es FitAI Coach, expert fitness et nutrition. Français, direct, humain.
-
-PROFIL: ${p.display_name ? p.display_name + " | " : ""}${p.goal} (${goalDesc}) | ${p.level} | ${equipLabel}${p.constraints ? " | ⚠️ " + p.constraints : ""}${equipRule}
-Humeur: ${p.mood || "?"} ${moodRule}${extra}
-Stats: streak ${streak}j | ${totalWorkouts} séances${recentWorkouts.length ? " | " + recentWorkouts.join(", ") : ""}${lastScanScore ? " | scan " + lastScanScore + "/100" : ""}${todayKcal > 0 ? " | " + todayKcal + "kcal/" + todayProtein + "g prot" : ""}
-${histBlk ? "Historique:\n" + histBlk + "\n" : ""}
-MESSAGE: ${rawMessage}
-
-**Gras** pour les points clés. Listes avec "- ". Séance = Échauffement/Corps/Retour au calme avec séries×reps×repos. Court si question simple, complet si plan.`;
+    // Utilise buildConversationPrompt depuis _coach-core (même qualité que coach.js)
+    const intent = detectIntent(rawMessage, "");
+    const prompt = buildConversationPrompt(intent, rawMessage, history, profile, goalCtx);
 
     const apiKey = process.env.GEMINI_API_KEY;
     await callGeminiStream({

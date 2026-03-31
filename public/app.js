@@ -1400,7 +1400,7 @@ function _exerciseDemoSvg(label = '') {
 }
 
 function _exerciseDemoDataUri(label = '') {
-  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(_exerciseDemoSvg(label));
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(_stickFigureSVG(label));
 }
 
 function _exerciseDisplay(ex = {}) {
@@ -3848,17 +3848,18 @@ function mergeNutritionShoppingList(base, extra) {
   return out;
 }
 
-function addRecipeToNutritionShoppingList() {
-  if (!window._lastRecipe) return toast('Aucune recette à ajouter.', 'err');
+function addRecipeToNutritionShoppingList(idx = 0) {
+  const recipe = (window._lastRecipes && window._lastRecipes[idx]) || window._lastRecipe;
+  if (!recipe) return toast(‘Aucune recette à ajouter.’, ‘err’);
   const payload = loadStoredNutritionPlanPayload();
-  if (!payload || !payload.plan) return toast('Génère d’abord un plan nutrition.', 'warn');
-  const recipeShopping = window._lastRecipe.shopping_list && typeof window._lastRecipe.shopping_list === 'object'
-    ? window._lastRecipe.shopping_list
-    : { title: 'Courses recette', categories: [{ title: 'Recette', items: (window._lastRecipe.ingredients_list || []).map((name) => ({ name, qty: 'à prévoir' })) }] };
+  if (!payload || !payload.plan) return toast(‘Génère d’abord un plan nutrition.’, ‘warn’);
+  const recipeShopping = recipe.shopping_list && typeof recipe.shopping_list === ‘object’
+    ? recipe.shopping_list
+    : { title: ‘Courses recette’, categories: [{ title: ‘Recette’, items: (recipe.ingredients_list || []).map((name) => ({ name, qty: ‘à prévoir’ })) }] };
   payload.plan.shopping_list = mergeNutritionShoppingList(payload.plan.shopping_list || buildNutritionShoppingList(payload.plan), recipeShopping);
   saveNutritionPlanPayload(payload);
-  renderNutritionPlanPayload(payload, { status: 'Liste de courses enrichie avec la recette.', statusType: 'ok' });
-  toast('Ingrédients ajoutés à la liste de courses ✓', 'ok');
+  renderNutritionPlanPayload(payload, { status: ‘Liste de courses enrichie avec la recette.’, statusType: ‘ok’ });
+  toast(‘Ingrédients ajoutés à la liste de courses ✓’, ‘ok’);
 }
 
 function setNutritionGeneratedState({ loading = false, visible = false, status = '', statusType = '', payload = null } = {}) {
@@ -4159,16 +4160,16 @@ async function generateRecipe() {
       body: JSON.stringify({ ingredients, goal, targetKcal, servings, recipeStyle })
     }, 28000);
 
-    // Normalize response: /api/generate-recipe returns { recipe, data }
-    let recipe = null;
-    if (j.recipe && typeof j.recipe === "object" && j.recipe.name) recipe = j.recipe;
-    else if (j.data && typeof j.data === "object" && j.data.name) recipe = j.data;
-    else if (j.type === "recipe" && j.data) recipe = j.data;
+    // Normalize response: supports new { recipes: [...] } and legacy { recipe, data }
+    let recipes = [];
+    if (Array.isArray(j.recipes) && j.recipes.length) recipes = j.recipes;
+    else if (j.recipe && typeof j.recipe === "object" && j.recipe.name) recipes = [j.recipe];
+    else if (j.data && typeof j.data === "object" && j.data.name) recipes = [j.data];
+    else if (j.type === "recipe" && j.data) recipes = [j.data];
 
     checkAndAwardAchievements({ recipes: 1 }).catch(() => {});
 
-    if (!recipe) {
-      // Fallback: show raw response
+    if (!recipes.length) {
       if (resultEl) {
         resultEl.style.display = "block";
         resultEl.innerHTML = `<div class="card" style="border-left:3px solid var(--green)"><div style="font-weight:700;margin-bottom:8px">Recette générée</div><div style="font-size:.84rem;line-height:1.6;white-space:pre-wrap">${escapeHtml(JSON.stringify(j, null, 2).slice(0, 1000))}</div></div>`;
@@ -4176,8 +4177,7 @@ async function generateRecipe() {
       return;
     }
 
-    if (resultEl) {
-      resultEl.style.display = "block";
+    const renderRecipeCard = (recipe, idx) => {
       const name = recipe.name || "Recette";
       const foodArt = recipeFoodArt(name);
       const stepsHtml = Array.isArray(recipe.steps)
@@ -4188,9 +4188,7 @@ async function generateRecipe() {
         : '';
       const twistHtml = recipe.healthy_twist ? `<div class="recipe-v2-tip">✨ ${escapeHtml(recipe.healthy_twist)}</div>` : '';
       const coachNoteHtml = recipe.coach_note ? `<div class="recipe-v2-coach">🧠 ${escapeHtml(recipe.coach_note)}</div>` : '';
-      const metaHtml = `<div class="recipe-v2-tip">👥 ${escapeHtml(String(recipe.servings || 2))} portions · 🎯 ${escapeHtml(recipe.best_for || 'Repas flexible')}</div>`;
-      const prepHtml = recipe.batch_prep ? `<div class="recipe-v2-tip">📦 ${escapeHtml(recipe.batch_prep)}</div>` : '';
-      resultEl.innerHTML = `
+      return `
         <div class="recipe-v2">
           <div class="recipe-v2-art">${foodArt}</div>
           <div class="recipe-v2-tag">${recipeRequestBadge(ingredients)}${recipe.prep_time ? ` · ⏱ ${escapeHtml(recipe.prep_time)}` : ""}</div>
@@ -4208,15 +4206,25 @@ async function generateRecipe() {
           ${recipe.batch_prep ? `<div class="recipe-v2-tip">📦 ${escapeHtml(recipe.batch_prep)}</div>` : ""}
           ${recipe.tips ? `<div class="recipe-v2-tip">💡 ${escapeHtml(recipe.tips)}</div>` : ""}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
-            <button class="btn btn-p btn-sm btn-full" onclick="addRecipeAsMeal()">➕ Ajouter comme repas</button>
-            <button class="btn btn-g btn-sm btn-full" onclick="addRecipeToNutritionShoppingList()">🛒 Ajouter aux courses</button>
+            <button class="btn btn-p btn-sm btn-full" onclick="addRecipeAsMeal(${idx})">➕ Ajouter comme repas</button>
+            <button class="btn btn-g btn-sm btn-full" onclick="addRecipeToNutritionShoppingList(${idx})">🛒 Ajouter aux courses</button>
           </div>
         </div>`;
-      // Store recipe for "add as meal"
-      window._lastRecipe = recipe;
-      // Save to DB history (fire-and-forget)
-      saveRecipeToHistory(recipe).catch(() => {});
+    };
+
+    if (resultEl) {
+      resultEl.style.display = "block";
+      const header = recipes.length > 1
+        ? `<div style="font-size:.82rem;color:var(--txt-dim);margin-bottom:10px;text-align:center">✨ ${recipes.length} recettes générées — choisissez votre préférée</div>`
+        : '';
+      resultEl.innerHTML = header + recipes.map((r, i) => renderRecipeCard(r, i)).join('<div style="height:16px"></div>');
     }
+
+    // Store recipes for "add as meal" / "add to shopping list"
+    window._lastRecipes = recipes;
+    window._lastRecipe = recipes[0];
+    // Save all to DB history (fire-and-forget)
+    recipes.forEach(r => saveRecipeToHistory(r).catch(() => {}));
   }).catch((e) => {
     if (errEl) {
       errEl.textContent = `Erreur: ${e.message}`;
@@ -4314,8 +4322,8 @@ function setRecipeIdea(value) {
 }
 window.setRecipeIdea = setRecipeIdea;
 
-function addRecipeAsMeal() {
-  const r = window._lastRecipe;
+function addRecipeAsMeal(idx = 0) {
+  const r = (window._lastRecipes && window._lastRecipes[idx]) || window._lastRecipe;
   if (!r) return toast("Aucune recette à ajouter.", "err");
   const nameEl = document.getElementById("n-name");
   const kcalEl = document.getElementById("n-kcal");

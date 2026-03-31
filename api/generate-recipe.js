@@ -153,50 +153,41 @@ function buildRecipePrompt(requestText, goal, targetKcal, servings = 2, recipeSt
   const ideaMode = isRecipeIdeaQuery(cleanRequest);
   const style = recipeStyleProfile(goal, cleanRequest, recipeStyle);
 
+  const recipeTemplate = `{"name":"Nom du plat","healthy_twist":"Pourquoi healthy/protéiné","ingredients_list":["120 g ...","1 ..."],"steps":["Étape 1 détaillée","Étape 2 détaillée","Étape 3"],"prep_time":"15 min","servings":${servings},"best_for":"Contexte d'usage","batch_prep":"Conseil batch","calories":${targetKcal},"protein":35,"carbs":50,"fat":15,"tips":"Conseil technique","coach_note":"Quand la manger"}`;
+
   if (ideaMode) {
     return `Tu es un chef nutritionniste sportif premium.
 L'utilisateur veut: ${cleanRequest}.
-Tu dois créer une ${style.healthyAngle} inspirée de cette envie.
-Objectif: ${goalLabel}. Calories visées: environ ${targetKcal} kcal.
-Style suggéré: ${cookingStyle}.
-Nombre de portions: ${servings}.
-Direction produit: ${style.styleHint}.
+Crée 3 versions différentes (légère, rapide, gourmande) de cette idée, toutes healthy et protéinées.
+Objectif: ${goalLabel}. Calories visées: environ ${targetKcal} kcal par portion.
+Nombre de portions: ${servings}. Direction produit: ${style.styleHint}.
 
 RÈGLES:
-- Si la demande est plaisir ou junk food (ex: crêpes, cookies, burger), transforme-la en version healthy crédible et riche en protéines.
-- Utilise des ingrédients réalistes faciles à trouver.
-- Donne un NOM appétissant et précis.
-- Donne une vraie liste d'ingrédients avec quantités.
-- Étapes détaillées, concrètes et pédagogiques.
-- Interdiction de dire simplement "cuire" sans préciser comment, combien de temps ou quel repère visuel.
-- Chaque étape doit être compréhensible par un débutant.
-- Ajoute un champ healthy_twist qui explique pourquoi cette version est plus healthy/protéinée.
-- Ajoute un champ coach_note court qui dit quand manger cette recette (petit-déj, post-workout, collation, etc.)
+- Les 3 recettes doivent être distinctes (ingrédients, style de cuisson, texture différents).
+- Si la demande est plaisir/junk food, transforme chaque version en variante healthy crédible.
+- Ingrédients réalistes, faciles à trouver.
+- Étapes détaillées et pédagogiques — jamais "cuire" sans préciser comment ni combien de temps.
 - Réponds UNIQUEMENT en JSON valide, sans markdown.
 
 FORMAT EXACT:
-{"name":"Nom du plat","healthy_twist":"Pourquoi cette version est healthy/protéinée","ingredients_list":["120 g ...","1 ..."],"steps":["Étape 1 détaillée","Étape 2 détaillée","Étape 3 détaillée"],"prep_time":"15 min","servings":2,"best_for":"Petit-déjeuner ou collation","batch_prep":"Comment la préparer en avance","calories":500,"protein":35,"carbs":50,"fat":15,"tips":"Conseil technique utile","coach_note":"Quand la manger"}`;
+{"recipes":[${recipeTemplate},${recipeTemplate},${recipeTemplate}]}`;
   }
 
   return `Tu es un chef nutritionniste sportif créatif.
-Crée une recette fitness ORIGINALE avec cette base fournie par l'utilisateur: ${cleanRequest}.
-Objectif: ${goalLabel}, environ ${targetKcal} kcal.
-Style de cuisson suggéré (adapte si besoin): ${cookingStyle}.
-Nombre de portions: ${servings}.
+Base fournie par l'utilisateur: ${cleanRequest}.
+Crée 3 recettes FITNESS ORIGINALES et variées (styles de cuisson et profils différents) à partir de cette base.
+Objectif: ${goalLabel}, environ ${targetKcal} kcal par portion. Portions: ${servings}.
 Direction produit: ${style.styleHint}.
 
 RÈGLES:
-- Interprète la base fournie comme ingrédients disponibles, idées de recette ou mélange des deux.
-- Donne un NOM DE PLAT spécifique et appétissant.
-- Donne une liste d'ingrédients structurée avec quantités.
-- Étapes détaillées, concrètes, jamais vagues: cite l'ingrédient, l'action, l'ordre et si possible le temps ou le repère visuel.
-- Interdiction de dire simplement "cuire les légumes" ou "cuire la protéine" sans préciser comment.
-- Le champ "healthy_twist" doit résumer ce qui rend la recette plus propre / utile pour l'objectif.
-- Le champ "coach_note" doit être un conseil court lié au contexte d'usage de la recette.
+- Les 3 recettes doivent être vraiment différentes entre elles.
+- Ingrédients disponibles = base principale, complète avec d'autres ingrédients courants.
+- Noms de plats spécifiques et appétissants.
+- Étapes concrètes: cite l'ingrédient, l'action, l'ordre, le temps ou le repère visuel.
 - Réponds UNIQUEMENT en JSON valide, sans texte autour.
 
 FORMAT EXACT:
-{"name":"Nom précis du plat","healthy_twist":"Pourquoi la recette colle à l'objectif","ingredients_list":["120 g ...","1 ..."],"steps":["Étape 1 détaillée","Étape 2 détaillée","Étape 3 détaillée"],"prep_time":"15 min","servings":2,"best_for":"Déjeuner ou dîner","batch_prep":"Comment la préparer en avance","calories":500,"protein":35,"carbs":50,"fat":15,"tips":"Conseil technique spécifique à cette recette","coach_note":"Quand la manger"}`;
+{"recipes":[${recipeTemplate},${recipeTemplate},${recipeTemplate}]}`;
 }
 
 function validateRecipe(raw) {
@@ -402,35 +393,42 @@ module.exports = async function handler(req, res) {
     let recipe;
     let usedFallback = false;
 
+    let recipes = null;
+
     if (GEMINI_API_KEY) {
       const result = await callGeminiText({
         apiKey: GEMINI_API_KEY,
         prompt: buildRecipePrompt(ingredients, goal, targetKcal, servings, recipeStyle),
         temperature: 0.75,
-        maxOutputTokens: 900,
+        maxOutputTokens: 2400,
         timeoutMs: GEMINI_TIMEOUT_MS,
         retries: 0,
-        mimeType: "application/json"  // forces Gemini to output valid JSON, no code fences
+        mimeType: "application/json"
       });
 
-      recipe = validateRecipe(extractJson(result.text));
-
-      if (!recipe) {
-        // Gemini responded but JSON was malformed — pure fallback, no raw text exposure
-        recipe = fallbackRecipe(ingredients, goal, targetKcal, servings, recipeStyle);
-        usedFallback = true;
+      const parsed = extractJson(result.text);
+      if (parsed && Array.isArray(parsed.recipes) && parsed.recipes.length) {
+        recipes = parsed.recipes.map(validateRecipe).filter(Boolean).slice(0, 3);
+      } else if (parsed) {
+        const single = validateRecipe(parsed);
+        if (single) recipes = [single];
       }
-    } else {
-      recipe = fallbackRecipe(ingredients, goal, targetKcal, servings, recipeStyle);
+    }
+
+    if (!recipes || !recipes.length) {
+      recipes = [fallbackRecipe(ingredients, goal, targetKcal, servings, recipeStyle)];
       usedFallback = true;
     }
+
+    recipe = recipes[0];
 
     return sendJson(res, 200, {
       ok:       true,
       requestId,
-      recipe,
+      recipes,               // array of up to 3 recipes
+      recipe,                // backward compat: first recipe
       type:     "recipe",
-      data:     recipe,      // compatible avec le format /api/coach
+      data:     recipe,      // backward compat
       fallback: usedFallback
     });
 
@@ -441,6 +439,7 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 200, {
       ok:         true,
       requestId,
+      recipes:    [recipe],
       recipe,
       type:       "recipe",
       data:       recipe,

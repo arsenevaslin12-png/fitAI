@@ -1,5 +1,6 @@
 "use strict";
 
+const { createClient } = require("@supabase/supabase-js");
 const {
   sendJson,
   setCors,
@@ -56,6 +57,22 @@ module.exports = async function handler(req, res) {
 async function handleCoach(req, res) {
   if (req.method !== "POST") {
     return sendJson(res, 405, { ok: false, error: "Methode non autorisee" });
+  }
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return sendJson(res, 500, { ok: false, error: "SUPABASE config manquante" });
+  }
+  const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return sendJson(res, 401, { ok: false, error: "Bearer token requis" });
+  try {
+    const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+    const { data: { user }, error } = await sb.auth.getUser(token);
+    if (error || !user) return sendJson(res, 401, { ok: false, error: "Token invalide" });
+  } catch {
+    return sendJson(res, 401, { ok: false, error: "AUTH_FAILED" });
   }
 
   const limit = checkRateLimit("coach", getIp(req), 10, 60_000);

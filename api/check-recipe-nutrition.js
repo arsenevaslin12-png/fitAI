@@ -72,7 +72,9 @@ Critères du score: densité nutritionnelle, équilibre protéines/glucides/lipi
 
     let result;
     try {
-      result = typeof raw === "string" ? JSON.parse(raw) : raw;
+      const text = typeof raw?.text === "string" ? raw.text : (typeof raw === "string" ? raw : null);
+      if (!text) throw new Error("invalid");
+      result = JSON.parse(text);
       if (!result || typeof result.score !== "number") throw new Error("invalid");
     } catch {
       result = { ...FALLBACK, analysis: "Recette partagée. Analyse indisponible temporairement.", strengths: ["Recette maison"] };
