@@ -1512,9 +1512,6 @@ function _exerciseDemoSvg(label = '') {
     </svg>`;
 }
 
-function _exerciseDemoDataUri(label = '') {
-  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(_exerciseDemoSvg(label));
-}
 
 function _exerciseDisplay(ex = {}) {
   return typeof _normalizeGuidedExercise === 'function' ? _normalizeGuidedExercise(ex, 0) : ex;
