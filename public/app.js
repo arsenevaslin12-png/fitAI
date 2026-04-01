@@ -5155,7 +5155,10 @@ async function generateRecipe() {
     recipes.forEach(r => saveRecipeToHistory(r).catch(() => {}));
   }).catch((e) => {
     if (errEl) {
-      errEl.textContent = `Erreur: ${e.message}`;
+      const msg = (e.name === "AbortError" || /abort/i.test(e.message))
+        ? "La génération a pris trop longtemps. Réessaie dans quelques secondes."
+        : `Erreur: ${e.message}`;
+      errEl.textContent = msg;
       errEl.style.display = "block";
     }
   });

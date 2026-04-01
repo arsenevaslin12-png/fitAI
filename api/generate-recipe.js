@@ -254,6 +254,312 @@ function fallbackRecipe(requestText, goal, targetKcal, servings = 2, recipeStyle
     };
   }
 
+  if (/pizza/.test(text)) {
+    return {
+      name: "Pizza maison healthy base légère",
+      healthy_twist: "Base fine et croustillante, sauce tomate maison sans sucre ajouté, garnie de légumes et d'une source de protéines maigres.",
+      ingredients_list: [
+        "1 pâte à pizza fine (ou wrap tortilla grande)",
+        "3 cuillères à soupe de sauce tomate nature",
+        "1 boule de mozzarella légère (125 g) ou 60 g de mozzarella light",
+        "100 g de poulet grillé en lanières (ou thon au naturel)",
+        "1/2 poivron rouge en lamelles",
+        "1/4 courgette en rondelles fines",
+        "1 poignée de roquette (ajoutée après cuisson)",
+        "Origan, basilic, poivre noir, filet d'huile d'olive"
+      ],
+      steps: [
+        "Préchauffe le four à 220°C chaleur tournante (ou 240°C conventionnel). Pose la base sur une grille ou plaque huilée.",
+        "Étale la sauce tomate sur la base en laissant 2 cm de bord libre. Assaisonne avec origan, poivre et une pincée de sel.",
+        "Répartis la mozzarella émiettée en petits morceaux uniformément sur la sauce.",
+        "Dispose les lamelles de poulet (ou thon égoutté), les rondelles de courgette et les lamelles de poivron.",
+        "Enfourne 10 à 13 minutes: la pâte doit être dorée et croustillante, la mozzarella fondue et légèrement colorée.",
+        "Sors du four, ajoute la roquette fraîche, un filet d'huile d'olive et sers immédiatement."
+      ],
+      prep_time: "20 min",
+      servings: s,
+      best_for: "Déjeuner ou dîner",
+      batch_prep: "Prépare 2 pizzas en même temps et emballe la deuxième pour le lendemain.",
+      calories: kcal,
+      protein: proteinBase + 8,
+      carbs: Math.max(30, Math.round(kcal * 0.42 / 4)),
+      fat: Math.max(10, Math.round(kcal * 0.25 / 9)),
+      tips: "Pour une base encore plus légère, remplace la pâte par un grand wrap tortilla : croustillant garantit en 8 min au four.",
+      coach_note: "Cette pizza couvre bien les macros d'un repas principal tout en restant bien en dessous d'une pizza classique.",
+      shopping_list: buildRecipeShoppingList(["1 pâte à pizza fine", "sauce tomate", "mozzarella légère", "100 g de poulet grillé", "poivron", "courgette", "roquette", "huile d'olive"])
+    };
+  }
+
+  if (/(bowl|buddha|poke)/.test(text)) {
+    return {
+      name: "Bowl protéiné équilibré",
+      healthy_twist: "Un seul bol pour couvrir protéines, glucides complexes et graisses saines en bonne proportion.",
+      ingredients_list: [
+        "150 g de riz complet ou quinoa cuit",
+        "120 g de poulet grillé ou tofu ferme",
+        "1/2 avocat en tranches",
+        "1 poignée d'épinards ou de roquette",
+        "1/4 de concombre en rondelles",
+        "1 cuillère à soupe de sauce soja légère",
+        "1 cuillère à café de sésame grillé",
+        "Jus de citron, gingembre râpé"
+      ],
+      steps: [
+        "Cuis le riz complet ou le quinoa selon le paquet (environ 15-18 min). Assaisonne avec une pointe de sel.",
+        "Coupe le poulet en lamelles et fais-le griller 3-4 min par face à feu moyen-vif avec un peu d'huile.",
+        "Prépare les légumes : tranche le concombre, coupe l'avocat et rince les feuilles vertes.",
+        "Dispose le riz au fond du bol, puis range les ingrédients en zones distinctes par-dessus.",
+        "Arrose avec la sauce soja, un trait de jus de citron et saupoudre de sésame grillé."
+      ],
+      prep_time: "20 min",
+      servings: s,
+      best_for: "Déjeuner ou repas post-training",
+      batch_prep: "Cuis le riz en grande quantité et conserve-le 3 jours au frigo.",
+      calories: kcal,
+      protein: proteinBase + 5,
+      carbs: Math.max(30, Math.round(kcal * 0.45 / 4)),
+      fat: Math.max(12, Math.round(kcal * 0.28 / 9)),
+      tips: "Ajoute 1 œuf mollet pour encore plus de protéines et de textures.",
+      coach_note: "Idéal après l'entraînement pour recharger glycogène et protéines en une fois.",
+      shopping_list: buildRecipeShoppingList(["150 g de riz complet", "120 g de poulet", "1/2 avocat", "épinards", "concombre", "sauce soja", "sésame"])
+    };
+  }
+
+  if (/(burger|sandwich|bagel)/.test(text)) {
+    return {
+      name: "Burger maison healthy",
+      healthy_twist: "Pain complet, steak maison ou galette de légumineuses, légumes frais croquants — le tout sans sauce industrielle.",
+      ingredients_list: [
+        "2 pains complets ou briochés légers",
+        "200 g de bœuf haché 5% ou de dinde hachée",
+        "1 tranche de fromage frais ou cheddar light",
+        "Laitue, tomate, oignon rouge",
+        "1 cuillère à soupe de moutarde",
+        "1 cuillère à soupe de fromage blanc (sauce burger maison)",
+        "Sel, poivre, ail en poudre"
+      ],
+      steps: [
+        "Mélange la viande hachée avec sel, poivre et ail en poudre. Façonne 2 steaks de même épaisseur (environ 2 cm).",
+        "Chauffe une poêle à feu vif sans matière grasse. Saisis les steaks 2-3 min par face pour du rosé, 4 min pour bien cuit.",
+        "Prépare la sauce : mélange fromage blanc, moutarde, une pincée de sel et un trait de citron.",
+        "Toaste légèrement les pains coupés en deux dans la même poêle 30 secondes côté mie.",
+        "Monte le burger : sauce sur la base, laitue, steak, fromage, tomate, oignon, sauce sur le chapeau."
+      ],
+      prep_time: "15 min",
+      servings: s,
+      best_for: "Repas principal ou post-training",
+      batch_prep: "Prépare les steaks à l'avance et congèle-les crus entre des feuilles de papier sulfurisé.",
+      calories: kcal,
+      protein: proteinBase + 12,
+      carbs: Math.max(25, Math.round(kcal * 0.35 / 4)),
+      fat: Math.max(12, Math.round(kcal * 0.28 / 9)),
+      tips: "Ne presse pas le steak avec la spatule pendant la cuisson : tu perds le jus et la jutosité.",
+      coach_note: "Bien calibré en protéines pour soutenir la récupération musculaire.",
+      shopping_list: buildRecipeShoppingList(["200 g de bœuf haché", "2 pains complets", "cheddar light", "laitue", "tomate", "oignon", "fromage blanc"])
+    };
+  }
+
+  if (/(p[âa]tes?|pasta|spaghetti|rigatoni|tagliatelle|linguine)/.test(text)) {
+    return {
+      name: "Pâtes protéinées sauce maison",
+      healthy_twist: "Pâtes complètes ou lentilles, sauce tomate maison sans sucre, source de protéines maigres bien dosée.",
+      ingredients_list: [
+        "100 g de pâtes complètes ou de lentilles corail (sec)",
+        "120 g de poulet émincé ou thon au naturel",
+        "200 g de coulis de tomates nature",
+        "1/2 oignon, 1 gousse d'ail",
+        "1 poignée d'épinards ou de basilic frais",
+        "1 cuillère à café d'huile d'olive",
+        "Sel, poivre, origan, flocons de piment"
+      ],
+      steps: [
+        "Cuis les pâtes al dente dans une grande casserole d'eau bouillante salée selon le temps indiqué. Réserve 2 cuillères d'eau de cuisson.",
+        "Pendant ce temps, fais revenir l'oignon émincé 3 min à feu moyen dans l'huile d'olive, puis ajoute l'ail 30 secondes.",
+        "Ajoute le poulet émincé et cuis-le 5-6 min en remuant jusqu'à coloration.",
+        "Verse le coulis, assaisonne avec origan, poivre et piment. Laisse mijoter 5 min à feu doux.",
+        "Égoutte les pâtes, ajoute-les à la sauce avec l'eau de cuisson réservée et les épinards. Mélange 1 min hors du feu."
+      ],
+      prep_time: "22 min",
+      servings: s,
+      best_for: "Déjeuner ou dîner post-training",
+      batch_prep: "Prépare la sauce en double et congèle-la par portions.",
+      calories: kcal,
+      protein: proteinBase + 6,
+      carbs: Math.max(35, Math.round(kcal * 0.48 / 4)),
+      fat: Math.max(8, Math.round(kcal * 0.2 / 9)),
+      tips: "L'eau de cuisson (amidon) lie la sauce aux pâtes et évite qu'elle sèche.",
+      coach_note: "Parfait avant un entraînement le soir : charge en glucides complexes et protéines.",
+      shopping_list: buildRecipeShoppingList(["100 g de pâtes complètes", "120 g de poulet émincé", "200 g de coulis de tomates", "oignon", "ail", "épinards", "huile d'olive"])
+    };
+  }
+
+  if (/(salade|salad)/.test(text)) {
+    return {
+      name: "Salade repas complète et rassasiante",
+      healthy_twist: "Une vraie salade-repas avec protéines, bons glucides et graisses saines — pas juste de la laitue.",
+      ingredients_list: [
+        "100 g de quinoa cuit ou pois chiches",
+        "120 g de poulet grillé ou œufs durs",
+        "Laitue romaine ou épinards frais",
+        "1/4 de concombre, 10 tomates cerises",
+        "1/4 d'avocat",
+        "30 g de feta légère émiettée",
+        "1 cuillère à soupe d'huile d'olive + citron (vinaigrette)",
+        "Herbes fraîches : persil, ciboulette"
+      ],
+      steps: [
+        "Cuis le quinoa (15 min eau bouillante) ou rince des pois chiches en boîte. Laisse refroidir.",
+        "Grille le poulet avec sel, poivre et herbes, 3-4 min par face. Laisse reposer 2 min avant de trancher.",
+        "Lave et essore les feuilles, coupe concombre et tomates, tranche l'avocat.",
+        "Prépare la vinaigrette : mélange huile d'olive, jus de citron, sel, poivre et une pincée d'origan.",
+        "Assemble dans un grand bol : feuilles, quinoa, poulet, légumes, avocat, feta. Arrose de vinaigrette juste avant de servir."
+      ],
+      prep_time: "18 min",
+      servings: s,
+      best_for: "Déjeuner ou repas léger du soir",
+      batch_prep: "Prépare les composants séparément et assemble au moment de manger.",
+      calories: kcal,
+      protein: proteinBase + 4,
+      carbs: Math.max(20, Math.round(kcal * 0.35 / 4)),
+      fat: Math.max(12, Math.round(kcal * 0.3 / 9)),
+      tips: "Ne mets la vinaigrette qu'au moment de manger pour éviter que les feuilles ramollissent.",
+      coach_note: "Idéale en déjeuner pour rester alerte l'après-midi sans coup de fatigue.",
+      shopping_list: buildRecipeShoppingList(["100 g de quinoa", "120 g de poulet grillé", "laitue romaine", "concombre", "tomates cerises", "avocat", "feta", "huile d'olive"])
+    };
+  }
+
+  if (/(omelette|frittata|oeuf|œuf)/.test(text)) {
+    return {
+      name: "Omelette protéinée aux légumes",
+      healthy_twist: "Riche en protéines, sans glucides superflus et cuisson sèche pour limiter les graisses ajoutées.",
+      ingredients_list: [
+        "3 œufs entiers + 2 blancs d'œufs",
+        "1/2 poivron, 1/4 d'oignon, 1 poignée d'épinards",
+        "30 g de fromage de chèvre ou feta émiettée",
+        "Sel, poivre, paprika, herbes de Provence",
+        "Spray cuisson ou 1/2 cuillère à café d'huile"
+      ],
+      steps: [
+        "Fouette les œufs et les blancs avec sel, poivre et une pincée de paprika. Réserve.",
+        "Fais revenir l'oignon et le poivron en brunoise 3 min à feu moyen dans une poêle légèrement huilée.",
+        "Ajoute les épinards frais et remue 1 min jusqu'à ce qu'ils tombent. Retire les légumes de la poêle.",
+        "Verse les œufs dans la poêle chaude à feu moyen-doux. Laisse prendre 2 min sans remuer, puis soulève les bords pour laisser couler l'œuf cru dessous.",
+        "Ajoute les légumes et le fromage sur une moitié, plie l'omelette et laisse encore 30 secondes. Sers immédiatement."
+      ],
+      prep_time: "10 min",
+      servings: s,
+      best_for: "Petit-déjeuner, déjeuner express ou dîner léger",
+      batch_prep: "Prépare les légumes en avance et cuis les œufs au moment.",
+      calories: kcal,
+      protein: proteinBase + 14,
+      carbs: Math.max(5, Math.round(kcal * 0.1 / 4)),
+      fat: Math.max(10, Math.round(kcal * 0.35 / 9)),
+      tips: "Feu moyen-doux uniquement : une omelette sur feu vif devient caoutchouteuse.",
+      coach_note: "Un des repas les plus rapides et les plus efficaces en protéines.",
+      shopping_list: buildRecipeShoppingList(["3 œufs entiers", "2 blancs d'œufs", "poivron", "oignon", "épinards", "fromage de chèvre"])
+    };
+  }
+
+  if (/(wrap|tacos?|burrito|quesadilla)/.test(text)) {
+    return {
+      name: "Wrap protéiné maison",
+      healthy_twist: "Tortilla complète, garniture fraîche et sauce légère maison — sans sauce industrielle grasse.",
+      ingredients_list: [
+        "2 tortillas complètes (blé complet ou maïs)",
+        "120 g de poulet grillé émincé",
+        "1/4 d'avocat",
+        "2 cuillères à soupe de fromage blanc + épices (sauce)",
+        "Laitue iceberg, tomate, oignon rouge",
+        "Jus de citron vert, cumin, paprika fumé"
+      ],
+      steps: [
+        "Assaisonne le poulet avec cumin, paprika, sel et poivre. Fais-le griller 3-4 min par face.",
+        "Prépare la sauce : mélange fromage blanc, jus de citron vert, une pincée de cumin et paprika.",
+        "Écrase légèrement l'avocat avec sel, jus de citron et poivre.",
+        "Réchauffe les tortillas 30 secondes côté par côté dans une poêle sèche.",
+        "Étale la sauce sur chaque tortilla, ajoute laitue, poulet émincé, avocat, tomate et oignon. Roule fermement."
+      ],
+      prep_time: "15 min",
+      servings: s,
+      best_for: "Déjeuner ou repas rapide",
+      batch_prep: "Prépare le poulet en avance pour assembler le wrap en 5 min.",
+      calories: kcal,
+      protein: proteinBase + 8,
+      carbs: Math.max(25, Math.round(kcal * 0.4 / 4)),
+      fat: Math.max(12, Math.round(kcal * 0.27 / 9)),
+      tips: "Enroule dans du papier alu pour manger facilement sans tout faire tomber.",
+      coach_note: "Pratique à emporter au travail ou en compétition.",
+      shopping_list: buildRecipeShoppingList(["2 tortillas complètes", "120 g de poulet grillé", "avocat", "fromage blanc", "laitue", "tomate", "oignon rouge"])
+    };
+  }
+
+  if (/(risotto)/.test(text)) {
+    return {
+      name: "Risotto léger poulet et légumes",
+      healthy_twist: "Riz arborio en quantité maîtrisée, bouillon maison à la place de la crème, parmesan dosé.",
+      ingredients_list: [
+        "100 g de riz arborio",
+        "120 g de poulet en dés",
+        "400 ml de bouillon de légumes chaud",
+        "1/2 oignon, 1 gousse d'ail",
+        "1 poignée de petits pois ou épinards",
+        "20 g de parmesan râpé",
+        "1 cuillère à café d'huile d'olive, sel, poivre"
+      ],
+      steps: [
+        "Fais revenir l'oignon et l'ail dans l'huile à feu moyen 2 min. Ajoute le poulet et dore-le 3 min.",
+        "Ajoute le riz et nacre-le 1 min en remuant jusqu'à ce qu'il soit légèrement translucide.",
+        "Ajoute le bouillon chaud louche par louche en remuant constamment — attends que chaque louche soit absorbée avant d'ajouter la suivante.",
+        "Après 16-18 min, le riz doit être al dente et crémeux. Ajoute petits pois ou épinards 2 min avant la fin.",
+        "Hors du feu, incorpore le parmesan, goûte et ajuste l'assaisonnement. Sers immédiatement."
+      ],
+      prep_time: "25 min",
+      servings: s,
+      best_for: "Dîner ou déjeuner",
+      batch_prep: "Le risotto se réchauffe avec un peu de bouillon ajouté.",
+      calories: kcal,
+      protein: proteinBase + 4,
+      carbs: Math.max(35, Math.round(kcal * 0.48 / 4)),
+      fat: Math.max(8, Math.round(kcal * 0.2 / 9)),
+      tips: "Le secret c'est le bouillon chaud et le remuage continu : ne jamais verser du bouillon froid.",
+      coach_note: "Riche en glucides complexes, idéal la veille d'une grosse séance.",
+      shopping_list: buildRecipeShoppingList(["100 g de riz arborio", "120 g de poulet", "bouillon de légumes", "oignon", "petits pois", "parmesan"])
+    };
+  }
+
+  if (/(soupe|veloute|bouillon|potage)/.test(text)) {
+    return {
+      name: "Soupe veloutée légume-protéine",
+      healthy_twist: "Soupe maison sans crème ni beurre — juste légumes, bouillon et une source de protéines pour rassasier.",
+      ingredients_list: [
+        "3 carottes ou 1 patate douce",
+        "1 oignon, 1 gousse d'ail",
+        "500 ml de bouillon de légumes",
+        "100 g de lentilles corail ou 100 g de poulet cuit",
+        "1 cuillère à café de cumin, curcuma",
+        "Sel, poivre, persil frais"
+      ],
+      steps: [
+        "Épluche et coupe les légumes en dés. Fais revenir l'oignon et l'ail 3 min dans une casserole avec un peu d'huile.",
+        "Ajoute les légumes et les épices, remue 2 min pour bien enrober.",
+        "Verse le bouillon chaud, ajoute les lentilles corail. Porte à ébullition puis laisse mijoter 18-20 min.",
+        "Mixe la soupe à l'aide d'un mixeur plongeant jusqu'à obtenir un velouté lisse.",
+        "Ajuste la consistance avec un peu d'eau si trop épaisse, assaisonne et sers avec persil frais."
+      ],
+      prep_time: "25 min",
+      servings: s,
+      best_for: "Entrée ou dîner léger",
+      batch_prep: "Se conserve 4 jours au frigo et se congèle très bien.",
+      calories: kcal,
+      protein: proteinBase,
+      carbs: Math.max(20, Math.round(kcal * 0.42 / 4)),
+      fat: Math.max(5, Math.round(kcal * 0.15 / 9)),
+      tips: "Ajoute une cuillère de skyr ou fromage blanc au moment de servir pour un velouté plus riche sans matières grasses.",
+      coach_note: "Parfait en dîner léger les jours de repos.",
+      shopping_list: buildRecipeShoppingList(["3 carottes", "1 oignon", "bouillon de légumes", "lentilles corail", "cumin", "curcuma"])
+    };
+  }
+
   if (/(cookies?|brownie|muffins?|cake|dessert)/.test(text)) {
     return {
       name: "Cookie protéiné version clean",
