@@ -1099,9 +1099,23 @@ body.light .db-day-bar{background:rgba(15,23,42,.1)}
 @keyframes waterPop{0%{transform:scale(1)}45%{transform:scale(1.2) translateY(-3px)}100%{transform:scale(1)}}
 .progress-text{margin-top:6px;font-size:.78rem;color:var(--muted);font-weight:700;text-align:right}
 /* ── Programme 8 semaines ── */
-.prog-phases-strip{display:flex;gap:6px;flex-wrap:wrap}
-.prog-phase-chip{font-size:.68rem;font-weight:800;padding:5px 10px;border-radius:20px;border:1.5px solid;background:transparent;cursor:pointer;transition:all .2s;letter-spacing:.04em;color:inherit}
-.prog-phase-chip.active{color:#fff!important;box-shadow:0 2px 12px rgba(0,0,0,.4);transform:scale(1.05)}
+.prog-phases-strip{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}
+.prog-tl-seg{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:2px 1px;transition:opacity .2s}
+.prog-tl-bar{width:100%;height:5px;border-radius:3px;background:var(--pc,#6366f1);opacity:.2;transition:all .25s}
+.prog-tl-seg.active .prog-tl-bar{opacity:1;height:7px;box-shadow:0 0 8px var(--pc,#6366f1)}
+.prog-tl-seg.past .prog-tl-bar{opacity:.5}
+.prog-tl-seg:hover:not(.active) .prog-tl-bar{opacity:.4}
+.prog-tl-lbl{font-size:.53rem;font-weight:700;color:var(--muted);letter-spacing:.04em;text-align:center;transition:color .2s}
+.prog-tl-seg.active .prog-tl-lbl{color:var(--pc,#6366f1);font-weight:900}
+.prog-tl-seg.past .prog-tl-lbl{color:var(--text2)}
+.prog-today-hero{border-radius:20px;padding:16px 18px;background:linear-gradient(135deg,rgba(37,99,235,.1),rgba(99,102,241,.06));border:1px solid rgba(37,99,235,.22)}
+.prog-today-rest{background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(5,150,105,.04))!important;border-color:rgba(16,185,129,.18)!important}
+.prog-today-hero-top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.prog-today-hero-icon{font-size:1.8rem;flex-shrink:0;line-height:1}
+.prog-today-hero-kicker{font-size:.58rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#60a5fa;margin-bottom:2px}
+.prog-today-hero-title{font-size:.98rem;font-weight:900;color:var(--text);line-height:1.2}
+.prog-today-hero-meta{font-size:.7rem;color:var(--text2);margin-top:3px}
+.prog-today-done-badge{margin-left:auto;font-size:.72rem;background:rgba(52,211,153,.12);color:#34d399;border:1px solid rgba(52,211,153,.3);padding:4px 10px;border-radius:8px;font-weight:800;white-space:nowrap;flex-shrink:0}
 .prog-day-card{border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:14px;margin-bottom:8px;background:rgba(255,255,255,.025);cursor:pointer;transition:background .2s}
 .prog-day-card:hover:not(.prog-day-rest){background:rgba(255,255,255,.055)}
 .prog-day-card.prog-day-today{border-color:rgba(37,99,235,.4);background:rgba(37,99,235,.07)}
@@ -1997,6 +2011,9 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           <div class="page-sub" id="prog-subtitle">Chargement du programme…</div>
         </div>
 
+        <!-- Today hero (populated by JS) -->
+        <div id="prog-today-hero" style="display:none;margin-bottom:8px"></div>
+
         <!-- Phase timeline -->
         <div class="card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -2047,9 +2064,7 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               <span style="font-size:.72rem;color:var(--muted)" id="prog-water-target">/ 8 verres</span>
             </div>
           </div>
-          <div class="prog-water-mini">
-            <div class="prog-water-mini-glasses" id="prog-water-glasses"></div>
-          </div>
+          <div id="prog-water-glasses" class="water-glasses-grid" style="grid-template-columns:repeat(8,1fr);gap:5px"></div>
           <div style="display:flex;gap:8px;margin-top:10px">
             <button onclick="adjustWater(-1);syncProgWater()" class="btn btn-g" style="flex:1;padding:10px;font-size:.88rem">−</button>
             <button onclick="adjustWater(1);syncProgWater()" class="btn btn-p" style="flex:1;padding:10px;font-size:.88rem">+ Verre 💧</button>

@@ -6353,9 +6353,13 @@ function syncProgWater() {
   if (targetEl) targetEl.textContent = `/ ${target} verres`;
   if (barEl) barEl.style.width = Math.min(100, Math.round((count / target) * 100)) + "%";
   if (glassesEl) {
-    glassesEl.innerHTML = Array.from({ length: target }, (_, i) =>
-      `<span class="prog-water-mini-glass" style="opacity:${i < count ? 1 : 0.2}">💧</span>`
-    ).join("");
+    glassesEl.innerHTML = Array.from({ length: target }, (_, i) => {
+      const filled = i < count;
+      return `<div class="water-glass${filled ? " filled" : ""}"
+        onclick="adjustWater(${filled ? i : i + 1});syncProgWater()" title="${filled ? "Retirer" : "Marquer bu"}">
+        <div class="wg-water"></div><div class="wg-shine"></div>
+      </div>`;
+    }).join("");
   }
 }
 window.syncProgWater = syncProgWater;
@@ -7690,14 +7694,17 @@ function renderProgramme(weekNum) {
   const sub = document.getElementById("prog-subtitle");
   if (sub) sub.textContent = (_prog.name ? _prog.name + " · " : "") + phase.name + " · RPE " + phase.rpe;
 
-  // Phase strip chips
+  // Phase timeline
   const strip = document.getElementById("prog-phases-strip");
   if (strip) {
     strip.innerHTML = PROG_PHASES.map(p => {
       const active = p.w === weekNum;
-      return `<button class="prog-phase-chip${active ? " active" : ""}"
-        style="border-color:${p.color};${active ? "background:" + p.color + ";" : "color:" + p.color + ";"}"
-        onclick="progSetWeek(${p.w})" title="${p.name}">${p.short}</button>`;
+      const past = p.w < weekNum;
+      return `<div class="prog-tl-seg${active ? " active" : ""}${past ? " past" : ""}"
+        style="--pc:${p.color}" onclick="progSetWeek(${p.w})" title="${p.name} — Semaine ${p.w}">
+        <div class="prog-tl-bar"></div>
+        <span class="prog-tl-lbl">${p.short}</span>
+      </div>`;
     }).join("");
   }
 
@@ -7706,6 +7713,64 @@ function renderProgramme(weekNum) {
   const lbl = document.getElementById("prog-cycle-label");
   if (bar) bar.style.width = ((weekNum / 8) * 100) + "%";
   if (lbl) lbl.textContent = "Semaine " + weekNum + " / 8 — " + phase.name;
+
+  // Today hero card
+  const heroEl = document.getElementById("prog-today-hero");
+  if (heroEl) {
+    const weekly = _progGetWeekly(_prog.goal);
+    const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
+    const todayDayIdx = weekly.findIndex(item => item.d === todayDow);
+    const todayItem = weekly[todayDayIdx];
+    if (todayItem && todayItem.type !== "rest") {
+      const exType = _progExType(todayItem.type, _prog.equipment || "");
+      const allEx = PROG_EXERCISES[exType] || [];
+      const priorCount = weekly.slice(0, todayDayIdx).filter(d => _progExType(d.type, _prog.equipment || "") === exType).length;
+      const pool = priorCount % 2 === 0 ? "A" : "B";
+      const pooled = allEx.filter(e => !e.pool || e.pool === pool);
+      const exList = (pooled.length >= 5 ? pooled : allEx).slice(0, 7);
+      const doneKey = `fitai_prog_done_${new Date().toISOString().slice(0, 10)}`;
+      let doneSets = {};
+      try { doneSets = JSON.parse(localStorage.getItem(doneKey) || "{}"); } catch {}
+      const doneCount = exList.filter((_, ei) => doneSets[`${todayDayIdx}_${ei}`]).length;
+      const pct = exList.length ? Math.round((doneCount / exList.length) * 100) : 0;
+      const allDone = doneCount === exList.length && exList.length > 0;
+      heroEl.style.display = "block";
+      heroEl.innerHTML = `
+        <div class="prog-today-hero">
+          <div class="prog-today-hero-top">
+            <div class="prog-today-hero-icon">${todayItem.icon}</div>
+            <div style="flex:1">
+              <div class="prog-today-hero-kicker">Séance du jour · ${phase.name}</div>
+              <div class="prog-today-hero-title">${todayItem.label}</div>
+              <div class="prog-today-hero-meta">${exList.length} exercices · RPE ${phase.rpe} · ${params.sets}×${params.reps}</div>
+            </div>
+            ${allDone ? '<span class="prog-today-done-badge">✓ Terminée</span>' : ''}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <div class="progress-track" style="flex:1;height:5px">
+              <div class="progress-fill" style="width:${pct}%;background:linear-gradient(90deg,#3b82f6,#6366f1);transition:width .35s"></div>
+            </div>
+            <span style="font-size:.65rem;color:#60a5fa;font-weight:800;white-space:nowrap">${doneCount}/${exList.length} faits</span>
+          </div>
+          <button class="prog-start-btn" onclick="progStartWorkout(${todayDayIdx})">▶ Commencer la séance</button>
+        </div>`;
+    } else if (todayItem && todayItem.type === "rest") {
+      heroEl.style.display = "block";
+      heroEl.innerHTML = `
+        <div class="prog-today-hero prog-today-rest">
+          <div class="prog-today-hero-top">
+            <div class="prog-today-hero-icon">😴</div>
+            <div>
+              <div class="prog-today-hero-kicker">Aujourd'hui</div>
+              <div class="prog-today-hero-title">Repos complet</div>
+              <div class="prog-today-hero-meta">Récupération musculaire · Hydratation · Étirements légers</div>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      heroEl.style.display = "none";
+    }
+  }
 
   // SVG Chart
   _renderProgChart(weekNum);
@@ -7862,7 +7927,7 @@ function progToggleDay(el) {
   const arrow = el.querySelector(".prog-expand-arrow");
   if (!ex) return;
   const open = ex.style.display !== "none";
-  ex.style.display = open ? "none" : "block";
+  ex.style.display = open ? "none" : "flex";
   if (arrow) arrow.textContent = open ? "▼" : "▲";
 }
 
