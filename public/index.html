@@ -1127,9 +1127,9 @@ body.light .db-day-bar{background:rgba(15,23,42,.1)}
 .prog-today-badge{font-size:.6rem;font-weight:800;background:rgba(37,99,235,.2);color:#60a5fa;padding:2px 7px;border-radius:6px;border:1px solid rgba(37,99,235,.3);white-space:nowrap}
 .prog-expand-arrow{font-size:.6rem;color:var(--muted)}
 .prog-day-exercises{margin-top:10px;display:flex;flex-direction:column;gap:4px}
-.prog-ex-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.prog-ex-row{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 .prog-ex-row:last-child{border-bottom:none}
-.prog-ex-name{font-size:.78rem;font-weight:700;flex:1;color:var(--text)}
+.prog-ex-name{font-size:.78rem;font-weight:700;color:var(--text)}
 .prog-ex-detail{font-size:.7rem;color:#38bdf8;font-weight:700;white-space:nowrap}
 .prog-ex-muscle{font-size:.63rem;color:var(--muted);white-space:nowrap}
 .prog-week-nav-btn{padding:6px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:var(--text);font-size:.8rem;font-weight:700;cursor:pointer;transition:all .2s}
@@ -1464,6 +1464,52 @@ body.light .db-day-bar{background:rgba(15,23,42,.1)}
 .scan-pending-avatar{position:absolute;top:34px;left:50%;transform:translateX(-50%);width:112px;height:112px;border-radius:999px;background:radial-gradient(circle at 50% 35%,rgba(255,255,255,.96),rgba(255,255,255,.88))}.scan-pending-eye{position:absolute;top:46px;width:8px;height:17px;border-radius:999px;background:#f97316;opacity:.7}.scan-pending-eye.left{left:30px}.scan-pending-eye.right{right:30px}.scan-pending-body{position:absolute;top:132px;left:50%;transform:translateX(-50%);width:72px;height:130px;border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.88))}.scan-pending-arm,.scan-pending-leg{position:absolute;width:28px;border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.88))}.scan-pending-arm.left{top:146px;left:46px;height:102px;transform:rotate(24deg)}.scan-pending-arm.right{top:146px;right:46px;height:102px;transform:rotate(-24deg)}.scan-pending-leg.left{top:250px;left:90px;height:106px}.scan-pending-leg.right{top:250px;right:90px;height:106px}
 .scan-pending-copy{display:flex;flex-direction:column;align-items:flex-start;gap:10px}.scan-pending-date{font-size:.72rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#fdba74}.scan-pending-title{font-size:1.22rem;font-weight:900;color:#fff}.scan-pending-sub{font-size:.84rem;line-height:1.6;color:var(--text2);max-width:420px}.scan-pending-chip{padding:6px 10px;border-radius:999px;background:rgba(249,115,22,.12);border:1px solid rgba(249,115,22,.22);color:#fdba74;font-size:.73rem;font-weight:800}
 @media(max-width:900px){.scan-loading-shell,.scan-pending-shell{grid-template-columns:1fr}.scan-v3-top{grid-template-columns:1fr}.scan-v3-scorecard{grid-template-columns:1fr}.scan-v3-bottom{grid-template-columns:1fr}.scan-loading-figure,.scan-pending-figure{min-height:240px}}
+/* ── BODY SCAN COMPARISON ── */
+.scan-compare-btn{background:none;border:1px solid rgba(255,255,255,.1);color:var(--muted);font-size:.7rem;font-weight:700;padding:5px 10px;border-radius:8px;cursor:pointer;transition:all .18s;letter-spacing:.02em}
+.scan-compare-btn:hover{border-color:rgba(99,102,241,.4);color:#818cf8}
+.scan-compare-btn.active{border-color:#6366f1;background:rgba(99,102,241,.14);color:#a5b4fc}
+.scan-v2.scan-selected{box-shadow:0 0 0 2px #6366f1,0 0 20px rgba(99,102,241,.25);border-radius:22px}
+#scan-compare-bar{position:sticky;bottom:16px;z-index:40;display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(15,23,42,.92);border:1px solid rgba(99,102,241,.35);border-radius:16px;backdrop-filter:blur(12px);box-shadow:0 8px 28px rgba(0,0,0,.45);margin-top:16px}
+.scan-cbar-txt{flex:1;font-size:.78rem;font-weight:700;color:var(--text2)}
+.scan-cbar-go{background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;border:none;border-radius:10px;padding:7px 14px;font-size:.78rem;font-weight:800;cursor:pointer;letter-spacing:.03em}
+.scan-cbar-cancel{background:none;border:1px solid rgba(255,255,255,.1);color:var(--muted);border-radius:8px;padding:6px 10px;font-size:.75rem;cursor:pointer}
+#scan-compare-modal{position:fixed;inset:0;z-index:200;background:rgba(2,6,23,.72);backdrop-filter:blur(6px);display:none;align-items:flex-end;justify-content:center;padding:0}
+#scan-compare-modal.open{display:flex}
+.scan-cmp-wrap{background:var(--surf);border:1px solid var(--border);border-radius:24px 24px 0 0;padding:20px 18px 28px;width:100%;max-width:680px;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+.scan-cmp-header{display:flex;align-items:center;justify-content:space-between}
+.scan-cmp-title{font-size:.88rem;font-weight:900;color:var(--text)}
+.scan-cmp-close{background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:4px 8px}
+.scan-cmp-banner{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-radius:14px;border:1px solid}
+.scan-cmp-photos{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.scan-cmp-col{display:flex;flex-direction:column;gap:6px}
+.scan-cmp-col-tag{font-size:.65rem;font-weight:800;padding:4px 10px;border-radius:8px;text-align:center;letter-spacing:.06em;text-transform:uppercase}
+.scan-cmp-photo{aspect-ratio:3/4;border-radius:14px;overflow:hidden;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07)}
+.scan-cmp-score{font-size:2rem;font-weight:900;color:#fff;text-align:center;line-height:1;font-family:Georgia,serif}
+.scan-cmp-score span{font-size:.9rem;color:var(--text2)}
+.scan-cmp-level{font-size:.7rem;color:var(--text2);text-align:center;font-weight:700}
+.scan-cmp-metrics{display:flex;flex-direction:column;gap:8px}
+.scan-cmp-metrics-hdr{display:flex;gap:8px;align-items:center;padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,.06)}
+.scan-cmp-row{display:grid;grid-template-columns:70px 1fr 28px 32px 28px 1fr;align-items:center;gap:6px}
+.scan-cmp-row-lbl{font-size:.7rem;font-weight:700;color:var(--text2)}
+.scan-cmp-bar-wrap{height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden}
+.scan-cmp-bar-fill{height:100%;border-radius:3px;transition:width .3s}
+.scan-cmp-row-val{font-size:.74rem;font-weight:800;color:var(--text);text-align:center}
+.scan-cmp-row-delta{font-size:.7rem;font-weight:900;text-align:center}
+.scan-cmp-close-btn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--text2);border-radius:12px;padding:11px;font-size:.82rem;font-weight:700;cursor:pointer;text-align:center;width:100%}
+/* ── PROGRAMME COACHING NOTE ── */
+.prog-coach-note{padding:12px 14px;border-radius:14px;background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(139,92,246,.05));border:1px solid rgba(99,102,241,.16);margin-top:12px;display:flex;flex-direction:column;gap:5px}
+.prog-cn-theme{font-size:.65rem;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#818cf8}
+.prog-cn-focus{font-size:.76rem;color:var(--text2);line-height:1.5}
+.prog-cn-cue{font-size:.73rem;font-style:italic;color:#a5b4fc;font-weight:600}
+/* ── PROGRAMME EXERCISE ROWS (enhanced) ── */
+.prog-ex-row.prog-ex-primary{background:rgba(99,102,241,.06);border-radius:10px;padding:6px 8px;margin:-2px 0}
+.prog-ex-primary-tag{font-size:.56rem;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#818cf8;background:rgba(99,102,241,.15);padding:2px 6px;border-radius:4px;white-space:nowrap}
+.prog-ex-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.prog-ex-name-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.prog-ex-sub-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.prog-ex-tempo{font-size:.6rem;color:#94a3b8;font-weight:700;background:rgba(255,255,255,.05);padding:1px 6px;border-radius:4px;white-space:nowrap}
+.prog-ex-hint{font-size:.63rem;color:#818cf8;font-weight:700;margin-top:1px}
+.prog-warmup-note{font-size:.7rem;color:#fb923c;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);border-radius:8px;padding:7px 10px;margin-bottom:6px;line-height:1.4}
 /* ── COACH CHAT V2 ── */
 .chat-msg{display:flex;flex-direction:column;max-width:88%;animation:fadeSlide .25s ease}
 .chat-msg-user{align-self:flex-end;align-items:flex-end}
@@ -2052,6 +2098,7 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
             </div>
           </div>
           <div id="prog-phase-stats" class="prog-phase-stats-row"></div>
+          <div id="prog-coach-note" class="prog-coach-note"></div>
           <div id="prog-days-list" style="margin-top:12px"></div>
         </div>
 
@@ -2869,6 +2916,12 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
         </div>
 
         <div id="scans-list"></div>
+
+        <!-- Floating compare bar (shows when 1-2 scans selected) -->
+        <div id="scan-compare-bar" style="display:none"></div>
+
+        <!-- Comparison modal overlay -->
+        <div id="scan-compare-modal" onclick="if(event.target===this)closeScanComparison()"></div>
       </div>
 
       <!-- DÉFIS -->

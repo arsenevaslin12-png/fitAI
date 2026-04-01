@@ -2886,7 +2886,7 @@ function renderBodyScanCard(scan, imageUrl) {
   const strengths = parsed.strengths.slice(0, 3);
   const previousScore = ext?.comparison?.previous_score;
 
-  return `<div class="scan-v2">
+  return `<div class="scan-v2" id="scan-card-${scan.id}" data-scan-id="${scan.id}">
     <div class="scan-v2-top scan-v3-top">
       <div class="scan-v2-photo scan-v3-photo">
         ${imageUrl ? lazyImg(imageUrl, "Scan", "", "width:100%;height:100%;object-fit:cover;opacity:.96") : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">📷 Photo non disponible</div>`}
@@ -2942,7 +2942,8 @@ function renderBodyScanCard(scan, imageUrl) {
         <div class="scan-v3-line">${escapeHtml(String(reco.frequency_suggestion || "Refais un scan sous 4 à 6 semaines avec le même angle pour comparer proprement."))}</div>
       </div>
     </div>
-    <div style="display:flex;justify-content:flex-end;padding:8px 14px 10px;border-top:1px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px 10px;border-top:1px solid var(--border)">
+      <button class="scan-compare-btn" id="scan-cmp-btn-${scan.id}" data-scan-id="${scan.id}" onclick="toggleScanCompare('${scan.id}')">⊞ Comparer</button>
       <button onclick="deleteBodyScan('${scan.id}')" style="display:flex;align-items:center;gap:5px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:.74rem;font-weight:600;padding:5px 8px;border-radius:8px;transition:color .2s" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
         Supprimer
@@ -2950,6 +2951,11 @@ function renderBodyScanCard(scan, imageUrl) {
     </div>
   </div>`;
 }
+
+// ── Body scan comparison state ────────────────────────────────────────────────
+let _scanAllData = [];
+let _scanAllUrls = {};
+let _scanCompareIds = [];
 
 async function loadScans() {
 
@@ -2977,6 +2983,11 @@ async function loadScans() {
       } catch {}
     }));
 
+    // Cache globally for comparison
+    _scanAllData = data;
+    _scanAllUrls = scanImageUrls;
+    _scanCompareIds = [];
+
     el.innerHTML = data.map((scan) => {
       const date = new Date(scan.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
       if (!scan.ai_feedback) return renderPendingScan(scan, date);
@@ -2987,6 +2998,149 @@ async function loadScans() {
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
 }
+
+// ── Scan comparison ───────────────────────────────────────────────────────────
+function toggleScanCompare(id) {
+  const idx = _scanCompareIds.indexOf(id);
+  if (idx >= 0) {
+    _scanCompareIds.splice(idx, 1);
+  } else {
+    if (_scanCompareIds.length >= 2) _scanCompareIds.shift();
+    _scanCompareIds.push(id);
+  }
+  _updateScanCompareUI();
+  if (_scanCompareIds.length === 2) showScanComparison();
+}
+
+function _updateScanCompareUI() {
+  document.querySelectorAll('.scan-compare-btn').forEach(btn => {
+    const id = btn.dataset.scanId;
+    const sel = _scanCompareIds.includes(id);
+    btn.classList.toggle('active', sel);
+    btn.textContent = sel ? '✓ Sélectionné' : '⊞ Comparer';
+  });
+  document.querySelectorAll('.scan-v2[data-scan-id]').forEach(card => {
+    card.classList.toggle('scan-selected', _scanCompareIds.includes(card.dataset.scanId));
+  });
+  const bar = document.getElementById('scan-compare-bar');
+  if (!bar) return;
+  if (_scanCompareIds.length === 0) {
+    bar.style.display = 'none';
+  } else if (_scanCompareIds.length === 1) {
+    bar.style.display = 'flex';
+    bar.innerHTML = '<span class="scan-cbar-txt">1 scan sélectionné — choisissez un 2ème</span><button class="scan-cbar-cancel" onclick="_scanCompareIds=[];_updateScanCompareUI()">✕ Annuler</button>';
+  } else {
+    bar.style.display = 'flex';
+    bar.innerHTML = '<span class="scan-cbar-txt">2 scans prêts à comparer</span><button class="scan-cbar-go" onclick="showScanComparison()">Comparer ▶</button><button class="scan-cbar-cancel" onclick="_scanCompareIds=[];_updateScanCompareUI()">✕</button>';
+  }
+}
+
+function showScanComparison() {
+  if (_scanCompareIds.length < 2) return;
+  const [a, b] = _scanCompareIds.map(id => _scanAllData.find(s => s.id === id)).filter(Boolean);
+  if (!a || !b) return;
+  // Sort: older = avant, newer = après
+  const [before, after] = new Date(a.created_at) <= new Date(b.created_at) ? [a, b] : [b, a];
+  const modal = document.getElementById('scan-compare-modal');
+  if (!modal) return;
+  modal.innerHTML = _renderScanCompare(before, _scanAllUrls[before.id] || '', after, _scanAllUrls[after.id] || '');
+  modal.classList.add('open');
+}
+
+function closeScanComparison() {
+  const modal = document.getElementById('scan-compare-modal');
+  if (modal) modal.classList.remove('open');
+}
+
+function _renderScanCompare(before, urlB, after, urlA) {
+  const sB = Number(before.physical_score || 0);
+  const sA = Number(after.physical_score || 0);
+  const delta = sA - sB;
+  const deltaSign = delta > 0 ? '+' : '';
+  const deltaColor = delta > 0 ? '#4ade80' : delta < 0 ? '#f87171' : '#94a3b8';
+  const dateB = new Date(before.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+  const dateA = new Date(after.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+  const levB = bodyScanLevelMeta(sB); const levA = bodyScanLevelMeta(sA);
+  const extB = before.extended_analysis || {}; const extA = after.extended_analysis || {};
+
+  const getMetric = (scan, ext, key) => {
+    if (key === 'sym') return Number(scan.symmetry_score || 0) || null;
+    if (key === 'post') return Number(scan.posture_score || 0) || null;
+    if (key === 'def') return Number((ext.score_breakdown || {}).muscle_definition || 0) || null;
+    if (key === 'comp') return Number((ext.score_breakdown || {}).body_composition || 0) || null;
+    return null;
+  };
+
+  const metrics = [
+    { key: 'sym',  label: 'Symétrie',    color: '#60a5fa' },
+    { key: 'def',  label: 'Définition',  color: '#22c55e' },
+    { key: 'comp', label: 'Composition', color: '#a855f7' },
+    { key: 'post', label: 'Posture',     color: '#06b6d4' },
+  ];
+
+  const metricsHtml = metrics.map(m => {
+    const vB = getMetric(before, extB, m.key);
+    const vA = getMetric(after, extA, m.key);
+    if (vB == null && vA == null) return '';
+    const d = vB != null && vA != null ? vA - vB : null;
+    const dc = d == null ? '#94a3b8' : d > 0 ? '#4ade80' : d < 0 ? '#f87171' : '#94a3b8';
+    return `<div class="scan-cmp-row">
+      <span class="scan-cmp-row-lbl">${m.label}</span>
+      <div class="scan-cmp-bar-wrap"><div class="scan-cmp-bar-fill" style="width:${vB ?? 0}%;background:${m.color}66"></div></div>
+      <span class="scan-cmp-row-val">${vB ?? '—'}</span>
+      <span class="scan-cmp-row-delta" style="color:${dc}">${d != null ? deltaSign.replace('+', d > 0 ? '+' : '') + (d > 0 ? '+' : '') + d : '—'}</span>
+      <span class="scan-cmp-row-val">${vA ?? '—'}</span>
+      <div class="scan-cmp-bar-wrap"><div class="scan-cmp-bar-fill" style="width:${vA ?? 0}%;background:${m.color}"></div></div>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  const photoCol = (url, score, date, level, tag, tagStyle) => `
+    <div class="scan-cmp-col">
+      <div class="scan-cmp-col-tag" style="${tagStyle}">${tag} · ${date}</div>
+      <div class="scan-cmp-photo">${url
+        ? `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:14px;display:block">`
+        : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:1.4rem">📷</div>`}
+      </div>
+      <div class="scan-cmp-score">${score}<span>/100</span></div>
+      <div class="scan-cmp-level">${level.label}</div>
+    </div>`;
+
+  return `<div class="scan-cmp-wrap">
+    <div class="scan-cmp-header">
+      <span class="scan-cmp-title">Comparaison body scan</span>
+      <button class="scan-cmp-close" onclick="closeScanComparison()">✕</button>
+    </div>
+    <div class="scan-cmp-banner" style="border-color:${deltaColor}33;background:${delta>0?'rgba(74,222,128,.07)':delta<0?'rgba(248,113,113,.07)':'rgba(148,163,184,.06)'}">
+      <div>
+        <div style="font-size:.62rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:2px">Évolution du score</div>
+        <div style="font-size:1.6rem;font-weight:900;color:${deltaColor};line-height:1">${deltaSign}${delta}</div>
+        <div style="font-size:.72rem;color:var(--text2);margin-top:2px">${sB} → ${sA} points sur 100</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:.62rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:2px">Écart temporel</div>
+        <div style="font-size:.88rem;font-weight:800;color:var(--text)">${dateB}</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:2px">→ ${dateA}</div>
+      </div>
+    </div>
+    <div class="scan-cmp-photos">
+      ${photoCol(urlB, sB, dateB, levB, 'Avant', 'background:rgba(148,163,184,.1);color:var(--text2)')}
+      ${photoCol(urlA, sA, dateA, levA, 'Après', `background:${delta>=0?'rgba(74,222,128,.12)':'rgba(248,113,113,.1)'};color:${deltaColor}`)}
+    </div>
+    ${metricsHtml ? `<div class="scan-cmp-metrics">
+      <div class="scan-cmp-metrics-hdr">
+        <span style="font-size:.62rem;color:var(--muted);font-weight:700">SOUS-SCORES</span>
+        <span style="font-size:.62rem;color:var(--muted);margin-left:auto">Avant</span>
+        <span style="font-size:.62rem;color:var(--muted)">Après</span>
+      </div>
+      ${metricsHtml}
+    </div>` : ''}
+    <button class="scan-cmp-close-btn" onclick="closeScanComparison()">Fermer la comparaison</button>
+  </div>`;
+}
+
+window.toggleScanCompare = toggleScanCompare;
+window.showScanComparison = showScanComparison;
+window.closeScanComparison = closeScanComparison;
 
 function formatFeedback(text) {
   // Convert newlines to <br> and escape HTML
@@ -7419,6 +7573,38 @@ window.wtOverlayClick = wtOverlayClick;
 
 // ══════════════════════════════════════════════════════════════════════════════
 
+const PROG_WEEK_NOTES = [
+  { theme:"Apprentissage technique", focus:"Amplitude complète, charges légères (~60% max). 12-15 reps lentes et contrôlées. Priorité à la maîtrise des mouvements.", cue:"La technique aujourd'hui = les kilos de demain." },
+  { theme:"Progression initiale",   focus:"+2.5 kg ou +1-2 reps vs S1 sur chaque exercice. Volume modéré, surcharge progressive. La charge monte, la technique reste irréprochable.", cue:"Surcharge progressive et patiente." },
+  { theme:"Volume maximum du cycle", focus:"5 séries, volume record du cycle. Fatigue musculaire élevée en fin de séance — c'est voulu. Alimentation et sommeil critiques cette semaine.", cue:"C'est ici que tu t'adaptes le plus." },
+  { theme:"Décharge obligatoire",    focus:"−40% volume vs S3. Mêmes exercices, charges réduites de 30%. Ne saute PAS cette semaine — c'est là que les gains de S3 se consolident.", cue:"La récupération EST de l'entraînement." },
+  { theme:"Travail de force",        focus:"5-7 reps lourdes, repos 3min complets obligatoires. Composés seulement. Charges +15% vs pic de S3. Abandon des accessoires non-essentiels.", cue:"Moins de reps, plus lourd, plus fort." },
+  { theme:"Force maximale",          focus:"+3 à 5% charge vs S5 sur chaque composé. 4-6 reps, technique absolue. Mets-toi en condition de performance avant chaque set.", cue:"Chaque kilo supplémentaire est un gain concret." },
+  { theme:"Puissance explosive",     focus:"3-5 reps, concentrique explosif, excentrique contrôlé 2s. Charges ~85-90% max. Qualité totale — arrête si la technique se dégrade.", cue:"Vite et fort — chaque rep est une intention totale." },
+  { theme:"Test de force final",     focus:"Teste tes maxima sur les 2-3 composés principaux. Compare avec ta semaine 1. Fais le bilan complet du cycle.", cue:"Montre tout ce que 8 semaines t'ont construit." }
+];
+
+const PROG_PHASE_EX_COUNT = [5, 6, 7, 4, 5, 5, 4, 3];
+// S1:5 (learn patterns) S2:6 S3:7 (max vol) S4:4 (deload) S5:5 S6:5 S7:4 (power quality) S8:3 (test max)
+
+const PROG_PHASE_TEMPO = [
+  "3-1-2 (lent)", "3-0-1", "2-0-1", "3-1-2 (récup)", "2-1-1", "2-0-1", "1-0-X (explosif)", "max"
+];
+// Descente - Pause - Montée
+
+function _progProgressionHint(weekNum) {
+  return [
+    "~60% charge max — technique et amplitude",
+    "+2.5 kg ou +1-2 reps vs S1",
+    "Charge maximale du cycle — pousse fort",
+    "−30 à 40% charge vs S3 — récupération",
+    "+15% charge vs S3 — force brute",
+    "+3-5% vs S5 — progression stricte",
+    "85-90% max — concentrique explosif",
+    "Test de force — tentez le maximum"
+  ][weekNum - 1] || "";
+}
+
 const PROG_PHASES = [
   { w:1, name:"Adaptation",    short:"S1", color:"#6366f1", volume:35, intensity:40, rpe:"5-6",  desc:"Volume léger, 12-15 reps. Apprentissage des mouvements, focus technique. RPE 5-6." },
   { w:2, name:"Hypertrophie",  short:"S2", color:"#2563eb", volume:55, intensity:62, rpe:"6-7",  desc:"Volume modéré, 10-12 reps. Surcharge progressive légère, +1 rep ou +2% vs S1. RPE 6-7." },
@@ -7783,6 +7969,16 @@ function renderProgramme(weekNum) {
   if (sp) { sp.textContent = phase.name; sp.style.color = phase.color; }
   if (wd) wd.textContent = phase.desc;
 
+  // Coach note for the week
+  const noteEl = document.getElementById("prog-coach-note");
+  if (noteEl) {
+    const note = PROG_WEEK_NOTES[weekNum - 1];
+    noteEl.innerHTML = `
+      <div class="prog-cn-theme">🎯 ${note.theme}</div>
+      <div class="prog-cn-focus">${note.focus}</div>
+      <div class="prog-cn-cue">"${note.cue}"</div>`;
+  }
+
   // Phase stats strip
   const statsEl = document.getElementById("prog-phase-stats");
   if (statsEl) {
@@ -7792,8 +7988,8 @@ function renderProgramme(weekNum) {
       <div class="prog-stat-pill" style="border-color:${phase.color}22;color:${phase.color}"><span>RPE</span><strong>${phase.rpe}</strong></div>
       <div class="prog-stat-pill"><span>Sets × Reps</span><strong>${params.sets}×${params.reps}</strong></div>
       <div class="prog-stat-pill"><span>Repos</span><strong>${restStr}</strong></div>
-      <div class="prog-stat-pill"><span>Volume</span><strong>${phase.volume}%</strong></div>
-      <div class="prog-stat-pill"><span>Intensité</span><strong>${phase.intensity}%</strong></div>
+      <div class="prog-stat-pill"><span>Tempo</span><strong>${PROG_PHASE_TEMPO[weekNum - 1]}</strong></div>
+      <div class="prog-stat-pill"><span>Progression</span><strong>${_progProgressionHint(weekNum)}</strong></div>
     `;
   }
 
@@ -7867,7 +8063,8 @@ function _renderProgDays(weekNum, params) {
     const allEx = PROG_EXERCISES[exType] || [];
     // Prefer pool-matched exercises, fall back to non-pool items (fullbody, hiit, etc.)
     const pooled = allEx.filter(e => !e.pool || e.pool === pool);
-    const exList  = (pooled.length >= 5 ? pooled : allEx).slice(0, 7);
+    const exCount = isRest ? 0 : (PROG_PHASE_EX_COUNT[weekNum - 1] || 5);
+    const exList  = (pooled.length >= 4 ? pooled : allEx).slice(0, exCount);
 
     let exHtml = "";
     const muscleColors = {
@@ -7878,19 +8075,35 @@ function _renderProgDays(weekNum, params) {
       Gainage: "#4ade80", Lombaires: "#a78bfa", Fullbody: "#e879f9", HIIT: "#f472b6",
     };
     const doneCount = isRest ? 0 : exList.filter((_, ei) => doneSets[`${dayIdx}_${ei}`]).length;
+    const tempo = PROG_PHASE_TEMPO[weekNum - 1] || "";
+    const progHint = _progProgressionHint(weekNum);
     if (isRest) {
       exHtml = `<div class="prog-rest-msg">😴 Repos complet — récupération musculaire et mentale. Hydratation, sommeil, étirements légers.</div>`;
     } else {
       const needSets = !["hiit","cardio","mobilite","core"].includes(item.type);
-      exHtml = exList.map((ex, exIdx) => {
-        const detail = ex.r ? ex.r : (needSets ? params.sets + "×" + params.reps + (params.rest ? " · " + params.rest + "s repos" : "") : params.reps);
+      // Warm-up reminder for force/power phases
+      const warmupHtml = weekNum >= 5 && needSets
+        ? `<div class="prog-warmup-note">🔥 Échauffement obligatoire : 2 séries légères avant le composé principal (50% puis 75% charge)</div>`
+        : '';
+      exHtml = warmupHtml + exList.map((ex, exIdx) => {
+        const detail = ex.r ? ex.r : (needSets ? params.sets + "×" + params.reps + " · " + (params.rest >= 60 ? Math.floor(params.rest/60) + "min" : params.rest + "s") + " repos" : params.reps);
         const isDone = doneSets[`${dayIdx}_${exIdx}`];
         const mColor = muscleColors[ex.m] || "var(--muted)";
-        return `<div class="prog-ex-row${isDone ? " done" : ""}">
+        const isPrimary = exIdx === 0 && needSets;
+        return `<div class="prog-ex-row${isDone ? " done" : ""}${isPrimary ? " prog-ex-primary" : ""}">
           <div class="prog-ex-check${isDone ? " checked" : ""}" onclick="progToggleExDone(event,${dayIdx},${exIdx})">${isDone ? "✓" : ""}</div>
-          <div class="prog-ex-name">${ex.n}</div>
-          <div class="prog-ex-detail">${detail}</div>
-          <div class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33">${ex.m}</div>
+          <div class="prog-ex-body">
+            <div class="prog-ex-name-row">
+              ${isPrimary ? `<span class="prog-ex-primary-tag">⭐ Principal</span>` : ''}
+              <span class="prog-ex-name">${ex.n}</span>
+            </div>
+            <div class="prog-ex-sub-row">
+              <span class="prog-ex-detail">${detail}</span>
+              ${isPrimary && tempo ? `<span class="prog-ex-tempo">Tempo ${tempo}</span>` : ''}
+              <span class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33">${ex.m}</span>
+            </div>
+            ${isPrimary ? `<div class="prog-ex-hint">${progHint}</div>` : ''}
+          </div>
         </div>`;
       }).join("");
     }
