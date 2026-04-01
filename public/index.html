@@ -259,6 +259,21 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .community-recipe-name{font-weight:800;font-size:.9rem;color:var(--text);flex:1}
 .community-recipe-footer{display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.06);font-size:.72rem;color:var(--muted)}
 .community-recipe-author{font-weight:600}
+.community-recipe-date{font-weight:500}
+.recipe-preptime-badge{background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.25);border-radius:20px;padding:3px 9px;font-size:.7rem;font-weight:700;color:#a5b4fc}
+.recipe-macro-pill.prot{background:rgba(99,102,241,.12);color:#a5b4fc}
+.recipe-macro-pill.carb{background:rgba(234,179,8,.1);color:#fbbf24}
+.recipe-macro-pill.fat{background:rgba(239,68,68,.1);color:#fca5a5}
+.recipe-card-details{margin:8px 0;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)}
+.recipe-card-details summary{font-size:.75rem;font-weight:700;color:var(--text2);padding:8px 12px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px}
+.recipe-card-details summary::before{content:"▶";font-size:.6rem;transition:transform .2s}
+.recipe-card-details[open] summary::before{transform:rotate(90deg)}
+.recipe-card-ingredients,.recipe-card-steps{margin:0;padding:6px 16px 10px;list-style:none;display:grid;gap:4px}
+.recipe-card-ingredients li,.recipe-card-steps li{font-size:.73rem;color:var(--muted);padding-left:12px;position:relative;line-height:1.4}
+.recipe-card-ingredients li::before{content:"·";position:absolute;left:0;color:var(--purple)}
+.recipe-card-steps{list-style:decimal;padding-left:28px}
+.recipe-card-steps li{list-style:decimal}
+.recipe-desc-text{font-size:.75rem;color:var(--muted);font-style:italic;margin-top:6px;line-height:1.5}
 .recipe-post-body{padding:0 16px 10px}
 .recipe-desc-text{font-size:.82rem;color:var(--text2);line-height:1.55;margin-bottom:8px}
 .recipe-strengths{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 4px}
@@ -1339,6 +1354,9 @@ body.light .db-day-bar{background:rgba(15,23,42,.1)}
 .nutr-shopping-item:last-child{border-bottom:none;padding-bottom:0}
 .nutr-shopping-item label{display:flex;align-items:flex-start;gap:8px;font-size:.75rem;color:var(--text2);line-height:1.4}
 .nutr-shopping-item small{font-size:.68rem;color:var(--muted);font-weight:700;white-space:nowrap}
+.nutr-shopping-item input[type="checkbox"]{accent-color:var(--purple);width:14px;height:14px;flex-shrink:0;margin-top:1px;cursor:pointer}
+.nutr-shopping-item input[type="checkbox"]:checked+span{text-decoration:line-through;opacity:.4;color:var(--muted)}
+.nutr-shopping-item.checked-item{opacity:.55}
 .nutr-loading-skeleton{display:grid;gap:10px}
 .nutr-sk{height:14px;border-radius:999px;background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.11),rgba(255,255,255,.05));background-size:200% 100%;animation:nutrshine 1.1s linear infinite}
 .nutr-sk.big{height:56px;border-radius:16px}
@@ -2817,8 +2835,18 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
                   </div>
                 </div>
                 <div class="field">
-                  <div class="lbl">Description (optionnel)</div>
-                  <textarea id="recipe-share-desc" placeholder="Contexte, astuces de préparation…" style="min-height:50px"></textarea>
+                  <div class="lbl">Étapes de préparation (optionnel)</div>
+                  <textarea id="recipe-share-steps" placeholder="1. Faire cuire le quinoa 15min&#10;2. Griller le poulet avec épices&#10;3. Assembler dans le bol" style="min-height:80px"></textarea>
+                </div>
+                <div style="display:flex;gap:10px">
+                  <div class="field" style="flex:1">
+                    <div class="lbl">Temps de prépa (min)</div>
+                    <input type="number" id="recipe-share-preptime" placeholder="30" min="1" max="300" style="width:80px"/>
+                  </div>
+                  <div class="field" style="flex:2">
+                    <div class="lbl">Description (optionnel)</div>
+                    <textarea id="recipe-share-desc" placeholder="Contexte, astuces…" style="min-height:36px"></textarea>
+                  </div>
                 </div>
                 <button class="btn btn-p btn-full" id="btn-share-recipe" onclick="shareRecipe()">Analyser et partager la recette</button>
               </div>

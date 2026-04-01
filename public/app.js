@@ -2293,6 +2293,8 @@ async function shareRecipe() {
   const ingredients = document.getElementById("recipe-share-ingredients")?.value.trim() || "";
   const servings = parseInt(document.getElementById("recipe-share-servings")?.value || "2");
   const desc = document.getElementById("recipe-share-desc")?.value.trim() || "";
+  const steps = document.getElementById("recipe-share-steps")?.value.trim() || "";
+  const preptime = parseInt(document.getElementById("recipe-share-preptime")?.value || "0") || null;
   const visibility = document.getElementById("recipe-share-visibility")?.value || "public";
 
   if (!name) return toast("Donne un nom à ta recette.", "err");
@@ -2323,6 +2325,8 @@ async function shareRecipe() {
       desc,
       ingredients,
       servings,
+      steps: steps || null,
+      preptime: preptime || null,
       n: nutrition || { score: null }
     };
     const content = "__r__" + JSON.stringify(recipePayload);
@@ -2338,7 +2342,7 @@ async function shareRecipe() {
     if (error) throw error;
 
     // Reset form
-    ["recipe-share-name","recipe-share-ingredients","recipe-share-desc"].forEach(id => {
+    ["recipe-share-name","recipe-share-ingredients","recipe-share-steps","recipe-share-desc"].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = "";
     });
@@ -2570,18 +2574,55 @@ async function loadCommunityRecipes() {
       const author = authorMap[post.user_id];
       const isMe = U && post.user_id === U.id;
       const authorName = isMe ? "Vous" : (author?.display_name || author?.username || "Membre");
+      const servings = parseInt(recipe.servings) || 1;
+
+      // Ingredients list
+      const ingredientLines = (recipe.ingredients || "").split(/\n/).map(l => l.trim()).filter(Boolean);
+      const ingredientsHtml = ingredientLines.length ? `
+        <details class="recipe-card-details">
+          <summary>Ingrédients (${servings} portion${servings > 1 ? 's' : ''})</summary>
+          <ul class="recipe-card-ingredients">
+            ${ingredientLines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}
+          </ul>
+        </details>` : '';
+
+      // Steps
+      const stepLines = (recipe.steps || "").split(/\n/).map(l => l.trim()).filter(Boolean);
+      const stepsHtml = stepLines.length ? `
+        <details class="recipe-card-details">
+          <summary>Préparation (${stepLines.length} étape${stepLines.length > 1 ? 's' : ''})</summary>
+          <ol class="recipe-card-steps">
+            ${stepLines.map(l => `<li>${escapeHtml(l.replace(/^\d+[.)]\s*/, ''))}</li>`).join('')}
+          </ol>
+        </details>` : '';
+
+      // Per-serving macros
+      const perServing = servings > 1 ? ` <span style="opacity:.5;font-size:.68rem">/ portion</span>` : '';
+      const kcalPer = n.kcal ? Math.round(n.kcal / servings) : null;
+      const protPer = n.protein ? Math.round(n.protein / servings) : null;
+      const carbsPer = n.carbs ? Math.round(n.carbs / servings) : null;
+      const fatPer = n.fat ? Math.round(n.fat / servings) : null;
+
       return `
         <div class="community-recipe-card">
           <div class="community-recipe-top">
             <div class="community-recipe-name">${escapeHtml(recipe.name || "Recette")}</div>
-            ${score !== null ? `<span class="recipe-score-badge ${scoreBadgeClass}">${score}/100</span>` : ""}
+            <div style="display:flex;align-items:center;gap:6px">
+              ${recipe.preptime ? `<span class="recipe-preptime-badge">⏱ ${recipe.preptime}min</span>` : ""}
+              ${score !== null ? `<span class="recipe-score-badge ${scoreBadgeClass}">${score}/100</span>` : ""}
+            </div>
           </div>
-          ${(n.kcal || n.protein) ? `<div class="recipe-macros-row">
-            ${n.kcal ? `<span class="recipe-macro-pill">${n.kcal} kcal</span>` : ""}
-            ${n.protein ? `<span class="recipe-macro-pill">${n.protein}g prot.</span>` : ""}
-            ${n.carbs ? `<span class="recipe-macro-pill">${n.carbs}g gluc.</span>` : ""}
+          ${servings > 1 ? `<div style="font-size:.7rem;color:var(--muted);margin-bottom:4px">${servings} portions — valeurs par portion</div>` : ""}
+          ${(kcalPer || protPer) ? `<div class="recipe-macros-row">
+            ${kcalPer ? `<span class="recipe-macro-pill">${kcalPer} kcal${perServing}</span>` : ""}
+            ${protPer ? `<span class="recipe-macro-pill prot">${protPer}g prot.${perServing}</span>` : ""}
+            ${carbsPer ? `<span class="recipe-macro-pill carb">${carbsPer}g gluc.${perServing}</span>` : ""}
+            ${fatPer ? `<span class="recipe-macro-pill fat">${fatPer}g lip.${perServing}</span>` : ""}
           </div>` : ""}
+          ${ingredientsHtml}
+          ${stepsHtml}
           ${n.analysis ? `<div class="recipe-analysis-text">${escapeHtml(n.analysis)}</div>` : ""}
+          ${recipe.desc ? `<div class="recipe-desc-text">${escapeHtml(recipe.desc)}</div>` : ""}
           <div class="community-recipe-footer">
             <span class="community-recipe-author">Par ${escapeHtml(authorName)}</span>
             <span class="community-recipe-date">${timeAgo(post.created_at)}</span>
@@ -4830,14 +4871,40 @@ function renderNutritionPlanPayload(payload, options = {}) {
     shopEl.innerHTML = (shopping.categories || []).map((group) => `
       <div class="nutr-shopping-group">
         <div class="nutr-shopping-title">${escapeHtml(group.title || 'Courses')}</div>
-        ${(group.items || []).map((item, idx) => `
-          <div class="nutr-shopping-item">
+        ${(group.items || []).map((item) => `
+          <div class="nutr-shopping-item" data-item="${escapeHtml(item.name || '')}">
             <label><input type="checkbox" data-shopping="${escapeHtml(item.name || '')}"/> <span>${escapeHtml(item.name || '')}</span></label>
             <small>${escapeHtml(item.qty || '')}</small>
           </div>`).join('')}
       </div>`).join('') + ((shopping.prep_tips || []).length ? `<div class="nutr-shopping-group"><div class="nutr-shopping-title">Prep</div>${shopping.prep_tips.map((tip) => `<div class="nutr-side-point">${escapeHtml(tip)}</div>`).join('')}</div>` : '') + ((shopping.quick_swaps || []).length ? `<div class="nutr-shopping-group"><div class="nutr-shopping-title">Swaps</div><div class="nutr-meal-items">${shopping.quick_swaps.map((swap) => `<span class="nutr-item-pill">${escapeHtml(swap)}</span>`).join('')}</div></div>` : '');
+    _shoppingCheckedInit(shopEl);
   }
   saveNutritionPlanPayload(data);
+}
+
+function _shoppingCheckedInit(container) {
+  const STORE_KEY = 'shopping_checked';
+  let checked = {};
+  try { checked = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
+  container.querySelectorAll('input[type="checkbox"][data-shopping]').forEach(cb => {
+    const key = cb.dataset.shopping;
+    if (checked[key]) {
+      cb.checked = true;
+      const row = cb.closest('.nutr-shopping-item');
+      if (row) row.classList.add('checked-item');
+    }
+    cb.addEventListener('change', () => {
+      const row = cb.closest('.nutr-shopping-item');
+      if (cb.checked) {
+        checked[key] = true;
+        if (row) row.classList.add('checked-item');
+      } else {
+        delete checked[key];
+        if (row) row.classList.remove('checked-item');
+      }
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(checked)); } catch {}
+    });
+  });
 }
 
 function buildSnackRescueItems(plan, goal, dayType) {
@@ -4890,7 +4957,14 @@ function copyNutritionShoppingList() {
 }
 
 function toggleNutritionChecklist(checked) {
-  document.querySelectorAll('#nutrition-shopping-body input[type="checkbox"]').forEach((el) => { el.checked = !!checked; });
+  document.querySelectorAll('#nutrition-shopping-body input[type="checkbox"]').forEach((el) => {
+    el.checked = !!checked;
+    const row = el.closest('.nutr-shopping-item');
+    if (row) row.classList.toggle('checked-item', !!checked);
+  });
+  if (!checked) {
+    try { localStorage.removeItem('shopping_checked'); } catch {}
+  }
 }
 window.copyNutritionShoppingList = copyNutritionShoppingList;
 window.toggleNutritionChecklist = toggleNutritionChecklist;
