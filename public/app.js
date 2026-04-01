@@ -1411,6 +1411,129 @@ function exerciseCuePack(ex = {}) {
   };
 }
 
+// Per-limb SMIL path animation data
+// Order per exercise: [L-upper-arm, L-lower-arm, R-upper-arm, R-lower-arm, L-thigh, L-shin, R-thigh, R-shin]
+// Each entry: [start_d, end_d]  — null end_d = static limb, no animation
+const _LIMB_ANIM = {
+  squat: [
+    ["M152 112 Q134 128 122 144","M152 112 Q138 124 128 136"],
+    ["M122 144 Q114 152 106 168","M128 136 Q124 142 120 150"],
+    ["M208 112 Q228 128 242 142","M208 112 Q222 124 232 136"],
+    ["M242 142 Q252 150 258 168","M232 136 Q236 142 240 150"],
+    ["M162 156 Q146 172 138 196","M162 156 Q138 180 122 196"],
+    ["M138 196 Q136 214 146 236","M122 196 Q112 212 124 234"],
+    ["M198 156 Q214 172 222 196","M198 156 Q222 180 238 196"],
+    ["M222 196 Q224 214 214 236","M238 196 Q248 212 236 234"]
+  ],
+  lunge: [
+    ["M156 112 Q142 128 134 148","M156 112 Q148 124 142 138"],
+    ["M134 148 Q128 160 120 176","M142 138 Q136 150 132 164"],
+    ["M204 112 Q220 124 232 142","M204 112 Q216 126 224 142"],
+    ["M232 142 Q242 154 250 170","M224 142 Q232 158 236 174"],
+    ["M166 156 Q150 174 144 206","M166 156 Q146 184 130 214"],
+    ["M144 206 Q146 224 136 238","M130 214 Q122 228 126 248"],
+    ["M194 156 Q218 168 242 180","M194 156 Q224 160 256 164"],
+    ["M242 180 Q258 188 272 226","M256 164 Q278 166 298 190"]
+  ],
+  push: [
+    ["M156 112 Q136 130 124 150","M156 112 Q126 110 98 110"],
+    ["M124 150 Q116 162 108 176","M98 110 Q84 112 72 114"],
+    ["M204 112 Q224 130 236 150","M204 112 Q234 110 262 110"],
+    ["M236 150 Q244 162 252 176","M262 110 Q276 112 288 114"],
+    ["M166 156 Q156 182 160 212",null],
+    ["M160 212 Q164 230 152 238",null],
+    ["M194 156 Q204 182 200 212",null],
+    ["M200 212 Q196 230 208 238",null]
+  ],
+  pull: [
+    ["M156 112 Q136 126 122 134","M156 112 Q146 120 142 132"],
+    ["M122 134 Q110 138 100 128","M142 132 Q136 148 134 166"],
+    ["M204 112 Q224 126 238 134","M204 112 Q214 120 218 132"],
+    ["M238 134 Q250 138 260 128","M218 132 Q224 148 226 166"],
+    ["M166 156 Q160 184 162 220",null],
+    ["M162 220 Q162 234 152 240",null],
+    ["M194 156 Q200 184 198 220",null],
+    ["M198 220 Q198 234 208 240",null]
+  ],
+  hinge: [
+    ["M156 112 Q142 128 132 148","M156 112 Q150 136 148 164"],
+    ["M132 148 Q128 160 124 176","M148 164 Q148 180 148 200"],
+    ["M204 112 Q218 128 228 148","M204 112 Q210 136 212 164"],
+    ["M228 148 Q232 160 236 176","M212 164 Q212 180 212 200"],
+    ["M166 156 Q154 176 150 206","M166 156 Q152 180 146 208"],
+    ["M150 206 Q148 226 138 242","M146 208 Q144 228 134 244"],
+    ["M194 156 Q206 176 210 206","M194 156 Q208 180 214 208"],
+    ["M210 206 Q212 226 222 242","M214 208 Q216 228 226 244"]
+  ],
+  core: [
+    ["M156 112 Q138 128 126 146","M156 112 Q148 124 144 140"],
+    ["M126 146 Q116 154 108 164","M144 140 Q138 154 134 168"],
+    ["M204 112 Q222 128 234 146","M204 112 Q212 124 216 140"],
+    ["M234 146 Q244 154 252 164","M216 140 Q222 154 226 168"],
+    ["M166 156 Q160 184 162 220","M166 156 Q154 168 144 182"],
+    ["M162 220 Q162 234 152 240","M144 182 Q136 196 140 210"],
+    ["M194 156 Q200 184 198 220","M194 156 Q206 168 216 182"],
+    ["M198 220 Q198 234 208 240","M216 182 Q224 196 220 210"]
+  ],
+  cardio: [
+    ["M156 112 Q136 90 122 74","M156 112 Q158 128 158 148"],
+    ["M122 74 Q112 62 102 52","M158 148 Q158 164 156 180"],
+    ["M204 112 Q224 90 238 74","M204 112 Q200 94 196 76"],
+    ["M238 74 Q248 62 258 52","M196 76 Q194 60 194 44"],
+    ["M166 156 Q150 176 142 204","M166 156 Q164 162 168 170"],
+    ["M142 204 Q136 226 124 240","M168 170 Q176 178 176 192"],
+    ["M194 156 Q210 176 218 204","M194 156 Q196 182 188 210"],
+    ["M218 204 Q224 226 236 240","M188 210 Q182 230 172 246"]
+  ],
+  press: [
+    ["M156 112 Q140 92 134 70","M156 112 Q152 88 150 62"],
+    ["M134 70 Q130 48 138 28","M150 62 Q150 40 152 18"],
+    ["M204 112 Q220 92 226 70","M204 112 Q208 88 210 62"],
+    ["M226 70 Q230 48 222 28","M210 62 Q210 40 208 18"],
+    ["M166 156 Q160 184 162 220",null],
+    ["M162 220 Q162 234 152 240",null],
+    ["M194 156 Q200 184 198 220",null],
+    ["M198 220 Q198 234 208 240",null]
+  ],
+  calf: [
+    ["M156 112 Q140 128 128 146",null],
+    ["M128 146 Q118 154 110 164",null],
+    ["M204 112 Q220 128 232 146",null],
+    ["M232 146 Q242 154 250 164",null],
+    ["M166 156 Q160 188 166 220","M166 156 Q162 188 164 220"],
+    ["M166 220 Q166 236 156 244","M164 220 Q170 234 176 248"],
+    ["M194 156 Q200 188 194 220","M194 156 Q198 188 196 220"],
+    ["M194 220 Q194 236 204 244","M196 220 Q190 234 184 248"]
+  ],
+  mobility: [
+    ["M156 112 Q138 128 124 146","M156 112 Q128 100 102 90"],
+    ["M124 146 Q114 156 102 170","M102 90 Q88 84 76 82"],
+    ["M204 112 Q222 128 236 146","M204 112 Q232 100 258 90"],
+    ["M236 146 Q246 156 258 170","M258 90 Q272 84 284 82"],
+    ["M166 156 Q154 180 150 212","M166 156 Q158 182 154 214"],
+    ["M150 212 Q148 230 138 240","M154 214 Q152 232 142 242"],
+    ["M194 156 Q206 180 210 212","M194 156 Q202 182 206 214"],
+    ["M210 212 Q212 230 222 240","M206 214 Q208 232 218 242"]
+  ]
+};
+
+function _buildAnimLimbs(key, dur) {
+  const defs = _LIMB_ANIM[key] || _LIMB_ANIM.squat;
+  const strokes = [
+    "rgba(255,255,255,.62)","rgba(255,255,255,.62)",
+    "#f8fafc","#f8fafc",
+    "rgba(255,255,255,.62)","rgba(255,255,255,.62)",
+    "#f8fafc","#f8fafc"
+  ];
+  const widths = ["8","7","8","7","8","7","8","7"];
+  return defs.map(([dStart, dEnd], i) => {
+    const anim = dEnd
+      ? `<animate attributeName="d" values="${dStart};${dEnd};${dStart}" dur="${dur}" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>`
+      : '';
+    return `<path d="${dStart}" stroke="${strokes[i]}" stroke-width="${widths[i]}" stroke-linecap="round" fill="none">${anim}</path>`;
+  }).join('');
+}
+
 function _exerciseDemoSvg(label = '') {
   const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const variants = [
@@ -1453,33 +1576,27 @@ function _exerciseDemoSvg(label = '') {
     mobility:'<path d="M148 98 L212 98 L220 146 L140 146 Z" fill="rgba(74,222,128,.12)"/><rect x="150" y="156" width="28" height="64" rx="12" fill="rgba(45,212,191,.12)"/><rect x="184" y="156" width="28" height="64" rx="12" fill="rgba(45,212,191,.12)"/>'
   };
 
-  const limbsByKey = {
-    squat:   '<path d="M152 112 Q134 128 122 144" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M122 144 Q114 152 106 168" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M208 112 Q228 128 242 142" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M242 142 Q252 150 258 168" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M162 156 Q146 172 138 196" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M138 196 Q136 214 146 236" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M198 156 Q214 172 222 196" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M222 196 Q224 214 214 236" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
-    lunge:   '<path d="M156 112 Q142 128 134 148" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M134 148 Q128 160 120 176" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q220 124 232 142" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M232 142 Q242 154 250 170" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q150 174 144 206" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M144 206 Q146 224 136 238" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q218 168 242 180" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M242 180 Q258 188 272 226" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
-    push:    '<path d="M156 112 Q136 130 124 150" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M124 150 Q116 162 108 176" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q224 130 236 150" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M236 150 Q244 162 252 176" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q156 182 160 212" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M160 212 Q164 230 152 238" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q204 182 200 212" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M200 212 Q196 230 208 238" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
-    pull:    '<path d="M156 112 Q136 126 122 134" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M122 134 Q110 138 100 128" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q224 126 238 134" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M238 134 Q250 138 260 128" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q160 184 162 220" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M162 220 Q162 234 152 240" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q200 184 198 220" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M198 220 Q198 234 208 240" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
-    hinge:   '<path d="M156 112 Q142 128 132 148" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M132 148 Q128 160 124 176" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q218 128 228 148" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M228 148 Q232 160 236 176" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q154 176 150 206" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M150 206 Q148 226 138 242" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q206 176 210 206" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M210 206 Q212 226 222 242" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
-    core:    '<path d="M156 112 Q138 128 126 146" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M126 146 Q116 154 108 164" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q222 128 234 146" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M234 146 Q244 154 252 164" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q160 184 162 220" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M162 220 Q162 234 152 240" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q200 184 198 220" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M198 220 Q198 234 208 240" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
-    cardio:  '<path d="M156 112 Q136 90 122 74" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M122 74 Q112 62 102 52" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q224 90 238 74" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M238 74 Q248 62 258 52" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q150 176 142 204" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M142 204 Q136 226 124 240" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q210 176 218 204" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M218 204 Q224 226 236 240" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
-    press:   '<path d="M156 112 Q140 92 134 70" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M134 70 Q130 48 138 28" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q220 92 226 70" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M226 70 Q230 48 222 28" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q160 184 162 220" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M162 220 Q162 234 152 240" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q200 184 198 220" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M198 220 Q198 234 208 240" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
-    calf:    '<path d="M156 112 Q140 128 128 146" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M128 146 Q118 154 110 164" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q220 128 232 146" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M232 146 Q242 154 250 164" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q160 188 166 220" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M166 220 Q166 236 156 244" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q200 188 194 220" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M194 220 Q194 236 204 244" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>',
-    mobility:'<path d="M156 112 Q138 128 124 146" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M124 146 Q114 156 102 170" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M204 112 Q222 128 236 146" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M236 146 Q246 156 258 170" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M166 156 Q154 180 150 212" stroke="rgba(255,255,255,.62)" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M150 212 Q148 230 138 240" stroke="rgba(255,255,255,.62)" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M194 156 Q206 180 210 212" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M210 212 Q212 230 222 240" stroke="#f8fafc" stroke-width="7" stroke-linecap="round" fill="none"/>'
+  const durByKey = {
+    squat: "1.35s", lunge: "1.2s", push: "1.4s", pull: "1.3s",
+    hinge: "1.5s", core: "2s", cardio: "0.7s", press: "1.4s",
+    calf: "1.1s", mobility: "2s"
   };
-  const limbs = limbsByKey[picked.key] || limbsByKey.squat;
+  const animDur = durByKey[picked.key] || "1.4s";
+  const limbs = _buildAnimLimbs(picked.key, animDur);
   const motion = motionByKey[picked.key] || motionByKey.squat;
 
-  // Per-exercise body animation (SMIL animateTransform works in inline SVG)
+  // Subtle whole-body sway — limb animations carry the actual movement
   const bodyAnimByKey = {
-    squat:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,10;0,0" dur="1.35s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    lunge:    '<animateTransform attributeName="transform" type="translate" values="0,0;5,3;0,0" dur="1.2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    push:     '<animateTransform attributeName="transform" type="translate" values="0,0;-9,0;0,0" dur="1.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    pull:     '<animateTransform attributeName="transform" type="translate" values="0,0;-10,0;0,0" dur="1.3s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    hinge:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,11;0,0" dur="1.5s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    core:     '<animateTransform attributeName="transform" type="rotate" values="0 180 180;8 180 180;0 180 180" dur="2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    cardio:   '<animateTransform attributeName="transform" type="translate" values="0,0;0,-15;0,0" dur="0.7s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    press:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,-12;0,0" dur="1.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    calf:     '<animateTransform attributeName="transform" type="translate" values="0,0;0,-9;0,0" dur="1.1s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    mobility: '<animateTransform attributeName="transform" type="rotate" values="0 180 180;-5 180 180;5 180 180;0 180 180" dur="2s" repeatCount="indefinite"/>',
+    squat:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,5;0,0" dur="1.35s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    lunge:    '<animateTransform attributeName="transform" type="translate" values="0,0;3,2;0,0" dur="1.2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    push:     '<animateTransform attributeName="transform" type="translate" values="0,0;-3,0;0,0" dur="1.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    pull:     '<animateTransform attributeName="transform" type="translate" values="0,0;-3,0;0,0" dur="1.3s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    hinge:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,5;0,0" dur="1.5s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    core:     '<animateTransform attributeName="transform" type="rotate" values="0 180 180;4 180 180;0 180 180" dur="2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    cardio:   '<animateTransform attributeName="transform" type="translate" values="0,0;0,-6;0,0" dur="0.7s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    press:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,-4;0,0" dur="1.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    calf:     '<animateTransform attributeName="transform" type="translate" values="0,0;0,-5;0,0" dur="1.1s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
+    mobility: '<animateTransform attributeName="transform" type="rotate" values="0 180 180;-3 180 180;3 180 180;0 180 180" dur="2s" repeatCount="indefinite"/>',
   };
   const bodyAnim = bodyAnimByKey[picked.key] || bodyAnimByKey.squat;
 
