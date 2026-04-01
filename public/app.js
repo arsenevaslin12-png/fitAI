@@ -1673,16 +1673,16 @@ function _buildAnimLimbs(key, dur) {
 function _exerciseDemoSvg(label = '') {
   const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const variants = [
-    { rx: /squat|chair|leg press|wall sit/, key: 'squat', accent: '#f59e0b', accent2: '#fb7185', label: 'jambes / fessiers' },
-    { rx: /lunge|fente|split squat|step-up/, key: 'lunge', accent: '#8b5cf6', accent2: '#22d3ee', label: 'jambes / stabilité' },
-    { rx: /pompe|push|bench|developpe|dips/, key: 'push', accent: '#22c55e', accent2: '#06b6d4', label: 'poussée haut du corps' },
-    { rx: /row|tirage|traction|pull|curl/, key: 'pull', accent: '#38bdf8', accent2: '#818cf8', label: 'tirage / dos' },
-    { rx: /deadlift|souleve|hinge|hip thrust|bridge|pont/, key: 'hinge', accent: '#ef4444', accent2: '#f59e0b', label: 'chaîne postérieure' },
-    { rx: /plank|gainage|abdo|hollow|mountain|russian twist|twist/, key: 'core', accent: '#22d3ee', accent2: '#a78bfa', label: 'core / stabilité' },
-    { rx: /jump|burpee|high knees|run|cardio|jack/, key: 'cardio', accent: '#f472b6', accent2: '#fb7185', label: 'cardio / densité' },
-    { rx: /press|military|shoulder/, key: 'press', accent: '#14b8a6', accent2: '#60a5fa', label: 'épaules / poussée' },
-    { rx: /calf|mollet/, key: 'calf', accent: '#fb923c', accent2: '#facc15', label: 'mollets / explosivité' },
-    { rx: /stretch|mobilite|rotation|respiration|yoga/, key: 'mobility', accent: '#4ade80', accent2: '#2dd4bf', label: 'mobilité / récupération' }
+    { rx: /squat|chair|leg press|wall sit|presse.*cuiss|hack squat|leg ext/, key: 'squat', accent: '#f59e0b', accent2: '#fb7185', label: 'jambes / fessiers' },
+    { rx: /lunge|fente|split squat|step-up|bulgare/, key: 'lunge', accent: '#8b5cf6', accent2: '#22d3ee', label: 'jambes / stabilité' },
+    { rx: /pompe|push|bench|developpe.*couch|developpe.*inclin|developpe.*militaire|dips|pike push|eleva.*front|ecarte/, key: 'push', accent: '#22c55e', accent2: '#06b6d4', label: 'poussée haut du corps' },
+    { rx: /row|tirage|traction|pull|curl|rowing|tractions|oiseau|pullover|shrug|trapeze/, key: 'pull', accent: '#38bdf8', accent2: '#818cf8', label: 'tirage / dos' },
+    { rx: /deadlift|souleve|hinge|hip thrust|bridge|pont|romanian|sumo|good morning|nordic/, key: 'hinge', accent: '#ef4444', accent2: '#f59e0b', label: 'chaîne postérieure' },
+    { rx: /plank|planche|gainage|abdo|hollow|mountain|russian twist|twist|crunch|bicycle|bird|dog|superman|deadbug|ab wheel|rollout|\bab\b/, key: 'core', accent: '#22d3ee', accent2: '#a78bfa', label: 'core / stabilité' },
+    { rx: /jump|burpee|high knees|run|cardio|jack|sprint|montee.*genou|corde.*sauter|tabata|hiit|box jump/, key: 'cardio', accent: '#f472b6', accent2: '#fb7185', label: 'cardio / densité' },
+    { rx: /press|military|shoulder|eleva.*lat|deltoid|militaire/, key: 'press', accent: '#14b8a6', accent2: '#60a5fa', label: 'épaules / poussée' },
+    { rx: /calf|mollet|releve.*pied|releve.*mollet|pointe/, key: 'calf', accent: '#fb923c', accent2: '#facc15', label: 'mollets / explosivité' },
+    { rx: /stretch|mobilite|mobilite|rotation|respiration|yoga|pigeon|cat.cow|foam|hip flex|thread|squat.*profond/, key: 'mobility', accent: '#4ade80', accent2: '#2dd4bf', label: 'mobilité / récupération' }
   ];
   const picked = variants.find((v) => v.rx.test(t)) || variants[0];
 
@@ -1740,6 +1740,7 @@ function _exerciseDemoSvg(label = '') {
       </g>
       <text x="34" y="46" fill="rgba(255,255,255,.52)" font-size="12" font-weight="800" letter-spacing="2.1">EXO GUIDÉ</text>
       <text x="34" y="62" fill="rgba(255,255,255,.34)" font-size="10" font-weight="700" letter-spacing="1.4">${picked.label.toUpperCase()}</text>
+      ${label ? `<text x="180" y="268" text-anchor="middle" fill="rgba(255,255,255,.55)" font-size="11" font-weight="700">${escapeHtml(label.slice(0,32))}</text>` : ''}
     </svg>`;
 }
 
@@ -5354,9 +5355,35 @@ async function loadWeeklyPlan() {
       .eq("user_id", U.id)
       .eq("week_start_date", weekStart)
       .order("day_of_week", { ascending: true });
-    if (error) { console.warn("[plan] load error:", error.message); return; }
-    renderWeeklyPlan(data || []);
-  } catch (e) { console.warn("[plan] load exception:", e); }
+    if (error) { console.warn("[plan] load error:", error.message); }
+    if (data && data.length) {
+      renderWeeklyPlan(data);
+    } else {
+      _showOfflineWeeklyPlan();
+    }
+  } catch (e) {
+    console.warn("[plan] load exception:", e);
+    _showOfflineWeeklyPlan();
+  }
+}
+
+function _showOfflineWeeklyPlan() {
+  // Build synthetic weekly plan from the 8-week offline programme
+  let prog = null;
+  try { prog = JSON.parse(localStorage.getItem("fitai_prog_v2") || "null"); } catch {}
+  const goal = prog?.goal || "remise_en_forme";
+  const weekly = PROG_WEEKLY[goal] || PROG_WEEKLY.remise_en_forme;
+  const typeToIntensity = {
+    push:"medium", pull:"medium", legs:"hard", fullbody:"medium",
+    hiit:"hard", cardio:"medium", core:"medium", mobilite:"easy", rest:"easy"
+  };
+  const plan = weekly.map(item => ({
+    day_of_week: item.d,
+    workout_type: item.label,
+    intensity: typeToIntensity[item.type] || "medium",
+    notes: ""
+  }));
+  renderWeeklyPlan(plan);
 }
 
 function renderWeeklyPlan(plan, weekNum, phase) {
@@ -8550,6 +8577,18 @@ function progToggleExDone(event, dayIdx, exIdx) {
   _renderProgDays(_progWeek || 1, params);
 }
 
+function _seededShuffle(arr, seed) {
+  const a = [...arr];
+  let s = (seed >>> 0) || 1;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
+    s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
+    const j = s % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 function progStartWorkout(dayIdx) {
   const weekly = _progGetWeekly(_prog?.goal || "");
   const item = weekly[dayIdx];
@@ -8561,7 +8600,13 @@ function progStartWorkout(dayIdx) {
   const pool = priorCount % 2 === 0 ? "A" : "B";
   const allEx = PROG_EXERCISES[exType] || [];
   const pooled = allEx.filter(e => !e.pool || e.pool === pool);
-  const exList = (pooled.length >= 5 ? pooled : allEx).slice(0, 7);
+  const base = pooled.length >= 5 ? pooled : allEx;
+  // Daily seed: changes each calendar day so exercises rotate automatically
+  const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const seed = parseInt(todayStr, 10) + dayIdx * 31 + (_progWeek || 1) * 97;
+  const shuffled = _seededShuffle(base, seed);
+  const exCount = PROG_PHASE_EX_COUNT[(_progWeek || 1) - 1] || 5;
+  const exList = shuffled.slice(0, exCount);
   const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
   const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   const label = `${item.icon} ${item.label} · ${dayNames[item.d - 1]}`;
