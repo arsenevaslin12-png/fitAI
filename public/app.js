@@ -5162,9 +5162,27 @@ function recipeFoodArt(name) {
 
 function recipeRequestBadge(text) {
   const t = String(text || '').toLowerCase();
-  if (/(cr[eê]pes?|pancakes?)/.test(t)) return '🥞 Version healthy';
-  if (/(cookies?|brownie|muffins?|cake|dessert)/.test(t)) return '🍪 Version fit';
-  if (/(burger|pizza|tacos?|wrap)/.test(t)) return '🔥 Twist clean';
+  if (/(cr[eê]pes?|pancakes?)/.test(t))                        return '🥞 Version healthy';
+  if (/(cookies?|brownie|muffins?|cake|dessert|gateau)/.test(t)) return '🍪 Version fit';
+  if (/(burger|sandwich|bagel)/.test(t))                        return '🍔 Twist clean';
+  if (/(pizza)/.test(t))                                        return '🍕 Healthy';
+  if (/(tacos?|wrap|burrito|quesadilla)/.test(t))              return '🌯 Fit & frais';
+  if (/(bowl|buddha|poke)/.test(t))                            return '🥣 Bowl fit';
+  if (/(omelette|oeuf|frittata)/.test(t))                      return '🍳 Protéiné';
+  if (/(salade|salad)/.test(t))                                return '🥗 Légère';
+  if (/(p[aâ]tes?|pasta|spaghetti|rigatoni|tagliatelle)/.test(t)) return '🍝 Fit';
+  if (/(risotto)/.test(t))                                     return '🍚 Version légère';
+  if (/(wok|poele|saute|stir.?fry)/.test(t))                  return '🥢 Express';
+  if (/(smoothie|shake|blend)/.test(t))                        return '🥤 Boost';
+  if (/(soupe|veloute|bouillon|potage)/.test(t))               return '🍲 Récup';
+  if (/(porridge|bouillie|avoine|overnight)/.test(t))          return '🥛 Énergie';
+  if (/(galette|tortilla|blinis?)/.test(t))                    return '🫓 Léger';
+  if (/(tartine|toast|bruschetta)/.test(t))                    return '🥑 Simple';
+  if (/(quiche|tarte|gratin)/.test(t))                         return '🥧 Twist light';
+  if (/(meatball|boulette|kefta)/.test(t))                     return '🧆 Protéiné';
+  if (/(poulet|chicken|dinde|turkey)/.test(t))                 return '🍗 Volaille fit';
+  if (/(saumon|thon|poisson|fish)/.test(t))                    return '🐟 Mer & santé';
+  if (/(post.?workout|après.*sport|recovery)/.test(t))         return '⚡ Post-workout';
   return '🍽️ Recette coach';
 }
 
@@ -6309,7 +6327,7 @@ const FOOD_OFFLINE_DB = {
   "lait amande":    { cal:24,  p:1,    c:3,   f:1.1, u:"100ml" },
   "lait avoine":    { cal:47,  p:1.5,  c:7,   f:1.5, u:"100ml" },
   "creme fraiche":  { cal:292, p:2.5,  c:3,   f:30,  u:"100g" },
-  "beurre":         { cal:717, p:0.9,  c:0.1, f:81,  u:"100g" },
+  "beurre":         { cal:717, p:0.9,  c:0.1, f:81,  u:"100g",  srv:0.12 },
   // ── Carbs & Grains ──
   "pâtes":          { cal:158, p:5.8,  c:31,  f:0.9, u:"100g cuit" },
   "pates":          { cal:158, p:5.8,  c:31,  f:0.9, u:"100g cuit" },
@@ -6345,7 +6363,7 @@ const FOOD_OFFLINE_DB = {
   "cacahuetes":     { cal:567, p:26,   c:16,  f:49,  u:"100g" },
   "beurre cacahu":  { cal:588, p:25,   c:20,  f:50,  u:"100g" },
   "beurre amande":  { cal:614, p:21,   c:19,  f:56,  u:"100g" },
-  "huile olive":    { cal:884, p:0,    c:0,   f:100, u:"100ml" },
+  "huile olive":    { cal:884, p:0,    c:0,   f:100, u:"100ml", srv:0.1  },
   "graines chia":   { cal:486, p:17,   c:42,  f:31,  u:"100g" },
   "graines lin":    { cal:534, p:18,   c:29,  f:42,  u:"100g" },
   "huile coco":     { cal:862, p:0,    c:0,   f:100, u:"100ml" },
@@ -6412,41 +6430,111 @@ const FOOD_OFFLINE_DB = {
   "omelette":       { cal:154, p:11,   c:0.5, f:12,  u:"100g" },
   "soupe":          { cal:55,  p:2,    c:9,   f:1.5, u:"100ml" },
   "soupe legumes":  { cal:55,  p:2,    c:9,   f:1.5, u:"100ml" },
-  "vinaigrette":    { cal:450, p:0,    c:5,   f:48,  u:"100ml" },
-  "mayonnaise":     { cal:680, p:1.5,  c:1.5, f:75,  u:"100g" },
-  "confiture":      { cal:250, p:0.5,  c:65,  f:0.1, u:"100g" },
-  "miel":           { cal:304, p:0.3,  c:82,  f:0,   u:"100g" },
-  "sucre":          { cal:400, p:0,    c:100, f:0,   u:"100g" },
-  "nutella":        { cal:539, p:6,    c:57,  f:31,  u:"100g" },
+  "vinaigrette":    { cal:450, p:0,    c:5,   f:48,  u:"100ml", srv:0.2  },
+  "mayonnaise":     { cal:680, p:1.5,  c:1.5, f:75,  u:"100g",  srv:0.15 },
+  "confiture":      { cal:250, p:0.5,  c:65,  f:0.1, u:"100g",  srv:0.15 },
+  "miel":           { cal:304, p:0.3,  c:82,  f:0,   u:"100g",  srv:0.15 },
+  "sucre":          { cal:400, p:0,    c:100, f:0,   u:"100g",  srv:0.05 },
+  "nutella":        { cal:539, p:6,    c:57,  f:31,  u:"100g",  srv:0.2  },
+  // ── Compound French meals (per typical serving — matched before individual ingredients) ──
+  "tartine beurre miel":      { cal:200, p:3,   c:32, f:7,  u:"tartine" },
+  "tartine beurre confiture": { cal:185, p:3,   c:30, f:7,  u:"tartine" },
+  "tartine nutella":          { cal:205, p:4,   c:28, f:9,  u:"tartine" },
+  "tartine beurre":           { cal:155, p:3,   c:18, f:9,  u:"tartine" },
+  "tartine confiture":        { cal:150, p:3,   c:28, f:2,  u:"tartine" },
+  "tartine miel":             { cal:140, p:3,   c:26, f:1,  u:"tartine" },
+  "tartine avocat":           { cal:175, p:4,   c:20, f:9,  u:"tartine" },
+  "tartine":                  { cal:85,  p:3,   c:18, f:1,  u:"tartine" },
+  "toast beurre miel":        { cal:200, p:3,   c:32, f:7,  u:"toast" },
+  "toast beurre":             { cal:155, p:3,   c:18, f:9,  u:"toast" },
+  "pain beurre confiture":    { cal:220, p:4,   c:35, f:8,  u:"tranche" },
+  "pain beurre":              { cal:165, p:3,   c:20, f:9,  u:"tranche" },
+  "pain chocolat":            { cal:420, p:7,   c:46, f:23, u:"pièce" },
+  "croque monsieur":          { cal:380, p:22,  c:30, f:18, u:"pièce" },
+  "croque madame":            { cal:440, p:26,  c:30, f:24, u:"pièce" },
+  "cafe au lait":             { cal:65,  p:3.5, c:5,  f:3,  u:"bol" },
+  "cafe creme":               { cal:80,  p:3,   c:6,  f:4,  u:"tasse" },
+  "bol cereales lait":        { cal:280, p:9,   c:48, f:6,  u:"bol" },
+  "cereales lait":            { cal:280, p:9,   c:48, f:6,  u:"bol" },
+  "riz poulet legumes":       { cal:420, p:36,  c:40, f:7,  u:"assiette" },
+  "riz poulet":               { cal:380, p:34,  c:38, f:6,  u:"assiette" },
+  "pates bolognaise":         { cal:420, p:26,  c:50, f:12, u:"assiette" },
+  "pates carbonara":          { cal:520, p:24,  c:48, f:24, u:"assiette" },
+  "pates pesto":              { cal:450, p:14,  c:50, f:20, u:"assiette" },
+  "salade nicoise":           { cal:320, p:24,  c:18, f:18, u:"assiette" },
+  "salade cesar":             { cal:380, p:22,  c:20, f:24, u:"assiette" },
+  "poulet riz":               { cal:380, p:34,  c:38, f:6,  u:"assiette" },
+  "bowl poulet":              { cal:450, p:38,  c:42, f:10, u:"bowl" },
+  "oeuf a la coque":          { cal:78,  p:6,   c:0.6,f:5,  u:"unité" },
+  "oeufs brouilles":          { cal:210, p:14,  c:1,  f:16, u:"portion" },
+  "omelette jambon fromage":  { cal:310, p:22,  c:3,  f:23, u:"omelette" },
+  "omelette legumes":         { cal:180, p:14,  c:6,  f:11, u:"omelette" },
+  "smoothie fruits":          { cal:160, p:3,   c:35, f:1,  u:"verre" },
+  "smoothie banane":          { cal:180, p:4,   c:38, f:2,  u:"verre" },
+  "porridge avoine":          { cal:280, p:10,  c:46, f:6,  u:"bol" },
 };
 
 function _offlineAnalyzeFood(description) {
   const normalize = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const text = normalize(description);
+
+  // Replace French number words with digits before matching
+  const FR_NUMS = {
+    'un ': 1, 'une ': 1, 'deux ': 2, 'trois ': 3, 'quatre ': 4, 'cinq ': 5,
+    'six ': 6, 'sept ': 7, 'huit ': 8, 'demi ': 0.5, 'moitie ': 0.5, 'quart ': 0.25
+  };
+  let normDesc = normalize(description);
+  for (const [word, val] of Object.entries(FR_NUMS)) {
+    normDesc = normDesc.replace(new RegExp('\\b' + word.trim() + '\\b', 'g'), `${val} `);
+  }
+  // "de beurre et miel" → keep "et"/"avec" as separators, they don't break compound matching
+  const text = normDesc;
   const items = [];
   let totCal = 0, totP = 0, totC = 0, totF = 0;
+  // Sort keys longest-first → compound entries ("tartine beurre miel") match before parts ("beurre", "miel")
   const keys = Object.keys(FOOD_OFFLINE_DB).sort((a, b) => b.length - a.length);
   const matched = new Set();
+  // Track char positions already consumed by a compound match
+  const usedRanges = [];
+  const overlaps = (start, end) => usedRanges.some(([s, e]) => start < e && end > s);
+
   for (const key of keys) {
     const normKey = normalize(key);
-    if (text.includes(normKey) && !matched.has(key)) {
-      matched.add(key);
-      const d = FOOD_OFFLINE_DB[key];
-      const idx = text.indexOf(normKey);
-      const around = text.slice(Math.max(0, idx - 10), idx + normKey.length + 8);
-      const nm = around.match(/(\d+(?:[,.]\d+)?)/);
-      const qty = nm ? Math.min(20, Math.max(1, Math.round(parseFloat(nm[1].replace(",", "."))))) : 1;
-      const unit = d.u || "100g";
-      items.push({
-        name:     key.charAt(0).toUpperCase() + key.slice(1),
-        quantity: qty > 1 ? `${qty}× ${unit}` : `1 ${unit}`,
-        calories: Math.round(d.cal * qty),
-        protein:  Math.round(d.p   * qty * 10) / 10,
-        carbs:    Math.round(d.c   * qty * 10) / 10,
-        fat:      Math.round(d.f   * qty * 10) / 10
-      });
-      totCal += d.cal * qty; totP += d.p * qty; totC += d.c * qty; totF += d.f * qty;
+    let idx = text.indexOf(normKey);
+    if (idx === -1 || matched.has(key)) continue;
+    if (overlaps(idx, idx + normKey.length)) continue;
+
+    matched.add(key);
+    // Mark compound multi-word keys as used to prevent sub-ingredient double-counting
+    if (normKey.includes(' ')) usedRanges.push([idx, idx + normKey.length]);
+
+    const d = FOOD_OFFLINE_DB[key];
+    // Look for a numeric quantity in a window around the match
+    const around = text.slice(Math.max(0, idx - 14), idx + normKey.length + 12);
+    const nm = around.match(/(\d+(?:[,.]\d+)?)/);
+    let qty;
+    if (nm) {
+      qty = Math.min(20, Math.max(0.1, parseFloat(nm[1].replace(",", "."))));
+    } else if (d.srv) {
+      // Condiment / topping with known typical portion (fraction of 100g/ml)
+      qty = d.srv;
+    } else {
+      qty = 1;
     }
+
+    const unit = d.u || "100g";
+    const dispQty = d.srv && !nm
+      ? `~${Math.round(d.srv * 100)}g`
+      : qty !== 1 ? `${qty}× ${unit}` : `1 ${unit}`;
+
+    items.push({
+      name:     key.charAt(0).toUpperCase() + key.slice(1),
+      quantity: dispQty,
+      calories: Math.round(d.cal * qty),
+      protein:  Math.round(d.p   * qty * 10) / 10,
+      carbs:    Math.round(d.c   * qty * 10) / 10,
+      fat:      Math.round(d.f   * qty * 10) / 10
+    });
+    totCal += d.cal * qty; totP += d.p * qty; totC += d.c * qty; totF += d.f * qty;
   }
   if (!items.length) {
     items.push({ name: "Repas estimé", quantity: "1 portion", calories: 450, protein: 22, carbs: 50, fat: 16 });
@@ -6588,7 +6676,7 @@ function selectMealType(type) {
 async function saveFoodAnalysis() {
   if (!U) return toast("Connecte-toi pour sauvegarder.", "err");
   const res = window._lastFoodAnalysis;
-  if (!res) return;
+  if (!res) return toast("Analyse d'abord ton repas avant d'enregistrer.", "err");
   const today = new Date().toISOString().slice(0, 10);
 
   const t = res.total || {};

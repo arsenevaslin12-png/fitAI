@@ -579,8 +579,9 @@ body.light .wt-next-empty{background:#fff;border-color:rgba(15,23,42,.12)}
 .recipe-v2-ing-list{display:flex;flex-wrap:wrap;gap:8px}
 .recipe-v2-ing{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:rgba(255,255,255,.78)}
 .recipe-v2-coach{padding:10px 14px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:12px;font-size:.79rem;color:#a7f3d0;line-height:1.5;margin-bottom:14px}
-.recipe-idea-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.recipe-idea-chip{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);padding:8px 12px;border-radius:999px;font-size:.76rem;font-weight:700;cursor:pointer;transition:all .15s}
+.recipe-idea-row{display:flex;flex-wrap:nowrap;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+.recipe-idea-row::-webkit-scrollbar{display:none}
+.recipe-idea-chip{flex-shrink:0;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);padding:7px 12px;border-radius:999px;font-size:.75rem;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap}
 .recipe-idea-chip:hover{border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.1);color:#c7d2fe}
 
 
@@ -2556,12 +2557,28 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           <div class="page-sub" style="margin-bottom:14px;margin-top:8px;font-size:.75rem">Décris une envie ou tes ingrédients — reçois 3 recettes fit avec macros détaillées. Ajoute directement comme repas ou en liste de courses.</div>
           <div style="display:flex;flex-direction:column;gap:12px">
             <div class="field"><div class="lbl">Envie ou ingrédients</div>
-              <textarea id="recipe-ingredients" placeholder="Ex: crêpes, cookies, burger poulet… ou poulet, riz, brocoli, oeufs" style="min-height:72px"></textarea>
+              <textarea id="recipe-ingredients" placeholder="Ex: bowl poulet riz, pâtes protéinées, pizza maison… ou liste tes ingrédients : poulet, riz, brocoli, œufs" style="min-height:72px"></textarea>
               <div class="recipe-idea-row">
-                <button class="recipe-idea-chip" onclick="setRecipeIdea('crêpes protéinées')" type="button">🥞 Crêpes protéinées</button>
-                <button class="recipe-idea-chip" onclick="setRecipeIdea('cookies healthy protéinés')" type="button">🍪 Cookies fit</button>
-                <button class="recipe-idea-chip" onclick="setRecipeIdea('burger poulet version clean')" type="button">🍔 Burger clean</button>
-                <button class="recipe-idea-chip" onclick="setRecipeIdea('petit-déjeuner post-workout protéiné')" type="button">⚡ Post-workout</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('crêpes protéinées avoine')" type="button">🥞 Crêpes</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('cookies healthy protéinés flocons avoine')" type="button">🍪 Cookies fit</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('burger poulet maison version clean')" type="button">🍔 Burger</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('bowl poulet riz légumes grillés')" type="button">🥣 Bowl</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('omelette légumes fromage healthy')" type="button">🍳 Omelette</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('salade repas complète protéines légumes')" type="button">🥗 Salade repas</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('pâtes protéinées poulet tomates')" type="button">🍝 Pâtes fit</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('pizza maison healthy base légère')" type="button">🍕 Pizza saine</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('wok poulet légumes sauce soja')" type="button">🥢 Wok</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('smoothie bowl protéiné fruits rouges')" type="button">🥤 Smoothie bowl</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('wrap poulet crudités sauce légère')" type="button">🌯 Wrap</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('soupe protéinée légumes maison')" type="button">🍲 Soupe</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('porridge avoine protéiné fruits secs')" type="button">🥛 Porridge</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('muffins protéinés avoine banane')" type="button">🧁 Muffins</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('pancakes protéinés banane avoine')" type="button">🥞 Pancakes</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('galettes légumes quinoa sans gluten')" type="button">🫓 Galettes</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('riz sauté légumes œufs style asiatique')" type="button">🍛 Riz sauté</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('quiche légère légumes sans pâte')" type="button">🥧 Quiche light</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('tartines avocat saumon fumé healthy')" type="button">🥑 Tartines</button>
+                <button class="recipe-idea-chip" onclick="setRecipeIdea('petit-déjeuner post-workout protéiné récupération')" type="button">⚡ Post-workout</button>
               </div>
             </div>
             <div class="grid2">
