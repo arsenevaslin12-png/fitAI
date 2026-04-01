@@ -1411,9 +1411,145 @@ function exerciseCuePack(ex = {}) {
   };
 }
 
-// Per-limb SMIL path animation data
-// Order per exercise: [L-upper-arm, L-lower-arm, R-upper-arm, R-lower-arm, L-thigh, L-shin, R-thigh, R-shin]
-// Each entry: [start_d, end_d]  — null end_d = static limb, no animation
+// Complete exercise figure frames — each exercise defines two full body positions (A=neutral, B=effort peak)
+// h=[cx,cy] head center, t=torso path (M L L L Z), l=8 limb paths:
+//   [0]L-upper-arm [1]L-lower-arm [2]R-upper-arm [3]R-lower-arm [4]L-thigh [5]L-shin [6]R-thigh [7]R-shin
+// SMIL path morphing requires identical command counts and types in both frames.
+const _EX_FRAMES = {
+  squat: {
+    dur: "1.35s",
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q148 108 138 124","M138 124 Q132 134 130 148","M196 92 Q212 108 222 124","M222 124 Q228 134 230 148",
+         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
+    b: { h:[180,86], t:"M156 106 L204 106 L206 154 L154 154 Z",
+      l:["M156 112 Q138 116 122 122","M122 122 Q110 126 106 132","M204 112 Q222 116 238 122","M238 122 Q250 126 254 132",
+         "M158 154 Q128 170 104 182","M104 182 Q96 206 112 230","M202 154 Q232 170 256 182","M256 182 Q264 206 248 230"] }
+  },
+  push: {
+    dur: "1.4s",
+    // Side view: head on right, body horizontal. Arms go down (frame A) → extended (frame B)
+    a: { h:[288,132], t:"M266 136 L168 154 L168 160 L266 142 Z",
+      l:["M234 137 Q232 154 232 168","M232 168 Q232 180 234 188","M200 143 Q198 160 198 174","M198 174 Q198 186 200 194",
+         "M168 157 Q144 157 120 157","M120 157 Q98 157 80 157","M168 157 Q144 159 120 161","M120 161 Q98 163 80 165"] },
+    b: { h:[288,110], t:"M266 114 L168 132 L168 138 L266 120 Z",
+      l:["M234 115 Q234 140 234 162","M234 162 Q234 178 234 190","M200 121 Q200 146 200 168","M200 168 Q200 184 200 196",
+         "M168 135 Q144 137 120 139","M120 139 Q98 141 80 143","M168 135 Q144 139 120 143","M120 143 Q98 147 80 151"] }
+  },
+  pull: {
+    dur: "1.3s",
+    // Chin-up: arms stretch up to bar (A), then pull — body rises, elbows wide (B)
+    a: { h:[180,80], t:"M164 102 L196 102 L194 162 L166 162 Z",
+      l:["M164 104 Q148 88 138 74","M138 74 Q132 60 134 48","M196 104 Q212 88 222 74","M222 74 Q228 60 226 48",
+         "M170 162 Q168 184 166 206","M166 206 Q164 226 168 244","M190 162 Q192 184 194 206","M194 206 Q196 226 192 244"] },
+    b: { h:[180,58], t:"M164 80 L196 80 L194 140 L166 140 Z",
+      l:["M164 82 Q140 70 128 64","M128 64 Q130 50 134 48","M196 82 Q220 70 232 64","M232 64 Q230 50 226 48",
+         "M170 140 Q168 162 166 184","M166 184 Q164 204 168 222","M190 140 Q192 162 194 184","M194 184 Q196 204 192 222"] }
+  },
+  hinge: {
+    dur: "1.5s",
+    // Hip hinge: standing (A) → torso tilts forward, arms reach toward floor (B)
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q154 114 150 136","M150 136 Q148 156 150 176","M196 92 Q206 114 210 136","M210 136 Q212 156 210 176",
+         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
+    b: { h:[214,96], t:"M192 84 L226 98 L220 158 L186 144 Z",
+      l:["M192 90 Q186 112 182 134","M182 134 Q178 154 178 176","M226 100 Q220 122 216 144","M216 144 Q212 164 212 186",
+         "M186 146 Q178 170 172 196","M172 196 Q168 218 174 236","M218 156 Q210 178 204 204","M204 204 Q200 222 206 240"] }
+  },
+  core: {
+    dur: "2s",
+    // Crunch: body reclined (A) → crunches up with knees pulling in (B)
+    a: { h:[220,160], t:"M196 148 L244 160 L240 170 L192 158 Z",
+      l:["M196 150 Q180 158 168 162","M168 162 Q158 164 150 162","M244 162 Q252 164 258 160","M258 160 Q264 156 268 150",
+         "M192 160 Q172 170 156 188","M156 188 Q146 202 144 222","M192 160 Q176 172 160 192","M160 192 Q150 208 148 228"] },
+    b: { h:[208,140], t:"M184 128 L232 148 L226 158 L178 138 Z",
+      l:["M184 130 Q170 140 160 152","M160 152 Q152 162 148 172","M232 150 Q240 152 246 150","M246 150 Q252 148 256 144",
+         "M178 140 Q162 148 150 160","M150 160 Q144 170 146 182","M178 140 Q164 150 152 164","M152 164 Q146 176 148 188"] }
+  },
+  cardio: {
+    dur: "0.7s",
+    // Running: alternating arm-leg stride (A) swaps to opposite stride (B)
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q150 76 144 62","M144 62 Q140 50 140 40","M196 92 Q210 110 216 126","M216 126 Q220 140 218 152",
+         "M168 148 Q172 170 180 192","M180 192 Q188 208 192 228","M192 148 Q194 164 182 180","M182 180 Q176 192 174 208"] },
+    b: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q178 110 184 126","M184 126 Q188 140 186 152","M196 92 Q182 76 176 62","M176 62 Q172 50 172 40",
+         "M168 148 Q164 164 152 180","M152 180 Q146 192 144 208","M192 148 Q196 170 204 192","M204 192 Q212 208 216 228"] }
+  },
+  press: {
+    dur: "1.4s",
+    // Shoulder press: bar at shoulder level (A) → arms fully overhead (B)
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q140 86 120 82","M120 82 Q116 68 120 56","M196 92 Q220 86 240 82","M240 82 Q244 68 240 56",
+         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
+    b: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q148 72 140 54","M140 54 Q136 36 136 22","M196 92 Q212 72 220 54","M220 54 Q224 36 224 22",
+         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] }
+  },
+  calf: {
+    dur: "1.1s",
+    // Calf raise: flat foot (A) → tiptoe, whole body slightly rises (B)
+    a: { h:[180,66], t:"M164 88 L196 88 L198 148 L162 148 Z",
+      l:["M164 94 Q148 110 138 126","M138 126 Q132 136 130 150","M196 94 Q212 110 222 126","M222 126 Q228 136 230 150",
+         "M168 150 Q164 172 162 198","M162 198 Q162 218 168 238","M192 150 Q196 172 198 198","M198 198 Q198 218 192 238"] },
+    b: { h:[180,58], t:"M164 80 L196 80 L198 140 L162 140 Z",
+      l:["M164 86 Q148 102 138 118","M138 118 Q132 128 130 142","M196 86 Q212 102 222 118","M222 118 Q228 128 230 142",
+         "M168 142 Q164 164 162 190","M162 190 Q168 208 178 224","M192 142 Q196 164 198 190","M198 190 Q192 208 182 224"] }
+  },
+  lunge: {
+    dur: "1.2s",
+    // Lunge: standing (A) → front knee deep, back leg extended (B)
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q148 108 138 124","M138 124 Q132 134 130 148","M196 92 Q212 108 222 124","M222 124 Q228 134 230 148",
+         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
+    b: { h:[174,82], t:"M158 102 L192 98 L194 158 L156 162 Z",
+      l:["M158 106 Q144 106 134 110","M134 110 Q124 114 120 122","M192 100 Q206 106 216 114","M216 114 Q226 122 228 134",
+         "M158 160 Q140 176 124 196","M124 196 Q116 212 118 236","M194 158 Q218 164 248 172","M248 172 Q270 178 294 202"] }
+  },
+  mobility: {
+    dur: "2s",
+    // Mobility: arms sweep wide open (B), gentle leg sway
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q152 106 146 122","M146 122 Q140 134 138 150","M196 92 Q208 106 214 122","M214 122 Q220 134 222 150",
+         "M168 148 Q164 170 160 196","M160 196 Q158 216 162 236","M192 148 Q196 170 200 196","M200 196 Q202 216 198 236"] },
+    b: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q136 84 110 78","M110 78 Q90 74 76 76","M196 92 Q224 84 250 78","M250 78 Q270 74 284 76",
+         "M168 148 Q162 172 156 200","M156 200 Q152 220 156 240","M192 148 Q198 172 204 200","M204 200 Q208 220 204 240"] }
+  }
+};
+
+function _buildAnimFigure(key, accent2) {
+  const fr = _EX_FRAMES[key] || _EX_FRAMES.squat;
+  const dur = fr.dur;
+  const ks = "0.45 0 0.55 1;0.45 0 0.55 1";
+  const [hAx, hAy] = fr.a.h;
+  const [hBx, hBy] = fr.b.h;
+
+  const mk = (attr, a, b) => (String(a) === String(b)) ? '' :
+    `<animate attributeName="${attr}" values="${a};${b};${a}" dur="${dur}" repeatCount="indefinite" calcMode="spline" keySplines="${ks}"/>`;
+
+  const head = `<circle cx="${hAx}" cy="${hAy}" r="22" fill="url(#skin)" stroke="rgba(255,255,255,.75)" stroke-width="1.2">${mk('cx',hAx,hBx)}${mk('cy',hAy,hBy)}</circle>`;
+  const torso = `<path d="${fr.a.t}" fill="url(#skin)" opacity=".98">${mk('d',fr.a.t,fr.b.t)}</path>`;
+
+  // Collar accent only for upright exercises
+  let collar = '';
+  if (key !== 'push' && key !== 'core') {
+    const colA = `M${hAx-14} ${hAy+26} Q${hAx} ${hAy+18} ${hAx+14} ${hAy+26}`;
+    const colB = `M${hBx-14} ${hBy+26} Q${hBx} ${hBy+18} ${hBx+14} ${hBy+26}`;
+    collar = `<path d="${colA}" fill="none" stroke="${accent2}" stroke-width="2.4" opacity=".9">${mk('d',colA,colB)}</path>`;
+  }
+
+  const strokes = ["rgba(255,255,255,.62)","rgba(255,255,255,.62)","#f8fafc","#f8fafc",
+                   "rgba(255,255,255,.62)","rgba(255,255,255,.62)","#f8fafc","#f8fafc"];
+  const widths  = ["8","7","8","7","9","8","9","8"];
+  const limbs = fr.a.l.map((dA, i) => {
+    const dB = fr.b.l[i];
+    return `<path d="${dA}" stroke="${strokes[i]}" stroke-width="${widths[i]}" stroke-linecap="round" fill="none">${mk('d',dA,dB)}</path>`;
+  }).join('');
+
+  return head + torso + collar + limbs;
+}
+
+// (legacy stub kept for reference — replaced by _EX_FRAMES)
 const _LIMB_ANIM = {
   squat: [
     ["M152 112 Q134 128 122 144","M152 112 Q138 124 128 136"],
@@ -1551,54 +1687,36 @@ function _exerciseDemoSvg(label = '') {
   const picked = variants.find((v) => v.rx.test(t)) || variants[0];
 
   const motionByKey = {
-    squat:   { path: 'M274 74 C300 112 300 154 272 188', head: 'M270 186 l16 -6 l-8 18' },
-    lunge:   { path: 'M92 212 C136 194 198 164 252 116', head: 'M250 114 l18 0 l-9 16' },
-    push:    { path: 'M288 110 C310 130 310 156 288 176', head: 'M286 174 l16 -6 l-7 16' },
-    pull:    { path: 'M96 116 C136 98 194 98 248 116',  head: 'M246 116 l-12 -8 l0 16' },
-    hinge:   { path: 'M92 178 C134 146 200 134 274 144', head: 'M272 144 l-14 -8 l2 18' },
-    core:    { path: 'M94 156 C136 166 202 166 250 152', head: 'M248 152 l-14 -8 l2 18' },
-    cardio:  { path: 'M266 68 C294 94 294 146 264 186',  head: 'M262 184 l16 -8 l-8 18' },
-    press:   { path: 'M180 48 C180 30 180 22 180 14',    head: 'M180 14 l-8 12 l16 0' },
+    squat:   { path: 'M274 74 C300 112 300 154 272 188',  head: 'M270 186 l16 -6 l-8 18' },
+    lunge:   { path: 'M92 212 C136 194 198 164 252 116',  head: 'M250 114 l18 0 l-9 16' },
+    push:    { path: 'M316 104 C326 122 326 148 316 166', head: 'M314 164 l14 -4 l-6 16' },
+    pull:    { path: 'M96 50 C136 42 224 42 264 50',      head: 'M262 50 l-8 -14 l-6 14' },
+    hinge:   { path: 'M92 178 C134 146 200 134 274 144',  head: 'M272 144 l-14 -8 l2 18' },
+    core:    { path: 'M112 178 C118 158 128 144 148 132', head: 'M148 130 l-8 14 l14 -2' },
+    cardio:  { path: 'M266 68 C294 94 294 146 264 186',   head: 'M262 184 l16 -8 l-8 18' },
+    press:   { path: 'M180 48 C180 30 180 22 180 14',     head: 'M180 14 l-8 12 l16 0' },
     calf:    { path: 'M254 156 C260 174 260 194 252 214', head: 'M252 212 l10 -10 l-2 16' },
     mobility:{ path: 'M112 204 C150 186 210 186 250 204', head: 'M248 204 l-14 -8 l2 18' }
   };
 
+  // Highlights tuned to each exercise's body position
   const highlightByKey = {
-    squat:   '<rect x="148" y="156" width="28" height="64" rx="12" fill="rgba(245,158,11,.25)"/><rect x="184" y="156" width="28" height="64" rx="12" fill="rgba(245,158,11,.25)"/>',
-    lunge:   '<rect x="150" y="156" width="26" height="64" rx="12" fill="rgba(139,92,246,.24)"/><rect x="186" y="156" width="26" height="64" rx="12" fill="rgba(34,211,238,.22)"/>',
-    push:    '<path d="M148 98 L212 98 L220 146 L140 146 Z" fill="rgba(34,197,94,.22)"/><ellipse cx="148" cy="104" rx="18" ry="12" fill="rgba(6,182,212,.18)"/><ellipse cx="212" cy="104" rx="18" ry="12" fill="rgba(6,182,212,.18)"/>',
-    pull:    '<path d="M148 98 L212 98 L204 152 L156 152 Z" fill="rgba(56,189,248,.2)"/><rect x="126" y="104" width="18" height="44" rx="9" fill="rgba(129,140,248,.14)"/><rect x="216" y="104" width="18" height="44" rx="9" fill="rgba(129,140,248,.14)"/>',
-    hinge:   '<path d="M148 152 Q180 170 212 152 L212 186 Q180 202 148 186 Z" fill="rgba(239,68,68,.18)"/><rect x="150" y="156" width="28" height="64" rx="12" fill="rgba(245,158,11,.16)"/><rect x="184" y="156" width="28" height="64" rx="12" fill="rgba(245,158,11,.16)"/>',
-    core:    '<rect x="156" y="144" width="48" height="46" rx="14" fill="rgba(34,211,238,.2)"/>',
-    cardio:  '<path d="M148 98 L212 98 L220 146 L140 146 Z" fill="rgba(244,114,182,.14)"/><rect x="150" y="156" width="28" height="64" rx="12" fill="rgba(251,113,133,.16)"/><rect x="184" y="156" width="28" height="64" rx="12" fill="rgba(251,113,133,.16)"/>',
-    press:   '<ellipse cx="148" cy="102" rx="18" ry="12" fill="rgba(20,184,166,.2)"/><ellipse cx="212" cy="102" rx="18" ry="12" fill="rgba(96,165,250,.2)"/>',
-    calf:    '<rect x="156" y="218" width="20" height="26" rx="9" fill="rgba(251,146,60,.22)"/><rect x="184" y="218" width="20" height="26" rx="9" fill="rgba(250,204,21,.2)"/>',
-    mobility:'<path d="M148 98 L212 98 L220 146 L140 146 Z" fill="rgba(74,222,128,.12)"/><rect x="150" y="156" width="28" height="64" rx="12" fill="rgba(45,212,191,.12)"/><rect x="184" y="156" width="28" height="64" rx="12" fill="rgba(45,212,191,.12)"/>'
+    squat:   '<circle cx="106" cy="186" r="26" fill="rgba(245,158,11,.22)"/><circle cx="254" cy="186" r="26" fill="rgba(245,158,11,.22)"/>',
+    lunge:   '<circle cx="122" cy="196" r="22" fill="rgba(139,92,246,.22)"/><rect x="240" y="162" width="54" height="14" rx="7" fill="rgba(34,211,238,.2)"/>',
+    push:    '<rect x="192" y="114" width="50" height="78" rx="12" fill="rgba(34,197,94,.2)"/>',
+    pull:    '<rect x="126" y="60" width="108" height="82" rx="14" fill="rgba(56,189,248,.14)"/><rect x="124" y="80" width="18" height="58" rx="9" fill="rgba(129,140,248,.14)"/><rect x="218" y="80" width="18" height="58" rx="9" fill="rgba(129,140,248,.14)"/>',
+    hinge:   '<path d="M170 148 Q202 166 224 154 L228 192 Q202 200 168 184 Z" fill="rgba(239,68,68,.18)"/>',
+    core:    '<rect x="178" y="132" width="60" height="40" rx="10" fill="rgba(34,211,238,.2)"/>',
+    cardio:  '<path d="M148 98 L212 98 L218 144 L142 144 Z" fill="rgba(244,114,182,.14)"/>',
+    press:   '<ellipse cx="136" cy="40" rx="14" ry="20" fill="rgba(20,184,166,.22)"/><ellipse cx="224" cy="40" rx="14" ry="20" fill="rgba(96,165,250,.22)"/>',
+    calf:    '<ellipse cx="166" cy="220" rx="14" ry="18" fill="rgba(251,146,60,.24)"/><ellipse cx="194" cy="220" rx="14" ry="18" fill="rgba(250,204,21,.22)"/>',
+    mobility:'<rect x="74" y="72" width="64" height="12" rx="6" fill="rgba(74,222,128,.18)"/><rect x="222" y="72" width="64" height="12" rx="6" fill="rgba(45,212,191,.18)"/>'
   };
 
-  const durByKey = {
-    squat: "1.35s", lunge: "1.2s", push: "1.4s", pull: "1.3s",
-    hinge: "1.5s", core: "2s", cardio: "0.7s", press: "1.4s",
-    calf: "1.1s", mobility: "2s"
-  };
-  const animDur = durByKey[picked.key] || "1.4s";
-  const limbs = _buildAnimLimbs(picked.key, animDur);
   const motion = motionByKey[picked.key] || motionByKey.squat;
-
-  // Subtle whole-body sway — limb animations carry the actual movement
-  const bodyAnimByKey = {
-    squat:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,5;0,0" dur="1.35s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    lunge:    '<animateTransform attributeName="transform" type="translate" values="0,0;3,2;0,0" dur="1.2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    push:     '<animateTransform attributeName="transform" type="translate" values="0,0;-3,0;0,0" dur="1.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    pull:     '<animateTransform attributeName="transform" type="translate" values="0,0;-3,0;0,0" dur="1.3s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    hinge:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,5;0,0" dur="1.5s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    core:     '<animateTransform attributeName="transform" type="rotate" values="0 180 180;4 180 180;0 180 180" dur="2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    cardio:   '<animateTransform attributeName="transform" type="translate" values="0,0;0,-6;0,0" dur="0.7s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    press:    '<animateTransform attributeName="transform" type="translate" values="0,0;0,-4;0,0" dur="1.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    calf:     '<animateTransform attributeName="transform" type="translate" values="0,0;0,-5;0,0" dur="1.1s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>',
-    mobility: '<animateTransform attributeName="transform" type="rotate" values="0 180 180;-3 180 180;3 180 180;0 180 180" dur="2s" repeatCount="indefinite"/>',
-  };
-  const bodyAnim = bodyAnimByKey[picked.key] || bodyAnimByKey.squat;
+  // Shadow ellipse adapted per exercise (push-up = ground at arm level; core = reclining)
+  const shadowCx = picked.key === 'push' ? 228 : 180;
+  const shadowCy = picked.key === 'push' ? 198 : picked.key === 'core' ? 240 : 246;
 
   return `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 280" width="100%" height="100%">
@@ -1613,16 +1731,12 @@ function _exerciseDemoSvg(label = '') {
       <circle cx="70" cy="60" r="72" fill="${picked.accent}" opacity=".14" filter="url(#blurBig)"/>
       <circle cx="280" cy="220" r="84" fill="${picked.accent2}" opacity=".12" filter="url(#blurBig)"/>
       <rect x="28" y="28" width="304" height="224" rx="24" fill="url(#glow1)" opacity=".96"/>
-      <ellipse cx="180" cy="228" rx="72" ry="18" fill="rgba(0,0,0,.26)" filter="url(#blurBig)"/>
+      <ellipse cx="${shadowCx}" cy="${shadowCy}" rx="72" ry="16" fill="rgba(0,0,0,.26)" filter="url(#blurBig)"/>
       <path d="${motion.path}" fill="none" stroke="${picked.accent2}" stroke-width="5" stroke-linecap="round" stroke-dasharray="12 9" opacity=".95"><animate attributeName="stroke-dashoffset" from="0" to="-42" dur="1.35s" repeatCount="indefinite"/></path>
       <path d="${motion.head}" fill="none" stroke="${picked.accent2}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>
       ${(highlightByKey[picked.key] || '')}
       <g filter="url(#drop)">
-        ${bodyAnim}
-        <circle cx="180" cy="68" r="22" fill="url(#skin)" stroke="rgba(255,255,255,.75)" stroke-width="1.2"/>
-        <path d="M158 94 Q180 82 202 94 L208 156 Q180 170 152 156 Z" fill="url(#skin)" opacity=".98"/>
-        <path d="M166 98 Q180 90 194 98" fill="none" stroke="${picked.accent2}" stroke-width="2.4" opacity=".95"/>
-        ${limbs}
+        ${_buildAnimFigure(picked.key, picked.accent2)}
       </g>
       <text x="34" y="46" fill="rgba(255,255,255,.52)" font-size="12" font-weight="800" letter-spacing="2.1">EXO GUIDÉ</text>
       <text x="34" y="62" fill="rgba(255,255,255,.34)" font-size="10" font-weight="700" letter-spacing="1.4">${picked.label.toUpperCase()}</text>
