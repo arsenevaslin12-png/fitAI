@@ -993,7 +993,7 @@ async function generateWorkoutPlan({ apiKey, message, history, profile, goalCont
 async function generateConversationReply({ apiKey, intent, message, history, profile, goalContext }) {
   const prompt = buildConversationPrompt(intent, message, history, profile, goalContext);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.55, maxOutputTokens: 1000, timeoutMs: 8000, retries: 1 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.55, maxOutputTokens: 2000, timeoutMs: 12000, retries: 1 });
     const text = String(result.text || "").replace(/^```[\w-]*\s*/g, "").replace(/```$/g, "").trim();
     if (!text) throw new Error("EMPTY_CONVERSATION");
     return { ok: true, message: text, model: result.model, fallback: false };
@@ -1006,7 +1006,7 @@ async function generateRecipeJson({ apiKey, message, profile, goalContext }) {
   const prompt = buildRecipePrompt(message, profile, goalContext);
   const servings = extractServings(message);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1200, timeoutMs: 8000, retries: 1 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 2200, timeoutMs: 12000, retries: 1 });
     const parsed = extractJSON(result.text);
     if (!parsed || !parsed.name) throw new Error("INVALID_RECIPE_JSON");
     if (!parsed.servings) parsed.servings = servings;
