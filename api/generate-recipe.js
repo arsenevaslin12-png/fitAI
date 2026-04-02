@@ -593,6 +593,256 @@ function fallbackRecipe(requestText, goal, targetKcal, servings = 2, recipeStyle
     };
   }
 
+  if (/(smoothie|shake|blend)/.test(text)) {
+    return {
+      name: "Smoothie protéiné équilibré",
+      healthy_twist: "Protéines, bons glucides et graisses saines en 2 minutes — sans sucre ajouté.",
+      ingredients_list: ["1 banane congelée","150 g de skyr ou fromage blanc","30 g de whey vanille ou nature","200 ml de lait végétal","1 cuillère à soupe de beurre de cacahuète","1 poignée de fruits rouges congelés","1 pincée de cannelle"],
+      steps: [
+        "Mets tous les ingrédients dans le blender, les liquides en premier pour faciliter le mixage.",
+        "Mixe 40 à 60 secondes jusqu'à obtenir une texture lisse et onctueuse.",
+        "Goûte et ajuste : plus de banane pour plus de sucré, plus de skyr pour plus d'épaisseur.",
+        "Verse immédiatement dans un grand verre et consomme dans les 10 minutes pour garder la texture."
+      ],
+      prep_time: "5 min", servings: s, best_for: "Petit-déjeuner express ou collation post-training",
+      batch_prep: "Prépare des sachets congelés avec fruits + banane pour gagner du temps chaque matin.",
+      calories: kcal, protein: proteinBase + 12,
+      carbs: Math.max(25, Math.round(kcal * 0.40 / 4)), fat: Math.max(8, Math.round(kcal * 0.22 / 9)),
+      tips: "Ajoute un glaçon si tu veux une texture plus froide et plus épaisse.", coach_note: "Idéal quand tu n'as pas faim le matin mais que ton corps a besoin de carburant.",
+      shopping_list: buildRecipeShoppingList(["1 banane","150 g de skyr","30 g de whey","lait végétal","beurre de cacahuète","fruits rouges"])
+    };
+  }
+
+  if (/(porridge|bouillie|avoine|overnight|granola)/.test(text)) {
+    return {
+      name: "Porridge protéiné overnight",
+      healthy_twist: "Flocons d'avoine préparés la nuit : digestion facilitée, protéines complètes, sucre naturel.",
+      ingredients_list: ["70 g de flocons d'avoine","200 ml de lait ou lait végétal","150 g de skyr nature","25 g de whey (facultatif)","1 cuillère à soupe de graines de chia","1/2 banane ou 1 poignée de fruits rouges","1 filet de miel ou sirop d'érable (optionnel)"],
+      steps: [
+        "Dans un bocal ou bol, verse les flocons d'avoine, les graines de chia et le lait. Mélange.",
+        "Ajoute le skyr et la whey si utilisé, mélange jusqu'à consistance homogène.",
+        "Couvre et réfrigère minimum 6 heures (idéal toute la nuit).",
+        "Le matin, ajoute les fruits frais ou surgelés, le miel si voulu. Consomme froid ou réchauffe 90 secondes au micro-ondes."
+      ],
+      prep_time: "5 min (+ 6h repos)", servings: s, best_for: "Petit-déjeuner ou collation",
+      batch_prep: "Prépare 3 bocaux le dimanche soir pour toute la semaine.",
+      calories: kcal, protein: proteinBase + 8,
+      carbs: Math.max(35, Math.round(kcal * 0.48 / 4)), fat: Math.max(6, Math.round(kcal * 0.18 / 9)),
+      tips: "Les graines de chia absorbent le liquide et donnent une texture crémeuse naturelle.", coach_note: "Le meilleur choix si tu n'as pas le temps le matin.",
+      shopping_list: buildRecipeShoppingList(["70 g de flocons d'avoine","skyr","whey","lait végétal","graines de chia","banane"])
+    };
+  }
+
+  if (/(galette|blinis?|tortilla.?mais)/.test(text)) {
+    return {
+      name: "Galettes protéinées sarrasin",
+      healthy_twist: "Farine de sarrasin complète, riche en fibres et sans gluten, garnie de protéines maigres.",
+      ingredients_list: ["100 g de farine de sarrasin","1 œuf","200 ml d'eau","1 pincée de sel","120 g de jambon blanc ou œufs brouillés","30 g de fromage râpé allégé","1/4 d'oignon, 1/2 poivron"],
+      steps: [
+        "Mélange farine de sarrasin, œuf, eau et sel jusqu'à pâte lisse. Laisse reposer 15 min.",
+        "Chauffe une poêle antiadhésive à feu moyen-vif, huile légèrement.",
+        "Verse une louche de pâte, incline la poêle pour bien étaler. Cuis 2 min jusqu'à bords secs.",
+        "Retourne, ajoute le jambon et le fromage sur une moitié, plie en deux. Cuis 1 min de plus.",
+        "Sers avec salade verte ou légumes grillés."
+      ],
+      prep_time: "20 min", servings: s, best_for: "Déjeuner léger ou dîner",
+      batch_prep: "Prépare la pâte à l'avance, se conserve 48h au frigo.",
+      calories: kcal, protein: proteinBase + 6,
+      carbs: Math.max(25, Math.round(kcal * 0.42 / 4)), fat: Math.max(8, Math.round(kcal * 0.22 / 9)),
+      tips: "Pâte un peu trop épaisse ? Ajoute 1-2 cuillères d'eau. Trop liquide ? 1 cuillère de farine.",
+      coach_note: "Repas complet en 20 min, idéal les soirs pressés.", shopping_list: buildRecipeShoppingList(["farine de sarrasin","œufs","jambon blanc","fromage râpé","poivron"])
+    };
+  }
+
+  if (/(tartine|toast|bruschetta)/.test(text)) {
+    return {
+      name: "Tartines protéinées complètes",
+      healthy_twist: "Pain complet à indice glycémique bas, garnitures riches en protéines et bons lipides.",
+      ingredients_list: ["2 tranches de pain complet ou seigle","100 g de cottage cheese ou fromage blanc","1/2 avocat","2 œufs pochés ou à la coque","Tomates cerises, roquette","Sel, poivre, paprika fumé, graines de sésame"],
+      steps: [
+        "Toaste les tranches de pain 2-3 min pour qu'elles soient dorées et croustillantes.",
+        "Écrase l'avocat avec une fourchette, assaisonne avec sel, poivre et paprika.",
+        "Poche les œufs : porte l'eau à frémissement avec un filet de vinaigre, casse l'œuf dans un ramequin et glisse-le 3 min dans l'eau.",
+        "Étale le cottage cheese sur le pain, ajoute l'avocat écrasé, l'œuf poché par-dessus.",
+        "Finit avec les tomates cerises coupées, la roquette, une pincée de sésame."
+      ],
+      prep_time: "10 min", servings: s, best_for: "Petit-déjeuner, brunch ou déjeuner léger",
+      batch_prep: "Prépare la garniture avocado la veille avec citron pour éviter l'oxydation.",
+      calories: kcal, protein: proteinBase + 8,
+      carbs: Math.max(25, Math.round(kcal * 0.38 / 4)), fat: Math.max(12, Math.round(kcal * 0.30 / 9)),
+      tips: "Le vinaigre dans l'eau de pochage aide le blanc à se coaguler autour du jaune.", coach_note: "Repas rapide mais complet en nutriments.",
+      shopping_list: buildRecipeShoppingList(["pain complet","cottage cheese","avocat","œufs","tomates cerises","roquette"])
+    };
+  }
+
+  if (/(quiche|tarte.*sal|gratin|lasagne|moussaka)/.test(text)) {
+    return {
+      name: "Quiche légère sans pâte brisée",
+      healthy_twist: "Appareil aux œufs enrichi en protéines, sans pâte beurée — moins de 400 kcal la part.",
+      ingredients_list: ["4 œufs entiers + 2 blancs","200 ml de lait écrémé ou lait végétal","150 g de poulet cuit en dés ou jambon dégraissé","1 poireau ou 1/2 courgette","50 g de gruyère allégé râpé","Sel, poivre, noix de muscade, herbes"],
+      steps: [
+        "Préchauffe le four à 180°C. Huile légèrement un moule à tarte ou à cake.",
+        "Fais revenir les légumes émincés 5 min à feu moyen dans une poêle avec peu d'huile.",
+        "Fouette œufs, blancs et lait. Assaisonne avec sel, poivre, noix de muscade.",
+        "Ajoute les légumes, le poulet et la moitié du gruyère à l'appareil. Mélange.",
+        "Verse dans le moule, parsème du reste de gruyère. Enfourne 30-35 min : l'appareil doit être pris et légèrement doré."
+      ],
+      prep_time: "40 min", servings: s, best_for: "Déjeuner ou dîner famille",
+      batch_prep: "Se conserve 3 jours au frigo, se réchauffe parfaitement.",
+      calories: kcal, protein: proteinBase + 6,
+      carbs: Math.max(10, Math.round(kcal * 0.18 / 4)), fat: Math.max(12, Math.round(kcal * 0.30 / 9)),
+      tips: "Sans pâte = moins de matières grasses et facilité de préparation — aucun compromis sur le goût.",
+      coach_note: "Excellent pour le meal-prep : 4 parts prêtes en une fois.", shopping_list: buildRecipeShoppingList(["4 œufs","lait écrémé","poulet cuit","poireau","gruyère allégé"])
+    };
+  }
+
+  if (/(boulette|meatball|kefta|kofta)/.test(text)) {
+    return {
+      name: "Boulettes protéinées sauce tomate",
+      healthy_twist: "Viande maigre façonnée maison, sans chapelure industrielle, mijotée dans une sauce tomate fraîche.",
+      ingredients_list: ["300 g de bœuf haché 5% ou dinde hachée","1 œuf","2 cuillères à soupe de flocons d'avoine mixés","Ail, persil, cumin, paprika","200 g de coulis de tomates","1/2 oignon","Sel, poivre"],
+      steps: [
+        "Mélange la viande, l'œuf, les flocons d'avoine, l'ail pressé, le persil et les épices. Façonne 12-14 boulettes de taille égale.",
+        "Chauffe une poêle à feu vif avec peu d'huile. Fais dorer les boulettes 2-3 min sur chaque face.",
+        "Retire les boulettes. Dans la même poêle, fais revenir l'oignon 3 min.",
+        "Ajoute le coulis de tomates, assaisonne, laisse mijoter 5 min puis remets les boulettes.",
+        "Couvre et laisse mijoter 12-15 min à feu doux. Sers avec riz complet ou couscous."
+      ],
+      prep_time: "25 min", servings: s, best_for: "Déjeuner ou dîner",
+      batch_prep: "Congèle les boulettes crues ou cuites par portions.",
+      calories: kcal, protein: proteinBase + 10,
+      carbs: Math.max(15, Math.round(kcal * 0.28 / 4)), fat: Math.max(10, Math.round(kcal * 0.25 / 9)),
+      tips: "Les flocons d'avoine remplacent la chapelure et ajoutent des fibres sans gluten raffiné.",
+      coach_note: "Repas riche en protéines, facile à préparer en grande quantité.", shopping_list: buildRecipeShoppingList(["300 g de bœuf haché","1 œuf","flocons d'avoine","coulis de tomates","ail","persil"])
+    };
+  }
+
+  if (/(wok|saute|poele|stir.?fry)/.test(text)) {
+    return {
+      name: "Wok express légumes-protéines",
+      healthy_twist: "Cuisson rapide à feu vif qui préserve les vitamines, peu de matières grasses, beaucoup de saveur.",
+      ingredients_list: ["120 g de poulet ou crevettes ou tofu ferme","1 poivron, 1 courgette, 1 carotte","100 g de nouilles soba ou riz complet cuit","2 cuillères à soupe de sauce soja légère","1 cuillère à café d'huile de sésame","Ail, gingembre, oignon vert","Graines de sésame"],
+      steps: [
+        "Coupe toutes les protéines et légumes en morceaux fins et uniformes avant de commencer — la cuisson wok est rapide.",
+        "Chauffe le wok ou grande poêle à feu très vif jusqu'à légère fumée. Ajoute l'huile.",
+        "Saisis la protéine 3-4 min en remuant constamment. Réserve.",
+        "Dans le même wok, fais sauter les légumes durs (carotte, poivron) 2 min, puis les tendres (courgette) 1 min.",
+        "Ajoute l'ail et le gingembre 30 secondes, puis les nouilles cuites, la sauce soja et la protéine. Mélange 1 min à feu vif. Sers avec sésame et oignon vert."
+      ],
+      prep_time: "18 min", servings: s, best_for: "Dîner rapide ou déjeuner express",
+      batch_prep: "Prépare et coupe les légumes à l'avance. Le wok se fait en 8 min une fois tout prêt.",
+      calories: kcal, protein: proteinBase + 5,
+      carbs: Math.max(30, Math.round(kcal * 0.44 / 4)), fat: Math.max(8, Math.round(kcal * 0.20 / 9)),
+      tips: "La clé du wok c'est le feu très vif et ne jamais surcharger la poêle — saisir, pas étuver.",
+      coach_note: "Un des repas les plus rapides et variés à préparer.", shopping_list: buildRecipeShoppingList(["120 g de poulet","poivron","courgette","carotte","nouilles soba","sauce soja","huile de sésame"])
+    };
+  }
+
+  if (/(poulet|chicken|dinde|turkey)/.test(text)) {
+    return {
+      name: "Poulet mariné grillé et légumes rôtis",
+      healthy_twist: "Marinade maison sans huile en excès, cuisson au four pour un résultat juteux et peu gras.",
+      ingredients_list: ["2 filets de poulet (300 g)","Jus de citron, ail, paprika, cumin, herbes de Provence","1 courgette, 1 poivron, 1 oignon rouge","1 cuillère à café d'huile d'olive","Sel, poivre","100 g de riz complet ou patate douce (accompagnement)"],
+      steps: [
+        "Mélange jus de citron, ail pressé, paprika, cumin, herbes, sel et poivre. Badigeonne les filets et laisse mariner 20 min minimum (ou la nuit).",
+        "Préchauffe le four à 200°C. Coupe les légumes en gros morceaux, enrobe avec l'huile, sel et poivre sur la plaque.",
+        "Pose les filets marinés sur la même plaque. Enfourne 20-22 min. Le poulet doit être doré et atteindre 74°C à cœur.",
+        "Laisse reposer 3 min avant de trancher — le jus se redistribue et la viande reste juteuse.",
+        "Sers avec le riz complet ou la patate douce cuite en parallèle."
+      ],
+      prep_time: "30 min", servings: s, best_for: "Déjeuner ou dîner post-training",
+      batch_prep: "Cuis 4 filets d'un coup et garde-les au frigo pour 3 jours de repas.",
+      calories: kcal, protein: proteinBase + 14,
+      carbs: Math.max(20, Math.round(kcal * 0.32 / 4)), fat: Math.max(8, Math.round(kcal * 0.20 / 9)),
+      tips: "Le repos de 3 min après cuisson est obligatoire — sinon tout le jus coule dans l'assiette.",
+      coach_note: "La base protéinée la plus polyvalente et économique.", shopping_list: buildRecipeShoppingList(["2 filets de poulet","citron","ail","paprika","courgette","poivron","riz complet"])
+    };
+  }
+
+  if (/(saumon|thon|poisson|cabillaud|lieu|dorade|truite)/.test(text)) {
+    return {
+      name: "Pavé de saumon crouté aux herbes",
+      healthy_twist: "Riche en oméga-3, croûte aux herbes sans beurre, cuit à basse température pour garder la tendreté.",
+      ingredients_list: ["2 pavés de saumon (150 g chacun)","Persil, ciboulette, aneth frais","1 cuillère à soupe de moutarde à l'ancienne","Jus de citron, zeste","1 gousse d'ail","200 g de haricots verts ou brocoli","Sel, poivre"],
+      steps: [
+        "Préchauffe le four à 180°C. Mélange herbes hachées, moutarde, jus de citron et ail pressé.",
+        "Assaisonne les pavés avec sel et poivre. Étale la croûte aux herbes sur le dessus.",
+        "Pose sur une plaque recouverte de papier cuisson. Enfourne 12-15 min selon l'épaisseur — l'intérieur doit rester légèrement rosé.",
+        "Pendant ce temps, cuis les haricots verts 5 min à l'eau bouillante salée, égoutte et assaisonne.",
+        "Sers le saumon sur les légumes avec un quartier de citron et un filet d'huile d'olive."
+      ],
+      prep_time: "20 min", servings: s, best_for: "Dîner léger ou déjeuner",
+      batch_prep: "La croûte aux herbes se prépare à l'avance et se conserve 3 jours.",
+      calories: kcal, protein: proteinBase + 10,
+      carbs: Math.max(8, Math.round(kcal * 0.15 / 4)), fat: Math.max(14, Math.round(kcal * 0.35 / 9)),
+      tips: "Ne cuis pas trop le saumon : un cœur encore rosé c'est voulu et beaucoup plus savoureux.",
+      coach_note: "Les oméga-3 du saumon accélèrent la récupération musculaire.", shopping_list: buildRecipeShoppingList(["2 pavés de saumon","persil","aneth","moutarde","citron","haricots verts"])
+    };
+  }
+
+  if (/(curry|tikka|masala|indien)/.test(text)) {
+    return {
+      name: "Curry de poulet léger aux épices",
+      healthy_twist: "Sauce maison aux épices anti-inflammatoires, sans crème — remplacée par du yaourt grec.",
+      ingredients_list: ["300 g de poulet en dés","1 oignon, 2 gousses d'ail, 1 cm de gingembre","200 g de tomates pelées en boîte","150 g de yaourt grec","Curry, curcuma, cumin, coriandre, paprika","Coriandre fraîche","100 g de riz basmati complet"],
+      steps: [
+        "Fais revenir l'oignon émincé 5 min à feu moyen dans peu d'huile. Ajoute ail et gingembre râpé 1 min.",
+        "Ajoute toutes les épices (curry, curcuma, cumin, coriandre moulue, paprika) et fais-les torréfier 30 secondes en remuant.",
+        "Ajoute le poulet en dés, fais-le colorer 3-4 min sur toutes les faces.",
+        "Verse les tomates pelées, écrase-les avec une cuillère. Laisse mijoter 15 min à feu doux.",
+        "Hors du feu, incorpore le yaourt grec en remuant vigoureusement pour éviter la coupure. Sers sur riz avec coriandre fraîche."
+      ],
+      prep_time: "30 min", servings: s, best_for: "Dîner ou déjeuner chaleureux",
+      batch_prep: "Le curry se bonifie le lendemain — prépares-en le double.",
+      calories: kcal, protein: proteinBase + 8,
+      carbs: Math.max(25, Math.round(kcal * 0.38 / 4)), fat: Math.max(8, Math.round(kcal * 0.22 / 9)),
+      tips: "Le yaourt doit être incorporé hors du feu pour ne pas cailler — texture crémeuse garantie.",
+      coach_note: "Le curcuma est anti-inflammatoire : parfait les jours de grosse séance.", shopping_list: buildRecipeShoppingList(["300 g de poulet","oignon","tomates pelées","yaourt grec","curry","curcuma","riz basmati"])
+    };
+  }
+
+  if (/(post.?workout|apres.*sport|recovery|recuper)/.test(text)) {
+    return {
+      name: "Repas de récupération post-training",
+      healthy_twist: "Ratio protéines/glucides 1:3 optimal pour resynthèse du glycogène et réparation musculaire dans les 30-45 min post-séance.",
+      ingredients_list: ["150 g de riz blanc ou patate douce cuite","130 g de blanc de poulet ou thon au naturel","1 banane","30 g de whey (facultatif)","1 cuillère à café d'huile d'olive","Sel, citron, herbes fraîches"],
+      steps: [
+        "Cuis le riz blanc à l'eau bouillante salée 12 min (ou réchauffe la patate douce).",
+        "Grille rapidement le blanc de poulet 3-4 min par face à feu vif — c'est volontairement rapide pour manger dans les 30 min post-effort.",
+        "Tranche le poulet, assaisonne avec citron, sel et herbes.",
+        "Mange la banane en même temps ou juste avant — ses glucides rapides aident à recharger le glycogène.",
+        "Option express : mixe whey + banane + 200 ml de lait pendant la cuisson du poulet pour diviser le temps."
+      ],
+      prep_time: "12 min", servings: 1, best_for: "Dans les 45 min après l'entraînement",
+      batch_prep: "Prépare le riz et le poulet à l'avance — réchauffe en 2 min.",
+      calories: kcal, protein: proteinBase + 12,
+      carbs: Math.max(40, Math.round(kcal * 0.52 / 4)), fat: Math.max(6, Math.round(kcal * 0.15 / 9)),
+      tips: "Fenêtre anabolique optimale : manger dans les 30-45 min post-effort pour maximiser la récupération.",
+      coach_note: "Ce repas accélère la récupération et prépare la prochaine séance.", shopping_list: buildRecipeShoppingList(["150 g de riz blanc","130 g de poulet","banane","whey","citron"])
+    };
+  }
+
+  if (/(steak|viande|boeuf|veau|agneau)/.test(text)) {
+    return {
+      name: "Steak grillé et légumes vapeur",
+      healthy_twist: "Viande rouge maigre dosée correctement, cuisson sèche, légumes vapeur pour préserver les vitamines.",
+      ingredients_list: ["150 g de rumsteck ou faux-filet","1 patate douce moyenne","Brocoli ou haricots verts","Sel, poivre, ail en poudre, thym","1/2 cuillère à café d'huile"],
+      steps: [
+        "Sors le steak du frigo 15 min avant de le cuire — température ambiante = cuisson uniforme.",
+        "Assaisonne avec sel, poivre, ail en poudre et thym juste avant la cuisson.",
+        "Chauffe une poêle ou grille à feu très vif. Saisis le steak 2 min par face pour saignant, 3 min pour à point.",
+        "Laisse reposer 3 min posé sur une grille — les fibres se relâchent et le jus reste dedans.",
+        "Sers avec patate douce au four (200°C, 25 min) et légumes vapeur 5-6 min."
+      ],
+      prep_time: "20 min", servings: s, best_for: "Déjeuner ou dîner prise de masse",
+      batch_prep: "Cuis 2 steaks d'un coup, le second se mange froid sur une salade.",
+      calories: kcal, protein: proteinBase + 14,
+      carbs: Math.max(20, Math.round(kcal * 0.32 / 4)), fat: Math.max(8, Math.round(kcal * 0.22 / 9)),
+      tips: "Ne pique jamais le steak avec une fourchette : percer = perdre le jus. Utilise des pinces.",
+      coach_note: "Riche en fer héminique et zinc, idéal pour récupération après séance intense.", shopping_list: buildRecipeShoppingList(["150 g de rumsteck","patate douce","brocoli","thym","ail"])
+    };
+  }
+
   const goalLabel = GOAL_LABELS[goal] || "équilibré";
   const ingredientPreview = sanitizeText(requestText).slice(0, 80);
   return {

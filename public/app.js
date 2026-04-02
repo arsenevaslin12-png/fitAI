@@ -8103,18 +8103,18 @@ const PROG_EXERCISES = {
     { n:"Curl marteau",                m:"Biceps brachial",pool:"B" },
   ],
   pull_home: [
-    { n:"Rowing haltères 1 bras",      m:"Dos",        pool:"A" },
-    { n:"Rowing élastique debout",     m:"Dos",        pool:"A" },
-    { n:"Curl haltères alterné",       m:"Biceps",     pool:"A" },
-    { n:"Oiseau haltères",             m:"Épaules arrière",pool:"A" },
+    { n:"Tractions (barre de porte)",  m:"Grand dorsal",pool:"A" },
+    { n:"Inverted row sous table",     m:"Dos moyen",  pool:"A" },
     { n:"Superman dos au sol",         m:"Bas du dos", pool:"A" },
-    { n:"Rowing haltères bilatéral",   m:"Dos",        pool:"A" },
-    { n:"Tractions porte (TRX maison)",m:"Grand dorsal",pool:"A" },
-    { n:"Rowing élastique assis",      m:"Dos moyen",  pool:"B" },
-    { n:"Curl marteau haltères",       m:"Biceps",     pool:"B" },
-    { n:"Good morning haltères",       m:"Bas du dos/Ischios",pool:"B" },
-    { n:"Élastique face pull",         m:"Épaules arrière",pool:"B" },
-    { n:"Deadbug",                     m:"Core/Dos",   pool:"B" },
+    { n:"Bird dog",                    m:"Core/Lombaires",pool:"A" },
+    { n:"Good morning poids de corps", m:"Lombaires/Ischios",pool:"A" },
+    { n:"Reverse snow angel au sol",   m:"Épaules arrière",pool:"A" },
+    { n:"Tractions prise serrée",      m:"Dos/Biceps", pool:"B" },
+    { n:"Inverted row prise large",    m:"Dos moyen",  pool:"B" },
+    { n:"Deadbug",                     m:"Core/Stabilité",pool:"B" },
+    { n:"Hyperextensions au sol",      m:"Bas du dos", pool:"B" },
+    { n:"Prone cobra (activation dos)",m:"Dos/Épaules",pool:"B" },
+    { n:"Hollow body hold",            m:"Core/Dos",   r:"20-30s", pool:"B" },
   ],
   legs: [
     { n:"Squat barre",                 m:"Quadriceps", pool:"A" },
@@ -8148,14 +8148,14 @@ const PROG_EXERCISES = {
     { n:"Single leg deadlift",         m:"Ischios/Fessiers",pool:"B" },
   ],
   fullbody: [
-    { n:"Squat haltères",              m:"Jambes" },
+    { n:"Squat poids de corps",        m:"Jambes" },
     { n:"Pompes",                      m:"Pecs/Triceps" },
-    { n:"Rowing haltères",             m:"Dos/Biceps" },
-    { n:"Fentes avant haltères",       m:"Jambes/Fessiers" },
+    { n:"Inverted row sous table",     m:"Dos/Biceps" },
+    { n:"Fentes avant",                m:"Jambes/Fessiers" },
     { n:"Planche",                     m:"Core", r:"30-45s" },
-    { n:"Développé militaire haltères",m:"Épaules" },
-    { n:"Soulevé de terre haltères",   m:"Dos/Jambes" },
-    { n:"Curl haltères",               m:"Biceps" },
+    { n:"Pompes pike",                 m:"Épaules/Triceps" },
+    { n:"Good morning poids de corps", m:"Dos/Jambes" },
+    { n:"Hollow body hold",            m:"Core/Abdos", r:"20-30s" },
     { n:"Dips sur chaise",             m:"Triceps" },
   ],
   hiit: [
@@ -8611,9 +8611,14 @@ function progStartWorkout(dayIdx) {
   const exCount = PROG_PHASE_EX_COUNT[(_progWeek || 1) - 1] || 5;
   const exList = shuffled.slice(0, exCount);
   const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
+  // Calculate target duration so _buildGuidedTimeline fills enough rounds
+  const avgWorkSec = 40;
+  const cappedRest = Math.min(90, params.rest || 30);
+  const sets = params.sets || 3;
+  const durationMin = Math.max(20, Math.ceil(exList.length * sets * (avgWorkSec + cappedRest) / 60));
   const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   const label = `${item.icon} ${item.label} · ${dayNames[item.d - 1]}`;
-  startWorkout(label, exList, params);
+  startWorkout(label, exList, { ...params, durationMin });
 }
 
 window.loadProgramme    = loadProgramme;
