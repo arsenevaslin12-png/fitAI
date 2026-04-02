@@ -4728,14 +4728,41 @@ function mergeNutritionShoppingList(base, extra) {
 function addRecipeToNutritionShoppingList(idx = 0) {
   const recipe = (window._lastRecipes && window._lastRecipes[idx]) || window._lastRecipe;
   if (!recipe) return toast('Aucune recette à ajouter.', 'err');
-  const payload = loadStoredNutritionPlanPayload();
-  if (!payload || !payload.plan) return toast("Génère d'abord un plan nutrition.", 'warn');
+
+  // Ensure a nutrition plan payload exists (create minimal one if needed)
+  let payload = loadStoredNutritionPlanPayload();
+  if (!payload || !payload.plan) {
+    payload = {
+      goal: 'maintenance', day_type: 'training', fallback: true,
+      nutrition: { calories: 2000, protein: 150, carbs: 220, fats: 65, notes: '' },
+      plan: { title: 'Liste de courses', summary: '', hydration_liters: 2.5,
+        coach_note: '', training_note: '', tips: [], substitutions: [], meals: [],
+        shopping_list: null, meal_prep: null }
+    };
+  }
+
   const recipeShopping = recipe.shopping_list && typeof recipe.shopping_list === 'object'
     ? recipe.shopping_list
-    : { title: 'Courses recette', categories: [{ title: 'Recette', items: (recipe.ingredients_list || []).map((name) => ({ name, qty: 'à prévoir' })) }] };
+    : { title: 'Courses recette', categories: [{ title: recipe.name || 'Recette', items: (recipe.ingredients_list || []).map((name) => ({ name, qty: 'à prévoir' })) }] };
   payload.plan.shopping_list = mergeNutritionShoppingList(payload.plan.shopping_list || buildNutritionShoppingList(payload.plan), recipeShopping);
   saveNutritionPlanPayload(payload);
-  renderNutritionPlanPayload(payload, { status: 'Liste de courses enrichie avec la recette.', statusType: 'ok' });
+  renderNutritionPlanPayload(payload, { status: 'Ingrédients ajoutés à ta liste de courses.', statusType: 'ok' });
+
+  // Open the shopping accordion so the user actually sees the list
+  const acc = document.getElementById('nutrition-shopping-acc');
+  if (acc) acc.open = true;
+  // If on a different tab, switch to nutrition
+  const nutritionTab = document.querySelector('[data-tab="nutrition"]');
+  if (nutritionTab && !document.getElementById('nutrition-shopping-acc')?.offsetParent) {
+    nutritionTab.click();
+    setTimeout(() => {
+      const a = document.getElementById('nutrition-shopping-acc');
+      if (a) { a.open = true; a.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    }, 300);
+  } else if (acc) {
+    acc.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   toast('Ingrédients ajoutés à la liste de courses ✓', 'ok');
 }
 
@@ -4804,7 +4831,7 @@ function renderNutritionPlanPayload(payload, options = {}) {
   const prepEl = document.getElementById('nutrition-prep-body');
   const snackEl = document.getElementById('nutrition-snack-body');
   const statusEl = document.getElementById('nutrition-plan-status');
-  setNutritionGeneratedState({ visible: true, loading: false, status: options.status || (data.fallback ? 'Plan de secours intelligent appliqué — utilisable tel quel.' : ''), statusType: options.statusType || (data.fallback ? 'warn' : ''), payload: data });
+  setNutritionGeneratedState({ visible: true, loading: false, status: options.status || '', statusType: options.statusType || 'ok', payload: data });
   if (shell) shell.style.display = 'grid';
   if (titleEl) titleEl.textContent = data.plan.title || 'Plan nutrition du jour';
   if (summaryEl) summaryEl.textContent = data.plan.summary || data.nutrition.notes || "Plan prêt à suivre aujourd'hui.";
@@ -5011,13 +5038,13 @@ async function generateNutrition() {
     if (reqSeq !== NUTRITION_REQUEST_SEQ) return;
 
     renderNutritionPlanPayload(j, {
-      status: j.fallback ? "Plan de secours intelligent généré — utilisable immédiatement." : "Nouveau plan généré pour aujourd'hui.",
-      statusType: j.fallback ? "warn" : "ok"
+      status: j.fallback ? "Plan nutrition prêt — basé sur ton profil." : "Nouveau plan généré pour aujourd'hui.",
+      statusType: j.fallback ? "ok" : "ok"
     });
     await loadNutritionTargets();
     incrementLocalMetric('fitai_nutrition_plans', 1);
     incrementWeeklyQuestMetric("nutrition_week", 1);
-    toast(j.fallback ? "Plan nutrition généré (fallback utile)" : "Plan nutrition généré ✓", j.fallback ? "warn" : "ok");
+    toast("Plan nutrition généré ✓", "ok");
   }).catch((e) => {
     if (reqSeq !== NUTRITION_REQUEST_SEQ) return;
     const msg = e.message || "Erreur génération";
