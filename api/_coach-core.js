@@ -129,8 +129,13 @@ function detectIntent(message, responseMode) {
   // Meal plan: full day or week planning
   if (has("journée alimentaire", "planning repas", "planning alimentaire", "repas de la journée", "menu journée", "semaine alimentaire", "planifier mes repas", "manger toute la journée", "organisation repas")) return "meal_plan";
 
-  // Recipe detection
-  if (has("recette", "cuisine", "prépare-moi", "prepare moi", "fais-moi un plat", "comment cuisiner", "comment préparer")) return "recipe_request";
+  // Recipe detection — explicit keywords + common food names
+  if (has("recette", "cuisine", "prépare-moi", "prepare moi", "fais-moi un plat", "comment cuisiner", "comment préparer",
+      "fais-moi", "fais moi", "je veux faire", "je veux cuisiner", "je veux manger")) return "recipe_request";
+  if (has("pizza", "pâtes", "pasta", "risotto", "burger", "wrap", "bowl", "salade composée",
+      "omelette", "quiche", "pancake", "crêpe", "crepe", "smoothie", "porridge", "tartine",
+      "galette", "wok", "curry", "poulet", "saumon", "steak", "riz sauté", "soupe",
+      "boulette", "gratin", "lasagne", "tarte", "cake salé")) return "recipe_request";
 
   // Workout detection — broad
   if (has("programme", "entraînement", "entrainement", "séance", "seance", "workout", "hiit", "full body", "upper body", "lower body", "exercice", "routine", "split", "abs", "cardio", "musculation", "muscul")) return "workout_request";
@@ -543,41 +548,61 @@ async function generateMealPlan({ apiKey, message, profile, goalContext }) {
   }
 }
 
+function extractServings(message) {
+  const t = String(message || "").toLowerCase();
+  const m = t.match(/pour\s+(\d+)\s*(?:personnes?|couverts?|parts?)?/) ||
+            t.match(/\b(\d+)\s*(?:personnes?|couverts?|parts?)\b/);
+  if (m) return Math.min(12, Math.max(1, Number(m[1])));
+  return 2;
+}
+
 function buildRecipePrompt(message, profile, goalContext) {
   const p = makeProfileSummary(profile, goalContext);
+  const servings = extractServings(message);
   return `Tu es un chef cuisinier et nutritionniste sportif. Réponds UNIQUEMENT en JSON valide, sans markdown, sans texte avant ni après.
 
 Profil utilisateur:
 - Objectif fitness: ${p.goal}
 - Contraintes alimentaires: ${p.constraints}
 
-Demande de l'utilisateur:
-${message}
+Demande de l'utilisateur: ${message}
+Nombre de couverts: ${servings}
 
 RÈGLES ABSOLUES:
-1. Identifie tous les ingrédients mentionnés dans la demande et utilise-les TOUS dans les étapes
-2. Nomme chaque ingrédient spécifiquement dans chaque étape (ex: "Coupez le poulet en dés", pas "Préparez les protéines")
-3. Si les ingrédients semblent incohérents ou inhabituels ensemble, mentionne-le dans "tips" et propose quand même une recette originale qui les utilise
-4. Les étapes doivent être des instructions de cuisine précises avec températures, temps et techniques (ex: "Faites revenir l'oignon 3 min à feu moyen jusqu'à transparence")
+1. La recette est pour EXACTEMENT ${servings} personne${servings > 1 ? "s" : ""} — toutes les quantités doivent être adaptées
+2. Identifie tous les ingrédients mentionnés et utilise-les TOUS dans les étapes
+3. Nomme chaque ingrédient spécifiquement dans chaque étape avec la quantité (ex: "Étale 150 g de sauce tomate", pas "Ajoute la sauce")
+4. Les étapes doivent être des instructions précises avec températures, temps et techniques
 5. Minimum 5 étapes détaillées, maximum 8 étapes
-6. Les macros doivent correspondre réellement aux ingrédients mentionnés
+6. Les macros doivent correspondre aux ingrédients ET au nombre de couverts (calories par personne)
+7. ingredients_list: liste chaque ingrédient avec la quantité exacte pour ${servings} personne${servings > 1 ? "s" : ""}
 
-Format JSON exact (respecte exactement cette structure):
+Format JSON exact:
 {
-  "name": "Nom créatif du plat basé sur les vrais ingrédients",
+  "name": "Nom créatif du plat",
+  "servings": ${servings},
   "prep_time": "X min",
+  "ingredients_list": [
+    "Quantité précise Ingrédient 1 (pour ${servings} pers.)",
+    "Quantité précise Ingrédient 2",
+    "..."
+  ],
   "steps": [
-    "Étape 1 avec action précise + ingrédient nommé + temps/technique",
-    "Étape 2 avec action précise + ingrédient nommé + temps/technique",
-    "Étape 3...",
-    "Étape 4...",
-    "Étape 5..."
+    "Étape 1 avec ingrédient nommé + quantité + temps/technique",
+    "Étape 2...",
+    "..."
   ],
   "calories": 500,
   "protein": 35,
   "carbs": 45,
   "fat": 15,
-  "tips": "Conseil spécifique aux ingrédients utilisés (ou note si combo inhabituel)"
+  "tips": "Conseil spécifique",
+  "shopping_list": {
+    "title": "Courses pour la recette",
+    "categories": [
+      { "title": "Catégorie", "items": [{ "name": "Ingrédient", "qty": "quantité pour ${servings} pers." }] }
+    ]
+  }
 }`;
 }
 
@@ -713,22 +738,52 @@ Action du jour: Donne-moi ton contexte exact — temps dispo, matériel, fatigue
 
 function fallbackRecipe(message, profile = {}, goalContext = {}) {
   const p = makeProfileSummary(profile, goalContext);
-  const name = p.goal === "prise_de_masse" ? "Bol protéiné énergie" : p.goal === "perte_de_poids" ? "Assiette lean express" : "Repas fitness équilibré";
+  const s = extractServings(message);
+  const isMasse = p.goal === "prise_de_masse";
+  const isSeche = p.goal === "perte_de_poids";
+  const name = isMasse ? "Bol protéiné énergie" : isSeche ? "Assiette lean express" : "Repas fitness équilibré";
+  const protQty = `${150 * s} g`;
+  const glucQty = `${80 * s} g`;
+  const ingredients_list = [
+    `${protQty} de blanc de poulet ou filet de saumon`,
+    `${glucQty} de riz complet ou quinoa (poids sec)`,
+    `${s} poignée${s > 1 ? "s" : ""} de légumes (brocoli, courgette, poivron)`,
+    `${s} cuillère${s > 1 ? "s" : ""} à soupe d'huile d'olive`,
+    `Sel, poivre, herbes de Provence`
+  ];
+  const shopping_list = {
+    title: `Courses pour ${s} personne${s > 1 ? "s" : ""}`,
+    categories: [{
+      title: 'Protéines', items: [{ name: 'Blanc de poulet ou saumon', qty: `${150 * s} g` }]
+    }, {
+      title: 'Glucides', items: [{ name: 'Riz complet ou quinoa', qty: `${80 * s} g` }]
+    }, {
+      title: 'Légumes', items: [
+        { name: 'Brocoli', qty: `${100 * s} g` },
+        { name: 'Courgette ou poivron', qty: `${s} unité${s > 1 ? "s" : ""}` }
+      ]
+    }, {
+      title: 'Épicerie', items: [{ name: 'Huile d\'olive', qty: `${s} c. à soupe` }]
+    }]
+  };
   return {
     name,
+    servings: s,
     prep_time: "15 min",
+    ingredients_list,
     steps: [
-      "Prépare une source de protéines maigres et fais-la cuire 6 à 8 minutes à feu moyen.",
-      "Fais chauffer la base glucidique choisie et garde une portion adaptée à ton objectif du jour.",
-      "Ajoute les légumes et cuis-les 3 à 5 minutes pour garder du croquant.",
-      "Incorpore une petite source de bons lipides puis assaisonne simplement avec herbes, sel et poivre.",
-      "Dresse l'assiette et ajuste la portion selon ta faim réelle et la difficulté de ta séance."
+      `Assaisonne ${protQty} de protéines avec sel, poivre et herbes, puis fais-les cuire 6 à 8 min à feu moyen dans une poêle avec un filet d'huile.`,
+      `Lance ${glucQty} de riz complet dans de l'eau bouillante salée (ratio 1:2) et fais cuire 12 min.`,
+      `Coupe les légumes en morceaux réguliers et fais-les sauter 4 à 5 min à feu vif jusqu'à coloration.`,
+      `Incorpore une cuillère d'huile d'olive sur les légumes, assaisonne et mélange bien.`,
+      `Dresse dans ${s > 1 ? "les assiettes" : "l'assiette"} : base de riz, légumes, protéine par-dessus. Sers immédiatement.`
     ],
-    calories: p.goal === "prise_de_masse" ? 700 : p.goal === "perte_de_poids" ? 450 : 550,
-    protein: p.goal === "prise_de_masse" ? 45 : 40,
-    carbs: p.goal === "perte_de_poids" ? 30 : 55,
-    fat: p.goal === "prise_de_masse" ? 22 : 16,
-    tips: "Ajoute 25 à 35 g de protéines par repas pour sécuriser la récupération."
+    calories: isMasse ? 700 : isSeche ? 450 : 550,
+    protein: isMasse ? 45 : 40,
+    carbs: isSeche ? 30 : 55,
+    fat: isMasse ? 22 : 16,
+    tips: `Adapte les quantités : pour ${s} personne${s > 1 ? "s" : ""}, compte environ 150 g de protéines et 80 g de glucides secs par personne.`,
+    shopping_list
   };
 }
 
@@ -949,10 +1004,16 @@ async function generateConversationReply({ apiKey, intent, message, history, pro
 
 async function generateRecipeJson({ apiKey, message, profile, goalContext }) {
   const prompt = buildRecipePrompt(message, profile, goalContext);
+  const servings = extractServings(message);
   try {
-    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1000, timeoutMs: 8000, retries: 1 });
+    const result = await generateWithRetry(apiKey, prompt, { temperature: 0.35, maxOutputTokens: 1200, timeoutMs: 8000, retries: 1 });
     const parsed = extractJSON(result.text);
     if (!parsed || !parsed.name) throw new Error("INVALID_RECIPE_JSON");
+    if (!parsed.servings) parsed.servings = servings;
+    // Build shopping_list from ingredients_list if AI didn't provide it
+    if (!parsed.shopping_list && Array.isArray(parsed.ingredients_list)) {
+      parsed.shopping_list = { title: 'Courses recette', categories: [{ title: 'Ingrédients', items: parsed.ingredients_list.map(n => ({ name: n, qty: '' })) }] };
+    }
     return { ok: true, data: parsed, model: result.model, fallback: false };
   } catch (error) {
     return { ok: true, data: fallbackRecipe(message, profile, goalContext), fallback: true, error: String(error?.message || "generation_failed"), degraded_reason: "fallback_fast" };

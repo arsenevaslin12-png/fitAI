@@ -255,38 +255,61 @@ function fallbackRecipe(requestText, goal, targetKcal, servings = 2, recipeStyle
   }
 
   if (/pizza/.test(text)) {
+    const mozz = s * 125;
+    const prot = s * 100;
+    const sauce = s * 3;
     return {
-      name: "Pizza maison healthy base légère",
-      healthy_twist: "Base fine et croustillante, sauce tomate maison sans sucre ajouté, garnie de légumes et d'une source de protéines maigres.",
+      name: `Pizza maison healthy${s > 1 ? ` (${s} personnes)` : ""}`,
+      healthy_twist: "Base fine et croustillante, sauce tomate maison sans sucre ajouté, garnie de légumes et de protéines maigres.",
       ingredients_list: [
-        "1 pâte à pizza fine (ou wrap tortilla grande)",
-        "3 cuillères à soupe de sauce tomate nature",
-        "1 boule de mozzarella légère (125 g) ou 60 g de mozzarella light",
-        "100 g de poulet grillé en lanières (ou thon au naturel)",
-        "1/2 poivron rouge en lamelles",
-        "1/4 courgette en rondelles fines",
-        "1 poignée de roquette (ajoutée après cuisson)",
-        "Origan, basilic, poivre noir, filet d'huile d'olive"
+        `${s} pâte${s > 1 ? "s" : ""} à pizza fine (ou ${s} grand${s > 1 ? "s" : ""} wrap tortilla)`,
+        `${sauce} cuillères à soupe de sauce tomate nature`,
+        `${mozz} g de mozzarella légère`,
+        `${prot} g de poulet grillé en lanières (ou thon au naturel)`,
+        `${s > 1 ? s : "1/2"} poivron rouge en lamelles`,
+        `${s > 1 ? s : "1/4"} courgette en rondelles fines`,
+        `${s} poignée${s > 1 ? "s" : ""} de roquette (ajoutée après cuisson)`,
+        `Origan, basilic, poivre noir, filet d'huile d'olive`
       ],
       steps: [
-        "Préchauffe le four à 220°C chaleur tournante (ou 240°C conventionnel). Pose la base sur une grille ou plaque huilée.",
-        "Étale la sauce tomate sur la base en laissant 2 cm de bord libre. Assaisonne avec origan, poivre et une pincée de sel.",
-        "Répartis la mozzarella émiettée en petits morceaux uniformément sur la sauce.",
-        "Dispose les lamelles de poulet (ou thon égoutté), les rondelles de courgette et les lamelles de poivron.",
-        "Enfourne 10 à 13 minutes: la pâte doit être dorée et croustillante, la mozzarella fondue et légèrement colorée.",
-        "Sors du four, ajoute la roquette fraîche, un filet d'huile d'olive et sers immédiatement."
+        `Préchauffe le four à 220 °C chaleur tournante. Prépare ${s > 1 ? `les ${s} bases` : "la base"} sur une grille huilée.`,
+        `Étale ${sauce} c. à soupe de sauce tomate sur ${s > 1 ? "chaque base" : "la base"} en laissant 2 cm de bord. Assaisonne avec origan et poivre.`,
+        `Répartis ${mozz} g de mozzarella émiettée uniformément sur la sauce.`,
+        `Dispose ${prot} g de poulet en lanières (ou thon égoutté), les rondelles de courgette et les lamelles de poivron.`,
+        `Enfourne 10 à 13 min : la pâte doit être dorée et croustillante, la mozzarella fondue et légèrement colorée.`,
+        `Sors du four, ajoute la roquette fraîche et un filet d'huile d'olive. Sers immédiatement.`
       ],
-      prep_time: "20 min",
+      prep_time: s > 2 ? "25 min" : "20 min",
       servings: s,
       best_for: "Déjeuner ou dîner",
-      batch_prep: "Prépare 2 pizzas en même temps et emballe la deuxième pour le lendemain.",
+      batch_prep: s < 3 ? "Prépare 2 pizzas en même temps et emballe la seconde pour le lendemain." : "Enfourne toutes les pizzas en même temps si ton four le permet.",
       calories: kcal,
       protein: proteinBase + 8,
       carbs: Math.max(30, Math.round(kcal * 0.42 / 4)),
       fat: Math.max(10, Math.round(kcal * 0.25 / 9)),
-      tips: "Pour une base encore plus légère, remplace la pâte par un grand wrap tortilla : croustillant garantit en 8 min au four.",
+      tips: `Pour ${s} personne${s > 1 ? "s" : ""} : compte 1 pâte, ${mozz / s} g de mozzarella et ${prot / s} g de protéines par personne. Ajuste selon l'appétit.`,
       coach_note: "Cette pizza couvre bien les macros d'un repas principal tout en restant bien en dessous d'une pizza classique.",
-      shopping_list: buildRecipeShoppingList(["1 pâte à pizza fine", "sauce tomate", "mozzarella légère", "100 g de poulet grillé", "poivron", "courgette", "roquette", "huile d'olive"])
+      shopping_list: {
+        title: `Courses pizza — ${s} personne${s > 1 ? "s" : ""}`,
+        categories: [
+          { title: "Base", items: [
+            { name: `Pâte à pizza fine`, qty: `${s} unité${s > 1 ? "s" : ""}` },
+            { name: "Sauce tomate nature", qty: `${Math.ceil(sauce / 3)} boîte${sauce > 3 ? "s" : ""}` }
+          ]},
+          { title: "Protéines", items: [
+            { name: "Poulet grillé (ou thon)", qty: `${prot} g` }
+          ]},
+          { title: "Fromage", items: [
+            { name: "Mozzarella légère", qty: `${mozz} g` }
+          ]},
+          { title: "Légumes & herbes", items: [
+            { name: "Poivron rouge", qty: `${s} unité${s > 1 ? "s" : ""}` },
+            { name: "Courgette", qty: `${s} petite${s > 1 ? "s" : ""}` },
+            { name: "Roquette", qty: `${s * 20} g` },
+            { name: "Origan, basilic séché", qty: "1 bocal" }
+          ]}
+        ]
+      }
     };
   }
 
@@ -936,7 +959,13 @@ module.exports = async function handler(req, res) {
   };
   const { ok: bodyOk, data: body } = validateBody(RecipeBodySchema, normalizedBody, res);
   if (!bodyOk) return;
-  const { ingredients, goal, targetKcal, servings, recipeStyle } = body;
+  let { ingredients, goal, targetKcal, servings, recipeStyle } = body;
+  // Auto-extract servings from text if user typed "pizza pour 3" in the ingredients field
+  if (!servings || servings === 2) {
+    const m = String(ingredients || "").toLowerCase().match(/pour\s+(\d+)\s*(?:personnes?|couverts?|parts?)?/) ||
+              String(ingredients || "").toLowerCase().match(/\b(\d+)\s*(?:personnes?|couverts?|parts?)\b/);
+    if (m) servings = Math.min(12, Math.max(1, Number(m[1])));
+  }
 
   if (!ingredients) {
     return sendJson(res, 400, {

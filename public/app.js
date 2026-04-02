@@ -1344,20 +1344,35 @@ async function sendCoachMsg(quickMsg) {
       renderPlan(PLAN);
     } else if (j.type === "recipe" && j.data) {
       const r = j.data;
+      // Store so "Ajouter aux courses" works from the coach chat
+      window._lastRecipe = r;
+      window._lastRecipes = [r];
+      const coachRecipeIdx = 0;
       let html = `<div class="coach-card-head"><span class="coach-card-kicker">Recette</span><strong>${escapeHtml(r.name || 'Recette coach')}</strong></div>`;
-      if (r.calories || r.protein) {
-        html += `<div class="coach-mini-pills">${[
-          r.calories ? `🔥 ${r.calories} kcal` : '',
-          r.protein ? `💪 ${r.protein}g prot.` : '',
-          r.prep_time ? `⏱ ${r.prep_time}` : ''
-        ].filter(Boolean).map(p => `<span class="coach-mini-pill">${escapeHtml(p)}</span>`).join('')}</div>`;
+      const pills = [
+        r.servings ? `👥 ${r.servings} pers.` : '',
+        r.calories ? `🔥 ${r.calories} kcal/pers.` : '',
+        r.protein ? `💪 ${r.protein}g prot.` : '',
+        r.prep_time ? `⏱ ${r.prep_time}` : ''
+      ].filter(Boolean);
+      if (pills.length) html += `<div class="coach-mini-pills">${pills.map(p => `<span class="coach-mini-pill">${escapeHtml(p)}</span>`).join('')}</div>`;
+      if (Array.isArray(r.ingredients_list) && r.ingredients_list.length) {
+        html += `<div style="margin:10px 0 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Ingrédients</div>`;
+        html += `<div class="coach-mini-pills" style="flex-wrap:wrap">`;
+        r.ingredients_list.forEach(ing => { html += `<span class="coach-mini-pill">${escapeHtml(ing)}</span>`; });
+        html += `</div>`;
       }
       if (Array.isArray(r.steps) && r.steps.length) {
+        html += `<div style="margin:10px 0 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Préparation</div>`;
         html += '<ol class="coach-list">';
-        r.steps.slice(0, 5).forEach(step => { html += `<li>${escapeHtml(step)}</li>`; });
+        r.steps.forEach(step => { html += `<li>${escapeHtml(step)}</li>`; });
         html += '</ol>';
       }
       if (r.tips) html += `<div class="coach-inline-tip">💡 ${escapeHtml(r.tips)}</div>`;
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+        <button class="btn btn-g btn-sm btn-full" onclick="addRecipeToNutritionShoppingList(${coachRecipeIdx})">🛒 Ajouter aux courses</button>
+        <button class="btn btn-p btn-sm btn-full" onclick="addRecipeAsMeal(${coachRecipeIdx})">➕ Ajouter comme repas</button>
+      </div>`;
       html += fallbackBadge;
       COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
     } else {
