@@ -1542,10 +1542,40 @@ function _buildAnimFigure(key, accent2) {
   const mk = (attr, a, b) => (String(a) === String(b)) ? '' :
     `<animate attributeName="${attr}" values="${a};${b};${a}" dur="${dur}" repeatCount="indefinite" calcMode="spline" keySplines="${ks}"/>`;
 
-  const head = `<circle cx="${hAx}" cy="${hAy}" r="22" fill="url(#skin)" stroke="rgba(255,255,255,.75)" stroke-width="1.2">${mk('cx',hAx,hBx)}${mk('cy',hAy,hBy)}</circle>`;
+  // Extract start/end coords from a path string "M x y Q ..."
+  const pStart = (d) => { const m = String(d||'').match(/M\s*([\d.-]+)\s+([\d.-]+)/); return m ? [+m[1],+m[2]] : null; };
+  const pEnd   = (d) => { const nums = (String(d||'').match(/-?[\d.]+/g)||[]); return nums.length >= 2 ? [+nums[nums.length-2],+nums[nums.length-1]] : null; };
+
+  // Animated circle helper (joint, foot, hand)
+  const dot = (ax,ay,bx,by,r,fill,stroke,sw=1.5) =>
+    (ax == null || bx == null) ? '' :
+    `<circle cx="${ax}" cy="${ay}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}">${mk('cx',ax,bx)}${mk('cy',ay,by)}</circle>`;
+
+  // Joint positions
+  const [leAx,leAy] = pStart(fr.a.l[1]) || [0,0];  const [leBx,leBy] = pStart(fr.b.l[1]) || [leAx,leAy];  // L elbow
+  const [reAx,reAy] = pStart(fr.a.l[3]) || [0,0];  const [reBx,reBy] = pStart(fr.b.l[3]) || [reAx,reAy];  // R elbow
+  const [lkAx,lkAy] = pStart(fr.a.l[5]) || [0,0];  const [lkBx,lkBy] = pStart(fr.b.l[5]) || [lkAx,lkAy];  // L knee
+  const [rkAx,rkAy] = pStart(fr.a.l[7]) || [0,0];  const [rkBx,rkBy] = pStart(fr.b.l[7]) || [rkAx,rkAy];  // R knee
+  const lfA = pEnd(fr.a.l[5]);  const lfB = pEnd(fr.b.l[5]) || lfA;  // L foot
+  const rfA = pEnd(fr.a.l[7]);  const rfB = pEnd(fr.b.l[7]) || rfA;  // R foot
+  const lwA = pEnd(fr.a.l[1]);  const lwB = pEnd(fr.b.l[1]) || lwA;  // L wrist
+  const rwA = pEnd(fr.a.l[3]);  const rwB = pEnd(fr.b.l[3]) || rwA;  // R wrist
+
+  // Limbs — left side slightly lighter, right side white, legs wider
+  const colL = "rgba(255,255,255,.58)";
+  const colR = "#f0f9ff";
+  const strokes = [colL,colL,colR,colR, colL,colL,colR,colR];
+  const widths  = ["8","7","8","7","10","9","10","9"];
+  const limbs = fr.a.l.map((dA, i) => {
+    const dB = fr.b.l[i];
+    if (!dB) return `<path d="${dA}" stroke="${strokes[i]}" stroke-width="${widths[i]}" stroke-linecap="round" fill="none"/>`;
+    return `<path d="${dA}" stroke="${strokes[i]}" stroke-width="${widths[i]}" stroke-linecap="round" fill="none">${mk('d',dA,dB)}</path>`;
+  }).join('');
+
+  // Torso
   const torso = `<path d="${fr.a.t}" fill="url(#skin)" opacity=".98">${mk('d',fr.a.t,fr.b.t)}</path>`;
 
-  // Collar accent only for upright exercises
+  // Collar accent
   let collar = '';
   if (key !== 'push' && key !== 'core') {
     const colA = `M${hAx-14} ${hAy+26} Q${hAx} ${hAy+18} ${hAx+14} ${hAy+26}`;
@@ -1553,15 +1583,28 @@ function _buildAnimFigure(key, accent2) {
     collar = `<path d="${colA}" fill="none" stroke="${accent2}" stroke-width="2.4" opacity=".9">${mk('d',colA,colB)}</path>`;
   }
 
-  const strokes = ["rgba(255,255,255,.62)","rgba(255,255,255,.62)","#f8fafc","#f8fafc",
-                   "rgba(255,255,255,.62)","rgba(255,255,255,.62)","#f8fafc","#f8fafc"];
-  const widths  = ["8","7","8","7","9","8","9","8"];
-  const limbs = fr.a.l.map((dA, i) => {
-    const dB = fr.b.l[i];
-    return `<path d="${dA}" stroke="${strokes[i]}" stroke-width="${widths[i]}" stroke-linecap="round" fill="none">${mk('d',dA,dB)}</path>`;
-  }).join('');
+  // Head (on top of torso)
+  const head = `<circle cx="${hAx}" cy="${hAy}" r="22" fill="url(#skin)" stroke="rgba(255,255,255,.75)" stroke-width="1.5">${mk('cx',hAx,hBx)}${mk('cy',hAy,hBy)}</circle>`;
+  // Face dot — gives a human feel
+  const faceAx = hAx + 6, faceAy = hAy + 4, faceBx = hBx + 6, faceBy = hBy + 4;
+  const face = `<circle cx="${faceAx}" cy="${faceAy}" r="3.5" fill="rgba(30,41,59,.5)">${mk('cx',faceAx,faceBx)}${mk('cy',faceAy,faceBy)}</circle>`;
 
-  return head + torso + collar + limbs;
+  // Joints — elbow, knee (rendered on top of limbs)
+  const elbowL = dot(leAx,leAy,leBx,leBy, 5.5, '#e2e8f0', 'rgba(255,255,255,.45)');
+  const elbowR = dot(reAx,reAy,reBx,reBy, 5.5, '#e2e8f0', 'rgba(255,255,255,.45)');
+  const kneeL  = dot(lkAx,lkAy,lkBx,lkBy, 6.5, '#e2e8f0', 'rgba(255,255,255,.45)');
+  const kneeR  = dot(rkAx,rkAy,rkBx,rkBy, 6.5, '#e2e8f0', 'rgba(255,255,255,.45)');
+
+  // Feet — colored with accent, stands out
+  const footL = lfA ? dot(lfA[0],lfA[1], lfB[0],lfB[1], 8.5, `${accent2}44`, `${accent2}bb`, 2) : '';
+  const footR = rfA ? dot(rfA[0],rfA[1], rfB[0],rfB[1], 8.5, `${accent2}44`, `${accent2}bb`, 2) : '';
+
+  // Hands — small neutral dots
+  const handL = lwA ? dot(lwA[0],lwA[1], lwB[0],lwB[1], 5.5, 'rgba(255,255,255,.4)', 'rgba(255,255,255,.5)') : '';
+  const handR = rwA ? dot(rwA[0],rwA[1], rwB[0],rwB[1], 5.5, 'rgba(255,255,255,.4)', 'rgba(255,255,255,.5)') : '';
+
+  // Render: limbs behind torso, joints/hands/feet on top
+  return limbs + torso + collar + head + face + elbowL + elbowR + kneeL + kneeR + footL + footR + handL + handR;
 }
 
 // (legacy stub kept for reference — replaced by _EX_FRAMES)
@@ -8049,8 +8092,8 @@ const PROG_WEEK_NOTES = [
   { theme:"Test de force final",     focus:"Teste tes maxima sur les 2-3 composés principaux. Compare avec ta semaine 1. Fais le bilan complet du cycle.", cue:"Montre tout ce que 8 semaines t'ont construit." }
 ];
 
-const PROG_PHASE_EX_COUNT = [5, 6, 7, 4, 5, 5, 4, 3];
-// S1:5 (learn patterns) S2:6 S3:7 (max vol) S4:4 (deload) S5:5 S6:5 S7:4 (power quality) S8:3 (test max)
+const PROG_PHASE_EX_COUNT = [6, 7, 8, 4, 6, 6, 5, 4];
+// S1:6 (apprentissage) S2:7 S3:8 (volume max) S4:4 (deload) S5:6 S6:6 S7:5 (puissance) S8:4 (test force)
 
 const PROG_PHASE_TEMPO = [
   "3-1-2 (lent)", "3-0-1", "2-0-1", "3-1-2 (récup)", "2-1-1", "2-0-1", "1-0-X (explosif)", "max"
@@ -8190,53 +8233,83 @@ const PROG_EXERCISES = {
     { n:"Single leg deadlift",         m:"Ischios/Fessiers",pool:"B" },
   ],
   fullbody: [
-    { n:"Squat poids de corps",        m:"Jambes" },
-    { n:"Pompes",                      m:"Pecs/Triceps" },
-    { n:"Inverted row sous table",     m:"Dos/Biceps" },
-    { n:"Fentes avant",                m:"Jambes/Fessiers" },
-    { n:"Planche",                     m:"Core", r:"30-45s" },
-    { n:"Pompes pike",                 m:"Épaules/Triceps" },
-    { n:"Good morning poids de corps", m:"Dos/Jambes" },
-    { n:"Hollow body hold",            m:"Core/Abdos", r:"20-30s" },
-    { n:"Dips sur chaise",             m:"Triceps" },
+    // Pool A — push dominant + hinge
+    { n:"Squat poids de corps",           m:"Jambes",              pool:"A" },
+    { n:"Pompes",                          m:"Pecs/Triceps",        pool:"A" },
+    { n:"Fentes avant",                    m:"Jambes/Fessiers",     pool:"A" },
+    { n:"Planche",                         m:"Core",      r:"30-45s",pool:"A" },
+    { n:"Hip thrust au sol",               m:"Fessiers",            pool:"A" },
+    { n:"Pompes pike",                     m:"Épaules/Triceps",     pool:"A" },
+    { n:"Good morning poids de corps",     m:"Dos/Jambes",          pool:"A" },
+    { n:"Dips sur chaise",                 m:"Triceps",             pool:"A" },
+    { n:"Hollow body hold",                m:"Core/Abdos", r:"20-30s",pool:"A" },
+    // Pool B — pull dominant + cardio
+    { n:"Squat bulgare chaise",            m:"Quadriceps/Fessiers", pool:"B" },
+    { n:"Pompes inclinées (pieds hauts)",  m:"Pecs haut",           pool:"B" },
+    { n:"Inverted row sous table",         m:"Dos/Biceps",          pool:"B" },
+    { n:"Mountain climbers",               m:"Core/Cardio", r:"30s", pool:"B" },
+    { n:"Nordic curl assisté",             m:"Ischios",             pool:"B" },
+    { n:"Pompes diamant",                  m:"Triceps/Pecs",        pool:"B" },
+    { n:"Bird dog",                        m:"Core/Lombaires",      pool:"B" },
+    { n:"Gainage latéral",                 m:"Obliques",  r:"25-35s",pool:"B" },
+    { n:"Squat sauté",                     m:"Jambes/Cardio",       pool:"B" },
   ],
   hiit: [
-    { n:"Burpees",                     m:"Full body",   r:"20s ×8 (Tabata)" },
-    { n:"Mountain climbers",           m:"Core/Cardio", r:"30s effort / 10s récup" },
-    { n:"Jump squats",                 m:"Jambes",      r:"30s / 15s repos" },
-    { n:"Planche dynamique",           m:"Core",        r:"40s / 20s repos" },
-    { n:"Montées de genoux",           m:"Cardio",      r:"30s sprint" },
-    { n:"Corde à sauter (simulation)", m:"Cardio",      r:"1 min" },
-    { n:"Sprint en place",             m:"Cardio",      r:"20s max / 10s" },
-    { n:"Box jumps (squat sauté)",     m:"Jambes/Cardio",r:"8 reps explosif" },
-    { n:"Pompes explosives",           m:"Pecs/Cardio", r:"15s max" },
+    // Pool A — Tabata-style
+    { n:"Burpees",                     m:"Full body",    r:"20s ×8", pool:"A" },
+    { n:"Mountain climbers",           m:"Core/Cardio",  r:"30s / 10s", pool:"A" },
+    { n:"Jump squats",                 m:"Jambes",       r:"30s / 15s", pool:"A" },
+    { n:"Pompes explosives",           m:"Pecs/Cardio",  r:"15s max",   pool:"A" },
+    { n:"Montées de genoux",           m:"Cardio",       r:"30s sprint",pool:"A" },
+    { n:"Box jumps (squat sauté)",     m:"Jambes/Cardio",r:"8 reps",    pool:"A" },
+    { n:"Sprint en place",             m:"Cardio",       r:"20s / 10s", pool:"A" },
+    // Pool B — AMRAP-style
+    { n:"Planche dynamique",           m:"Core",         r:"40s / 20s", pool:"B" },
+    { n:"Corde à sauter (simulation)", m:"Cardio",       r:"1 min",     pool:"B" },
+    { n:"Burpee modifié (sans saut)",  m:"Full body",    r:"40s",       pool:"B" },
+    { n:"Fentes sautées alternées",    m:"Jambes/Cardio",r:"30s",       pool:"B" },
+    { n:"Pompes + rotation",           m:"Pecs/Épaules", r:"10 reps",   pool:"B" },
+    { n:"Skater jumps",                m:"Jambes/Cardio",r:"30s",       pool:"B" },
+    { n:"Hollow rock",                 m:"Core",         r:"20 reps",   pool:"B" },
   ],
   cardio: [
-    { n:"Course / marche rapide",      m:"Cardio",      r:"35 min zone 2 (FC 130-150)" },
+    { n:"Course / marche rapide",      m:"Cardio",      r:"35 min zone 2" },
     { n:"Vélo / elliptique",           m:"Cardio",      r:"30 min cadence stable" },
     { n:"Natation",                    m:"Cardio",      r:"20-30 min" },
     { n:"Rameur",                      m:"Cardio/Dos",  r:"20 min intervalles" },
     { n:"Marche nordique",             m:"Cardio",      r:"45 min" },
+    { n:"Corde à sauter",              m:"Cardio",      r:"15-20 min" },
+    { n:"Vélo HIIT",                   m:"Cardio",      r:"8× (30s sprint / 30s récup)" },
   ],
   core: [
-    { n:"Planche avant",               m:"Core",        r:"3× 30-60s" },
-    { n:"Crunchs bicycle",             m:"Obliques",    r:"3× 20 reps" },
-    { n:"Hollow body hold",            m:"Core",        r:"3× 30s" },
-    { n:"Bird dog",                    m:"Core/Stabilisateurs", r:"3× 10/côté" },
-    { n:"Gainage latéral",             m:"Obliques",    r:"3× 30s/côté" },
-    { n:"Russian twist haltère",       m:"Obliques",    r:"3× 15/côté" },
-    { n:"Dead bug",                    m:"Core",        r:"3× 10/côté" },
-    { n:"Ab wheel rollout",            m:"Core",        r:"3× 8-12 reps" },
+    // Pool A — planches + gainage
+    { n:"Planche avant",               m:"Core",        r:"30-60s",  pool:"A" },
+    { n:"Crunchs bicycle",             m:"Obliques",                 pool:"A" },
+    { n:"Hollow body hold",            m:"Core",        r:"20-30s",  pool:"A" },
+    { n:"Bird dog",                    m:"Core/Stabilisateurs",      pool:"A" },
+    { n:"Gainage latéral",             m:"Obliques",    r:"30s/côté",pool:"A" },
+    { n:"Ab wheel rollout",            m:"Core",                     pool:"A" },
+    // Pool B — crunchs + rotation
+    { n:"Russian twist",               m:"Obliques",                 pool:"B" },
+    { n:"Dead bug",                    m:"Core",                     pool:"B" },
+    { n:"Crunch inversé",              m:"Abdos bas",                pool:"B" },
+    { n:"Planche avec toucher épaule", m:"Core/Épaules",             pool:"B" },
+    { n:"Mountain climbers lents",     m:"Core/Cardio", r:"30s",     pool:"B" },
+    { n:"Scissors (ciseaux couchés)",  m:"Abdos bas",                pool:"B" },
   ],
   mobilite: [
-    { n:"Pigeon yoga (hanche)",        m:"Hanches",     r:"90s/côté" },
-    { n:"Étirement quadriceps debout", m:"Quadriceps",  r:"60s/côté" },
-    { n:"Cat-cow rachis",              m:"Dos",         r:"10 cycles lents" },
-    { n:"Foam roller thoracique",      m:"Haut du dos", r:"2 min" },
-    { n:"Hip flexors — fente basse",   m:"Hanches/Psoas",r:"90s/côté" },
-    { n:"Étirement pectoraux porte",   m:"Pecs/Épaules",r:"60s" },
-    { n:"Thread the needle rotation",  m:"Dos/Épaules", r:"8/côté" },
-    { n:"Squat profond 90-90",         m:"Hanches/Mollets",r:"2 min" },
+    // Pool A — hanches et bas du dos
+    { n:"Pigeon yoga (hanche)",        m:"Hanches",     r:"90s/côté", pool:"A" },
+    { n:"Cat-cow rachis",              m:"Dos",         r:"10 cycles",pool:"A" },
+    { n:"Hip flexors — fente basse",   m:"Hanches/Psoas",r:"90s/côté",pool:"A" },
+    { n:"Thread the needle rotation",  m:"Dos/Épaules", r:"8/côté",  pool:"A" },
+    { n:"Squat profond 90-90",         m:"Hanches/Mollets",r:"2 min",  pool:"A" },
+    // Pool B — haut du corps et mollets
+    { n:"Étirement quadriceps debout", m:"Quadriceps",  r:"60s/côté", pool:"B" },
+    { n:"Foam roller thoracique",      m:"Haut du dos", r:"2 min",    pool:"B" },
+    { n:"Étirement pectoraux porte",   m:"Pecs/Épaules",r:"60s",      pool:"B" },
+    { n:"World's greatest stretch",    m:"Corps entier",r:"6/côté",   pool:"B" },
+    { n:"Relâchement ischio debout",   m:"Ischios",     r:"60s/côté", pool:"B" },
   ],
   rest: []
 };
