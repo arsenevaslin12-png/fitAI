@@ -167,6 +167,7 @@ function sendJson(res, status, payload) {
 }
 
 const { checkRateLimit, getIp } = require("./_coach-core");
+const { createClient } = require("@supabase/supabase-js");
 
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -174,6 +175,21 @@ module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
   if (req.method !== "POST") { res.statusCode = 405; return res.end(); }
+
+  // Auth check — require valid Supabase Bearer token
+  const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return sendJson(res, 401, { ok: false, error: "Bearer token requis" });
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+      const { data: { user }, error } = await sb.auth.getUser(token);
+      if (error || !user) return sendJson(res, 401, { ok: false, error: "Token invalide" });
+    } catch {
+      return sendJson(res, 401, { ok: false, error: "AUTH_FAILED" });
+    }
+  }
 
   const limit = checkRateLimit("analyze-food", getIp(req), 20, 60_000);
   if (!limit.ok) {

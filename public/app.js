@@ -800,8 +800,8 @@ function selectMood(btn, level) {
     const today = new Date().toISOString().slice(0, 10);
     SB.from("daily_moods")
       .upsert({ user_id: U.id, mood_level: level, mood_label: label, date: today }, { onConflict: "user_id,date" })
-      .then(({ error }) => { if (error) console.warn("[mood] save failed:", error.message); })
-      .catch((err) => console.warn("[mood] promise rejected:", err));
+      .then(({ error }) => { if (error) { console.warn("[mood] save failed:", error.message); toast("Humeur non sauvegardée — vérifie ta connexion.", "err"); } })
+      .catch((err) => { console.warn("[mood] promise rejected:", err); toast("Humeur non sauvegardée.", "err"); });
   }
 }
 
@@ -1992,7 +1992,7 @@ async function loadHistory() {
       return;
     }
     el.innerHTML = `<div class="sessions-list">${data.map((s) => {
-      const d = new Date(s.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+      const d = safeDate(s.created_at, { day: "numeric", month: "short" });
       const exCount = s.plan?.exercises?.length || 0;
       const dur = s.plan?.duration ? `${s.plan.duration} min` : "";
       const metaParts = [d];
@@ -3197,7 +3197,7 @@ function renderBodyScanCard(scan, imageUrl) {
     ? { strengths: extStrengths, improvements: extImprovements, recommendations: [], overview: "" }
     : parseScanFeedback(scan.ai_feedback || "");
   const physScore = Number(scan.physical_score || 0);
-  const date = new Date(scan.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  const date = safeDate(scan.created_at, { day: "numeric", month: "long", year: "numeric" });
   const level = bodyScanLevelMeta(physScore);
   const confidence = bodyScanConfidenceMeta(ext);
   const verdict = bodyScanVerdict(ext, physScore);
@@ -3320,7 +3320,7 @@ async function loadScans() {
     _scanCompareIds = [];
 
     el.innerHTML = data.map((scan) => {
-      const date = new Date(scan.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+      const date = safeDate(scan.created_at, { day: "numeric", month: "long", year: "numeric" });
       if (!scan.ai_feedback) return renderPendingScan(scan, date);
       return renderBodyScanCard(scan, scanImageUrls[scan.id]);
     }).join('<div style="height:16px"></div>');
@@ -3389,8 +3389,8 @@ function _renderScanCompare(before, urlB, after, urlA) {
   const delta = sA - sB;
   const deltaSign = delta > 0 ? '+' : '';
   const deltaColor = delta > 0 ? '#4ade80' : delta < 0 ? '#f87171' : '#94a3b8';
-  const dateB = new Date(before.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
-  const dateA = new Date(after.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+  const dateB = safeDate(before.created_at, { day: "numeric", month: "short", year: "numeric" });
+  const dateA = safeDate(after.created_at, { day: "numeric", month: "short", year: "numeric" });
   const levB = bodyScanLevelMeta(sB); const levA = bodyScanLevelMeta(sA);
   const extB = before.extended_analysis || {}; const extA = after.extended_analysis || {};
 
@@ -4097,6 +4097,11 @@ function escapeHtml(value) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function safeDate(str, opts) {
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? "récemment" : d.toLocaleDateString("fr-FR", opts);
 }
 
 let toastTimer;
@@ -5941,7 +5946,7 @@ async function loadProgress() {
   if (sessHead) sessHead.textContent = sessions.length + " seances total";
 
   var scanData = scans.filter(function(s) { return s.physical_score > 0; }).map(function(s) {
-    return { value: s.physical_score, label: new Date(s.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) };
+    return { value: s.physical_score, label: safeDate(s.created_at, { day: "numeric", month: "short" }) };
   });
   var scanEl   = document.getElementById("chart-scan-svg");
   var scanHead = document.getElementById("chart-scan-headline");
@@ -6064,7 +6069,7 @@ function applyTheme(mode) {
   var label = document.getElementById("theme-label");
   if (icon)  icon.textContent  = isLight ? "☀️" : "🌙";
   if (label) label.textContent = isLight ? "Mode clair" : "Mode sombre";
-  localStorage.setItem("fitai_theme", mode);
+  try { localStorage.setItem("fitai_theme", mode); } catch {}
 }
 
 function toggleTheme() {
@@ -8725,6 +8730,9 @@ function progStartWorkout(dayIdx) {
   const shuffled = _seededShuffle(base, seed);
   const exCount = PROG_PHASE_EX_COUNT[(_progWeek || 1) - 1] || 5;
   const exList = shuffled.slice(0, exCount);
+  if (!exList || exList.length === 0) {
+    return toast("Aucun exercice disponible pour cette séance.", "err");
+  }
   const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
   // Calculate target duration so _buildGuidedTimeline fills enough rounds
   const avgWorkSec = 40;

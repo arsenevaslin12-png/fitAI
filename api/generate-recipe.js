@@ -194,7 +194,7 @@ FORMAT EXACT:
 
 function validateRecipe(raw) {
   if (!raw || typeof raw !== "object") return null;
-  if (!raw.name && !Array.isArray(raw.steps) && !raw.calories) return null;
+  if (!raw.name || !Array.isArray(raw.steps) || raw.steps.length === 0) return null;
   return {
     name:      String(raw.name || "Recette IA"),
     healthy_twist: String(raw.healthy_twist || ""),
