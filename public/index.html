@@ -93,6 +93,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   background:var(--grad);
   display:flex;align-items:center;justify-content:center;
   font-size:.8rem;font-weight:800;color:#fff;flex-shrink:0;
+  overflow:hidden;background-size:cover;background-position:center;
 }
 .sidebar-user-info{flex:1;min-width:0}
 .sidebar-user-name{font-size:.78rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -662,7 +663,8 @@ body.light .wt-next-empty{background:#fff;border-color:rgba(15,23,42,.12)}
 /* Avatar with XP ring */
 .profile-avatar-wrap{position:relative;flex-shrink:0;width:80px;height:80px}
 .profile-xp-ring{position:absolute;inset:-4px;width:calc(100% + 8px);height:calc(100% + 8px);transform:rotate(-90deg)}
-.profile-big-avatar{position:absolute;inset:4px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900;color:#fff;border:2.5px solid rgba(12,18,36,.98);box-shadow:0 0 20px rgba(99,102,241,.45)}
+.profile-big-avatar{position:absolute;inset:4px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900;color:#fff;border:2.5px solid rgba(12,18,36,.98);box-shadow:0 0 20px rgba(99,102,241,.45);overflow:hidden}
+.p-avatar-btn{position:absolute;bottom:-4px;right:-4px;width:26px;height:26px;border-radius:50%;background:#6366f1;border:2px solid rgba(12,18,36,.98);color:#fff;font-size:.72rem;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2;padding:0}
 .profile-level-chip{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);background:linear-gradient(90deg,#6366f1,#8b5cf6);color:#fff;font-size:.58rem;font-weight:900;padding:2px 8px;border-radius:999px;white-space:nowrap;border:1.5px solid rgba(12,18,36,.98);letter-spacing:.03em}
 .profile-hero-info{flex:1;min-width:0;padding-top:44px}
 .profile-xp-row{display:flex;align-items:center;gap:8px;margin-top:8px}
@@ -1744,7 +1746,7 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
       </div>
     </div>
     <div class="sidebar-user">
-      <div class="sidebar-avatar">💪</div>
+      <div class="sidebar-avatar" id="sidebar-avatar-el">💪</div>
       <div class="sidebar-user-info">
         <div class="sidebar-user-name" id="tu">—</div>
         <div class="sidebar-user-role">Membre</div>
@@ -3114,7 +3116,9 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
                     </linearGradient>
                   </defs>
                 </svg>
-                <div class="profile-big-avatar" id="p-avatar">?</div>
+                <div class="profile-big-avatar" id="p-avatar" style="cursor:pointer" onclick="document.getElementById('p-avatar-input').click()" title="Changer la photo">?</div>
+                <button class="p-avatar-btn" id="p-avatar-btn" onclick="document.getElementById('p-avatar-input').click()" title="Changer la photo">📷</button>
+                <input type="file" id="p-avatar-input" accept="image/*" style="display:none" onchange="if(this.files[0]) uploadAvatar(this.files[0])"/>
                 <div class="profile-level-chip" id="p-level-chip">Niv.1</div>
               </div>
               <div class="profile-hero-info">

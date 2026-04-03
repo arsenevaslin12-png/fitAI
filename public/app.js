@@ -2647,7 +2647,7 @@ async function loadFeed(silent = false) {
     const authorIds = [...new Set(data.map(p => p.user_id))];
     const authorMap = {};
     try {
-      const { data: profiles } = await SB.from("profiles").select("id,display_name,username").in("id", authorIds);
+      const { data: profiles } = await SB.from("profiles").select("id,display_name,username,avatar_url").in("id", authorIds);
       (profiles || []).forEach(p => { authorMap[p.id] = p; });
     } catch { /* fallback to "Membre" */ }
 
@@ -2665,6 +2665,10 @@ async function loadFeed(silent = false) {
       const authorHandle = !me && author?.username ? `@${escapeHtml(author.username)}` : "";
       const initial = authorName.charAt(0).toUpperCase();
       const avatarColor = AVATAR_COLORS[(post.user_id || "").charCodeAt(0) % AVATAR_COLORS.length];
+      const authorAvatar = me ? window._myAvatarUrl : author?.avatar_url;
+      const avatarHtml = authorAvatar
+        ? `<div class="post-card-avatar" style="background:${avatarColor};background-image:url(${JSON.stringify(authorAvatar)});background-size:cover;background-position:center"></div>`
+        : `<div class="post-card-avatar" style="background:${avatarColor}">${initial}</div>`;
       const rawContent = String(post.content || "");
 
       // Recipe post rendering
@@ -2689,9 +2693,7 @@ async function loadFeed(silent = false) {
           return `
             <div class="post-card recipe-post-card" id="post-${post.id}">
               <div class="post-card-header recipe-post-header">
-                <div class="recipe-post-icon">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" y1="17" x2="18" y2="17"/><line x1="6" y1="21" x2="18" y2="21"/></svg>
-                </div>
+                ${avatarHtml}
                 <div class="post-card-info">
                   <div class="post-card-name">${escapeHtml(recipe.name || "Recette")} ${score !== null ? `<span class="recipe-score-badge ${scoreBadgeClass}">${scoreLabel}</span>` : ""}</div>
                   <div class="post-card-meta">${authorHandle ? `<span class="post-card-handle">${authorHandle}</span> · ` : ""}${escapeHtml(authorName)} · ${visIcon} ${date}</div>
@@ -2717,7 +2719,7 @@ async function loadFeed(silent = false) {
       return `
         <div class="post-card" id="post-${post.id}">
           <div class="post-card-header">
-            <div class="post-card-avatar" style="background:${avatarColor}">${initial}</div>
+            ${avatarHtml}
             <div class="post-card-info">
               <div class="post-card-name">${escapeHtml(authorName)}${me ? " <span class='post-me-badge'>Vous</span>" : ""}</div>
               <div class="post-card-meta">${authorHandle ? `<span class="post-card-handle">${authorHandle}</span> · ` : ""}${visIcon} ${date}</div>
@@ -3631,11 +3633,79 @@ async function deleteBodyScan(id) {
   }
 }
 
+// ── Avatar helpers ────────────────────────────────────────────────────────────
+function _setAvatarEl(el, name, url) {
+  if (!el) return;
+  if (url) {
+    el.style.backgroundImage = `url(${JSON.stringify(url)})`;
+    el.style.backgroundSize  = "cover";
+    el.style.backgroundPosition = "center";
+    el.textContent = "";
+  } else {
+    el.style.backgroundImage = "";
+    el.style.backgroundSize  = "";
+    el.style.backgroundPosition = "";
+    el.textContent = (name || "?").charAt(0).toUpperCase();
+  }
+}
+
+async function _resizeImageBlob(file, maxPx = 400) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(resolve, "image/jpeg", 0.82);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
+async function uploadAvatar(file) {
+  if (!U || !file) return;
+  if (file.size > 5 * 1024 * 1024) return toast("Image trop lourde (max 5 Mo).", "err");
+  const btn = document.getElementById("p-avatar-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "⏳"; }
+  try {
+    const blob = await _resizeImageBlob(file, 400);
+    const path = `${U.id}/avatar.jpg`;
+    const { error: upErr } = await SB.storage
+      .from("avatars")
+      .upload(path, blob, { upsert: true, contentType: "image/jpeg" });
+    if (upErr) throw upErr;
+    const { data: urlData } = SB.storage.from("avatars").getPublicUrl(path);
+    const publicUrl = urlData?.publicUrl;
+    if (!publicUrl) throw new Error("URL publique introuvable");
+    // Bust cache by appending timestamp
+    const finalUrl = publicUrl + "?t=" + Date.now();
+    await SB.from("profiles").upsert({ id: U.id, avatar_url: publicUrl, updated_at: new Date().toISOString() }, { onConflict: "id" });
+    window._myAvatarUrl = finalUrl;
+    _setAvatarEl(document.getElementById("p-avatar"), null, finalUrl);
+    _setAvatarEl(document.getElementById("sidebar-avatar-el"), null, finalUrl);
+    toast("Photo de profil mise à jour ✓", "ok");
+  } catch (e) {
+    const msg = e.message?.includes("Bucket not found") || e.message?.includes("404")
+      ? "Bucket 'avatars' introuvable — créez-le dans Supabase Storage (public)."
+      : `Erreur upload: ${e.message}`;
+    toast(msg, "err");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "📷"; }
+  }
+}
+window.uploadAvatar = uploadAvatar;
+
 async function loadProfile() {
   if (!U) return;
   try {
     const [profileRes, streakRes] = await Promise.all([
-      SB.from("profiles").select("display_name,username,age,weight,height").eq("id", U.id).maybeSingle(),
+      SB.from("profiles").select("display_name,username,age,weight,height,avatar_url").eq("id", U.id).maybeSingle(),
       SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle()
     ]);
     const data = profileRes?.data;
@@ -3645,8 +3715,10 @@ async function loadProfile() {
     setEl("p-name", name);
     setEl("p-email", U.email || "");
     setEl("p-handle", data?.username ? `@${data.username}` : "");
-    const pAvatar = document.getElementById("p-avatar");
-    if (pAvatar) pAvatar.textContent = name.charAt(0).toUpperCase();
+    const avatarUrl = data?.avatar_url ? data.avatar_url + "?t=" + (window._avatarCacheBust || "") : null;
+    if (avatarUrl) window._myAvatarUrl = avatarUrl;
+    _setAvatarEl(document.getElementById("p-avatar"), name, avatarUrl);
+    _setAvatarEl(document.getElementById("sidebar-avatar-el"), name, avatarUrl);
     setVal("p-pseudo", data?.display_name || "");
     setVal("p-username", data?.username || "");
     setVal("p-age", data?.age || "");
