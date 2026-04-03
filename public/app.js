@@ -1991,7 +1991,8 @@ async function loadHistory() {
       el.innerHTML = '<div class="empty"><span style="font-size:1.4rem;display:block;margin-bottom:6px">—</span>Aucune séance sauvegardée</div>';
       return;
     }
-    el.innerHTML = `<div class="sessions-list">${data.map((s) => {
+    window._sessionCache = data.map(s => s.plan);
+    el.innerHTML = `<div class="sessions-list">${data.map((s, si) => {
       const d = safeDate(s.created_at, { day: "numeric", month: "short" });
       const exCount = s.plan?.exercises?.length || 0;
       const dur = s.plan?.duration ? `${s.plan.duration} min` : "";
@@ -1999,13 +2000,13 @@ async function loadHistory() {
       if (dur) metaParts.push(dur);
       if (exCount) metaParts.push(`${exCount} exerc.`);
       return `
-        <div class="sess-row" onclick="replaySession(${JSON.stringify(JSON.stringify(s.plan))})">
+        <div class="sess-row" onclick="replaySession(${si})">
           <div class="sess-row-left">
             <div class="sess-row-title">${escapeHtml(s.plan?.title || "Séance")}</div>
             <div class="sess-row-meta">${metaParts.map(p => `<span>${escapeHtml(p)}</span>`).join('<span style="opacity:.3">·</span>')}</div>
           </div>
           <div class="sess-row-right">
-            <button class="sess-replay-btn" onclick="event.stopPropagation();replaySession(${JSON.stringify(JSON.stringify(s.plan))})">Revoir</button>
+            <button class="sess-replay-btn" onclick="event.stopPropagation();replaySession(${si})">Revoir</button>
           </div>
         </div>`;
     }).join("")}</div>`;
@@ -2014,9 +2015,11 @@ async function loadHistory() {
   }
 }
 
-function replaySession(planJson) {
+function replaySession(idxOrPlan) {
   try {
-    const plan = typeof planJson === "string" ? JSON.parse(planJson) : planJson;
+    const plan = typeof idxOrPlan === "number"
+      ? (window._sessionCache?.[idxOrPlan] || null)
+      : (typeof idxOrPlan === "string" ? JSON.parse(idxOrPlan) : idxOrPlan);
     if (!plan) return;
     PLAN = plan;
     renderPlan(PLAN);
@@ -5265,8 +5268,9 @@ async function saveRecipeToHistory(recipe) {
       carbs:     recipe.carbs     || null,
       fat:       recipe.fat       || null,
       prep_time: recipe.prep_time || null,
-      steps:     Array.isArray(recipe.steps) ? recipe.steps : [],
-      tips:      recipe.tips      || null,
+      steps:            Array.isArray(recipe.steps) ? recipe.steps : [],
+      ingredients_list: Array.isArray(recipe.ingredients_list) ? recipe.ingredients_list : [],
+      tips:             recipe.tips      || null,
       saved_at:  new Date().toISOString()
     }, { onConflict: "user_id,name" });
     incrementLocalMetric('fitai_recipes_saved', 1);
@@ -5281,11 +5285,12 @@ async function loadRecipeHistory() {
   if (!el) return;
   try {
     const { data, error } = await SB.from("saved_recipes")
-      .select("id,name,calories,protein,carbs,fat,prep_time,saved_at")
+      .select("id,name,calories,protein,carbs,fat,prep_time,steps,ingredients_list,tips,saved_at")
       .eq("user_id", U.id)
       .order("saved_at", { ascending: false })
-      .limit(8);
+      .limit(10);
     if (error) throw error;
+    window._recipeHistoryCache = data || [];
     renderRecipeHistory(data || []);
   } catch (err) { console.warn("[recipe-history] load failed:", err); }
 }
@@ -5297,18 +5302,81 @@ function renderRecipeHistory(items) {
     el.innerHTML = '<div class="empty" style="font-size:.82rem;padding:8px 0">Aucune recette générée pour l\'instant.</div>';
     return;
   }
-  el.innerHTML = items.map(r => `
-    <div class="recipe-hist-item">
-      <div class="recipe-hist-icon">${recipeFoodArt(r.name)}</div>
-      <div style="flex:1;min-width:0">
-        <div class="recipe-hist-name">${escapeHtml(r.name)}</div>
-        <div class="recipe-hist-macros">
-          ${r.calories ? `🔥 ${r.calories} kcal` : ""}
-          ${r.protein  ? ` · 💪 ${r.protein}g prot.` : ""}
-          ${r.prep_time ? ` · ⏱ ${escapeHtml(r.prep_time)}` : ""}
+  el.innerHTML = items.map((r, i) => `
+    <div class="recipe-hist-item" style="flex-direction:column;align-items:stretch;gap:0;padding-bottom:0">
+      <div style="display:flex;align-items:center;gap:10px;padding-bottom:8px">
+        <div class="recipe-hist-icon">${recipeFoodArt(r.name)}</div>
+        <div style="flex:1;min-width:0">
+          <div class="recipe-hist-name">${escapeHtml(r.name)}</div>
+          <div class="recipe-hist-macros">
+            ${r.calories ? `🔥 ${r.calories} kcal` : ""}
+            ${r.protein  ? ` · 💪 ${r.protein}g prot.` : ""}
+            ${r.prep_time ? ` · ⏱ ${escapeHtml(r.prep_time)}` : ""}
+          </div>
         </div>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:2px;padding-bottom:10px">
+        <button class="btn btn-g btn-sm" onclick="reloadHistoryRecipe(${i})">📖 Voir la recette</button>
+        <button class="btn btn-g btn-sm" onclick="addHistoryRecipeToShopping(${i})">🛒 Courses</button>
+      </div>
     </div>`).join("");
+}
+
+function reloadHistoryRecipe(idx) {
+  const r = window._recipeHistoryCache?.[idx];
+  if (!r) return toast("Recette introuvable.", "err");
+  // Build a minimal recipe object compatible with the coach card renderer
+  const recipe = {
+    name: r.name,
+    calories: r.calories,
+    protein: r.protein,
+    carbs: r.carbs,
+    fat: r.fat,
+    prep_time: r.prep_time,
+    steps: Array.isArray(r.steps) ? r.steps : [],
+    ingredients_list: Array.isArray(r.ingredients_list) ? r.ingredients_list : [],
+    tips: r.tips || ""
+  };
+  window._lastRecipe = recipe;
+  window._lastRecipes = [recipe];
+  gotoTab("coach");
+  const now = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  let html = `<div class="coach-card-head"><span class="coach-card-kicker">Recette sauvegardée</span><strong>${escapeHtml(recipe.name)}</strong></div>`;
+  const pills = [
+    recipe.calories ? `🔥 ${recipe.calories} kcal` : "",
+    recipe.protein  ? `💪 ${recipe.protein}g prot.` : "",
+    recipe.prep_time ? `⏱ ${recipe.prep_time}` : ""
+  ].filter(Boolean);
+  if (pills.length) html += `<div class="coach-mini-pills">${pills.map(p => `<span class="coach-mini-pill">${escapeHtml(p)}</span>`).join("")}</div>`;
+  if (recipe.ingredients_list.length) {
+    html += `<div style="margin:10px 0 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Ingrédients</div>`;
+    html += `<div class="coach-mini-pills" style="flex-wrap:wrap">`;
+    recipe.ingredients_list.forEach(ing => { html += `<span class="coach-mini-pill">${escapeHtml(ing)}</span>`; });
+    html += `</div>`;
+  }
+  if (recipe.steps.length) {
+    html += `<div style="margin:10px 0 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Préparation</div>`;
+    html += '<ol class="coach-list">';
+    recipe.steps.forEach(step => { html += `<li>${escapeHtml(step)}</li>`; });
+    html += '</ol>';
+  }
+  if (recipe.tips) html += `<div class="coach-inline-tip">💡 ${escapeHtml(recipe.tips)}</div>`;
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+    <button class="btn btn-g btn-sm btn-full" onclick="addRecipeToNutritionShoppingList(0)">🛒 Ajouter aux courses</button>
+    <button class="btn btn-p btn-sm btn-full" onclick="addRecipeAsMeal(0)">➕ Ajouter comme repas</button>
+  </div>`;
+  COACH_HISTORY.push({ role: "ai", content: html, time: now });
+  saveCoachHistory();
+  renderCoachChat();
+}
+
+function addHistoryRecipeToShopping(idx) {
+  const r = window._recipeHistoryCache?.[idx];
+  if (!r) return toast("Recette introuvable.", "err");
+  const recipe = { name: r.name, calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat, prep_time: r.prep_time, steps: Array.isArray(r.steps) ? r.steps : [], ingredients_list: Array.isArray(r.ingredients_list) ? r.ingredients_list : [], tips: r.tips || "" };
+  window._lastRecipe = recipe;
+  window._lastRecipes = [recipe];
+  addRecipeToNutritionShoppingList(0);
 }
 
 function recipeFoodArt(name) {
@@ -5590,6 +5658,8 @@ window.saveSession = saveSession;
 window.clearCoachChat = clearCoachChat;
 window.toggleCoachSuggestions = toggleCoachSuggestions;
 window.replaySession = replaySession;
+window.reloadHistoryRecipe = reloadHistoryRecipe;
+window.addHistoryRecipeToShopping = addHistoryRecipeToShopping;
 window.addMeal = addMeal;
 window.deleteMeal = deleteMeal;
 window.createPost = createPost;
