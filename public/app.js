@@ -3540,9 +3540,112 @@ async function loadProfile() {
     }
     if (data?.weight) { USER_WEIGHT = parseFloat(data.weight); renderWater(); }
 
+    // Render weight chart + TDEE with current profile data
+    const goal = (await sbSafeSingle(SB.from('goals').select('type,level').eq('user_id', U.id).maybeSingle()))?.data;
+    renderWeightChart();
+    renderTdeeCard(parseFloat(data?.weight) || 0, parseFloat(data?.height) || 0, parseInt(data?.age) || 0, goal?.type || '');
+
     // Update XP ring + level chip + trophy counts in profile
     _updateProfileXpDisplay();
   } catch (e) { console.error("[Profile] Load error:", e); }
+}
+
+// ── Weight log ────────────────────────────────────────────────────────────────
+const WEIGHT_LOG_KEY = "fitai_weight_log";
+
+function getWeightLog() {
+  try { return JSON.parse(localStorage.getItem(WEIGHT_LOG_KEY) || "[]"); } catch { return []; }
+}
+
+function addWeightEntry(kg) {
+  if (!kg || kg <= 0) return;
+  const log = getWeightLog();
+  const today = new Date().toISOString().slice(0, 10);
+  const idx = log.findIndex(e => e.date === today);
+  if (idx >= 0) log[idx].weight = kg; else log.push({ date: today, weight: kg });
+  log.sort((a, b) => a.date.localeCompare(b.date));
+  const trimmed = log.slice(-16); // keep last 16 entries
+  try { localStorage.setItem(WEIGHT_LOG_KEY, JSON.stringify(trimmed)); } catch {}
+}
+
+function renderWeightChart() {
+  const el = document.getElementById("weight-chart-wrap");
+  if (!el) return;
+  const log = getWeightLog();
+  if (log.length < 2) {
+    el.innerHTML = '<div class="chart-empty" style="font-size:.78rem;padding:8px 0 0">Enregistre ton poids régulièrement pour voir ton évolution.</div>';
+    return;
+  }
+  const data = log.map(e => ({
+    value: e.weight,
+    label: new Date(e.date + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+  }));
+  const minW = Math.min(...data.map(d => d.value));
+  const maxW = Math.max(...data.map(d => d.value));
+  const trend = data[data.length - 1].value - data[0].value;
+  const trendStr = trend === 0 ? "stable" : (trend > 0 ? `+${trend.toFixed(1)} kg` : `${trend.toFixed(1)} kg`);
+  const trendColor = trend < 0 ? "#22c55e" : trend > 0 ? "#f97316" : "#a78bfa";
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <span style="font-size:.72rem;color:var(--muted)">${data[0].label} → ${data[data.length-1].label}</span>
+    <span style="font-size:.72rem;font-weight:800;color:${trendColor}">${trendStr}</span>
+  </div>` + renderSvgChart(data, { color: "#a78bfa", unit: " kg", H: 110, zeroBase: false });
+}
+
+function renderTdeeCard(weight, height, age, goalType) {
+  const el = document.getElementById("tdee-card-body");
+  if (!el) return;
+  if (!weight || !height || !age) {
+    el.innerHTML = '<div style="font-size:.78rem;color:var(--muted)">Complète ton profil (poids, taille, âge) pour voir tes besoins caloriques.</div>';
+    return;
+  }
+  // Mifflin-St Jeor without gender (average of M/F formulas)
+  const bmr = Math.round(10 * weight + 6.25 * height - 5 * age - 78);
+  const activityMult = 1.45; // moderately active default
+  const tdee = Math.round(bmr * activityMult);
+  // Macro targets by goal
+  const goalMap = {
+    "prise de masse": { kcalDelta: +250, proteinPer: 2.2, fatPer: 1.0, label: "Prise de masse" },
+    "perte de poids":  { kcalDelta: -400, proteinPer: 2.2, fatPer: 0.8, label: "Perte de poids" },
+    "cardio":          { kcalDelta: 0,    proteinPer: 1.8, fatPer: 1.0, label: "Cardio / endurance" },
+    "performance":     { kcalDelta: +100, proteinPer: 2.0, fatPer: 1.0, label: "Performance" }
+  };
+  const gk = Object.keys(goalMap).find(k => (goalType || "").toLowerCase().includes(k)) || null;
+  const g = goalMap[gk] || { kcalDelta: 0, proteinPer: 2.0, fatPer: 1.0, label: "Maintien" };
+  const targetKcal = tdee + g.kcalDelta;
+  const protein = Math.round(g.proteinPer * weight);
+  const fat = Math.round(g.fatPer * weight);
+  const carbs = Math.max(0, Math.round((targetKcal - protein * 4 - fat * 9) / 4));
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div class="profile-stat-pill" style="grid-column:1/-1;flex-direction:row;justify-content:space-between;padding:10px 14px">
+        <div>
+          <div style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em">TDEE estimé · ${g.label}</div>
+          <div style="font-size:1.5rem;font-weight:900;color:#f97316;line-height:1.1">${targetKcal} <span style="font-size:.75rem;font-weight:700;color:var(--muted)">kcal/j</span></div>
+        </div>
+        <div style="font-size:.68rem;color:var(--muted);text-align:right;line-height:1.5">BMR ${bmr} kcal<br>× ${activityMult} activité${g.kcalDelta !== 0 ? "<br>" + (g.kcalDelta > 0 ? "+" : "") + g.kcalDelta + " objectif" : ""}</div>
+      </div>
+      <div class="profile-stat-pill">
+        <span class="psp-icon" style="color:#60a5fa">🥩</span>
+        <span class="psp-val" style="color:#60a5fa">${protein}g</span>
+        <span class="psp-lbl">Protéines</span>
+      </div>
+      <div class="profile-stat-pill">
+        <span class="psp-icon" style="color:#fbbf24">🍚</span>
+        <span class="psp-val" style="color:#fbbf24">${carbs}g</span>
+        <span class="psp-lbl">Glucides</span>
+      </div>
+      <div class="profile-stat-pill">
+        <span class="psp-icon" style="color:#f87171">🥑</span>
+        <span class="psp-val" style="color:#f87171">${fat}g</span>
+        <span class="psp-lbl">Lipides</span>
+      </div>
+      <div class="profile-stat-pill" style="background:rgba(167,139,250,.06);border-color:rgba(167,139,250,.2)">
+        <span class="psp-icon">⚖️</span>
+        <span class="psp-val" style="color:#a78bfa">${weight} kg</span>
+        <span class="psp-lbl">Poids actuel</span>
+      </div>
+    </div>
+    <div style="font-size:.65rem;color:var(--muted);line-height:1.5">Estimation Mifflin-St Jeor · activité modérée · ${protein * 4 + carbs * 4 + fat * 9} kcal total macros</div>`;
 }
 
 function _updateProfileXpDisplay() {
@@ -3658,6 +3761,7 @@ async function saveProfile() {
       }
       throw error;
     }
+    if (weight) addWeightEntry(weight);
     toast("Profil mis à jour ✓", "ok");
     DataCache.del('coach_ctx_v2');
     await loadProfile();
@@ -5672,6 +5776,8 @@ window.doScan = doScan;
 window.selectMood = selectMood;
 window.startWithMood = startWithMood;
 window.saveProfile = saveProfile;
+window.addWeightEntry = addWeightEntry;
+window.renderWeightChart = renderWeightChart;
 window.deleteBodyScan = deleteBodyScan;
 window.generateRecipe    = generateRecipe;
 window.generateNutrition = generateNutrition;

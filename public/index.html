@@ -4,6 +4,12 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>FitAI Pro</title>
+<link rel="manifest" href="/manifest.json"/>
+<meta name="theme-color" content="#6366f1"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="FitAI"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -3144,6 +3150,21 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- ── TDEE + MACROS ── -->
+        <div class="card" style="border-color:rgba(249,115,22,.14);background:linear-gradient(160deg,rgba(10,16,32,.98),rgba(8,12,28,.98))">
+          <div class="card-title" style="margin-bottom:12px">🎯 Besoins caloriques & macros</div>
+          <div id="tdee-card-body"><span style="color:var(--muted);font-size:.82rem">Chargement…</span></div>
+        </div>
+
+        <!-- ── SUIVI DU POIDS ── -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div class="card-title" style="margin:0">⚖️ Évolution du poids</div>
+            <button class="btn btn-g btn-sm" onclick="(()=>{const v=parseFloat(document.getElementById('p-weight')?.value);if(!v)return toast('Saisis ton poids dans le formulaire ci-dessous puis clique ici.','err');addWeightEntry(v);renderWeightChart();toast('Poids enregistré ✓','ok');})()" style="font-size:.7rem">+ Log poids</button>
+          </div>
+          <div id="weight-chart-wrap"></div>
         </div>
 
         <!-- ── TROPHÉES DU PROFIL ── -->
