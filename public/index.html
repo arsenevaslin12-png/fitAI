@@ -757,6 +757,18 @@ body.light .wt-next-empty{background:#fff;border-color:rgba(15,23,42,.12)}
 
 /* ── DASHBOARD BENTO ── */
 .db-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+.onboard-card{background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.08));border:1px solid rgba(99,102,241,.3);border-radius:20px;padding:18px;margin-bottom:14px}
+.onboard-header{margin-bottom:12px}
+.onboard-title{font-size:1rem;font-weight:900;color:var(--text)}
+.onboard-sub{font-size:.74rem;color:var(--muted);margin-top:2px}
+.onboard-steps{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.onboard-step{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 12px;cursor:pointer;transition:background .15s,border-color .15s}
+.onboard-step:hover{background:rgba(99,102,241,.12);border-color:rgba(99,102,241,.3)}
+.onboard-num{width:24px;height:24px;border-radius:50%;background:var(--grad);color:#fff;font-size:.72rem;font-weight:900;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.onboard-step-body{flex:1;min-width:0}
+.onboard-step-title{font-size:.84rem;font-weight:800;color:var(--text)}
+.onboard-step-sub{font-size:.7rem;color:var(--muted);margin-top:1px}
+.onboard-arrow{color:var(--muted);font-size:.9rem;flex-shrink:0}
 .db-chip{padding:8px 16px;border:1px solid rgba(37,99,235,.35);background:rgba(37,99,235,.12);border-radius:999px;font-weight:700;color:#60a5fa;font-size:.82rem}
 .db-goal{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid rgba(37,99,235,.2);background:rgba(37,99,235,.07);border-radius:20px;padding:14px 18px}
 .db-goal-main{display:flex;align-items:center;gap:14px}
@@ -1799,6 +1811,9 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           </div>
           <div class="db-chip" id="db-date">📅 —</div>
         </div>
+
+        <!-- Onboarding (shown only for new users) -->
+        <div id="db-onboarding" style="display:none;transition:opacity .3s"></div>
 
         <!-- Goal banner -->
         <div class="db-goal">

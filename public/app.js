@@ -761,11 +761,77 @@ async function loadDashboard() {
     loadScanMiniTile();
     restoreMoodSelection();
     renderWeekActivity();
+    _renderOnboarding();
   } catch (e) {
     console.error("[Dashboard] Error:", e);
   }
   showGlobalLoader(false);
 }
+
+// ── Onboarding card ───────────────────────────────────────────────────────────
+const ONBOARD_KEY = "fitai_onboarded";
+
+function _renderOnboarding() {
+  const el = document.getElementById("db-onboarding");
+  if (!el) return;
+  // Dismissed or already active
+  try { if (localStorage.getItem(ONBOARD_KEY)) { el.style.display = "none"; return; } } catch {}
+  // Only show if user has no workouts yet
+  const streakEl = document.getElementById("p-streak");
+  const totalEl  = document.getElementById("st-sess");
+  const total    = parseInt(totalEl?.textContent || "0") || 0;
+  if (total > 0) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.innerHTML = `
+    <div class="onboard-card">
+      <div class="onboard-header">
+        <div class="onboard-title">🎉 Bienvenue sur FitAI !</div>
+        <div class="onboard-sub">4 étapes pour bien démarrer</div>
+      </div>
+      <div class="onboard-steps">
+        <div class="onboard-step" onclick="gotoTab('goal')">
+          <span class="onboard-num">1</span>
+          <div class="onboard-step-body">
+            <div class="onboard-step-title">Définir ton objectif</div>
+            <div class="onboard-step-sub">Perte de poids · prise de masse · cardio…</div>
+          </div>
+          <span class="onboard-arrow">→</span>
+        </div>
+        <div class="onboard-step" onclick="gotoTab('profile')">
+          <span class="onboard-num">2</span>
+          <div class="onboard-step-body">
+            <div class="onboard-step-title">Compléter ton profil</div>
+            <div class="onboard-step-sub">Poids · taille · âge pour tes macros personnalisées</div>
+          </div>
+          <span class="onboard-arrow">→</span>
+        </div>
+        <div class="onboard-step" onclick="gotoTab('programme')">
+          <span class="onboard-num">3</span>
+          <div class="onboard-step-body">
+            <div class="onboard-step-title">Lancer ta première séance</div>
+            <div class="onboard-step-sub">Programme 8 semaines guidé · séance libre</div>
+          </div>
+          <span class="onboard-arrow">→</span>
+        </div>
+        <div class="onboard-step" onclick="gotoTab('coach')">
+          <span class="onboard-num">4</span>
+          <div class="onboard-step-body">
+            <div class="onboard-step-title">Parler au coach IA</div>
+            <div class="onboard-step-sub">Demande une recette · un plan · des conseils</div>
+          </div>
+          <span class="onboard-arrow">→</span>
+        </div>
+      </div>
+      <button class="btn btn-p btn-full" onclick="dismissOnboarding()" style="margin-top:4px">C'est parti ! 🚀</button>
+    </div>`;
+}
+
+function dismissOnboarding() {
+  try { localStorage.setItem(ONBOARD_KEY, "1"); } catch {}
+  const el = document.getElementById("db-onboarding");
+  if (el) { el.style.opacity = "0"; setTimeout(() => { el.style.display = "none"; }, 300); }
+}
+window.dismissOnboarding = dismissOnboarding;
 
 // ── V2 MOOD TRACKER ──────────────────────────────────────────────────────────
 const MOOD_LABELS = { 1: "Épuisé", 2: "Fatigué", 3: "Neutre", 4: "Bien", 5: "En forme" };
@@ -1992,46 +2058,83 @@ async function saveSession() {
   }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
 }
 
+const HISTORY_PAGE = 10;
+let _historyOffset = 0;
+
+function _sessRowHtml(s, si) {
+  const d = safeDate(s.created_at, { day: "numeric", month: "short" });
+  const exCount = s.plan?.exercises?.length || 0;
+  const dur = s.plan?.duration ? `${s.plan.duration} min` : "";
+  const metaParts = [d];
+  if (dur) metaParts.push(dur);
+  if (exCount) metaParts.push(`${exCount} exerc.`);
+  return `
+    <div class="sess-row" onclick="replaySession(${si})">
+      <div class="sess-row-left">
+        <div class="sess-row-title">${escapeHtml(s.plan?.title || "Séance")}</div>
+        <div class="sess-row-meta">${metaParts.map(p => `<span>${escapeHtml(p)}</span>`).join('<span style="opacity:.3">·</span>')}</div>
+      </div>
+      <div class="sess-row-right">
+        <button class="sess-replay-btn" onclick="event.stopPropagation();replaySession(${si})">Revoir</button>
+      </div>
+    </div>`;
+}
+
 async function loadHistory() {
   if (!U) return;
+  _historyOffset = 0;
+  window._sessionCache = [];
   const el = document.getElementById("history-list");
   if (!el) return;
-
   try {
     const { data, error } = await SB.from("workout_sessions")
       .select("id,created_at,plan")
       .eq("user_id", U.id)
       .order("created_at", { ascending: false })
-      .limit(10);
+      .range(0, HISTORY_PAGE - 1);
     if (error) throw error;
-
     if (!data?.length) {
-      el.innerHTML = '<div class="empty"><span style="font-size:1.4rem;display:block;margin-bottom:6px">—</span>Aucune séance sauvegardée</div>';
+      el.innerHTML = '<div class="empty"><span style="font-size:1.4rem;display:block;margin-bottom:6px">—</span>Aucune séance sauvegardée<br><span style="font-size:.78rem;color:var(--muted);margin-top:4px;display:block">Lance ta première séance depuis l\'onglet Programme ou Coach.</span></div>';
       return;
     }
     window._sessionCache = data.map(s => s.plan);
-    el.innerHTML = `<div class="sessions-list">${data.map((s, si) => {
-      const d = safeDate(s.created_at, { day: "numeric", month: "short" });
-      const exCount = s.plan?.exercises?.length || 0;
-      const dur = s.plan?.duration ? `${s.plan.duration} min` : "";
-      const metaParts = [d];
-      if (dur) metaParts.push(dur);
-      if (exCount) metaParts.push(`${exCount} exerc.`);
-      return `
-        <div class="sess-row" onclick="replaySession(${si})">
-          <div class="sess-row-left">
-            <div class="sess-row-title">${escapeHtml(s.plan?.title || "Séance")}</div>
-            <div class="sess-row-meta">${metaParts.map(p => `<span>${escapeHtml(p)}</span>`).join('<span style="opacity:.3">·</span>')}</div>
-          </div>
-          <div class="sess-row-right">
-            <button class="sess-replay-btn" onclick="event.stopPropagation();replaySession(${si})">Revoir</button>
-          </div>
-        </div>`;
-    }).join("")}</div>`;
+    _historyOffset = data.length;
+    const hasMore = data.length === HISTORY_PAGE;
+    el.innerHTML = `<div class="sessions-list" id="sessions-list-inner">${data.map((s, si) => _sessRowHtml(s, si)).join("")}</div>
+      ${hasMore ? `<button class="btn btn-g btn-full" id="hist-more-btn" onclick="loadMoreHistory()" style="margin-top:10px;font-size:.8rem">Voir plus</button>` : ""}`;
   } catch (e) {
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
 }
+
+async function loadMoreHistory() {
+  if (!U) return;
+  const btn = document.getElementById("hist-more-btn");
+  const listEl = document.getElementById("sessions-list-inner");
+  if (!listEl) return;
+  if (btn) { btn.disabled = true; btn.textContent = "Chargement…"; }
+  try {
+    const from = _historyOffset;
+    const to   = from + HISTORY_PAGE - 1;
+    const { data, error } = await SB.from("workout_sessions")
+      .select("id,created_at,plan")
+      .eq("user_id", U.id)
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+    if (!data?.length) { if (btn) btn.remove(); return; }
+    const offset = window._sessionCache.length;
+    window._sessionCache = [...window._sessionCache, ...data.map(s => s.plan)];
+    _historyOffset += data.length;
+    listEl.insertAdjacentHTML("beforeend", data.map((s, i) => _sessRowHtml(s, offset + i)).join(""));
+    if (data.length < HISTORY_PAGE) { if (btn) btn.remove(); }
+    else if (btn) { btn.disabled = false; btn.textContent = "Voir plus"; }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "Voir plus"; }
+    toast("Erreur chargement historique.", "err");
+  }
+}
+window.loadMoreHistory = loadMoreHistory;
 
 function replaySession(idxOrPlan) {
   try {
@@ -5448,9 +5551,10 @@ function renderRecipeHistory(items) {
           </div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:2px;padding-bottom:10px">
-        <button class="btn btn-g btn-sm" onclick="reloadHistoryRecipe(${i})">📖 Voir la recette</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding-top:2px;padding-bottom:10px">
+        <button class="btn btn-g btn-sm" onclick="reloadHistoryRecipe(${i})">📖 Voir</button>
         <button class="btn btn-g btn-sm" onclick="addHistoryRecipeToShopping(${i})">🛒 Courses</button>
+        <button class="btn btn-g btn-sm" onclick="shareHistoryRecipe(${i})">🌍 Partager</button>
       </div>
     </div>`).join("");
 }
@@ -5511,6 +5615,37 @@ function addHistoryRecipeToShopping(idx) {
   window._lastRecipes = [recipe];
   addRecipeToNutritionShoppingList(0);
 }
+
+async function shareHistoryRecipe(idx) {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+  const r = window._recipeHistoryCache?.[idx];
+  if (!r) return toast("Recette introuvable.", "err");
+  try {
+    const ingredients = Array.isArray(r.ingredients_list) && r.ingredients_list.length
+      ? r.ingredients_list.join(", ")
+      : "";
+    const recipePayload = {
+      _t: "recipe",
+      name: r.name,
+      desc: r.tips || "",
+      ingredients,
+      servings: 2,
+      steps: Array.isArray(r.steps) ? r.steps.join(" | ") : null,
+      preptime: null,
+      n: { score: null, kcal: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat }
+    };
+    const content = "__r__" + JSON.stringify(recipePayload);
+    const { error } = await SB.from("community_posts").insert({
+      user_id: U.id, content, visibility: "public",
+      image_url: null, created_at: new Date().toISOString(), kudos: 0
+    });
+    if (error) throw error;
+    toast(`"${r.name}" partagée dans la communauté 🎉`, "ok");
+  } catch (e) {
+    toast(`Erreur: ${e.message}`, "err");
+  }
+}
+window.shareHistoryRecipe = shareHistoryRecipe;
 
 function recipeFoodArt(name) {
   const n = (name || "").toLowerCase();
