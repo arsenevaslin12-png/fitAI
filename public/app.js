@@ -663,6 +663,21 @@ async function doLogout() {
 // NAVIGATION
 // ══════════════════════════════════════════════════════════════════════════════
 
+let _feedRefreshTimer = null;
+
+function _startFeedRefresh() {
+  if (_feedRefreshTimer) return;
+  _feedRefreshTimer = setInterval(() => {
+    if (document.getElementById("t-community")?.classList.contains("on")) {
+      loadFeed(true); // silent refresh — no spinner
+    }
+  }, 30_000);
+}
+
+function _stopFeedRefresh() {
+  if (_feedRefreshTimer) { clearInterval(_feedRefreshTimer); _feedRefreshTimer = null; }
+}
+
 function gotoTab(name) {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.remove("on"));
   document.querySelectorAll(".bnav-btn").forEach((btn) => btn.classList.remove("on"));
@@ -671,11 +686,14 @@ function gotoTab(name) {
   const scroll = document.getElementById("scroll");
   if (scroll) scroll.scrollTop = 0;
 
+  // Stop feed auto-refresh when leaving community tab
+  if (name !== "community") _stopFeedRefresh();
+
   if (name === "dashboard") loadDashboard();
   if (name === "goal") loadGoal();
   if (name === "coach") { loadCoachHistory(); loadHistory(); }
   if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); loadCommunityRecipes(); loadNutritionPlanFromStorage(); }
-  if (name === "community") loadFeed();
+  if (name === "community") { loadFeed(); _startFeedRefresh(); }
   if (name === "friends") { loadFriends(); loadFriendRequests(); loadLeaderboard(); }
   if (name === "bodyscan") loadScans();
   if (name === "progress") loadProgress();
@@ -2458,9 +2476,20 @@ async function resolveFeedImageUrls(posts) {
   return out;
 }
 
-async function loadFeed() {
+async function loadFeed(silent = false) {
   const el = document.getElementById("feed");
   if (!el) return;
+  // On silent refresh, only update if no posts are showing yet (avoid jarring rerender while user reads)
+  if (silent && el.querySelector(".post-card")) {
+    // Just check for new posts without destroying current render
+    try {
+      const { data: latest } = await SB.from("community_posts")
+        .select("id").order("created_at", { ascending: false }).limit(1);
+      const latestId = latest?.[0]?.id;
+      const firstCard = el.querySelector(".post-card");
+      if (latestId && firstCard && firstCard.id === `post-${latestId}`) return; // no new posts
+    } catch { return; }
+  }
   try {
     let query = SB.from("community_posts")
       .select("id,user_id,content,kudos,image_url,visibility,created_at")
@@ -2555,7 +2584,7 @@ async function loadFeed() {
           const ingredientsHtml = recipe.ingredients ? `<div class="recipe-ingredients-text"><strong>Ingrédients :</strong> ${escapeHtml(String(recipe.ingredients).slice(0, 200))}${recipe.ingredients.length > 200 ? "…" : ""}</div>` : "";
           const descHtml = recipe.desc ? `<div class="recipe-desc-text">${escapeHtml(recipe.desc)}</div>` : "";
           return `
-            <div class="post-card recipe-post-card">
+            <div class="post-card recipe-post-card" id="post-${post.id}">
               <div class="post-card-header recipe-post-header">
                 <div class="recipe-post-icon">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" y1="17" x2="18" y2="17"/><line x1="6" y1="21" x2="18" y2="21"/></svg>
@@ -2583,7 +2612,7 @@ async function loadFeed() {
       }
 
       return `
-        <div class="post-card">
+        <div class="post-card" id="post-${post.id}">
           <div class="post-card-header">
             <div class="post-card-avatar" style="background:${avatarColor}">${initial}</div>
             <div class="post-card-info">
@@ -8930,3 +8959,12 @@ window.progToggleExDone = progToggleExDone;
 window.progStartWorkout = progStartWorkout;
 
 document.addEventListener("DOMContentLoaded", boot);
+
+// Pause feed auto-refresh when tab/app is hidden (battery & quota friendly)
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    _stopFeedRefresh();
+  } else if (document.getElementById("t-community")?.classList.contains("on")) {
+    _startFeedRefresh();
+  }
+});
