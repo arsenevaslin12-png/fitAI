@@ -1,0 +1,59 @@
+--- app.js.pre_v10
++++ app.js
+@@ -4784,7 +4784,7 @@
+     return;
+   }
+   const ex = next.ex;
+-  wrap.innerHTML = `<div class="wt-next-card"><div><div class="wt-next-kicker">Ensuite</div><div class="wt-next-name">${escapeHtml(ex.n || ex.name || 'Exercice')}</div><div class="wt-next-meta">${Math.max(20, Number(ex.guideSeconds || 0))}s effort · ${Math.max(0, Number(ex.restSeconds || 0))}s pause${next.round ? ` · Tour ${next.round}` : ''}</div></div><div class="wt-next-mini"><img class="wt-next-img" src="${_exerciseDemoDataUri(ex.n || ex.name || '')}" alt="Démo suivante"/></div></div>`;
++  wrap.innerHTML = `<div class="wt-next-card"><div><div class="wt-next-kicker">Ensuite</div><div class="wt-next-name">${escapeHtml(ex.n || ex.name || 'Exercice')}</div><div class="wt-next-meta">${Math.max(20, Number(ex.guideSeconds || 0))}s effort · ${Math.max(0, Number(ex.restSeconds || 0))}s pause${next.round ? ` · Tour ${next.round}` : ''}</div></div><div class="wt-next-mini">${_animatedExerciseFigureHtml(ex.n || ex.name || '', 'wt-next-figure', `Démo ${ex.n || ex.name || 'suivante'}`)}</div></div>`;
+ }
+ 
+ function _wtSetSessionMeta(block, phaseSeconds) {
+@@ -6080,6 +6080,38 @@
+ }
+ 
+ // ── Animated stick figure for exercise movements ──────────────────────────────
++function _withUniqueExerciseSvgIds(svg) {
++  const uid = `wt${Math.random().toString(36).slice(2, 9)}`;
++  return String(svg || "")
++    .replace(/id="sf"/g, `id="sf-${uid}"`)
++    .replace(/url\(#sf\)/g, `url(#sf-${uid})`)
++    .replace(/id="hg"/g, `id="hg-${uid}"`)
++    .replace(/url\(#hg\)/g, `url(#hg-${uid})`);
++}
++
++function _exerciseMotionType(name = "") {
++  const nm = String(name || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
++  if (/jump|jack|burpee|saut|high.?knees|montee.?genou|mountain|climber/.test(nm)) return 'cardio';
++  if (/squat|fente|lunge|step.?up|mollet|calf/.test(nm)) return 'lower';
++  if (/pompe|push.?up|dip|press|develop|bench|militaire|extension.tricep|curl|elevation|raise|shrug/.test(nm)) return 'upper';
++  if (/souleve|deadlift|terre|sumo|roumain|hip.?thrust|thrust|rowing|tirage|row|pull.?over|oiseau/.test(nm)) return 'hinge';
++  if (/planche|plank|gainage|crunch|abdo|sit.?up|hollow|twist|rotation/.test(nm)) return 'core';
++  if (/etir|stretch|mobilit|yoga|souplesse|respiration|ouverture/.test(nm)) return 'mobility';
++  return 'flow';
++}
++
++function _exerciseMotionBadge(name = "") {
++  const type = _exerciseMotionType(name);
++  return ({ cardio:'Cardio', lower:'Bas du corps', upper:'Haut du corps', hinge:'Chaîne postérieure', core:'Core', mobility:'Mobilité', flow:'Mouvement guidé' })[type] || 'Mouvement guidé';
++}
++
++function _animatedExerciseFigureHtml(name = '', cls = 'wt-demo-figure', label = 'Démo mouvement') {
++  const svg = _withUniqueExerciseSvgIds(_stickFigureSVG(name));
++  const motionType = _exerciseMotionType(name);
++  const badge = _exerciseMotionBadge(name);
++  return `<div class="${cls} motion-${motionType}" data-motion="${motionType}" role="img" aria-label="${escapeAttr(label)}"><div class="wt-motion-stage"><div class="wt-motion-badge">${escapeHtml(badge)}</div><div class="wt-motion-glow wt-motion-glow-a"></div><div class="wt-motion-glow wt-motion-glow-b"></div><div class="wt-motion-svg">${svg}</div></div></div>`;
++}
++
+ function _stickFigureSVG(name) {
+   const nm = (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+   // Near (right/front) limb — bright, thick
+@@ -6830,7 +6862,7 @@
+ 
+   const imgWrap = document.getElementById('wt-ex-img-wrap');
+   if (imgWrap) {
+-    imgWrap.innerHTML = `<div class="wt-visual-main"><div class="ex-figure-tag">Démo mouvement</div><img class="wt-demo-gif" src="${_exerciseDemoDataUri(ex.n || '')}" alt="Démo ${escapeHtml(ex.n || '')}"/></div><div class="wt-visual-muscle"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(ex.m || ex.n || '')}</div>`;
++    imgWrap.innerHTML = `<div class="wt-visual-main"><div class="ex-figure-tag">Démo mouvement</div>${_animatedExerciseFigureHtml(ex.n || '', 'wt-demo-figure', `Démo ${ex.n || ''}`)}</div><div class="wt-visual-muscle"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(ex.m || ex.n || '')}</div>`;
+   }
+ 
+   const cue = exerciseCuePack({ name: ex.n || '', muscle: ex.m || '' });
