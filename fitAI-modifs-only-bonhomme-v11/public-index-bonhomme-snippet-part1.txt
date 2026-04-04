@@ -1,0 +1,18 @@
+/* public/index.html — part 1 */
+.wt-demo-figure,.wt-next-figure{width:100%;height:100%;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 18px 32px rgba(0,0,0,.36));transform:scale(1.05)}
+.wt-demo-figure svg,.wt-next-figure svg{width:100%;height:100%;display:block;overflow:visible}
+.wt-demo-figure{min-height:280px;max-height:280px}
+.wt-next-figure{min-height:96px;max-height:96px}
+.wt-motion-stage{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:inherit;isolation:isolate}
+.wt-motion-svg{position:relative;z-index:2;width:100%;height:100%;display:flex;align-items:center;justify-content:center;transform-origin:50% 72%}
+.wt-motion-badge{position:absolute;top:8px;right:8px;z-index:3;padding:6px 10px;border-radius:999px;background:rgba(15,23,42,.66);border:1px solid rgba(255,255,255,.12);font-size:.58rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#cbd5e1;backdrop-filter:blur(10px)}
+.wt-motion-glow{position:absolute;inset:auto 12% 10% 12%;height:26px;border-radius:999px;filter:blur(14px);opacity:.75;z-index:1;pointer-events:none}
+.wt-motion-glow-a{background:radial-gradient(circle,rgba(99,102,241,.42),transparent 70%)}
+.wt-motion-glow-b{background:radial-gradient(circle,rgba(34,211,238,.24),transparent 72%);animation:wtGlowPulse 1.8s ease-in-out infinite}
+.wt-demo-figure.motion-cardio .wt-motion-svg,.wt-next-figure.motion-cardio .wt-motion-svg{animation:wtCardioBoost .82s ease-in-out infinite}
+.wt-demo-figure.motion-lower .wt-motion-svg,.wt-next-figure.motion-lower .wt-motion-svg{animation:wtLowerDrive 1.45s ease-in-out infinite}
+.wt-demo-figure.motion-upper .wt-motion-svg,.wt-next-figure.motion-upper .wt-motion-svg{animation:wtUpperDrive 1.25s ease-in-out infinite}
+.wt-demo-figure.motion-hinge .wt-motion-svg,.wt-next-figure.motion-hinge .wt-motion-svg{animation:wtHingeDrive 1.45s ease-in-out infinite}
+.wt-demo-figure.motion-core .wt-motion-svg,.wt-next-figure.motion-core .wt-motion-svg{animation:wtCoreDrive 1.18s ease-in-out infinite}
+.wt-demo-figure.motion-mobility .wt-motion-svg,.wt-next-figure.motion-mobility .wt-motion-svg{animation:wtMobilityFlow 2.4s ease-in-out infinite}
+.wt-demo-figure.motion-flow .wt-motion-svg,.wt-next-figure.motion-flow .wt-motion-svg{animation:wtFlowDrive 1.7s ease-in-out infinite}
