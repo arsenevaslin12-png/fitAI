@@ -1,0 +1,19 @@
+BRANCHE: upload/bonhomme-v11-files
+
+FICHIERS UPLOADÉS:
+- fitAI-modifs-only-bonhomme-v11/README.md
+- fitAI-modifs-only-bonhomme-v11/public-app-js.patch
+- fitAI-modifs-only-bonhomme-v11/public-index-bonhomme-snippet-part1.txt
+- fitAI-modifs-only-bonhomme-v11/public-index-bonhomme-snippet-part2.txt
+
+COMMENT L'APPLIQUER:
+1) Ouvrir public/app.js
+2) Appliquer les remplacements décrits dans public-app-js.patch
+3) Ouvrir public/index.html
+4) Ajouter le contenu de public-index-bonhomme-snippet-part1.txt dans la balise <style>
+5) Ajouter ensuite le contenu de public-index-bonhomme-snippet-part2.txt juste après
+
+EFFET ATTENDU:
+- le bonhomme du workout devient animé inline
+- la carte "Ensuite" affiche aussi le bonhomme animé
+- l'animation varie selon le type d'exercice (cardio, bas du corps, haut du corps, hinge, core, mobilité)
