@@ -1,0 +1,9602 @@
+"use strict";
+
+let SB = null;
+let U = null;
+let MODE = "login";
+let PLAN = null;
+let FILE = null;
+let COACH_HISTORY = [];
+const MAX_COACH_HISTORY = 20;
+let AUTH_ERROR_COUNT = 0;
+const MAX_AUTH_ERRORS = 3;
+const LIKED = new Set((() => {
+  try { return JSON.parse(localStorage.getItem("fp_likes") || "[]"); }
+  catch { return []; }
+})());
+const ASYNC_LOCKS = new Set();
+let POST_PHOTO = null;
+let FEED_FILTER = "all";
+let LAST_COACH_PROMPT = "";
+let COACH_REQUEST_SEQ = 0;
+let USER_WEIGHT = null; // kg, loaded from profile — used to compute water target
+let _appReady = false; // guards against double-call of showApp() from onAuthStateChange + getSession()
+
+const GOAL_LABELS = {
+  prise_de_masse: "💪 Prise de masse",
+  perte_de_poids: "🔥 Perte de poids",
+  endurance: "🏃 Endurance",
+  force: "🏋️ Force",
+  remise_en_forme: "🌟 Remise en forme",
+  maintien: "⚖️ Maintien"
+};
+
+// ── DataCache — SWR-equivalent (stale-while-revalidate) ──────────────────────
+const DataCache = (() => {
+  const store = {};
+  return {
+    get(key) {
+      const item = store[key];
+      if (!item) return null;
+      if (Date.now() > item.expires) { delete store[key]; return null; }
+      return item.data;
+    },
+    set(key, data, ttlMs = 60000) {
+      store[key] = { data, expires: Date.now() + ttlMs };
+    },
+    del(key) { delete store[key]; },
+    bust(prefix) {
+      Object.keys(store).forEach(k => { if (k.startsWith(prefix)) delete store[k]; });
+    }
+  };
+})();
+
+// ── Lazy image loading via IntersectionObserver ───────────────────────────────
+const lazyObserver = typeof IntersectionObserver !== "undefined"
+  ? new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target;
+          if (img.dataset.src) {
+            img.src = img.dataset.src;
+            img.removeAttribute("data-src");
+            lazyObserver.unobserve(img);
+          }
+        }
+      });
+    }, { rootMargin: "200px" })
+  : null;
+
+function lazyImg(src, alt = "", cls = "", style = "") {
+  // Returns img HTML with data-src for lazy loading
+  return `<img data-src="${escapeAttr(src)}" alt="${escapeAttr(alt)}"${cls ? ` class="${cls}"` : ""}${style ? ` style="${style}"` : ""} loading="lazy" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"/>`;
+}
+
+function observeLazyImgs(container) {
+  if (!lazyObserver || !container) return;
+  container.querySelectorAll("img[data-src]").forEach(img => lazyObserver.observe(img));
+}
+
+function escapeAttr(str) {
+  return String(str || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+
+async function sbSafeSingle(query) {
+  try {
+    const res = await query;
+    return res && typeof res === "object" ? res : { data: null, error: null };
+  } catch (e) {
+    return { data: null, error: e };
+  }
+}
+
+async function sbSafeList(query) {
+  try {
+    const res = await query;
+    const data = Array.isArray(res?.data) ? res.data : [];
+    return { ...(res || {}), data };
+  } catch (e) {
+    return { data: [], error: e };
+  }
+}
+
+function coachGoalLabel(goal) {
+  return {
+    prise_de_masse: "Prise de masse",
+    perte_de_poids: "Perte de poids",
+    endurance: "Endurance",
+    force: "Force",
+    remise_en_forme: "Remise en forme",
+    maintien: "Maintien"
+  }[String(goal || "")] || "Objectif libre";
+}
+
+function buildCoachPriorityLine(ctx = {}) {
+  const parts = [];
+  if (ctx.lastScanFocus) parts.push(`Focus: ${ctx.lastScanFocus}`);
+  if (ctx.recentSessions7d > 0) parts.push(`${ctx.recentSessions7d} séance${ctx.recentSessions7d > 1 ? 's' : ''}/7j`);
+  if (ctx.todayProtein > 0) parts.push(`${ctx.todayProtein}g prot.`);
+  if (ctx.currentStreak > 0) parts.push(`streak ${ctx.currentStreak}j`);
+  return parts.length ? parts.slice(0, 3).join(' · ') : 'Action simple, utile, réaliste.';
+}
+
+function coachMoodPrompt(kind) {
+  const prompts = {
+    low: "J'ai la flemme aujourd'hui. Recadre-moi sans me culpabiliser et donne-moi l'action minimale la plus intelligente.",
+    medium: "Je suis moyen aujourd'hui. Donne-moi une séance courte mais utile et réaliste.",
+    high: "Je me sens bien. Donne-moi le meilleur focus du jour pour progresser sans perdre en qualité.",
+    recover: "Je suis fatigué ou j'ai mal dormi. Adapte ma journée entre récupération active, mobilité et séance très légère."
+  };
+  return prompts[kind] || prompts.medium;
+}
+
+function detectCoachModeClient(prompt) {
+  const t = String(prompt || '').toLowerCase();
+  if (/flemme|pas envie|motivation|discipline|stagne|stagnation|j'ai la flemme|j ai la flemme/.test(t)) return 'motivation';
+  if (/fatigu|mal dormi|courbature|récup|recup|repos|épuis|epuis|claqué|claque/.test(t)) return 'recovery';
+  if (/liste de course|liste d'achat|faire les courses|courses pour|supermarch|barbecue|bbq|soir[eé]e burgers/.test(t)) return 'shopping_list';
+  if (/journée alimentaire|journee alimentaire|que manger|quoi manger|repas|menu|plan alimentaire/.test(t)) return 'meal_plan';
+  if (/recette|cuisine|prépare|prepare|plat/.test(t)) return 'recipe_json';
+  if (/programme|séance|seance|workout|full body|upper body|lower body|hiit|musculation|circuit|abdos|cardio|push|pull|jambes|pecs|dos/.test(t)) return 'workout_json';
+  return 'advice';
+}
+
+
+function isCoachWorkoutPrompt(prompt) {
+  const t = String(prompt || '').toLowerCase();
+  return /séance|seance|workout|full body|upper body|lower body|prise de masse|hypertroph|musculation|fais-moi une vraie séance|adapte ma séance|entrainement|entraînement|cardio|jambes|pecs|dos|abdos|push|pull/.test(t);
+}
+
+async function requestWorkoutPlanDirect(prompt, token, coachProfile, goalContext, historyForApi) {
+  const payload = {
+    prompt,
+    message: prompt,
+    history: historyForApi,
+    goalContext,
+    goal: goalContext?.type || coachProfile?.goal || '',
+    level: coachProfile?.level || goalContext?.level || 'beginner',
+    equipment: coachProfile?.equipment || 'poids du corps',
+    injuries: coachProfile?.injuries || goalContext?.constraints || '',
+    weight: coachProfile?.weight || null,
+    height: coachProfile?.height || null,
+    age: coachProfile?.age || null,
+    sleep_hours: coachProfile?.sleep_hours || null,
+    recovery_score: coachProfile?.recovery_score || null,
+    mood_today: coachProfile?.mood_today || '',
+    current_streak: coachProfile?.current_streak || 0,
+    total_workouts: coachProfile?.total_workouts || 0,
+    recent_sessions_7d: coachProfile?.recent_sessions_7d || 0,
+    best_scan_score: coachProfile?.best_scan_score || 0,
+    last_scan_summary: coachProfile?.last_scan_summary || '',
+    nutrition_summary: coachProfile?.nutrition_summary || '',
+    recent_meal_pattern: coachProfile?.recent_meal_pattern || '',
+    recent_workouts: Array.isArray(coachProfile?.recent_workouts) ? coachProfile.recent_workouts : [],
+    today_kcal: coachProfile?.today_kcal || 0,
+    today_protein: coachProfile?.today_protein || 0,
+    coach_tone: coachProfile?.coach_tone || getCoachTonePreference()
+  };
+  const { response } = await fetchJsonWithTimeout('/api/workout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload)
+  }, 12000);
+  return response;
+}
+
+function ensureCoachPlanPlacement() {
+  const anchor = document.getElementById('coach-plan-anchor');
+  const planCard = document.getElementById('plan-card');
+  if (!anchor || !planCard) return;
+  if (planCard.parentElement !== anchor) anchor.appendChild(planCard);
+}
+
+function coachToneLabel(val) {
+  return { balanced: 'Équilibré', supportive: 'Bienveillant', direct: 'Direct', strict: 'Exigeant' }[String(val || 'balanced')] || 'Équilibré';
+}
+
+function getCoachTonePreference() {
+  try {
+    const stored = localStorage.getItem('fitai_coach_tone');
+    if (stored) return stored;
+  } catch {}
+  return 'balanced';
+}
+
+function setCoachTonePreference(val) {
+  try { localStorage.setItem('fitai_coach_tone', val || 'balanced'); } catch {}
+  const badge = document.getElementById('coach-tone-badge');
+  if (badge) badge.textContent = coachToneLabel(val);
+}
+
+async function loadCoachContext(force = false) {
+  const cacheKey = 'coach_ctx_v2';
+  if (!force) {
+    const cached = DataCache.get(cacheKey);
+    if (cached) return cached;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgoIso = new Date(Date.now() - 7 * 86400000).toISOString();
+  const [goalRes, profileRes, streakRes, recentSessionsRes, scanRes, mealsTodayRes, mealsWeekRes] = await Promise.all([
+    sbSafeSingle(SB.from('goals').select('type,level,constraints,equipment').eq('user_id', U.id).maybeSingle()),
+    sbSafeSingle(SB.from('profiles').select('display_name,weight,height,age').eq('id', U.id).maybeSingle()),
+    sbSafeSingle(SB.from('user_streaks').select('current_streak,total_workouts').eq('user_id', U.id).maybeSingle()),
+    sbSafeList(SB.from('workout_sessions').select('plan,created_at').eq('user_id', U.id).gte('created_at', weekAgoIso).order('created_at', { ascending: false }).limit(6)),
+    sbSafeList(SB.from('body_scans').select('physical_score,created_at,extended_analysis,ai_feedback').eq('user_id', U.id).order('created_at', { ascending: false }).limit(3)),
+    sbSafeList(SB.from('meals').select('name,calories,protein').eq('user_id', U.id).eq('date', today)),
+    sbSafeList(SB.from('meals').select('name,calories,protein,date').eq('user_id', U.id).gte('date', today.slice(0,8) + '01').limit(12))
+  ]);
+
+  const goalContext = goalRes?.data || {};
+  const dbProfile = profileRes?.data || {};
+  const currentStreak = Number(streakRes?.data?.current_streak || 0);
+  const totalWorkouts = Number(streakRes?.data?.total_workouts || 0);
+  const recentSessions = recentSessionsRes?.data || [];
+  const recentWorkoutNames = recentSessions.map(s => s.plan?.title || 'Séance').filter(Boolean).slice(0, 4);
+  const recentSessions7d = recentSessions.length;
+  const scans = scanRes?.data || [];
+  const lastScan = scans[0] || null;
+  const bestScanScore = scans.reduce((best, s) => Math.max(best, Number(s.physical_score) || 0), 0) || null;
+  const lastScanSummary = lastScan?.extended_analysis?.areas_for_improvement?.[0]
+    || lastScan?.extended_analysis?.personalized_recommendations?.training?.[0]
+    || String(lastScan?.ai_feedback || '').split(/[.!?]/)[0]
+    || '';
+  const todayMeals = mealsTodayRes?.data || [];
+  const todayKcal = Math.round(todayMeals.reduce((s, m) => s + (Number(m.calories) || 0), 0));
+  const todayProtein = Math.round(todayMeals.reduce((s, m) => s + (Number(m.protein) || 0), 0));
+  const nutritionSummary = todayKcal > 0 ? `${todayKcal} kcal · ${todayProtein}g protéines` : 'Suivi nutrition encore léger';
+  const recentMealPattern = (mealsWeekRes?.data || []).slice(0, 5).map((m) => `${m.name || 'Repas'} ${m.calories ? `${m.calories}kcal` : ''}`.trim()).join(', ');
+
+  let moodLabel = '';
+  try {
+    const savedMood = localStorage.getItem('fitai_mood');
+    const savedMoodDate = localStorage.getItem('fitai_mood_date');
+    if (savedMood && savedMoodDate === new Date().toDateString()) moodLabel = MOOD_LABELS[parseInt(savedMood)] || '';
+  } catch {}
+
+  const coachProfile = {
+    display_name: dbProfile.display_name || U.email?.split('@')[0] || '',
+    weight: dbProfile.weight || null,
+    height: dbProfile.height || null,
+    age: dbProfile.age || null,
+    goal: goalContext.type || '',
+    level: goalContext.level || 'beginner',
+    injuries: goalContext.constraints || '',
+    equipment: goalContext.equipment || 'poids du corps',
+    mood_today: moodLabel || undefined,
+    current_streak: currentStreak || undefined,
+    total_workouts: totalWorkouts || undefined,
+    recent_workouts: recentWorkoutNames.length ? recentWorkoutNames : undefined,
+    recent_sessions_7d: recentSessions7d || undefined,
+    best_scan_score: bestScanScore || undefined,
+    last_scan_summary: lastScanSummary || undefined,
+    nutrition_summary: nutritionSummary || undefined,
+    recent_meal_pattern: recentMealPattern || undefined,
+    today_kcal: todayKcal > 0 ? todayKcal : undefined,
+    today_protein: todayProtein > 0 ? todayProtein : undefined,
+    coach_tone: getCoachTonePreference()
+  };
+
+  const ctx = { goalContext, coachProfile, insights: { currentStreak, recentSessions7d, todayProtein, todayKcal, bestScanScore, lastScanSummary, moodLabel } };
+  DataCache.set(cacheKey, ctx, 45000);
+  return ctx;
+}
+
+function buildCoachLocalFallback(prompt, ctx = {}) {
+  const t = String(prompt || '').toLowerCase();
+  const name = ctx.coachProfile?.display_name || U?.email?.split('@')[0] || 'champion';
+  const streak = Number(ctx.coachProfile?.current_streak || 0);
+  const scanNote = ctx.coachProfile?.last_scan_summary ? `Ton dernier scan pointe surtout : ${ctx.coachProfile.last_scan_summary}.` : '';
+  const nutritionNote = ctx.coachProfile?.nutrition_summary ? `Côté nutrition, tu en es à ${ctx.coachProfile.nutrition_summary}.` : '';
+  if (/flemme|pas envie|motivation|discipline|j'ai la flemme|j ai la flemme/.test(t)) {
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Coach mental</span><strong>OK ${escapeHtml(name)}, on ne cherche pas la séance parfaite, on protège l'élan.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">La flemme n'est pas le problème. Le vrai risque, c'est de laisser une journée moyenne casser ton rythme.</p><div class="coach-h2">Pourquoi</div><p class="coach-p">${escapeHtml(streak > 0 ? `Tu as déjà ${streak} jour(s) de régularité.` : `Tu n'as pas besoin d'une grosse séance pour garder le cap.`)} ${escapeHtml(scanNote)} ${escapeHtml(nutritionNote)}</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>mets juste ta tenue maintenant</li><li>fais 6 min de marche active ou 2 exercices faciles</li><li>si l'énergie remonte, tu continues 10 min de plus</li></ul>`;
+  }
+  if (/fatigu|mal dormi|courbature|épuis|epuis|recup|repos|claqué|claque/.test(t)) {
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Récupération</span><strong>Aujourd'hui on adapte, on ne force pas.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">Je te conseille une journée légère : mobilité, marche, technique propre, mais pas de séance dure.</p><div class="coach-h2">Pourquoi</div><p class="coach-p">Quand la récup est basse, pousser plus fort rapporte rarement plus. Tu veux garder le mouvement, pas t'écraser.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>8 à 12 min de marche</li><li>2 mouvements mobilité</li><li>un repas protéiné propre ce soir</li></ul>`;
+  }
+  return `<div class="coach-card-head"><span class="coach-card-kicker">Coach express</span><strong>Je te donne l'action la plus utile maintenant.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">On va droit au but : adapte ta journée à ton énergie réelle et garde une action simple, propre et tenable.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>dis-moi ton temps dispo</li><li>ton matériel</li><li>ton niveau d'énergie sur 10</li></ul>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BOOT & INITIALISATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function boot() {
+  bootMsg("Chargement du SDK…");
+
+  // 1. Charger le SDK Supabase
+  try {
+    await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js");
+  } catch (e) {
+    return bootError("Impossible de charger le SDK Supabase. Vérifiez votre connexion internet.");
+  }
+
+  // 2. Récupérer la configuration
+  bootMsg("Récupération de la configuration…");
+  let cfg;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const r = await fetch("/api/config", {
+      headers: { Accept: "application/json" },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    cfg = await r.json();
+    if (!r.ok || !cfg.ok) {
+      throw new Error(cfg.message || cfg.error || `Erreur serveur (HTTP ${r.status})`);
+    }
+  } catch (e) {
+    if (e.name === "AbortError") {
+      return bootError("Timeout: le serveur ne répond pas. Réessayez plus tard.");
+    }
+    return bootError(`Configuration invalide: ${e.message}`);
+  }
+
+  // 3. Valider l'URL Supabase côté client
+  if (!cfg.supabaseUrl || !cfg.supabaseUrl.includes(".supabase.co")) {
+    return bootError("URL Supabase invalide. Vérifiez la configuration Vercel.");
+  }
+
+  // 3b. Health check — vérifier que Supabase est joignable AVANT de créer le client
+  bootMsg("Vérification de Supabase…");
+  try {
+    const hc = new AbortController();
+    const hcTimer = setTimeout(() => hc.abort(), 8000);
+    const healthRes = await fetch(cfg.supabaseUrl + "/auth/v1/health", {
+      signal: hc.signal,
+      headers: { "apikey": cfg.supabaseAnonKey }
+    });
+    clearTimeout(hcTimer);
+
+    if (!healthRes.ok) {
+      const st = healthRes.status;
+      if (st === 401 || st === 403) {
+        return bootError(
+          "Clé Supabase invalide ou ne correspond pas au projet.\n" +
+          "→ Supabase Dashboard → Settings → API → utilisez soit la clé anon/public legacy, soit la publishable key\n" +
+          "→ Vercel Dashboard → Settings → Environment Variables → SUPABASE_ANON_KEY ou SUPABASE_PUBLISHABLE_KEY"
+        );
+      }
+      return bootError(
+        "Supabase a répondu avec une erreur (HTTP " + st + ").\n" +
+        "Vérifiez que votre projet Supabase est actif:\n" +
+        "→ https://supabase.com/dashboard/projects"
+      );
+    }
+  } catch (e) {
+    if (e.name === "AbortError") {
+      return bootError(
+        "Supabase ne répond pas (timeout 8s).\n\n" +
+        "Causes probables:\n" +
+        "• Projet Supabase pausé (free tier = pause après 7j d'inactivité)\n" +
+        "• URL incorrecte dans SUPABASE_URL\n\n" +
+        "→ https://supabase.com/dashboard/projects → Restore project\n" +
+        "→ Puis redéployez sur Vercel"
+      );
+    }
+    return bootError(
+      "Impossible de joindre Supabase.\n\n" +
+      "Causes probables:\n" +
+      "• Projet Supabase pausé (free tier = pause auto après inactivité)\n" +
+      "• URL incorrecte: " + cfg.supabaseUrl + "\n\n" +
+      "→ https://supabase.com/dashboard/projects → Restore project\n" +
+      "→ Vérifiez SUPABASE_URL dans Vercel"
+    );
+  }
+
+  // 4. Initialiser le client Supabase
+  bootMsg("Connexion à Supabase…");
+  try {
+    SB = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "pkce",
+        storageKey: "fitai_auth",
+        storage: window.localStorage
+      }
+    });
+  } catch (e) {
+    return bootError(`Erreur création client Supabase: ${e.message}`);
+  }
+
+  // 5. Écouter les changements d'authentification
+  SB.auth.onAuthStateChange((event, session) => {
+    if (typeof window !== "undefined" && window.__FITAI_DEBUG__) console.log("[Auth]", event, session?.user?.email || "no user");
+
+    if (event === "TOKEN_REFRESHED") {
+      AUTH_ERROR_COUNT = 0;
+    }
+
+    if (event === "SIGNED_OUT" || !session) {
+      U = null;
+      showAuth();
+      return;
+    }
+
+    if (session?.user) {
+      U = session.user;
+      AUTH_ERROR_COUNT = 0;
+      showApp();
+    }
+  });
+
+  // 6. Vérifier la session existante
+  bootMsg("Vérification de la session…");
+  try {
+    const { data, error } = await SB.auth.getSession();
+
+    if (error) {
+      console.error("[Auth] getSession error:", error);
+      // Si erreur de session, nettoyer et afficher login
+      await clearLocalSession();
+      hideBoot();
+      showAuth();
+      return;
+    }
+
+    hideBoot();
+
+    if (data?.session?.user) {
+      U = data.session.user;
+      showApp();
+    } else {
+      showAuth();
+    }
+  } catch (e) {
+    console.error("[Auth] Session check failed:", e);
+    // Erreur réseau probable (CORS, offline, etc.)
+    if (isCorsOrNetworkError(e)) {
+      return bootError(
+        "Erreur de connexion à Supabase.\n\n" +
+        "• Vérifiez votre connexion internet\n" +
+        "• Le projet Supabase est peut-être pausé\n" +
+        "→ https://supabase.com/dashboard/projects"
+      );
+    }
+    await clearLocalSession();
+    hideBoot();
+    showAuth();
+  }
+}
+
+function isCorsOrNetworkError(error) {
+  if (!error) return false;
+  const msg = String(error.message || error).toLowerCase();
+  return msg.includes("network") ||
+         msg.includes("cors") ||
+         msg.includes("failed to fetch") ||
+         msg.includes("load failed") ||
+         msg.includes("fetch");
+}
+
+async function clearLocalSession() {
+  try {
+    localStorage.removeItem("fitai_auth");
+    localStorage.removeItem("supabase.auth.token");
+    // Nettoyer toutes les clés Supabase
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith("sb-") || key.includes("supabase")) {
+        localStorage.removeItem(key);
+      }
+    });
+    if (SB) {
+      try { await SB.auth.signOut({ scope: "local" }); } catch (_) {}
+    }
+  } catch (e) {
+    console.error("[Auth] clearLocalSession error:", e);
+  }
+}
+
+function bootMsg(message) {
+  const el = document.getElementById("boot-msg");
+  if (el) el.textContent = message;
+}
+
+function bootError(message) {
+  const sp = document.getElementById("boot-sp");
+  const msg = document.getElementById("boot-msg");
+  const err = document.getElementById("boot-err");
+  if (sp) sp.style.display = "none";
+  if (msg) msg.style.display = "none";
+  if (err) {
+    err.style.display = "block";
+    err.innerHTML = message.replace(/\n/g, "<br>");
+  }
+}
+
+function hideBoot() {
+  const bootEl = document.getElementById("boot");
+  if (!bootEl) return;
+  bootEl.classList.add("hidden");
+  setTimeout(() => { bootEl.style.display = "none"; }, 450);
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Échec chargement: ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AUTHENTIFICATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+function showAuth() {
+  _appReady = false;
+  _nutrTargetsCache = null;
+  const auth = document.getElementById("auth");
+  const app = document.getElementById("app");
+  if (auth) auth.style.display = "flex";
+  if (app) app.classList.remove("on");
+}
+
+function showApp() {
+  const auth = document.getElementById("auth");
+  const app = document.getElementById("app");
+  if (auth) auth.style.display = "none";
+  if (app) app.classList.add("on");
+  // Guard: only run full initialization once per session to avoid
+  // double-invocation from onAuthStateChange + getSession() both firing.
+  if (_appReady) return;
+  _appReady = true;
+  const tu = document.getElementById("tu");
+  if (tu) tu.textContent = U?.email || "Membre";
+  ensureCriticalUI();
+  applyStoredTheme();
+  gotoTab("dashboard");
+}
+
+function authMode(mode) {
+  MODE = mode;
+  const tabLogin = document.getElementById("atab-login");
+  const tabSignup = document.getElementById("atab-signup");
+  const btn = document.getElementById("auth-btn");
+  if (tabLogin) tabLogin.classList.toggle("on", mode === "login");
+  if (tabSignup) tabSignup.classList.toggle("on", mode === "signup");
+  if (btn) btn.textContent = mode === "login" ? "Se connecter" : "S'inscrire";
+  setAuthMessage("", "");
+}
+
+function setAuthMessage(text, cls) {
+  const el = document.getElementById("auth-msg");
+  if (!el) return;
+  el.textContent = text;
+  el.className = `auth-msg ${cls ? `auth-${cls}` : ""}`;
+}
+
+async function doAuth() {
+  const emailEl = document.getElementById("a-email");
+  const pwdEl = document.getElementById("a-pwd");
+  const email = emailEl ? emailEl.value.trim() : "";
+  const password = pwdEl ? pwdEl.value : "";
+
+  if (!email || !password) {
+    return setAuthMessage("Email et mot de passe requis.", "err");
+  }
+
+  if (password.length < 6) {
+    return setAuthMessage("Mot de passe: 6 caractères minimum.", "err");
+  }
+
+  const btn = document.getElementById("auth-btn");
+  const label = MODE === "login" ? "Connexion…" : "Inscription…";
+
+  await withButton(btn, label, async () => {
+    setAuthMessage("", "");
+
+    try {
+      let result;
+
+      if (MODE === "login") {
+        result = await SB.auth.signInWithPassword({ email, password });
+      } else {
+        result = await SB.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: window.location.origin
+          }
+        });
+      }
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      if (MODE === "signup") {
+        // Vérifier si l'email doit être confirmé
+        if (result.data?.user && !result.data.session) {
+          setAuthMessage("Compte créé ! Vérifiez vos emails pour confirmer.", "ok");
+        } else if (result.data?.session) {
+          // Auto-confirm activé, l'utilisateur est connecté
+          setAuthMessage("Compte créé et connecté !", "ok");
+        }
+      }
+
+    } catch (e) {
+      console.error("[Auth] Error:", e);
+
+      // Traduire les erreurs courantes
+      let msg = e.message || "Erreur d'authentification";
+
+      if (isCorsOrNetworkError(e)) {
+        msg = "Impossible de joindre Supabase. Votre projet est peut-être pausé → supabase.com/dashboard";
+      } else if (msg.includes("Signups not allowed")) {
+        msg = "Inscriptions désactivées. Supabase Dashboard → Authentication → Settings → Enable Sign Up";
+      } else if (msg.includes("Invalid login")) {
+        msg = "Email ou mot de passe incorrect.";
+      } else if (msg.includes("Email not confirmed")) {
+        msg = "Email non confirmé. Vérifiez votre boîte mail.";
+      } else if (msg.includes("User already registered")) {
+        msg = "Cet email est déjà utilisé. Connectez-vous ou utilisez un autre email.";
+      } else if (msg.includes("Password should be")) {
+        msg = "Mot de passe trop faible. Utilisez au moins 6 caractères.";
+      } else if (msg.includes("rate limit")) {
+        msg = "Trop de tentatives. Attendez quelques minutes.";
+      }
+
+      setAuthMessage(msg, "err");
+    }
+  });
+}
+
+async function doLogout() {
+  try {
+    await SB.auth.signOut();
+  } catch (e) {
+    console.error("[Auth] Logout error:", e);
+  }
+  await clearLocalSession();
+  U = null;
+  showAuth();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _feedRefreshTimer = null;
+
+function _startFeedRefresh() {
+  if (_feedRefreshTimer) return;
+  _feedRefreshTimer = setInterval(() => {
+    if (document.getElementById("t-community")?.classList.contains("on")) {
+      loadFeed(true); // silent refresh — no spinner
+    }
+  }, 30_000);
+}
+
+function _stopFeedRefresh() {
+  if (_feedRefreshTimer) { clearInterval(_feedRefreshTimer); _feedRefreshTimer = null; }
+}
+
+function gotoTab(name) {
+  document.querySelectorAll(".tab").forEach((tab) => tab.classList.remove("on"));
+  document.querySelectorAll(".bnav-btn").forEach((btn) => btn.classList.remove("on"));
+  document.getElementById(`t-${name}`)?.classList.add("on");
+  document.getElementById(`n-${name}`)?.classList.add("on");
+  const scroll = document.getElementById("scroll");
+  if (scroll) scroll.scrollTop = 0;
+
+  // Stop feed auto-refresh when leaving community tab
+  if (name !== "community") _stopFeedRefresh();
+
+  if (name === "dashboard") loadDashboard();
+  if (name === "goal") loadGoal();
+  if (name === "coach") { loadCoachHistory(); loadHistory(); }
+  if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); loadCommunityRecipes(); loadNutritionPlanFromStorage(); }
+  if (name === "community") { loadFeed(); _startFeedRefresh(); }
+  if (name === "friends") { loadFriends(); loadFriendRequests(); loadLeaderboard(); loadFriendSuggestions(); renderFriendsOverview(); }
+  if (name === "bodyscan") loadScans();
+  if (name === "progress") loadProgress();
+  if (name === "defis") loadDefis();
+  if (name === "programme") loadProgramme();
+  if (name === "profile") {
+    loadProfile();
+    loadStats();
+    loadAchievements();
+    _updateProfileXpDisplay();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UI SAFETY
+// ══════════════════════════════════════════════════════════════════════════════
+
+
+function ensureCriticalUI() {
+  ["community", "friends", "profile"].forEach((tab) => {
+    const nav = document.getElementById(`n-${tab}`);
+    const pane = document.getElementById(`t-${tab}`);
+    if (nav) nav.style.display = "";
+    if (pane) pane.style.display = pane.classList.contains("on") ? "flex" : "";
+  });
+  const recipeCard = document.getElementById("nutrition-recipe-card");
+  if (recipeCard) recipeCard.style.display = "";
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadDashboard() {
+  showGlobalLoader(true, "Chargement du dashboard…");
+  try {
+    // Dynamic date
+    const dateEl = document.getElementById("db-date");
+    if (dateEl) {
+      const now = new Date();
+      dateEl.textContent = "📅 " + now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+    }
+    // Greet with name
+    const greetEl = document.getElementById("db-greet-name");
+    const sidebarName = document.getElementById("tu");
+    if (greetEl && U) {
+      try {
+        const { data } = await SB.from("profiles").select("display_name,username,age,weight,height").eq("id", U.id).maybeSingle();
+        const name = data?.display_name || data?.username || U.email?.split("@")[0] || "Champion";
+        greetEl.textContent = name;
+        if (sidebarName) sidebarName.textContent = name;
+        // Update goal card
+        const goalText = document.getElementById("db-goal-text");
+        if (goalText) goalText.textContent = `Objectif de ${name}`;
+      } catch {
+        const name = U.email?.split("@")[0] || "Champion";
+        greetEl.textContent = name;
+        if (sidebarName) sidebarName.textContent = name;
+      }
+    }
+    await Promise.all([loadGoal(), loadMeals(), loadStats(), loadNutritionTargets(), loadStreak()]);
+    if (typeof renderDailyChallengesSection === "function") renderDailyChallengesSection();
+    renderWater();
+    loadWeeklyPlan();
+    loadScanMiniTile();
+    restoreMoodSelection();
+    renderWeekActivity();
+    _renderOnboarding();
+  } catch (e) {
+    console.error("[Dashboard] Error:", e);
+  }
+  showGlobalLoader(false);
+}
+
+// ── Onboarding card ───────────────────────────────────────────────────────────
+const ONBOARD_KEY = "fitai_onboarded";
+
+function _renderOnboarding() {
+  const el = document.getElementById("db-onboarding");
+  if (!el) return;
+  // Dismissed or already active
+  try { if (localStorage.getItem(ONBOARD_KEY)) { el.style.display = "none"; return; } } catch {}
+  // Only show if user has no workouts yet
+  const streakEl = document.getElementById("p-streak");
+  const totalEl  = document.getElementById("st-sess");
+  const total    = parseInt(totalEl?.textContent || "0") || 0;
+  if (total > 0) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.innerHTML = `
+    <div class="onboard-card">
+      <div class="onboard-header">
+        <div class="onboard-title">🎉 Bienvenue sur FitAI !</div>
+        <div class="onboard-sub">4 étapes pour bien démarrer</div>
+      </div>
+      <div class="onboard-steps">
+        <div class="onboard-step" onclick="gotoTab('goal')">
+          <span class="onboard-num">1</span>
+          <div class="onboard-step-body">
+            <div class="onboard-step-title">Définir ton objectif</div>
+            <div class="onboard-step-sub">Perte de poids · prise de masse · cardio…</div>
+          </div>
+          <span class="onboard-arrow">→</span>
+        </div>
+        <div class="onboard-step" onclick="gotoTab('profile')">
+          <span class="onboard-num">2</span>
+          <div class="onboard-step-body">
+            <div class="onboard-step-title">Compléter ton profil</div>
+            <div class="onboard-step-sub">Poids · taille · âge pour tes macros personnalisées</div>
+          </div>
+          <span class="onboard-arrow">→</span>
+        </div>
+        <div class="onboard-step" onclick="gotoTab('programme')">
+          <span class="onboard-num">3</span>
+          <div class="onboard-step-body">
+            <div class="onboard-step-title">Lancer ta première séance</div>
+            <div class="onboard-step-sub">Programme flexible 1, 4, 8 ou 12 semaines · séance libre</div>
+          </div>
+          <span class="onboard-arrow">→</span>
+        </div>
+        <div class="onboard-step" onclick="gotoTab('coach')">
+          <span class="onboard-num">4</span>
+          <div class="onboard-step-body">
+            <div class="onboard-step-title">Parler au coach IA</div>
+            <div class="onboard-step-sub">Demande une recette · un plan · des conseils</div>
+          </div>
+          <span class="onboard-arrow">→</span>
+        </div>
+      </div>
+      <button class="btn btn-p btn-full" onclick="dismissOnboarding()" style="margin-top:4px">C'est parti ! 🚀</button>
+    </div>`;
+}
+
+function dismissOnboarding() {
+  try { localStorage.setItem(ONBOARD_KEY, "1"); } catch {}
+  const el = document.getElementById("db-onboarding");
+  if (el) { el.style.opacity = "0"; setTimeout(() => { el.style.display = "none"; }, 300); }
+}
+window.dismissOnboarding = dismissOnboarding;
+
+// ── V2 MOOD TRACKER ──────────────────────────────────────────────────────────
+const MOOD_LABELS = { 1: "Épuisé", 2: "Fatigué", 3: "Neutre", 4: "Bien", 5: "En forme" };
+const MOOD_COACH_MSGS = {
+  1: "Je suis épuisé aujourd'hui. Adapte ma séance : propose quelque chose de très léger ou de la récupération active.",
+  2: "Je me sens fatigué. Propose une séance courte et modérée, rien d'intense.",
+  3: "Je me sens neutre. Lance-moi une séance standard selon mes objectifs.",
+  4: "Je me sens bien ! Propose une séance normale à intense selon mon objectif.",
+  5: "Je suis en pleine forme aujourd'hui ! Pousse-moi avec une séance intense selon mon objectif."
+};
+
+// Mood-level to card background glow (subtle tint)
+const MOOD_BG = {
+  1: "linear-gradient(145deg,rgba(248,113,113,.12),rgba(239,68,68,.04))",
+  2: "linear-gradient(145deg,rgba(251,146,60,.11),rgba(249,115,22,.04))",
+  3: "linear-gradient(145deg,rgba(251,191,36,.1),rgba(234,179,8,.04))",
+  4: "linear-gradient(145deg,rgba(74,222,128,.1),rgba(34,197,94,.04))",
+  5: "linear-gradient(145deg,rgba(96,165,250,.12),rgba(37,99,235,.05))"
+};
+const MOOD_BORDER = { 1:"rgba(248,113,113,.25)", 2:"rgba(251,146,60,.22)", 3:"rgba(251,191,36,.2)", 4:"rgba(74,222,128,.2)", 5:"rgba(96,165,250,.22)" };
+const MOOD_EMOJI  = { 1:"😩", 2:"😔", 3:"😐", 4:"😊", 5:"💪" };
+
+function selectMood(btn, level) {
+  document.querySelectorAll(".mood-face").forEach(b => b.classList.remove("selected"));
+  btn.classList.add("selected");
+  const startBtn = document.getElementById("mood-start-btn");
+  if (startBtn) startBtn.classList.add("active");
+  const label = MOOD_LABELS[level] || "";
+
+  // Live label tag
+  const labelTag = document.getElementById("mood-label-tag");
+  if (labelTag) {
+    labelTag.textContent = (MOOD_EMOJI[level] || "") + " " + label;
+    labelTag.classList.add("visible");
+  }
+  // Dynamic card glow
+  const card = document.querySelector(".b-mood");
+  if (card) {
+    card.style.background = MOOD_BG[level] || "";
+    card.style.borderColor = MOOD_BORDER[level] || "";
+  }
+
+  try {
+    localStorage.setItem("fitai_mood", String(level));
+    localStorage.setItem("fitai_mood_label", label);
+    localStorage.setItem("fitai_mood_date", new Date().toDateString());
+  } catch {}
+  // Persist to Supabase daily_moods table
+  if (U) {
+    const today = new Date().toISOString().slice(0, 10);
+    SB.from("daily_moods")
+      .upsert({ user_id: U.id, mood_level: level, mood_label: label, date: today }, { onConflict: "user_id,date" })
+      .then(({ error }) => { if (error) { console.warn("[mood] save failed:", error.message); toast("Humeur non sauvegardée — vérifie ta connexion.", "err"); } })
+      .catch((err) => { console.warn("[mood] promise rejected:", err); toast("Humeur non sauvegardée.", "err"); });
+  }
+}
+
+function startWithMood() {
+  const level = parseInt(localStorage.getItem("fitai_mood") || "0");
+  gotoTab("coach");
+  if (level >= 1 && level <= 5 && localStorage.getItem("fitai_mood_date") === new Date().toDateString()) {
+    setTimeout(() => sendCoachMsg(MOOD_COACH_MSGS[level]), 300);
+  }
+}
+
+function restoreMoodSelection() {
+  // First restore from localStorage (instant)
+  try {
+    const saved = localStorage.getItem("fitai_mood");
+    const savedDate = localStorage.getItem("fitai_mood_date");
+    if (saved && savedDate === new Date().toDateString()) {
+      const lvl = parseInt(saved);
+      document.querySelectorAll(".mood-face").forEach(b => {
+        if (b.dataset.v === saved) b.classList.add("selected");
+      });
+      const startBtn = document.getElementById("mood-start-btn");
+      if (startBtn) startBtn.classList.add("active");
+      _applyMoodGlow(lvl);
+    }
+  } catch {}
+  // Then sync from Supabase (persistent across devices)
+  if (U) {
+    const today = new Date().toISOString().slice(0, 10);
+    SB.from("daily_moods").select("mood_level,mood_label").eq("user_id", U.id).eq("date", today).maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        const lvl = data.mood_level;
+        document.querySelectorAll(".mood-face").forEach(b => b.classList.remove("selected"));
+        document.querySelectorAll(".mood-face").forEach(b => {
+          if (b.dataset.v === String(lvl)) b.classList.add("selected");
+        });
+        const startBtn = document.getElementById("mood-start-btn");
+        if (startBtn) startBtn.classList.add("active");
+        _applyMoodGlow(lvl);
+        try {
+          localStorage.setItem("fitai_mood", String(lvl));
+          localStorage.setItem("fitai_mood_label", data.mood_label || "");
+          localStorage.setItem("fitai_mood_date", new Date().toDateString());
+        } catch {}
+      }).catch((err) => console.warn("[mood] restore failed:", err));
+  }
+}
+
+function _applyMoodGlow(level) {
+  const labelTag = document.getElementById("mood-label-tag");
+  if (labelTag) {
+    labelTag.textContent = (MOOD_EMOJI[level] || "") + " " + (MOOD_LABELS[level] || "");
+    labelTag.classList.add("visible");
+  }
+  const card = document.querySelector(".b-mood");
+  if (card) {
+    card.style.background = MOOD_BG[level] || "";
+    card.style.borderColor = MOOD_BORDER[level] || "";
+  }
+}
+
+// ── Dashboard ring animation ─────────────────────────────────────────────────
+function animateRing(id, value, max) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const r = parseFloat(el.getAttribute("r") || 20);
+  const circ = 2 * Math.PI * r;
+  const pct = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
+  el.setAttribute("stroke-dasharray", String(circ));
+  // Defer to next frame so CSS transition fires
+  requestAnimationFrame(() => {
+    el.style.strokeDashoffset = String(circ * (1 - pct));
+  });
+}
+
+// ── Dashboard week activity bars ─────────────────────────────────────────────
+async function renderWeekActivity() {
+  if (!U) return;
+  try {
+    const today = new Date();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    monday.setHours(0, 0, 0, 0);
+    const { data } = await SB.from("workout_sessions")
+      .select("created_at")
+      .eq("user_id", U.id)
+      .gte("created_at", monday.toISOString());
+
+    // Map session dates to day index (0=Mon … 6=Sun)
+    const DAY_HEIGHTS = [22, 28, 32, 26, 30, 34, 20]; // varied heights for active days
+    const activeDays = new Set((data || []).map(s => (new Date(s.created_at).getDay() + 6) % 7));
+    const todayIdx = (today.getDay() + 6) % 7;
+
+    const countEl = document.getElementById("db-week-count");
+    if (countEl) countEl.textContent = `${activeDays.size} / 7j`;
+
+    document.querySelectorAll(".db-week .db-day").forEach((el, i) => {
+      const isActive = activeDays.has(i);
+      const isToday = i === todayIdx;
+      el.classList.toggle("active", isActive);
+      el.classList.toggle("today", isToday && !isActive);
+      const bar = el.querySelector(".db-day-bar");
+      if (bar) {
+        const h = isActive ? DAY_HEIGHTS[i] : (isToday ? 14 : 5);
+        // Small delay so CSS transition fires
+        setTimeout(() => { bar.style.height = h + "px"; }, 80 + i * 40);
+      }
+    });
+  } catch (e) {
+    console.warn("[WeekActivity]", e.message);
+  }
+}
+
+// ── V2 SCAN IA MINI TILE ─────────────────────────────────────────────────────
+async function loadScanMiniTile() {
+  if (!U) return;
+  const scoreEl = document.getElementById("scan-mini-score");
+  const ringsEl = document.getElementById("scan-mini-rings");
+  try {
+    const { data } = await SB.from("body_scans")
+      .select("physical_score,symmetry_score,posture_score,bodyfat_proxy,ai_feedback,extended_analysis")
+      .eq("user_id", U.id)
+      .not("ai_feedback", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!data) {
+      if (scoreEl) scoreEl.textContent = "—";
+      if (ringsEl) ringsEl.innerHTML = '<div class="scan-no-data">Aucun scan · Tapez pour analyser</div>';
+      return;
+    }
+
+    const score = data.physical_score || 0;
+    if (scoreEl) scoreEl.textContent = score + "%";
+
+    // Progress rings: Symétrie, Posture, Compo (bodyfat proxy inverted → "Définition")
+    const sym  = Math.min(100, Math.max(0, data.symmetry_score  || 0));
+    const post = Math.min(100, Math.max(0, data.posture_score   || 0));
+    // bodyfat_proxy is a % of fat — lower is better; convert to definition score
+    const bfRaw = data.extended_analysis?.score_breakdown?.body_composition ?? data.bodyfat_proxy ?? 50;
+    const def  = Math.min(100, Math.max(0, Math.round(100 - bfRaw)));
+
+    const ringR = 14;
+    const ringC = 2 * Math.PI * ringR;
+    function ring(pct, color, label) {
+      const filled = ringC * (pct / 100);
+      return `<div class="ring-item">
+        <svg class="ring-svg" width="36" height="36" viewBox="0 0 36 36">
+          <circle class="ring-track" cx="18" cy="18" r="${ringR}"/>
+          <circle class="ring-fill" cx="18" cy="18" r="${ringR}" stroke="${color}" stroke-dasharray="${filled.toFixed(1)} ${ringC.toFixed(1)}"/>
+        </svg>
+        <div class="ring-lbl">${label}</div>
+      </div>`;
+    }
+
+    if (ringsEl) {
+      ringsEl.innerHTML =
+        ring(sym,  "#00FFFF", "Sym.") +
+        ring(post, "#a855f7", "Post.") +
+        ring(def,  "#22c55e", "Déf.");
+    }
+
+    // Update hidden compat counter
+    const countEl = document.getElementById("db-scans");
+    if (countEl) countEl.textContent = "1+";
+
+  } catch (e) {
+    console.warn("[ScanMini] load error:", e);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// OBJECTIF
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Goal visual selectors ──────────────────────────────────────────────────────
+function selectGoalType(val) {
+  const el = document.getElementById("g-type");
+  if (el) el.value = val;
+  document.querySelectorAll(".goal-type-btn").forEach(b => b.classList.toggle("on", b.dataset.val === val));
+}
+function selectGoalLevel(val) {
+  const el = document.getElementById("g-level");
+  if (el) el.value = val;
+  document.querySelectorAll(".goal-level-tab").forEach(b => b.classList.toggle("on", b.dataset.val === val));
+}
+function selectGoalSessions(val) {
+  const el = document.getElementById("g-sessions");
+  if (el) el.value = val;
+  document.querySelectorAll(".goal-session-pill").forEach(b => b.classList.toggle("on", b.dataset.val === val));
+}
+function selectGoalEquip(val) {
+  const el = document.getElementById("g-equipment");
+  if (el) el.value = val;
+  document.querySelectorAll(".goal-equip-chip").forEach(b => b.classList.toggle("on", b.dataset.val === val));
+}
+
+async function loadGoal() {
+  if (!U) return;
+  try {
+    const { data, error } = await SB.from("goals").select("*").eq("user_id", U.id).maybeSingle();
+    if (error) throw error;
+
+    const goalForm = document.getElementById("goal-form");
+    const goalView = document.getElementById("goal-view");
+    if (goalForm) goalForm.style.display = data ? "none" : "block";
+    if (goalView) goalView.style.display = data ? "block" : "none";
+
+    if (!data) return;
+
+    // Populate form hidden inputs + visual selectors (for editing)
+    if (data.type) selectGoalType(data.type);
+    if (data.level) selectGoalLevel(data.level);
+    const storedSessions = localStorage.getItem("fitai_goal_sessions") || "";
+    if (storedSessions) selectGoalSessions(storedSessions);
+    selectGoalEquip(data.equipment || "");
+    const gText = document.getElementById("g-text");
+    const gConstraints = document.getElementById("g-constraints");
+    if (gText) gText.value = data.text || "";
+    if (gConstraints) gConstraints.value = data.constraints || "";
+
+    // Hero view card
+    const GOAL_ICONS = { prise_de_masse:"💪", perte_de_poids:"🔥", endurance:"🏃", force:"🏋️", remise_en_forme:"🌟", maintien:"⚖️" };
+    const EQUIP_LABELS = { "":"Poids du corps", halteres:"Haltères", barre:"Barre", salle:"Salle complète", kettlebell:"Kettlebell", elastiques:"Élastiques" };
+    const LEVEL_SHORT = { debutant:"Débutant", intermediaire:"Inter.", avance:"Avancé", elite:"Élite" };
+    const setEl = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    setEl("goal-hero-icon", GOAL_ICONS[data.type] || "🎯");
+    setEl("goal-hero-title", GOAL_LABELS[data.type] || data.type || "Mon objectif");
+    setEl("goal-hero-sub", data.text ? data.text.slice(0, 80) : "Objectif personnalisé");
+    setEl("gs-level", LEVEL_SHORT[data.level] || data.level || "—");
+    const storedSess = localStorage.getItem("fitai_goal_sessions") || "";
+    setEl("gs-sessions", storedSess ? `${storedSess}×/sem` : "—");
+    setEl("gs-equip", EQUIP_LABELS[data.equipment || ""] || "Poids du corps");
+  } catch (e) {
+    console.error("[Goal] Load error:", e);
+  }
+}
+
+function goalEdit() {
+  const goalView = document.getElementById("goal-view");
+  const goalForm = document.getElementById("goal-form");
+  if (goalView) goalView.style.display = "none";
+  if (goalForm) goalForm.style.display = "block";
+  // Scroll to top of form
+  if (goalForm) goalForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function saveGoal() {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+
+  const type  = document.getElementById("g-type")?.value  || "";
+  const level = document.getElementById("g-level")?.value || "";
+  if (!type)  return toast("Sélectionne un type d'objectif.", "err");
+  if (!level) return toast("Sélectionne ton niveau.", "err");
+
+  // sessions_per_week stored locally (column may not exist in DB)
+  const sessionsRaw = document.getElementById("g-sessions")?.value || "";
+  if (sessionsRaw) {
+    try { localStorage.setItem("fitai_goal_sessions", sessionsRaw); } catch {}
+  }
+
+  const payload = {
+    user_id: U.id,
+    type,
+    level,
+    text: (document.getElementById("g-text")?.value || "").trim(),
+    constraints: (document.getElementById("g-constraints")?.value || "").trim(),
+    equipment: document.getElementById("g-equipment")?.value || "",
+    updated_at: new Date().toISOString()
+  };
+
+  const btn = document.getElementById("btn-save-goal");
+  await withButton(btn, "Enregistrement…", async () => {
+    const { error } = await SB.from("goals").upsert(payload, { onConflict: "user_id" });
+    if (error) throw error;
+    toast("Objectif enregistré ✓", "ok");
+    await loadGoal();
+  }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COACH IA
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Coach Chat Memory ──
+function loadCoachHistory() {
+  try {
+    const stored = localStorage.getItem("fp_coach_history");
+    if (stored) COACH_HISTORY = JSON.parse(stored);
+  } catch { COACH_HISTORY = []; }
+  renderCoachChat();
+  const coachToneBadge = document.getElementById('coach-tone-badge');
+  if (coachToneBadge) coachToneBadge.textContent = coachToneLabel(getCoachTonePreference());
+  loadCoachStats();
+}
+
+async function loadCoachStats() {
+  if (!U) return;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const weekAgoIso = new Date(Date.now() - 7 * 86400000).toISOString();
+    const weekAgoDate = weekAgoIso.slice(0, 10);
+    const [streakRes, goalRes, profileRes, weekMealsRes, sessionsRes, scanRes] = await Promise.all([
+      sbSafeSingle(SB.from("user_streaks").select("current_streak,total_workouts").eq("user_id", U.id).maybeSingle()),
+      sbSafeSingle(SB.from("goals").select("level,type,constraints,equipment").eq("user_id", U.id).maybeSingle()),
+      sbSafeSingle(SB.from("profiles").select("display_name,weight,height,age").eq("id", U.id).maybeSingle()),
+      sbSafeList(SB.from("meals").select("calories,protein,name,date").eq("user_id", U.id).gte("date", weekAgoDate)),
+      sbSafeList(SB.from("workout_sessions").select("created_at,plan").eq("user_id", U.id).gte("created_at", weekAgoIso)),
+      sbSafeList(SB.from("body_scans").select("physical_score,created_at,extended_analysis,ai_feedback").eq("user_id", U.id).order("created_at", { ascending: false }).limit(1))
+    ]);
+
+    const streak = Number(streakRes?.data?.current_streak || 0);
+    const totalWorkouts = Number(streakRes?.data?.total_workouts || 0);
+    const level = goalRes?.data?.level || "";
+    const goalType = goalRes?.data?.type || "";
+    const weekMeals = weekMealsRes?.data || [];
+    const weekKcal = weekMeals.reduce((s, m) => s + (Number(m.calories) || 0), 0);
+    const avgWeekKcal = weekMeals.length ? Math.round(weekKcal / 7) : 0;
+    const todayMeals = weekMeals.filter((m) => String(m.date || "") === today);
+    const todayProtein = Math.round(todayMeals.reduce((s, m) => s + (Number(m.protein) || 0), 0));
+    const sessions7d = (sessionsRes?.data || []).length;
+    const lastScan = scanRes?.data?.[0] || null;
+    const LEVEL_LABELS = { beginner: "Débutant", intermediate: "Inter.", advanced: "Expert", debutant: "Débutant", intermediaire: "Inter.", avance: "Expert" };
+
+    window._coachDisplayName = profileRes?.data?.display_name || U?.email?.split("@")[0] || "";
+
+    const setEl = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+    setEl("cs-energy", streak > 0 ? `${streak}j` : "0j");
+    setEl("cs-week", sessions7d || totalWorkouts || "0");
+    setEl("cs-level", LEVEL_LABELS[level] || level || "—");
+    setEl("cs-kcal", avgWeekKcal > 0 ? `${avgWeekKcal}` : "—");
+
+    let moodLabel = "";
+    try {
+      const savedMood = localStorage.getItem("fitai_mood");
+      const savedMoodDate = localStorage.getItem("fitai_mood_date");
+      if (savedMood && savedMoodDate === new Date().toDateString()) {
+        moodLabel = MOOD_LABELS[parseInt(savedMood)] || "";
+      }
+    } catch {}
+
+    const coachSubLine = document.getElementById("coach-sub-line");
+    if (coachSubLine) {
+      const parts = [coachGoalLabel(goalType)];
+      if (LEVEL_LABELS[level]) parts.push(LEVEL_LABELS[level]);
+      if (moodLabel) parts.push(moodLabel);
+      coachSubLine.textContent = parts.filter(Boolean).join(" · ");
+    }
+    const coachToneBadge = document.getElementById('coach-tone-badge');
+    if (coachToneBadge) coachToneBadge.textContent = coachToneLabel(getCoachTonePreference());
+
+    const lastScanFocus = lastScan?.extended_analysis?.areas_for_improvement?.[0]
+      || lastScan?.extended_analysis?.personalized_recommendations?.training?.[0]
+      || String(lastScan?.ai_feedback || "").split(/[.!?]/)[0]
+      || "";
+    const priorityEl = document.getElementById("coach-priority-line");
+    if (priorityEl) {
+      priorityEl.textContent = buildCoachPriorityLine({
+        lastScanFocus,
+        recentSessions7d: sessions7d,
+        todayProtein,
+        currentStreak: streak
+      });
+    }
+
+    if (!COACH_HISTORY.length) renderCoachChat();
+  } catch {}
+}
+
+function saveCoachHistory() {
+  try {
+    if (COACH_HISTORY.length > MAX_COACH_HISTORY) {
+      COACH_HISTORY = COACH_HISTORY.slice(-MAX_COACH_HISTORY);
+    }
+    localStorage.setItem("fp_coach_history", JSON.stringify(COACH_HISTORY));
+  } catch {}
+}
+
+function renderCoachChat() {
+  const el = document.getElementById("chat-messages");
+  if (!el) return;
+
+  const userInitial = (U?.email?.split("@")[0] || "U").slice(0, 1).toUpperCase();
+
+  if (!COACH_HISTORY.length) {
+    const userName = window._coachDisplayName || U?.email?.split("@")[0] || "toi";
+    // Mood-aware greeting
+    let moodLine = "";
+    try {
+      const savedMood = localStorage.getItem("fitai_mood");
+      const savedMoodDate = localStorage.getItem("fitai_mood_date");
+      if (savedMood && savedMoodDate === new Date().toDateString()) {
+        const m = parseInt(savedMood);
+        if (m <= 2) moodLine = `<div style="margin-top:7px;font-size:.8rem;color:#f87171;font-weight:600">Je vois que tu es fatigué aujourd'hui — je vais adapter tes recommandations.</div>`;
+        else if (m >= 4) moodLine = `<div style="margin-top:7px;font-size:.8rem;color:#4ade80;font-weight:600">Tu es en forme aujourd'hui — parfait pour pousser un peu plus fort !</div>`;
+      }
+    } catch {}
+    const aiAvat = `<div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>`;
+    el.innerHTML = `
+      <div class="chat-msg chat-msg-ai">
+        ${aiAvat}
+        <div class="chat-bubble ai-bubble">
+          <div class="coach-card-head"><span class="coach-card-kicker">Coach personnel</span><strong>Salut ${escapeHtml(userName)}. Dis-moi juste ton état du jour ou ton besoin exact.</strong></div>
+          <div class="coach-p">Je te réponds court, utile et contextuel : séance, récup, nutrition ou recadrage mental.</div>
+          ${moodLine}
+        </div>
+      </div>`;
+    return;
+  }
+
+  const aiAvatar = `<div class="chat-avatar" style="background:linear-gradient(135deg,#1d4ed8,#0891b2)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>`;
+
+  el.innerHTML = COACH_HISTORY.map(msg => {
+    if (msg.role === "user") {
+      return `<div class="chat-msg chat-msg-user"><div class="chat-user-avatar">${userInitial}</div><div class="chat-bubble user-bubble"><div class="chat-role-label">Toi</div>${escapeHtml(msg.content)}<span class="chat-time" style="color:rgba(255,255,255,.58)">${msg.time || ""}</span></div></div>`;
+    } else {
+      return `<div class="chat-msg chat-msg-ai">${aiAvatar}<div class="chat-bubble ai-bubble"><div class="chat-role-label">Coach</div>${sanitizeCoachHtml(msg.content)}<span class="chat-time">${msg.time || ""}</span></div></div>`;
+    }
+  }).join("");
+
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendCoachMsg(quickMsg) {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+  const coachInput = document.getElementById("coach-input");
+  const prompt = quickMsg || (coachInput ? coachInput.value.trim() : "");
+  const errorEl = document.getElementById("coach-err");
+  if (errorEl) { errorEl.style.display = "none"; errorEl.innerHTML = ""; }
+  if (!prompt) return;
+  LAST_COACH_PROMPT = prompt;
+  COACH_REQUEST_SEQ += 1;
+  const requestId = COACH_REQUEST_SEQ;
+  if (coachInput) coachInput.value = "";
+
+  if (ASYNC_LOCKS.has("coach-msg")) return;
+  ASYNC_LOCKS.add("coach-msg");
+
+  const now = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  COACH_HISTORY.push({ role: "user", content: prompt, time: now });
+  saveCoachHistory();
+  renderCoachChat();
+
+  const chatEl = document.getElementById("chat-messages");
+  if (chatEl) setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50);
+
+  const quickEl = document.getElementById("chat-quick");
+  if (quickEl && COACH_HISTORY.length > 1) {
+    quickEl.classList.add("compact");
+    const tog = document.getElementById("chat-suggest-toggle");
+    if (tog) tog.style.display = "block";
+  }
+
+  const btn = document.getElementById("btn-gen");
+  if (btn) btn.disabled = true;
+
+  if (chatEl) {
+    chatEl.insertAdjacentHTML("beforeend", '<div class="chat-msg chat-msg-ai" id="coach-thinking"><div class="chat-avatar coach-ai-avatar">⚡</div><div class="chat-bubble ai-bubble coach-thinking-bubble"><div class="typing-dots"><span></span><span></span><span></span></div><div class="coach-thinking-copy">Le coach analyse ton contexte…</div></div></div>');
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  try {
+    const token = await getToken();
+    if (!token) throw new Error("Session expirée. Reconnectez-vous.");
+
+    const { goalContext, coachProfile } = await loadCoachContext();
+    const historyForApi = COACH_HISTORY.slice(-15, -1).map((m) => ({
+      role: m.role,
+      content: m.role === "ai" ? stripHtml(m.content).slice(0, 400) : m.content
+    }));
+
+    const responseMode = detectCoachModeClient(prompt);
+    let { response: j } = await fetchJsonWithTimeout("/api/coach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ message: prompt, responseMode, history: historyForApi, profile: coachProfile, goalContext })
+    }, 12000);
+
+    if (requestId !== COACH_REQUEST_SEQ) return;
+
+    if (isCoachWorkoutPrompt(prompt) && (!j || j.type !== 'workout')) {
+      try {
+        const direct = await requestWorkoutPlanDirect(prompt, token, coachProfile, goalContext, historyForApi);
+        if (direct?.data?.exercises?.length) {
+          j = { ok: true, type: 'workout', data: direct.data, fallback: !!direct.fallback };
+        }
+      } catch {}
+    }
+
+    const thinkEl = document.getElementById("coach-thinking");
+    if (thinkEl) thinkEl.remove();
+    const aiTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const fallbackBadge = j.fallback ? '<div class="coach-inline-note">Réponse sécurisée</div>' : '';
+
+    if (j.type === "shopping_list" && j.data) {
+      const d = j.data;
+      let html = `<div class="coach-card-head"><span class="coach-card-kicker">Courses coach</span><strong>${escapeHtml(d.title || "Liste de courses")}</strong></div>`;
+      if (d.context) html += `<p class="coach-p">${escapeHtml(d.context)}</p>`;
+      (d.categories || []).forEach(cat => {
+        if (!cat.items?.length) return;
+        html += `<div class="coach-h2">${escapeHtml(cat.name)}</div><ul class="coach-list">`;
+        cat.items.forEach(item => {
+          html += `<li><strong>${escapeHtml(item.name)}</strong>${item.qty ? ` — ${escapeHtml(item.qty)}` : ""}${item.note ? ` <em>(${escapeHtml(item.note)})</em>` : ""}</li>`;
+        });
+        html += `</ul>`;
+      });
+      if (d.tips) html += `<div class="coach-inline-tip">💡 ${escapeHtml(d.tips)}</div>`;
+      html += fallbackBadge;
+      COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
+    } else if (j.type === "meal_plan" && j.data) {
+      const d = j.data;
+      let html = `<div class="coach-card-head"><span class="coach-card-kicker">Nutrition</span><strong>${escapeHtml(d.title || "Journée alimentaire")}</strong></div>`;
+      if (d.total_calories || d.total_protein) {
+        const parts = [];
+        if (d.total_calories) parts.push(`🔥 ${d.total_calories} kcal`);
+        if (d.total_protein) parts.push(`💪 ${d.total_protein}g prot.`);
+        html += `<div class="coach-mini-pills">${parts.map(p => `<span class="coach-mini-pill">${escapeHtml(p)}</span>`).join("")}</div>`;
+      }
+      (d.meals || []).forEach(meal => {
+        html += `<div class="coach-meal-row"><div class="coach-meal-top"><strong>${escapeHtml(meal.name)}</strong>${meal.time ? `<span>${escapeHtml(meal.time)}</span>` : ''}</div>`;
+        if (meal.items?.length) html += `<div class="coach-meal-items">${meal.items.map(item => `<span>${escapeHtml(item)}</span>`).join(' · ')}</div>`;
+        html += `</div>`;
+      });
+      if (d.notes) html += `<div class="coach-inline-tip">💡 ${escapeHtml(d.notes)}</div>`;
+      html += fallbackBadge;
+      COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
+    } else if (j.type === "workout" && j.data) {
+      PLAN = j.data;
+      const plan = j.data;
+      let aiResponse = `<div class="coach-card-head"><span class="coach-card-kicker">Séance prête</span><strong>${escapeHtml(plan.title || "Séance générée")}</strong></div>`;
+      const metaParts = [];
+      if (plan.duration) metaParts.push(`⏱ ${plan.duration} min`);
+      if (plan.calories_estimate || plan.calories) metaParts.push(`🔥 ~${plan.calories_estimate || plan.calories} kcal`);
+      if (plan.exercises?.length) metaParts.push(`💪 ${plan.exercises.length} exercices`);
+      if (metaParts.length) aiResponse += `<div class="coach-mini-pills">${metaParts.map(p => `<span class="coach-mini-pill">${escapeHtml(p)}</span>`).join("")}</div>`;
+      aiResponse += `<p class="coach-p">Je t'ai préparé un plan complet hors du chat pour garder la conversation propre. Ouvre la séance détaillée juste en dessous.</p><div class="coach-inline-note coach-inline-workout-cta">⬇️ Le détail des exercices, consignes et visuels est affiché dans le bloc séance.</div>${fallbackBadge}`;
+      COACH_HISTORY.push({ role: "ai", content: aiResponse, time: aiTime });
+      renderPlan(PLAN);
+    } else if (j.type === "recipe" && j.data) {
+      const r = j.data;
+      // Store so "Ajouter aux courses" works from the coach chat
+      window._lastRecipe = r;
+      window._lastRecipes = [r];
+      const coachRecipeIdx = 0;
+      let html = `<div class="coach-card-head"><span class="coach-card-kicker">Recette</span><strong>${escapeHtml(r.name || 'Recette coach')}</strong></div>`;
+      const pills = [
+        r.servings ? `👥 ${r.servings} pers.` : '',
+        r.calories ? `🔥 ${r.calories} kcal/pers.` : '',
+        r.protein ? `💪 ${r.protein}g prot.` : '',
+        r.prep_time ? `⏱ ${r.prep_time}` : ''
+      ].filter(Boolean);
+      if (pills.length) html += `<div class="coach-mini-pills">${pills.map(p => `<span class="coach-mini-pill">${escapeHtml(p)}</span>`).join('')}</div>`;
+      if (Array.isArray(r.ingredients_list) && r.ingredients_list.length) {
+        html += `<div style="margin:10px 0 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Ingrédients</div>`;
+        html += `<div class="coach-mini-pills" style="flex-wrap:wrap">`;
+        r.ingredients_list.forEach(ing => { html += `<span class="coach-mini-pill">${escapeHtml(ing)}</span>`; });
+        html += `</div>`;
+      }
+      if (Array.isArray(r.steps) && r.steps.length) {
+        html += `<div style="margin:10px 0 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Préparation</div>`;
+        html += '<ol class="coach-list">';
+        r.steps.forEach(step => { html += `<li>${escapeHtml(step)}</li>`; });
+        html += '</ol>';
+      }
+      if (r.tips) html += `<div class="coach-inline-tip">💡 ${escapeHtml(r.tips)}</div>`;
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+        <button class="btn btn-g btn-sm btn-full" onclick="addRecipeToNutritionShoppingList(${coachRecipeIdx})">🛒 Ajouter aux courses</button>
+        <button class="btn btn-p btn-sm btn-full" onclick="addRecipeAsMeal(${coachRecipeIdx})">➕ Ajouter comme repas</button>
+      </div>`;
+      html += fallbackBadge;
+      COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
+    } else {
+      const safeCoachMessage = finalizeCoachMessageForDisplay(j.message || "Je n'ai pas pu formuler une réponse.");
+      const textHtml = formatCoachText(safeCoachMessage) + fallbackBadge;
+      COACH_HISTORY.push({ role: "ai", content: textHtml, time: aiTime });
+    }
+
+    saveCoachHistory();
+    renderCoachChat();
+    if (chatEl) setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50);
+  } catch (e) {
+    if (requestId !== COACH_REQUEST_SEQ) return;
+    const thinkEl = document.getElementById("coach-thinking");
+    if (thinkEl) thinkEl.remove();
+    let ctx = null;
+    try { ctx = await loadCoachContext(); } catch {}
+    const errTime = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    COACH_HISTORY.push({ role: "ai", content: buildCoachLocalFallback(prompt, ctx || {}), time: errTime });
+    saveCoachHistory();
+    renderCoachChat();
+    if (errorEl) { errorEl.style.display = "none"; errorEl.innerHTML = ""; }
+  } finally {
+    if (btn) btn.disabled = false;
+    ASYNC_LOCKS.delete("coach-msg");
+  }
+}
+
+// Keep original generateWorkout as alias
+async function generateWorkout() {
+  return sendCoachMsg();
+}
+
+
+function exerciseCuePack(ex = {}) {
+  const name = String(ex.name || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const byKeyword = [
+    [/squat|fente|split squat|leg press/, { start: "Pieds ancrés et genoux dans l'axe.", move: "Descends contrôlé, remonte en poussant le sol.", focus: "Quadriceps et fessiers.", breathe: "Inspire en bas, expire en remontant." }],
+    [/souleve|deadlift|hip thrust|pont/, { start: "Dos neutre, cage verrouillée, appui talons.", move: "Charnière de hanches propre sans arrondir.", focus: "Chaîne postérieure et fessiers.", breathe: "Bloque le tronc avant la poussée, relâche en haut." }],
+    [/pompe|developpe|bench|dips|presse/, { start: "Omoplates serrées, poitrine ouverte.", move: "Descente contrôlée puis poussée franche.", focus: "Pectoraux, épaules, triceps.", breathe: "Inspire à la descente, expire à la poussée." }],
+    [/traction|rowing|tirage|pull|curl/, { start: "Épaules basses, poitrine sortie.", move: "Tire les coudes sans casser le buste.", focus: "Dos et bras.", breathe: "Expire pendant le tirage." }],
+    [/planche|gainage|crunch|abdo|mountain/, { start: "Bassin neutre et ventre gainé.", move: "Reste compact, zéro mouvement parasite.", focus: "Sangle abdominale.", breathe: "Respiration courte mais contrôlée." }],
+    [/course|velo|bike|burpee|hiit|jump/, { start: "Trouve ton rythme avant d'accélérer.", move: "Reste léger et régulier.", focus: "Cardio et explosivité.", breathe: "Respiration continue, pas d'apnée." }],
+    [/yoga|mobilite|stretch|etirement/, { start: "Place-toi lentement jusqu'à sentir une tension légère.", move: "Cherche l'amplitude sans forcer.", focus: "Ouverture et récupération.", breathe: "Inspire long, expire encore plus long." }]
+  ];
+  for (const [rx, pack] of byKeyword) if (rx.test(name)) return pack;
+  return {
+    start: "Place-toi stable avant la première rep.",
+    move: "Contrôle la phase descendante puis accélère à la montée.",
+    focus: ex.muscle ? `Accent sur ${String(ex.muscle).toLowerCase()}.` : "Cherche une exécution propre avant l'intensité.",
+    breathe: "Expire sur l'effort principal."
+  };
+}
+
+// Complete exercise figure frames — each exercise defines two full body positions (A=neutral, B=effort peak)
+// h=[cx,cy] head center, t=torso path (M L L L Z), l=8 limb paths:
+//   [0]L-upper-arm [1]L-lower-arm [2]R-upper-arm [3]R-lower-arm [4]L-thigh [5]L-shin [6]R-thigh [7]R-shin
+// SMIL path morphing requires identical command counts and types in both frames.
+const _EX_FRAMES = {
+  squat: {
+    dur: "1.35s",
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q148 108 138 124","M138 124 Q132 134 130 148","M196 92 Q212 108 222 124","M222 124 Q228 134 230 148",
+         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
+    b: { h:[180,86], t:"M156 106 L204 106 L206 154 L154 154 Z",
+      l:["M156 112 Q138 116 122 122","M122 122 Q110 126 106 132","M204 112 Q222 116 238 122","M238 122 Q250 126 254 132",
+         "M158 154 Q128 170 104 182","M104 182 Q96 206 112 230","M202 154 Q232 170 256 182","M256 182 Q264 206 248 230"] }
+  },
+  push: {
+    dur: "1.4s",
+    // Side view: head on right, body horizontal. Arms go down (frame A) → extended (frame B)
+    a: { h:[288,132], t:"M266 136 L168 154 L168 160 L266 142 Z",
+      l:["M234 137 Q232 154 232 168","M232 168 Q232 180 234 188","M200 143 Q198 160 198 174","M198 174 Q198 186 200 194",
+         "M168 157 Q144 157 120 157","M120 157 Q98 157 80 157","M168 157 Q144 159 120 161","M120 161 Q98 163 80 165"] },
+    b: { h:[288,110], t:"M266 114 L168 132 L168 138 L266 120 Z",
+      l:["M234 115 Q234 140 234 162","M234 162 Q234 178 234 190","M200 121 Q200 146 200 168","M200 168 Q200 184 200 196",
+         "M168 135 Q144 137 120 139","M120 139 Q98 141 80 143","M168 135 Q144 139 120 143","M120 143 Q98 147 80 151"] }
+  },
+  pull: {
+    dur: "1.3s",
+    // Chin-up: arms stretch up to bar (A), then pull — body rises, elbows wide (B)
+    a: { h:[180,80], t:"M164 102 L196 102 L194 162 L166 162 Z",
+      l:["M164 104 Q148 88 138 74","M138 74 Q132 60 134 48","M196 104 Q212 88 222 74","M222 74 Q228 60 226 48",
+         "M170 162 Q168 184 166 206","M166 206 Q164 226 168 244","M190 162 Q192 184 194 206","M194 206 Q196 226 192 244"] },
+    b: { h:[180,58], t:"M164 80 L196 80 L194 140 L166 140 Z",
+      l:["M164 82 Q140 70 128 64","M128 64 Q130 50 134 48","M196 82 Q220 70 232 64","M232 64 Q230 50 226 48",
+         "M170 140 Q168 162 166 184","M166 184 Q164 204 168 222","M190 140 Q192 162 194 184","M194 184 Q196 204 192 222"] }
+  },
+  hinge: {
+    dur: "1.5s",
+    // Hip hinge: standing (A) → torso tilts forward, arms reach toward floor (B)
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q154 114 150 136","M150 136 Q148 156 150 176","M196 92 Q206 114 210 136","M210 136 Q212 156 210 176",
+         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
+    b: { h:[214,96], t:"M192 84 L226 98 L220 158 L186 144 Z",
+      l:["M192 90 Q186 112 182 134","M182 134 Q178 154 178 176","M226 100 Q220 122 216 144","M216 144 Q212 164 212 186",
+         "M186 146 Q178 170 172 196","M172 196 Q168 218 174 236","M218 156 Q210 178 204 204","M204 204 Q200 222 206 240"] }
+  },
+  core: {
+    dur: "2s",
+    // Crunch: body reclined (A) → crunches up with knees pulling in (B)
+    a: { h:[220,160], t:"M196 148 L244 160 L240 170 L192 158 Z",
+      l:["M196 150 Q180 158 168 162","M168 162 Q158 164 150 162","M244 162 Q252 164 258 160","M258 160 Q264 156 268 150",
+         "M192 160 Q172 170 156 188","M156 188 Q146 202 144 222","M192 160 Q176 172 160 192","M160 192 Q150 208 148 228"] },
+    b: { h:[208,140], t:"M184 128 L232 148 L226 158 L178 138 Z",
+      l:["M184 130 Q170 140 160 152","M160 152 Q152 162 148 172","M232 150 Q240 152 246 150","M246 150 Q252 148 256 144",
+         "M178 140 Q162 148 150 160","M150 160 Q144 170 146 182","M178 140 Q164 150 152 164","M152 164 Q146 176 148 188"] }
+  },
+  cardio: {
+    dur: "0.7s",
+    // Running: alternating arm-leg stride (A) swaps to opposite stride (B)
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q150 76 144 62","M144 62 Q140 50 140 40","M196 92 Q210 110 216 126","M216 126 Q220 140 218 152",
+         "M168 148 Q172 170 180 192","M180 192 Q188 208 192 228","M192 148 Q194 164 182 180","M182 180 Q176 192 174 208"] },
+    b: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q178 110 184 126","M184 126 Q188 140 186 152","M196 92 Q182 76 176 62","M176 62 Q172 50 172 40",
+         "M168 148 Q164 164 152 180","M152 180 Q146 192 144 208","M192 148 Q196 170 204 192","M204 192 Q212 208 216 228"] }
+  },
+  press: {
+    dur: "1.4s",
+    // Shoulder press: bar at shoulder level (A) → arms fully overhead (B)
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q140 86 120 82","M120 82 Q116 68 120 56","M196 92 Q220 86 240 82","M240 82 Q244 68 240 56",
+         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
+    b: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q148 72 140 54","M140 54 Q136 36 136 22","M196 92 Q212 72 220 54","M220 54 Q224 36 224 22",
+         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] }
+  },
+  calf: {
+    dur: "1.1s",
+    // Calf raise: flat foot (A) → tiptoe, whole body slightly rises (B)
+    a: { h:[180,66], t:"M164 88 L196 88 L198 148 L162 148 Z",
+      l:["M164 94 Q148 110 138 126","M138 126 Q132 136 130 150","M196 94 Q212 110 222 126","M222 126 Q228 136 230 150",
+         "M168 150 Q164 172 162 198","M162 198 Q162 218 168 238","M192 150 Q196 172 198 198","M198 198 Q198 218 192 238"] },
+    b: { h:[180,58], t:"M164 80 L196 80 L198 140 L162 140 Z",
+      l:["M164 86 Q148 102 138 118","M138 118 Q132 128 130 142","M196 86 Q212 102 222 118","M222 118 Q228 128 230 142",
+         "M168 142 Q164 164 162 190","M162 190 Q168 208 178 224","M192 142 Q196 164 198 190","M198 190 Q192 208 182 224"] }
+  },
+  lunge: {
+    dur: "1.2s",
+    // Lunge: standing (A) → front knee deep, back leg extended (B)
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q148 108 138 124","M138 124 Q132 134 130 148","M196 92 Q212 108 222 124","M222 124 Q228 134 230 148",
+         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
+    b: { h:[174,82], t:"M158 102 L192 98 L194 158 L156 162 Z",
+      l:["M158 106 Q144 106 134 110","M134 110 Q124 114 120 122","M192 100 Q206 106 216 114","M216 114 Q226 122 228 134",
+         "M158 160 Q140 176 124 196","M124 196 Q116 212 118 236","M194 158 Q218 164 248 172","M248 172 Q270 178 294 202"] }
+  },
+  mobility: {
+    dur: "2s",
+    // Mobility: arms sweep wide open (B), gentle leg sway
+    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q152 106 146 122","M146 122 Q140 134 138 150","M196 92 Q208 106 214 122","M214 122 Q220 134 222 150",
+         "M168 148 Q164 170 160 196","M160 196 Q158 216 162 236","M192 148 Q196 170 200 196","M200 196 Q202 216 198 236"] },
+    b: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
+      l:["M164 92 Q136 84 110 78","M110 78 Q90 74 76 76","M196 92 Q224 84 250 78","M250 78 Q270 74 284 76",
+         "M168 148 Q162 172 156 200","M156 200 Q152 220 156 240","M192 148 Q198 172 204 200","M204 200 Q208 220 204 240"] }
+  }
+};
+
+function _buildAnimFigure(key, accent2, skinId = "skin") {
+  const fr = _EX_FRAMES[key] || _EX_FRAMES.squat;
+  const dur = fr.dur;
+  const ks = "0.45 0 0.55 1;0.45 0 0.55 1";
+  const [hAx, hAy] = fr.a.h;
+  const [hBx, hBy] = fr.b.h;
+
+  const mk = (attr, a, b) => (String(a) === String(b)) ? '' :
+    `<animate attributeName="${attr}" values="${a};${b};${a}" dur="${dur}" repeatCount="indefinite" calcMode="spline" keySplines="${ks}"/>`;
+
+  // Extract start/end coords from a path string "M x y Q ..."
+  const pStart = (d) => { const m = String(d||'').match(/M\s*([\d.-]+)\s+([\d.-]+)/); return m ? [+m[1],+m[2]] : null; };
+  const pEnd   = (d) => { const nums = (String(d||'').match(/-?[\d.]+/g)||[]); return nums.length >= 2 ? [+nums[nums.length-2],+nums[nums.length-1]] : null; };
+
+  // Animated circle helper (joint, foot, hand)
+  const dot = (ax,ay,bx,by,r,fill,stroke,sw=1.5) =>
+    (ax == null || bx == null) ? '' :
+    `<circle cx="${ax}" cy="${ay}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}">${mk('cx',ax,bx)}${mk('cy',ay,by)}</circle>`;
+
+  // Joint positions
+  const [leAx,leAy] = pStart(fr.a.l[1]) || [0,0];  const [leBx,leBy] = pStart(fr.b.l[1]) || [leAx,leAy];  // L elbow
+  const [reAx,reAy] = pStart(fr.a.l[3]) || [0,0];  const [reBx,reBy] = pStart(fr.b.l[3]) || [reAx,reAy];  // R elbow
+  const [lkAx,lkAy] = pStart(fr.a.l[5]) || [0,0];  const [lkBx,lkBy] = pStart(fr.b.l[5]) || [lkAx,lkAy];  // L knee
+  const [rkAx,rkAy] = pStart(fr.a.l[7]) || [0,0];  const [rkBx,rkBy] = pStart(fr.b.l[7]) || [rkAx,rkAy];  // R knee
+  const lfA = pEnd(fr.a.l[5]);  const lfB = pEnd(fr.b.l[5]) || lfA;  // L foot
+  const rfA = pEnd(fr.a.l[7]);  const rfB = pEnd(fr.b.l[7]) || rfA;  // R foot
+  const lwA = pEnd(fr.a.l[1]);  const lwB = pEnd(fr.b.l[1]) || lwA;  // L wrist
+  const rwA = pEnd(fr.a.l[3]);  const rwB = pEnd(fr.b.l[3]) || rwA;  // R wrist
+
+  // Limbs — left side slightly lighter, right side white, legs wider
+  const colL = "rgba(255,255,255,.58)";
+  const colR = "#f0f9ff";
+  const strokes = [colL,colL,colR,colR, colL,colL,colR,colR];
+  const widths  = ["8","7","8","7","10","9","10","9"];
+  const limbs = fr.a.l.map((dA, i) => {
+    const dB = fr.b.l[i];
+    if (!dB) return `<path d="${dA}" stroke="${strokes[i]}" stroke-width="${widths[i]}" stroke-linecap="round" fill="none"/>`;
+    return `<path d="${dA}" stroke="${strokes[i]}" stroke-width="${widths[i]}" stroke-linecap="round" fill="none">${mk('d',dA,dB)}</path>`;
+  }).join('');
+
+  // Torso
+  const torso = `<path d="${fr.a.t}" fill="url(#${skinId})" opacity=".98">${mk('d',fr.a.t,fr.b.t)}</path>`;
+
+  // Collar accent
+  let collar = '';
+  if (key !== 'push' && key !== 'core') {
+    const colA = `M${hAx-14} ${hAy+26} Q${hAx} ${hAy+18} ${hAx+14} ${hAy+26}`;
+    const colB = `M${hBx-14} ${hBy+26} Q${hBx} ${hBy+18} ${hBx+14} ${hBy+26}`;
+    collar = `<path d="${colA}" fill="none" stroke="${accent2}" stroke-width="2.4" opacity=".9">${mk('d',colA,colB)}</path>`;
+  }
+
+  // Head (on top of torso)
+  const head = `<circle cx="${hAx}" cy="${hAy}" r="22" fill="url(#${skinId})" stroke="rgba(255,255,255,.75)" stroke-width="1.5">${mk('cx',hAx,hBx)}${mk('cy',hAy,hBy)}</circle>`;
+  // Face dot — gives a human feel
+  const faceAx = hAx + 6, faceAy = hAy + 4, faceBx = hBx + 6, faceBy = hBy + 4;
+  const face = `<circle cx="${faceAx}" cy="${faceAy}" r="3.5" fill="rgba(30,41,59,.5)">${mk('cx',faceAx,faceBx)}${mk('cy',faceAy,faceBy)}</circle>`;
+
+  // Joints — elbow, knee (rendered on top of limbs)
+  const elbowL = dot(leAx,leAy,leBx,leBy, 5.5, '#e2e8f0', 'rgba(255,255,255,.45)');
+  const elbowR = dot(reAx,reAy,reBx,reBy, 5.5, '#e2e8f0', 'rgba(255,255,255,.45)');
+  const kneeL  = dot(lkAx,lkAy,lkBx,lkBy, 6.5, '#e2e8f0', 'rgba(255,255,255,.45)');
+  const kneeR  = dot(rkAx,rkAy,rkBx,rkBy, 6.5, '#e2e8f0', 'rgba(255,255,255,.45)');
+
+  // Feet — colored with accent, stands out
+  const footL = lfA ? dot(lfA[0],lfA[1], lfB[0],lfB[1], 8.5, `${accent2}44`, `${accent2}bb`, 2) : '';
+  const footR = rfA ? dot(rfA[0],rfA[1], rfB[0],rfB[1], 8.5, `${accent2}44`, `${accent2}bb`, 2) : '';
+
+  // Hands — small neutral dots
+  const handL = lwA ? dot(lwA[0],lwA[1], lwB[0],lwB[1], 5.5, 'rgba(255,255,255,.4)', 'rgba(255,255,255,.5)') : '';
+  const handR = rwA ? dot(rwA[0],rwA[1], rwB[0],rwB[1], 5.5, 'rgba(255,255,255,.4)', 'rgba(255,255,255,.5)') : '';
+
+  // Render: limbs behind torso, joints/hands/feet on top
+  return limbs + torso + collar + head + face + elbowL + elbowR + kneeL + kneeR + footL + footR + handL + handR;
+}
+
+// (legacy stub kept for reference — replaced by _EX_FRAMES)
+const _LIMB_ANIM = {
+  squat: [
+    ["M152 112 Q134 128 122 144","M152 112 Q138 124 128 136"],
+    ["M122 144 Q114 152 106 168","M128 136 Q124 142 120 150"],
+    ["M208 112 Q228 128 242 142","M208 112 Q222 124 232 136"],
+    ["M242 142 Q252 150 258 168","M232 136 Q236 142 240 150"],
+    ["M162 156 Q146 172 138 196","M162 156 Q138 180 122 196"],
+    ["M138 196 Q136 214 146 236","M122 196 Q112 212 124 234"],
+    ["M198 156 Q214 172 222 196","M198 156 Q222 180 238 196"],
+    ["M222 196 Q224 214 214 236","M238 196 Q248 212 236 234"]
+  ],
+  lunge: [
+    ["M156 112 Q142 128 134 148","M156 112 Q148 124 142 138"],
+    ["M134 148 Q128 160 120 176","M142 138 Q136 150 132 164"],
+    ["M204 112 Q220 124 232 142","M204 112 Q216 126 224 142"],
+    ["M232 142 Q242 154 250 170","M224 142 Q232 158 236 174"],
+    ["M166 156 Q150 174 144 206","M166 156 Q146 184 130 214"],
+    ["M144 206 Q146 224 136 238","M130 214 Q122 228 126 248"],
+    ["M194 156 Q218 168 242 180","M194 156 Q224 160 256 164"],
+    ["M242 180 Q258 188 272 226","M256 164 Q278 166 298 190"]
+  ],
+  push: [
+    ["M156 112 Q136 130 124 150","M156 112 Q126 110 98 110"],
+    ["M124 150 Q116 162 108 176","M98 110 Q84 112 72 114"],
+    ["M204 112 Q224 130 236 150","M204 112 Q234 110 262 110"],
+    ["M236 150 Q244 162 252 176","M262 110 Q276 112 288 114"],
+    ["M166 156 Q156 182 160 212",null],
+    ["M160 212 Q164 230 152 238",null],
+    ["M194 156 Q204 182 200 212",null],
+    ["M200 212 Q196 230 208 238",null]
+  ],
+  pull: [
+    ["M156 112 Q136 126 122 134","M156 112 Q146 120 142 132"],
+    ["M122 134 Q110 138 100 128","M142 132 Q136 148 134 166"],
+    ["M204 112 Q224 126 238 134","M204 112 Q214 120 218 132"],
+    ["M238 134 Q250 138 260 128","M218 132 Q224 148 226 166"],
+    ["M166 156 Q160 184 162 220",null],
+    ["M162 220 Q162 234 152 240",null],
+    ["M194 156 Q200 184 198 220",null],
+    ["M198 220 Q198 234 208 240",null]
+  ],
+  hinge: [
+    ["M156 112 Q142 128 132 148","M156 112 Q150 136 148 164"],
+    ["M132 148 Q128 160 124 176","M148 164 Q148 180 148 200"],
+    ["M204 112 Q218 128 228 148","M204 112 Q210 136 212 164"],
+    ["M228 148 Q232 160 236 176","M212 164 Q212 180 212 200"],
+    ["M166 156 Q154 176 150 206","M166 156 Q152 180 146 208"],
+    ["M150 206 Q148 226 138 242","M146 208 Q144 228 134 244"],
+    ["M194 156 Q206 176 210 206","M194 156 Q208 180 214 208"],
+    ["M210 206 Q212 226 222 242","M214 208 Q216 228 226 244"]
+  ],
+  core: [
+    ["M156 112 Q138 128 126 146","M156 112 Q148 124 144 140"],
+    ["M126 146 Q116 154 108 164","M144 140 Q138 154 134 168"],
+    ["M204 112 Q222 128 234 146","M204 112 Q212 124 216 140"],
+    ["M234 146 Q244 154 252 164","M216 140 Q222 154 226 168"],
+    ["M166 156 Q160 184 162 220","M166 156 Q154 168 144 182"],
+    ["M162 220 Q162 234 152 240","M144 182 Q136 196 140 210"],
+    ["M194 156 Q200 184 198 220","M194 156 Q206 168 216 182"],
+    ["M198 220 Q198 234 208 240","M216 182 Q224 196 220 210"]
+  ],
+  cardio: [
+    ["M156 112 Q136 90 122 74","M156 112 Q158 128 158 148"],
+    ["M122 74 Q112 62 102 52","M158 148 Q158 164 156 180"],
+    ["M204 112 Q224 90 238 74","M204 112 Q200 94 196 76"],
+    ["M238 74 Q248 62 258 52","M196 76 Q194 60 194 44"],
+    ["M166 156 Q150 176 142 204","M166 156 Q164 162 168 170"],
+    ["M142 204 Q136 226 124 240","M168 170 Q176 178 176 192"],
+    ["M194 156 Q210 176 218 204","M194 156 Q196 182 188 210"],
+    ["M218 204 Q224 226 236 240","M188 210 Q182 230 172 246"]
+  ],
+  press: [
+    ["M156 112 Q140 92 134 70","M156 112 Q152 88 150 62"],
+    ["M134 70 Q130 48 138 28","M150 62 Q150 40 152 18"],
+    ["M204 112 Q220 92 226 70","M204 112 Q208 88 210 62"],
+    ["M226 70 Q230 48 222 28","M210 62 Q210 40 208 18"],
+    ["M166 156 Q160 184 162 220",null],
+    ["M162 220 Q162 234 152 240",null],
+    ["M194 156 Q200 184 198 220",null],
+    ["M198 220 Q198 234 208 240",null]
+  ],
+  calf: [
+    ["M156 112 Q140 128 128 146",null],
+    ["M128 146 Q118 154 110 164",null],
+    ["M204 112 Q220 128 232 146",null],
+    ["M232 146 Q242 154 250 164",null],
+    ["M166 156 Q160 188 166 220","M166 156 Q162 188 164 220"],
+    ["M166 220 Q166 236 156 244","M164 220 Q170 234 176 248"],
+    ["M194 156 Q200 188 194 220","M194 156 Q198 188 196 220"],
+    ["M194 220 Q194 236 204 244","M196 220 Q190 234 184 248"]
+  ],
+  mobility: [
+    ["M156 112 Q138 128 124 146","M156 112 Q128 100 102 90"],
+    ["M124 146 Q114 156 102 170","M102 90 Q88 84 76 82"],
+    ["M204 112 Q222 128 236 146","M204 112 Q232 100 258 90"],
+    ["M236 146 Q246 156 258 170","M258 90 Q272 84 284 82"],
+    ["M166 156 Q154 180 150 212","M166 156 Q158 182 154 214"],
+    ["M150 212 Q148 230 138 240","M154 214 Q152 232 142 242"],
+    ["M194 156 Q206 180 210 212","M194 156 Q202 182 206 214"],
+    ["M210 212 Q212 230 222 240","M206 214 Q208 232 218 242"]
+  ]
+};
+
+function _buildAnimLimbs(key, dur) {
+  const defs = _LIMB_ANIM[key] || _LIMB_ANIM.squat;
+  const strokes = [
+    "rgba(255,255,255,.62)","rgba(255,255,255,.62)",
+    "#f8fafc","#f8fafc",
+    "rgba(255,255,255,.62)","rgba(255,255,255,.62)",
+    "#f8fafc","#f8fafc"
+  ];
+  const widths = ["8","7","8","7","8","7","8","7"];
+  return defs.map(([dStart, dEnd], i) => {
+    const anim = dEnd
+      ? `<animate attributeName="d" values="${dStart};${dEnd};${dStart}" dur="${dur}" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>`
+      : '';
+    return `<path d="${dStart}" stroke="${strokes[i]}" stroke-width="${widths[i]}" stroke-linecap="round" fill="none">${anim}</path>`;
+  }).join('');
+}
+
+function _exerciseDemoSvg(label = '') {
+  const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const variants = [
+    { rx: /squat|chair|leg press|wall sit|presse.*cuiss|hack squat|leg ext/, key: 'squat', accent: '#f59e0b', accent2: '#fb7185', label: 'jambes / fessiers' },
+    { rx: /lunge|fente|split squat|step-up|bulgare/, key: 'lunge', accent: '#8b5cf6', accent2: '#22d3ee', label: 'jambes / stabilité' },
+    { rx: /pompe|push|bench|developpe.*couch|developpe.*inclin|developpe.*militaire|dips|pike push|eleva.*front|ecarte/, key: 'push', accent: '#22c55e', accent2: '#06b6d4', label: 'poussée haut du corps' },
+    { rx: /row|tirage|traction|pull|curl|rowing|tractions|oiseau|pullover|shrug|trapeze/, key: 'pull', accent: '#38bdf8', accent2: '#818cf8', label: 'tirage / dos' },
+    { rx: /deadlift|souleve|hinge|hip thrust|bridge|pont|romanian|sumo|good morning|nordic/, key: 'hinge', accent: '#ef4444', accent2: '#f59e0b', label: 'chaîne postérieure' },
+    { rx: /plank|planche|gainage|abdo|hollow|mountain|russian twist|twist|crunch|bicycle|bird|dog|superman|deadbug|ab wheel|rollout|\bab\b/, key: 'core', accent: '#22d3ee', accent2: '#a78bfa', label: 'core / stabilité' },
+    { rx: /jump|burpee|high knees|run|cardio|jack|sprint|montee.*genou|corde.*sauter|tabata|hiit|box jump/, key: 'cardio', accent: '#f472b6', accent2: '#fb7185', label: 'cardio / densité' },
+    { rx: /press|military|shoulder|eleva.*lat|deltoid|militaire/, key: 'press', accent: '#14b8a6', accent2: '#60a5fa', label: 'épaules / poussée' },
+    { rx: /calf|mollet|releve.*pied|releve.*mollet|pointe/, key: 'calf', accent: '#fb923c', accent2: '#facc15', label: 'mollets / explosivité' },
+    { rx: /stretch|mobilite|mobilite|rotation|respiration|yoga|pigeon|cat.cow|foam|hip flex|thread|squat.*profond/, key: 'mobility', accent: '#4ade80', accent2: '#2dd4bf', label: 'mobilité / récupération' }
+  ];
+  const picked = variants.find((v) => v.rx.test(t)) || variants[0];
+  const uid = 'ex' + Math.random().toString(36).slice(2, 8);
+  const bgId = `bg1-${uid}`;
+  const glowId = `glow1-${uid}`;
+  const blurId = `blurBig-${uid}`;
+  const dropId = `drop-${uid}`;
+  const skinId = `skin-${uid}`;
+
+  const motionByKey = {
+    squat:   { path: 'M274 74 C300 112 300 154 272 188',  head: 'M270 186 l16 -6 l-8 18' },
+    lunge:   { path: 'M92 212 C136 194 198 164 252 116',  head: 'M250 114 l18 0 l-9 16' },
+    push:    { path: 'M316 104 C326 122 326 148 316 166', head: 'M314 164 l14 -4 l-6 16' },
+    pull:    { path: 'M96 50 C136 42 224 42 264 50',      head: 'M262 50 l-8 -14 l-6 14' },
+    hinge:   { path: 'M92 178 C134 146 200 134 274 144',  head: 'M272 144 l-14 -8 l2 18' },
+    core:    { path: 'M112 178 C118 158 128 144 148 132', head: 'M148 130 l-8 14 l14 -2' },
+    cardio:  { path: 'M266 68 C294 94 294 146 264 186',   head: 'M262 184 l16 -8 l-8 18' },
+    press:   { path: 'M180 48 C180 30 180 22 180 14',     head: 'M180 14 l-8 12 l16 0' },
+    calf:    { path: 'M254 156 C260 174 260 194 252 214', head: 'M252 212 l10 -10 l-2 16' },
+    mobility:{ path: 'M112 204 C150 186 210 186 250 204', head: 'M248 204 l-14 -8 l2 18' }
+  };
+
+  // Highlights tuned to each exercise's body position
+  const highlightByKey = {
+    squat:   '<circle cx="106" cy="186" r="26" fill="rgba(245,158,11,.22)"/><circle cx="254" cy="186" r="26" fill="rgba(245,158,11,.22)"/>',
+    lunge:   '<circle cx="122" cy="196" r="22" fill="rgba(139,92,246,.22)"/><rect x="240" y="162" width="54" height="14" rx="7" fill="rgba(34,211,238,.2)"/>',
+    push:    '<rect x="192" y="114" width="50" height="78" rx="12" fill="rgba(34,197,94,.2)"/>',
+    pull:    '<rect x="126" y="60" width="108" height="82" rx="14" fill="rgba(56,189,248,.14)"/><rect x="124" y="80" width="18" height="58" rx="9" fill="rgba(129,140,248,.14)"/><rect x="218" y="80" width="18" height="58" rx="9" fill="rgba(129,140,248,.14)"/>',
+    hinge:   '<path d="M170 148 Q202 166 224 154 L228 192 Q202 200 168 184 Z" fill="rgba(239,68,68,.18)"/>',
+    core:    '<rect x="178" y="132" width="60" height="40" rx="10" fill="rgba(34,211,238,.2)"/>',
+    cardio:  '<path d="M148 98 L212 98 L218 144 L142 144 Z" fill="rgba(244,114,182,.14)"/>',
+    press:   '<ellipse cx="136" cy="40" rx="14" ry="20" fill="rgba(20,184,166,.22)"/><ellipse cx="224" cy="40" rx="14" ry="20" fill="rgba(96,165,250,.22)"/>',
+    calf:    '<ellipse cx="166" cy="220" rx="14" ry="18" fill="rgba(251,146,60,.24)"/><ellipse cx="194" cy="220" rx="14" ry="18" fill="rgba(250,204,21,.22)"/>',
+    mobility:'<rect x="74" y="72" width="64" height="12" rx="6" fill="rgba(74,222,128,.18)"/><rect x="222" y="72" width="64" height="12" rx="6" fill="rgba(45,212,191,.18)"/>'
+  };
+
+  const motion = motionByKey[picked.key] || motionByKey.squat;
+  // Shadow ellipse adapted per exercise (push-up = ground at arm level; core = reclining)
+  const shadowCx = picked.key === 'push' ? 228 : 180;
+  const shadowCy = picked.key === 'push' ? 198 : picked.key === 'core' ? 240 : 246;
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 280" width="100%" height="100%">
+      <defs>
+        <linearGradient id="${bgId}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#081122"/><stop offset="100%" stop-color="#13213b"/></linearGradient>
+        <linearGradient id="${glowId}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${picked.accent}" stop-opacity=".28"/><stop offset="100%" stop-color="${picked.accent2}" stop-opacity=".12"/></linearGradient>
+        <filter id="${blurId}"><feGaussianBlur stdDeviation="18"/></filter>
+        <filter id="${dropId}"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#020617" flood-opacity=".45"/></filter>
+        <linearGradient id="${skinId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#dbeafe"/></linearGradient>
+      </defs>
+      <rect x="14" y="14" width="332" height="252" rx="30" fill="url(#${bgId})" stroke="rgba(255,255,255,.08)"/>
+      <circle cx="70" cy="60" r="72" fill="${picked.accent}" opacity=".14" filter="url(#${blurId})"/>
+      <circle cx="280" cy="220" r="84" fill="${picked.accent2}" opacity=".12" filter="url(#${blurId})"/>
+      <rect x="28" y="28" width="304" height="224" rx="24" fill="url(#${glowId})" opacity=".96"/>
+      <ellipse cx="${shadowCx}" cy="${shadowCy}" rx="72" ry="16" fill="rgba(0,0,0,.26)" filter="url(#${blurId})"/>
+      <path d="${motion.path}" fill="none" stroke="${picked.accent2}" stroke-width="5" stroke-linecap="round" stroke-dasharray="12 9" opacity=".95"><animate attributeName="stroke-dashoffset" from="0" to="-42" dur="1.35s" repeatCount="indefinite"/></path>
+      <path d="${motion.head}" fill="none" stroke="${picked.accent2}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>
+      ${(highlightByKey[picked.key] || '')}
+      <g filter="url(#${dropId})">
+        ${_buildAnimFigure(picked.key, picked.accent2, skinId)}
+      </g>
+      <text x="34" y="46" fill="rgba(255,255,255,.52)" font-size="12" font-weight="800" letter-spacing="2.1">EXO GUIDÉ</text>
+      <text x="34" y="62" fill="rgba(255,255,255,.34)" font-size="10" font-weight="700" letter-spacing="1.4">${picked.label.toUpperCase()}</text>
+      ${label ? `<text x="180" y="268" text-anchor="middle" fill="rgba(255,255,255,.55)" font-size="11" font-weight="700">${escapeHtml(label.slice(0,32))}</text>` : ''}
+    </svg>`;
+}
+
+
+function _exerciseDisplay(ex = {}) {
+  return typeof _normalizeGuidedExercise === 'function' ? _normalizeGuidedExercise(ex, 0) : ex;
+}
+
+function exerciseVisualHtml(ex = {}) {
+  const safe = _exerciseDisplay(ex);
+  const name = safe.name || safe.n || safe.muscle || '';
+  return `<div class="ex-visual-stack"><div class="ex-figure"><div class="ex-figure-tag">Démo mouvement</div><div class="ex-demo-gif">${_exerciseDemoSvg(name)}</div></div><div class="ex-muscle-map"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(safe.muscle || safe.name || '')}</div></div>`;
+}
+
+function exerciseHowToHtml(ex = {}) {
+  const safe = _exerciseDisplay(ex);
+  const cue = exerciseCuePack(safe);
+  const detail = safe.guideSeconds ? `Bloc guidé de ${safe.guideSeconds}s puis ${safe.restSeconds || 20}s de pause.` : (safe.sets ? `${safe.sets} séries` : 'Exécution continue.');
+  const errorTip = _getExerciseTip(safe.name || safe.n || '') || "Évite l'élan et garde une amplitude propre.";
+  return `<div class="ex-howto"><div class="ex-howto-item"><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div class="ex-howto-item"><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div class="ex-howto-item"><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div class="ex-howto-item"><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div><div class="ex-howto-item"><span>Rythme</span><p>${escapeHtml(detail)}</p></div><div class="ex-howto-item"><span>Erreur à éviter</span><p>${escapeHtml(errorTip)}</p></div></div>`;
+}
+
+function renderExerciseCard(ex, idx) {
+  ex = _exerciseDisplay(ex);
+
+  const badges = [];
+  if (ex.sets && ex.sets > 0) badges.push(`<span class="ex-badge sets">${ex.sets} séries</span>`);
+  if (ex.guideSeconds) badges.push(`<span class="ex-badge dur">${ex.guideSeconds}s effort</span>`);
+  else if (ex.reps && ex.reps !== "0") badges.push(`<span class="ex-badge reps">${escapeHtml(String(ex.reps))} reps</span>`);
+  if (ex.restSeconds) badges.push(`<span class="ex-badge rest">${ex.restSeconds}s pause</span>`);
+  else if (ex.rest && ex.rest > 0) badges.push(`<span class="ex-badge rest">${ex.rest}s repos</span>`);
+  if (ex.muscle) badges.push(`<span class="ex-badge muscle">${escapeHtml(ex.muscle)}</span>`);
+  if (ex.equipment) badges.push(`<span class="ex-badge equip">${escapeHtml(ex.equipment)}</span>`);
+
+  const diffClass = ex.difficulty === "facile" ? "facile" : ex.difficulty === "difficile" ? "difficile" : "moyen";
+
+  return `
+    <div class="ex-card ex-card-premium">
+      <div class="ex-num">${idx + 1}</div>
+      <div class="ex-visual-col">${exerciseVisualHtml(ex)}</div>
+      <div class="ex-body">
+        <div class="ex-name">
+          <span>${escapeHtml(ex.name || "Exercice")}</span>
+          <span class="ex-diff ${diffClass}" title="${escapeHtml(ex.difficulty || 'moyen')}"></span>
+        </div>
+        <div class="ex-badges">${badges.join("")}</div>
+        ${ex.description ? `<div class="ex-desc">${escapeHtml(ex.description)}</div>` : ""}
+        ${exerciseHowToHtml(ex)}
+      </div>
+    </div>
+  `;
+}
+
+function renderPlan(plan) {
+  const head = document.getElementById("plan-head");
+  const meta = document.getElementById("plan-meta");
+  const notes = document.getElementById("plan-notes");
+  const blocks = document.getElementById("plan-blocks");
+
+  if (head) {
+    head.innerHTML = `<div class="plan-title-text">${escapeHtml(plan.title || "Séance")}</div>`;
+  }
+
+  if (meta) {
+    const pills = [];
+    if (plan.duration) pills.push(`<span class="plan-meta-pill">${plan.duration} min</span>`);
+    const kcal = plan.calories_estimate || plan.calories;
+    if (kcal) pills.push(`<span class="plan-meta-pill">~${kcal} kcal</span>`);
+    const lvlMap = { beginner:"Débutant", debutant:"Débutant", intermediate:"Intermédiaire", intermediaire:"Intermédiaire", advanced:"Avancé", avance:"Avancé" };
+    const lvl = lvlMap[plan.level] || plan.level || "";
+    if (lvl) pills.push(`<span class="plan-meta-pill">${escapeHtml(lvl)}</span>`);
+    if (plan.exercises?.length) pills.push(`<span class="plan-meta-pill">${plan.exercises.length} exercices</span>`);
+    meta.innerHTML = pills.join("");
+    meta.style.display = pills.length ? "flex" : "none";
+  }
+
+  if (notes) {
+    const noteParts = [];
+    if (plan.daily_focus) noteParts.push(`Focus du jour : ${plan.daily_focus}`);
+    if (plan.intensity_reason) noteParts.push(plan.intensity_reason);
+    if (plan.coach_note) noteParts.push(plan.coach_note);
+    if (plan.notes) noteParts.push(plan.notes);
+    notes.innerHTML = noteParts.length ? noteParts.map((x, i) => `<div class="plan-note-line"><span>${i === 0 ? '🎯' : i === 1 ? '⚙️' : '💬'}</span><span>${escapeHtml(x)}</span></div>`).join('') : '';
+    notes.style.display = noteParts.length ? 'grid' : 'none';
+  }
+
+  if (blocks) {
+    // Priority 1: blocks[] with phase color-coding
+    if (Array.isArray(plan.blocks) && plan.blocks.length > 0) {
+      const phaseClasses = ["phase-warmup", "phase-main", "phase-cooldown"];
+      const phaseIcons = [
+        `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>`
+      ];
+      blocks.innerHTML = plan.blocks.map((b, bi) => {
+        const phaseClass = phaseClasses[Math.min(bi, phaseClasses.length - 1)];
+        const icon = phaseIcons[Math.min(bi, phaseIcons.length - 1)];
+        const dur = b.duration_sec ? `${formatDuration(b.duration_sec)}` : "";
+        const rpe = b.rpe ? `RPE ${b.rpe}` : "";
+        const hasExercises = Array.isArray(b.exercises) && b.exercises.length > 0;
+        const hasItems = Array.isArray(b.items) && b.items.length > 0;
+
+        return `
+          <div class="block ${phaseClass}" style="margin-bottom:4px">
+            <div class="block-head" style="margin-bottom:10px">
+              <span class="plan-phase-label">${icon} ${escapeHtml(b.title || "")}</span>
+              <div class="block-meta">
+                ${rpe ? `<span class="rpe">${escapeHtml(rpe)}</span>` : ""}
+                ${dur ? `<span class="bdur">${dur}</span>` : ""}
+              </div>
+            </div>
+            ${hasExercises
+              ? b.exercises.map((ex, i) => renderExerciseCard(ex, i)).join("")
+              : hasItems
+                ? `<ul class="block-items">${b.items.map(it => `<li>${escapeHtml(String(it))}</li>`).join("")}</ul>`
+                : ""
+            }
+          </div>
+        `;
+      }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
+    }
+    // Priority 2: exercises[] flat list — split into phases by position
+    else if (Array.isArray(plan.exercises) && plan.exercises.length > 0) {
+      const exs = plan.exercises;
+      const n = exs.length;
+      let warmupCount = 0, cooldownCount = 0;
+      if (n >= 7) { warmupCount = 2; cooldownCount = 2; }
+      else if (n >= 5) { warmupCount = 2; cooldownCount = 1; }
+      else if (n >= 3) { warmupCount = 1; cooldownCount = 1; }
+      const warmupExs = exs.slice(0, warmupCount);
+      const cooldownExs = n > cooldownCount ? exs.slice(n - cooldownCount) : [];
+      const mainExs = exs.slice(warmupCount, n - cooldownCount || n);
+      const phases = [];
+      if (warmupExs.length) phases.push({ title: "Échauffement", cls: "phase-warmup", rpe: "3-4", exs: warmupExs });
+      if (mainExs.length)   phases.push({ title: "Séance principale", cls: "phase-main", rpe: "7-8", exs: mainExs });
+      if (cooldownExs.length) phases.push({ title: "Récupération", cls: "phase-cooldown", rpe: "2-3", exs: cooldownExs });
+
+      blocks.innerHTML = phases.map((ph) => {
+        let idxOffset = ph.cls === "phase-main" ? warmupCount : ph.cls === "phase-cooldown" ? n - cooldownCount : 0;
+        return `
+          <div class="block ${ph.cls}" style="margin-bottom:4px">
+            <div class="block-head" style="margin-bottom:10px">
+              <span class="plan-phase-label">${escapeHtml(ph.title)}</span>
+              <span class="rpe">RPE ${ph.rpe}</span>
+            </div>
+            ${ph.exs.map((ex, i) => renderExerciseCard(ex, idxOffset + i)).join("")}
+          </div>
+        `;
+      }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
+    } else {
+      blocks.innerHTML = '<div class="empty"><span style="font-size:1.5rem;margin-bottom:6px;display:block">—</span>Aucun exercice disponible</div>';
+    }
+  }
+
+  const planCard = document.getElementById("plan-card");
+  ensureCoachPlanPlacement();
+  if (planCard) planCard.style.display = "block";
+}
+
+async function saveSession() {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+  if (!PLAN) return toast("Générez d'abord une séance.", "err");
+
+  await guarded("save-session", async () => {
+    const { error } = await SB.from("workout_sessions").insert({ user_id: U.id, plan: PLAN });
+    if (error) throw error;
+    toast("Séance sauvegardée ✓", "ok");
+    await updateDailyStreak({ incrementWorkouts: true });
+    await Promise.all([loadHistory(), loadStreak()]);
+    checkAndAwardAchievements().catch(() => {});
+    incrementWeeklyQuestMetric("sessions_week", 1);
+  }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
+}
+
+const HISTORY_PAGE = 10;
+let _historyOffset = 0;
+
+function _sessRowHtml(s, si) {
+  const d = safeDate(s.created_at, { day: "numeric", month: "short" });
+  const exCount = s.plan?.exercises?.length || 0;
+  const dur = s.plan?.duration ? `${s.plan.duration} min` : "";
+  const metaParts = [d];
+  if (dur) metaParts.push(dur);
+  if (exCount) metaParts.push(`${exCount} exerc.`);
+  return `
+    <div class="sess-row" onclick="replaySession(${si})">
+      <div class="sess-row-left">
+        <div class="sess-row-title">${escapeHtml(s.plan?.title || "Séance")}</div>
+        <div class="sess-row-meta">${metaParts.map(p => `<span>${escapeHtml(p)}</span>`).join('<span style="opacity:.3">·</span>')}</div>
+      </div>
+      <div class="sess-row-right">
+        <button class="sess-replay-btn" onclick="event.stopPropagation();replaySession(${si})">Revoir</button>
+      </div>
+    </div>`;
+}
+
+async function loadHistory() {
+  if (!U) return;
+  _historyOffset = 0;
+  window._sessionCache = [];
+  const el = document.getElementById("history-list");
+  if (!el) return;
+  try {
+    const { data, error } = await SB.from("workout_sessions")
+      .select("id,created_at,plan")
+      .eq("user_id", U.id)
+      .order("created_at", { ascending: false })
+      .range(0, HISTORY_PAGE - 1);
+    if (error) throw error;
+    if (!data?.length) {
+      el.innerHTML = '<div class="empty"><span style="font-size:1.4rem;display:block;margin-bottom:6px">—</span>Aucune séance sauvegardée<br><span style="font-size:.78rem;color:var(--muted);margin-top:4px;display:block">Lance ta première séance depuis l\'onglet Programme ou Coach.</span></div>';
+      return;
+    }
+    window._sessionCache = data.map(s => s.plan);
+    _historyOffset = data.length;
+    const hasMore = data.length === HISTORY_PAGE;
+    el.innerHTML = `<div class="sessions-list" id="sessions-list-inner">${data.map((s, si) => _sessRowHtml(s, si)).join("")}</div>
+      ${hasMore ? `<button class="btn btn-g btn-full" id="hist-more-btn" onclick="loadMoreHistory()" style="margin-top:10px;font-size:.8rem">Voir plus</button>` : ""}`;
+  } catch (e) {
+    FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+    renderCommunityOverview(FEED_SOCIAL_STATE.stats);
+    el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function loadMoreHistory() {
+  if (!U) return;
+  const btn = document.getElementById("hist-more-btn");
+  const listEl = document.getElementById("sessions-list-inner");
+  if (!listEl) return;
+  if (btn) { btn.disabled = true; btn.textContent = "Chargement…"; }
+  try {
+    const from = _historyOffset;
+    const to   = from + HISTORY_PAGE - 1;
+    const { data, error } = await SB.from("workout_sessions")
+      .select("id,created_at,plan")
+      .eq("user_id", U.id)
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+    if (!data?.length) { if (btn) btn.remove(); return; }
+    const offset = window._sessionCache.length;
+    window._sessionCache = [...window._sessionCache, ...data.map(s => s.plan)];
+    _historyOffset += data.length;
+    listEl.insertAdjacentHTML("beforeend", data.map((s, i) => _sessRowHtml(s, offset + i)).join(""));
+    if (data.length < HISTORY_PAGE) { if (btn) btn.remove(); }
+    else if (btn) { btn.disabled = false; btn.textContent = "Voir plus"; }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "Voir plus"; }
+    toast("Erreur chargement historique.", "err");
+  }
+}
+window.loadMoreHistory = loadMoreHistory;
+
+function replaySession(idxOrPlan) {
+  try {
+    const plan = typeof idxOrPlan === "number"
+      ? (window._sessionCache?.[idxOrPlan] || null)
+      : (typeof idxOrPlan === "string" ? JSON.parse(idxOrPlan) : idxOrPlan);
+    if (!plan) return;
+    PLAN = plan;
+    renderPlan(PLAN);
+    toast("Séance rechargée", "ok");
+  } catch { toast("Impossible de recharger la séance.", "err"); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NUTRITION
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function addMeal() {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+
+  const nameEl = document.getElementById("n-name");
+  const name = nameEl ? nameEl.value.trim() : "";
+  if (!name) return toast("Nom du repas requis.", "err");
+
+  const payload = {
+    user_id: U.id,
+    name,
+    calories: toInt("n-kcal"),
+    protein: toInt("n-prot"),
+    carbs: toInt("n-carb"),
+    fat: toInt("n-fat"),
+    date: new Date().toISOString().slice(0, 10)
+  };
+
+  const btn = document.getElementById("btn-meal");
+  await withButton(btn, "Ajout…", async () => {
+    const { error } = await SB.from("meals").insert(payload);
+    if (error) throw error;
+    ["n-name", "n-kcal", "n-prot", "n-carb", "n-fat"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    toast("Repas ajouté ✓", "ok");
+    await loadMeals();
+  }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function deleteMeal(id) {
+  if (!U) return;
+  const ok = await confirmModal("Supprimer ce repas ?", "Il sera retiré du journal de la journée.");
+  if (!ok) return;
+  await guarded(`meal-${id}`, async () => {
+    const { error } = await SB.from("meals").delete().eq("id", id).eq("user_id", U.id);
+    if (error) throw error;
+    await loadMeals();
+  }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function loadMeals() {
+  if (!U) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const el = document.getElementById("meals-list");
+  if (!el) return;
+
+  try {
+    const { data, error } = await SB.from("meals").select("*").eq("user_id", U.id).eq("date", today).order("created_at");
+    if (error) throw error;
+
+    const totals = (data || []).reduce((acc, m) => ({
+      kcal: acc.kcal + (m.calories || 0),
+      protein: acc.protein + (m.protein || 0),
+      carbs: acc.carbs + (m.carbs || 0),
+      fat: acc.fat + (m.fat || 0)
+    }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+
+    const mKcal = document.getElementById("m-kcal");
+    if (mKcal) mKcal.textContent = String(totals.kcal);
+    const dbKcal = document.getElementById("db-kcal");
+    if (dbKcal) dbKcal.textContent = String(totals.kcal);
+    animateRing("ring-kcal", totals.kcal, 2500);
+    const mProt = document.getElementById("m-prot");
+    if (mProt) mProt.textContent = `${totals.protein}g`;
+    const mCarb = document.getElementById("m-carb");
+    if (mCarb) mCarb.textContent = `${totals.carbs}g`;
+    const mFat = document.getElementById("m-fat");
+    if (mFat) mFat.textContent = `${totals.fat}g`;
+
+    await renderNutritionProgress(totals);
+
+    if (!data?.length) {
+      el.innerHTML = '<div class="empty"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;margin:0 auto 8px"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3v7"/></svg>Aucun repas aujourd\'hui</div>';
+      return;
+    }
+
+    const MEAL_TYPE_LABELS = { petit_dej: "Petit-déj", collation: "Collation", midi: "Déjeuner", soir: "Dîner" };
+    el.innerHTML = data.map((meal) => {
+      const typeLabel = MEAL_TYPE_LABELS[meal.meal_type] || "";
+      const kcal = meal.calories || 0;
+      const prot = meal.protein || 0;
+      const carb = meal.carbs || 0;
+      const fat = meal.fat || 0;
+      return `
+      <div class="meal-card">
+        <div class="meal-card-top">
+          <div class="meal-card-name">${escapeHtml(meal.name)}${typeLabel ? ` <span class="meal-type-tag">${typeLabel}</span>` : ""}</div>
+          <div class="meal-card-kcal">${kcal} <span class="meal-card-kcal-unit">kcal</span></div>
+          <button class="meal-card-del" onclick="deleteMeal('${meal.id}')" title="Supprimer">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+          </button>
+        </div>
+        <div class="meal-card-macros">
+          <span class="meal-macro-pill" style="border-color:rgba(74,222,128,.3);color:#4ade80">${prot}g prot.</span>
+          <span class="meal-macro-pill" style="border-color:rgba(251,191,36,.3);color:#fbbf24">${carb}g gluc.</span>
+          <span class="meal-macro-pill" style="border-color:rgba(248,113,113,.3);color:#f87171">${fat}g lip.</span>
+        </div>
+      </div>`;
+    }).join("");
+  } catch (e) {
+    FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+    renderCommunityOverview(FEED_SOCIAL_STATE.stats);
+    el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+let _nutrTargetsCache = null;
+let NUTRITION_REQUEST_SEQ = 0;
+let LAST_NUTRITION_PLAN = null;
+const NUTRITION_PLAN_STORAGE_KEY = "fitai_last_nutrition_plan_v2";
+
+async function _fetchNutritionTargets() {
+  if (_nutrTargetsCache) return _nutrTargetsCache;
+  const { data } = await SB.from("nutrition_targets").select("calories,protein,carbs,fats").eq("user_id", U.id).maybeSingle();
+  _nutrTargetsCache = data || { calories: 2200, protein: 140, carbs: 260, fats: 70 };
+  return _nutrTargetsCache;
+}
+
+async function loadNutritionTargets() {
+  if (!U) return;
+  try {
+    _nutrTargetsCache = null; // force refresh when explicitly called
+    const target = await _fetchNutritionTargets();
+    const targetKcal = document.getElementById("target-kcal");
+    const targetProt = document.getElementById("target-prot");
+    const targetCarb = document.getElementById("target-carb");
+    const targetFat = document.getElementById("target-fat");
+    if (targetKcal) targetKcal.innerHTML = `${target.calories} <span style="font-size:.7rem;font-weight:600;color:var(--muted)">kcal</span>`;
+    if (targetProt) targetProt.textContent = `${target.protein}g`;
+    if (targetCarb) targetCarb.textContent = `${target.carbs}g`;
+    if (targetFat) targetFat.textContent = `${target.fats}g`;
+  } catch (e) {
+    console.error("[Nutrition] loadTargets error:", e);
+  }
+}
+
+async function renderNutritionProgress(totals) {
+  if (!U) return;
+  try {
+    const t = await _fetchNutritionTargets();
+    const targetCalories = t.calories || 2200;
+    const targetProt = t.protein || 140;
+    const targetCarb = t.carbs || 260;
+    const targetFat = t.fats || 70;
+
+    // Calorie ring (SVG arc — circumference of r=50 is ≈ 314)
+    const pct = Math.max(0, Math.min(1, totals.kcal / targetCalories));
+    const arc = document.getElementById("kcal-ring-arc");
+    if (arc) {
+      const circ = 314;
+      arc.setAttribute("stroke-dasharray", `${(pct * circ).toFixed(1)} ${circ}`);
+      // Gradient via SVG defs; only override to red when over limit
+      if (pct > 1) arc.setAttribute("stroke", "#f87171");
+      else arc.setAttribute("stroke", "url(#kcalGrad)");
+    }
+
+    // Linear bar compat (if still exists)
+    const calFill = document.getElementById("cal-progress-fill");
+    const calText = document.getElementById("cal-progress-text");
+    if (calFill) calFill.style.width = `${Math.round(pct * 100)}%`;
+    if (calText) calText.textContent = `${totals.kcal} / ${targetCalories} kcal`;
+
+    // Macro bars + targets labels
+    const barProt = document.getElementById("bar-prot");
+    const barCarb = document.getElementById("bar-carb");
+    const barFat = document.getElementById("bar-fat");
+    if (barProt) barProt.style.width = `${Math.min(100, Math.round((totals.protein / targetProt) * 100))}%`;
+    if (barCarb) barCarb.style.width = `${Math.min(100, Math.round((totals.carbs / targetCarb) * 100))}%`;
+    if (barFat) barFat.style.width = `${Math.min(100, Math.round((totals.fat / targetFat) * 100))}%`;
+
+    const tProt = document.getElementById("macro-target-prot");
+    const tCarb = document.getElementById("macro-target-carb");
+    const tFat = document.getElementById("macro-target-fat");
+    if (tProt) tProt.textContent = `/ ${targetProt}g`;
+    if (tCarb) tCarb.textContent = `/ ${targetCarb}g`;
+    if (tFat) tFat.textContent = `/ ${targetFat}g`;
+
+    // Remaining calories indicator
+    const remaining = targetCalories - totals.kcal;
+    const remainingRow = document.getElementById("nutr-remaining-row");
+    const remainingVal = document.getElementById("nutr-remaining-kcal");
+    if (remainingRow && remainingVal) {
+      remainingRow.style.display = "";
+      if (remaining > 0) {
+        remainingVal.textContent = `${remaining} kcal`;
+        remainingVal.style.color = "#4ade80";
+      } else {
+        remainingVal.textContent = `+${Math.abs(remaining)} kcal dépassé`;
+        remainingVal.style.color = "#f87171";
+      }
+    }
+  } catch (e) {
+    console.error("[Nutrition] renderProgress error:", e);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COMMUNAUTÉ
+// ══════════════════════════════════════════════════════════════════════════════
+
+function previewPostPhoto(file) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) return toast("Format image requis.", "err");
+  if (file.size > 4 * 1024 * 1024) return toast("Photo trop volumineuse (max 4MB).", "err");
+  POST_PHOTO = file;
+  const nameEl = document.getElementById("post-photo-name");
+  if (nameEl) nameEl.textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = document.getElementById("post-photo-img");
+    const preview = document.getElementById("post-photo-preview");
+    if (img) img.src = reader.result;
+    if (preview) preview.style.display = "block";
+  };
+  reader.readAsDataURL(file);
+}
+
+async function createPost() {
+  if (!U) return toast("Session expirée.", "err");
+  const postInput = document.getElementById("post-input");
+  const content = postInput ? postInput.value.trim() : "";
+  if (!content && !POST_PHOTO) return toast("Écrivez un message ou ajoutez une photo.", "err");
+
+  const visibilityEl = document.getElementById("post-visibility");
+  const visibility = visibilityEl ? visibilityEl.value : "public";
+
+  const btn = document.getElementById("btn-post");
+  await withButton(btn, "Publication…", async () => {
+    let image_url = null;
+    if (POST_PHOTO) {
+      const ext = (POST_PHOTO.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").toLowerCase();
+      const path = `${U.id}/posts/${Date.now()}.${ext}`;
+      const upload = await SB.storage.from("user_uploads").upload(path, POST_PHOTO, { contentType: POST_PHOTO.type });
+      if (upload.error) {
+        console.warn("[Post] Photo upload failed:", upload.error);
+        toast("Échec upload photo, publication sans image.", "err");
+      } else {
+        image_url = path; // bucket is private: store the storage path, not a public URL
+      }
+    }
+    const payload = { user_id: U.id, content: content || "📸", kudos: 0, visibility };
+    if (image_url) payload.image_url = image_url;
+    const { error } = await SB.from("community_posts").insert(payload);
+    if (error) throw error;
+    checkAndAwardAchievements().catch(() => {});
+    if (postInput) postInput.value = "";
+    POST_PHOTO = null;
+    const nameEl = document.getElementById("post-photo-name");
+    const preview = document.getElementById("post-photo-preview");
+    const fileInput = document.getElementById("post-photo-input");
+    if (nameEl) nameEl.textContent = "";
+    if (preview) preview.style.display = "none";
+    if (fileInput) fileInput.value = "";
+    await loadFeed();
+    toast("Publié ✓", "ok");
+  }).catch(e => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function giveKudos(postId, count) {
+  if (!U) return;
+  if (LIKED.has(postId)) return toast("Déjà kudosé.", "err");
+
+  await guarded(`kudos-${postId}`, async () => {
+    // Utiliser la fonction RPC sécurisée
+    const { data, error } = await SB.rpc("give_kudos", { target_post_id: postId });
+    if (error) throw error;
+    if (data && !data.ok) {
+      if (data.error === "already_kudosed") return toast("Déjà kudosé.", "err");
+      throw new Error(data.error);
+    }
+    LIKED.add(postId);
+    try { localStorage.setItem("fp_likes", JSON.stringify([...LIKED])); } catch {}
+    await loadFeed();
+  }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function deletePost(postId) {
+  if (!U) return;
+  const ok = await confirmModal("Supprimer ce post ?", "Il sera retiré définitivement du fil communautaire.");
+  if (!ok) return;
+  await guarded(`post-${postId}`, async () => {
+    const { error } = await SB.from("community_posts").delete().eq("id", postId).eq("user_id", U.id);
+    if (error) throw error;
+    await loadFeed();
+  }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
+}
+
+function setPostTemplate(type) {
+  // Switch back to regular post mode if in recipe mode
+  const regularForm = document.getElementById("regular-post-form");
+  const recipeForm = document.getElementById("recipe-share-form");
+  if (regularForm) regularForm.style.display = "block";
+  if (recipeForm) recipeForm.style.display = "none";
+
+  const input = document.getElementById("post-input");
+  if (!input) return;
+  const tpl = {
+    seance: "Séance terminée — ",
+    pr: "Nouveau record personnel — ",
+    nutrition: "Repas du jour : ",
+    motivation: "Ma motivation du jour :\n\n",
+    progress: "Mes progrès cette semaine :\n\n"
+  };
+  input.value = tpl[type] || "";
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+
+function toggleRecipeMode() {
+  const regularForm = document.getElementById("regular-post-form");
+  const recipeForm = document.getElementById("recipe-share-form");
+  if (!regularForm || !recipeForm) return;
+  const isRecipe = recipeForm.style.display !== "none";
+  regularForm.style.display = isRecipe ? "block" : "none";
+  recipeForm.style.display = isRecipe ? "none" : "block";
+  const btn = document.querySelector(".post-cat-chip-recipe");
+  if (btn) btn.style.background = isRecipe ? "" : "rgba(99,102,241,.25)";
+}
+
+async function shareRecipe() {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+  const name = document.getElementById("recipe-share-name")?.value.trim() || "";
+  const ingredients = document.getElementById("recipe-share-ingredients")?.value.trim() || "";
+  const servings = parseInt(document.getElementById("recipe-share-servings")?.value || "2");
+  const desc = document.getElementById("recipe-share-desc")?.value.trim() || "";
+  const steps = document.getElementById("recipe-share-steps")?.value.trim() || "";
+  const preptime = parseInt(document.getElementById("recipe-share-preptime")?.value || "0") || null;
+  const visibility = document.getElementById("recipe-share-visibility")?.value || "public";
+
+  if (!name) return toast("Donne un nom à ta recette.", "err");
+  if (!ingredients) return toast("Liste au moins quelques ingrédients.", "err");
+
+  const btn = document.getElementById("btn-share-recipe");
+  await withButton(btn, "Analyse en cours…", async () => {
+    const token = await getToken();
+    if (!token) throw new Error("Session expirée.");
+
+    // Call Gemini nutrition check
+    let nutrition = null;
+    try {
+      const resp = await fetchJsonWithTimeout("/api/check-recipe-nutrition", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, ingredients, servings })
+      }, 20000);
+      nutrition = resp?.data || null;
+    } catch {
+      // Proceed without nutrition data
+    }
+
+    // Build recipe content (prefixed JSON for special rendering in feed)
+    const recipePayload = {
+      _t: "recipe",
+      name,
+      desc,
+      ingredients,
+      servings,
+      steps: steps || null,
+      preptime: preptime || null,
+      n: nutrition || { score: null }
+    };
+    const content = "__r__" + JSON.stringify(recipePayload);
+
+    const { error } = await SB.from("community_posts").insert({
+      user_id: U.id,
+      content,
+      visibility,
+      image_url: null,
+      created_at: new Date().toISOString(),
+      kudos: 0
+    });
+    if (error) throw error;
+
+    // Reset form
+    ["recipe-share-name","recipe-share-ingredients","recipe-share-steps","recipe-share-desc"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    toggleRecipeMode();
+    await loadFeed();
+    toast(nutrition ? `Recette partagée — score nutritionnel : ${nutrition.score}/100` : "Recette partagée ✓", "ok");
+  }).catch(e => toast(`Erreur: ${e.message}`, "err"));
+}
+
+function setFeedFilter(filter) {
+  FEED_FILTER = filter;
+  document.querySelectorAll(".feed-filter-btn").forEach(b => b.classList.toggle("on", b.dataset.filter === filter));
+  loadFeed();
+  renderCommunityOverview(FEED_SOCIAL_STATE.stats);
+}
+
+const FEED_IMAGE_CACHE = new Map();
+
+const FEED_SOCIAL_STATE = { posts: [], stats: null, refreshedAt: 0 };
+
+function _communityPostType(post = {}) {
+  const raw = String(post.content || "");
+  if (raw.startsWith("__r__")) return { key: "recipe", label: "Recette", emoji: "🍳" };
+  const kind = detectCoachModeClient(raw);
+  if (kind === 'workout_json') return { key: 'workout', label: 'Workout', emoji: '🏋️' };
+  if (/pr|record|charge|rep max|max/.test(raw.toLowerCase())) return { key: 'pr', label: 'PR', emoji: '🏆' };
+  if (/motivation|discipline|objectif|go/.test(raw.toLowerCase())) return { key: 'mindset', label: 'Motivation', emoji: '⚡' };
+  if (/meal|repas|kcal|prot|nutrition/.test(raw.toLowerCase())) return { key: 'nutrition', label: 'Nutrition', emoji: '🥗' };
+  return { key: 'update', label: 'Update', emoji: '✨' };
+}
+
+function _communityOverviewHtml(stats = {}) {
+  const cards = [
+    { icon: '📰', label: 'Posts visibles', value: stats.totalPosts || 0, sub: FEED_FILTER === 'friends' ? 'de tes amis' : 'dans ce fil' },
+    { icon: '🍳', label: 'Recettes', value: stats.recipePosts || 0, sub: 'partagées' },
+    { icon: '💬', label: 'Commentaires', value: stats.totalComments || 0, sub: 'sur ces posts' },
+    { icon: '❤️', label: 'Kudos', value: stats.totalKudos || 0, sub: 'engagement' },
+  ];
+  const refreshed = stats.refreshedAt ? new Date(stats.refreshedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
+  return `<div class="community-overview-grid">${cards.map(card => `<div class="community-overview-card"><div class="community-overview-top"><span>${card.icon}</span><span>${card.label}</span></div><div class="community-overview-value">${card.value}</div><div class="community-overview-sub">${card.sub}</div></div>`).join('')}</div><div class="community-overview-meta">Dernière mise à jour : ${refreshed}</div>`;
+}
+
+async function renderCommunityOverview(stats) {
+  const el = document.getElementById('community-overview');
+  if (!el) return;
+  el.innerHTML = _communityOverviewHtml(stats || FEED_SOCIAL_STATE.stats || {});
+}
+
+async function _loadFriendshipSnapshot() {
+  if (!U) return { acceptedIds: [], pendingSentIds: [], pendingReceivedIds: [], acceptedCount: 0, pendingCount: 0 };
+  try {
+    const { data, error } = await SB.from('friendships')
+      .select('id,requester_id,addressee_id,status')
+      .or(`requester_id.eq.${U.id},addressee_id.eq.${U.id}`);
+    if (error) throw error;
+    const acceptedIds = [];
+    const pendingSentIds = [];
+    const pendingReceivedIds = [];
+    for (const row of data || []) {
+      const otherId = row.requester_id === U.id ? row.addressee_id : row.requester_id;
+      if (row.status === 'accepted') acceptedIds.push(otherId);
+      else if (row.status === 'pending' && row.requester_id === U.id) pendingSentIds.push(otherId);
+      else if (row.status === 'pending' && row.addressee_id === U.id) pendingReceivedIds.push(otherId);
+    }
+    return {
+      acceptedIds,
+      pendingSentIds,
+      pendingReceivedIds,
+      acceptedCount: acceptedIds.length,
+      pendingCount: pendingReceivedIds.length,
+    };
+  } catch {
+    return { acceptedIds: [], pendingSentIds: [], pendingReceivedIds: [], acceptedCount: 0, pendingCount: 0 };
+  }
+}
+
+async function loadFriendSuggestions() {
+  const el = document.getElementById('friend-suggestions');
+  if (!el || !U) return;
+  try {
+    const snapshot = await _loadFriendshipSnapshot();
+    const excluded = new Set([U.id, ...snapshot.acceptedIds, ...snapshot.pendingSentIds, ...snapshot.pendingReceivedIds]);
+    const { data, error } = await SB.from('profiles').select('id,username,display_name').limit(18);
+    if (error) throw error;
+    const candidates = (data || []).filter(p => !excluded.has(p.id)).slice(0, 4);
+    if (!candidates.length) {
+      el.innerHTML = '<div class="friends-empty-state"><div style="font-size:.9rem">✨</div><div style="font-weight:700">Aucune suggestion pour le moment</div><div style="font-size:.78rem;color:var(--muted)">Continue à publier et à ajouter des amis pour enrichir ton réseau.</div></div>';
+      return;
+    }
+    el.innerHTML = candidates.map(p => {
+      const name = p.display_name || p.username || 'Membre';
+      const avatarColor = AVATAR_COLORS[(p.id || '').charCodeAt(0) % AVATAR_COLORS.length];
+      return `<div class="friend-card friend-card-suggestion"><div class="friend-card-avatar" style="background:${avatarColor}">${escapeHtml(name.charAt(0).toUpperCase())}</div><div class="friend-card-info"><div class="friend-card-name">${escapeHtml(name)}</div><div class="friend-card-meta">${p.username ? `@${escapeHtml(p.username)}` : 'Membre FitAI Pro'} · suggéré pour toi</div></div><button class="btn btn-p btn-sm" onclick="sendFriendRequest('${p.id}')">+ Ajouter</button></div>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur suggestions: ${escapeHtml(e.message || 'chargement')}</div>`;
+  }
+}
+
+async function renderFriendsOverview(opts = {}) {
+  const el = document.getElementById('friends-overview');
+  if (!el || !U) return;
+  try {
+    const snapshot = opts.snapshot || await _loadFriendshipSnapshot();
+    let bestStreak = 0;
+    let workouts = 0;
+    if (snapshot.acceptedIds.length) {
+      const { data } = await SB.from('user_streaks').select('user_id,current_streak,total_workouts').in('user_id', snapshot.acceptedIds);
+      for (const row of data || []) {
+        bestStreak = Math.max(bestStreak, Number(row.current_streak) || 0);
+        workouts += Number(row.total_workouts) || 0;
+      }
+    }
+    const cards = [
+      { icon: '👥', label: 'Amis actifs', value: snapshot.acceptedCount || 0, sub: 'connectés' },
+      { icon: '📩', label: 'Demandes', value: snapshot.pendingCount || 0, sub: 'à traiter' },
+      { icon: '🔥', label: 'Meilleure streak', value: bestStreak || 0, sub: 'chez tes amis' },
+      { icon: '🏋️', label: 'Séances cumulées', value: workouts || 0, sub: 'réseau' },
+    ];
+    el.innerHTML = `<div class="friends-overview-grid">${cards.map(card => `<div class="friends-overview-card"><div class="friends-overview-top"><span>${card.icon}</span><span>${card.label}</span></div><div class="friends-overview-value">${card.value}</div><div class="friends-overview-sub">${card.sub}</div></div>`).join('')}</div>`;
+  } catch {}
+}
+
+
+async function resolveFeedImageUrls(posts) {
+  const out = {};
+  const now = Date.now();
+  const toSign = [];
+
+  for (const post of posts || []) {
+    const ref = String(post.image_url || "").trim();
+    if (!ref) continue;
+    if (/^https?:\/\//i.test(ref)) {
+      out[post.id] = ref;
+      continue;
+    }
+    const cached = FEED_IMAGE_CACHE.get(ref);
+    if (cached && cached.expiresAt > now) {
+      out[post.id] = cached.url;
+      continue;
+    }
+    toSign.push({ postId: post.id, path: ref });
+  }
+
+  await Promise.all(toSign.map(async ({ postId, path }) => {
+    try {
+      const { data, error } = await SB.storage.from("user_uploads").createSignedUrl(path, 60 * 60);
+      if (error) throw error;
+      if (data?.signedUrl) {
+        FEED_IMAGE_CACHE.set(path, { url: data.signedUrl, expiresAt: now + 55 * 60 * 1000 });
+        out[postId] = data.signedUrl;
+      }
+    } catch (e) {
+      console.warn("[Feed] Signed URL failed:", path, e?.message || e);
+    }
+  }));
+
+  return out;
+}
+
+async function loadFeed(silent = false) {
+  const el = document.getElementById("feed");
+  if (!el) return;
+  // On silent refresh, only update if no posts are showing yet (avoid jarring rerender while user reads)
+  if (silent && el.querySelector(".post-card")) {
+    // Just check for new posts without destroying current render
+    try {
+      const { data: latest } = await SB.from("community_posts")
+        .select("id").order("created_at", { ascending: false }).limit(1);
+      const latestId = latest?.[0]?.id;
+      const firstCard = el.querySelector(".post-card");
+      if (latestId && firstCard && firstCard.id === `post-${latestId}`) return; // no new posts
+    } catch { return; }
+  }
+  try {
+    let query = SB.from("community_posts")
+      .select("id,user_id,content,kudos,image_url,visibility,created_at")
+      .order("created_at", { ascending: false })
+      .limit(25);
+
+    if (FEED_FILTER === "mine") {
+      query = query.eq("user_id", U.id);
+    }
+    if (FEED_FILTER === "friends" && U) {
+      // Fetch friend user_ids (accepted friendships)
+      const { data: fships } = await SB.from("friendships")
+        .select("requester_id,addressee_id")
+        .eq("status", "accepted")
+        .or(`requester_id.eq.${U.id},addressee_id.eq.${U.id}`);
+      const friendIds = (fships || []).map(f => f.requester_id === U.id ? f.addressee_id : f.requester_id);
+      if (!friendIds.length) {
+        FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+        renderCommunityOverview(FEED_SOCIAL_STATE.stats);
+        el.innerHTML = '<div class="empty"><span class="empty-ic">👥</span>Ajoutez des amis pour voir leur fil.</div>';
+        return;
+      }
+      // Show friends' posts (public or friends-visible)
+      query = query.in("user_id", friendIds).neq("visibility", "private");
+    }
+
+    const { data: allData, error } = await query;
+    if (error) throw error;
+    // Client-side filter for recipes tab
+    const data = FEED_FILTER === "recipes"
+      ? (allData || []).filter(p => String(p.content || "").startsWith("__r__"))
+      : (allData || []);
+    if (!data.length) {
+      FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+      renderCommunityOverview(FEED_SOCIAL_STATE.stats);
+      el.innerHTML = '<div class="empty"><span class="empty-ic">👥</span>Aucun post dans ce fil.</div>';
+      return;
+    }
+
+    const postIds = data.map(post => post.id);
+    const commentCounts = {};
+    try {
+      const { data: commentRows, error: commentError } = await SB.from("comments")
+        .select("post_id")
+        .in("post_id", postIds)
+        .limit(1000);
+      if (commentError) throw commentError;
+      for (const row of commentRows || []) commentCounts[row.post_id] = (commentCounts[row.post_id] || 0) + 1;
+    } catch (e) {
+      console.warn("[Feed] Comment counts unavailable:", e?.message || e);
+    }
+
+    const imageUrls = await resolveFeedImageUrls(data);
+
+    FEED_SOCIAL_STATE.posts = data;
+    FEED_SOCIAL_STATE.stats = {
+      totalPosts: data.length,
+      recipePosts: data.filter(p => String(p.content || '').startsWith('__r__')).length,
+      totalComments: Object.values(commentCounts).reduce((sum, n) => sum + (Number(n) || 0), 0),
+      totalKudos: data.reduce((sum, p) => sum + (Number(p.kudos) || 0), 0),
+      refreshedAt: Date.now(),
+    };
+    renderCommunityOverview(FEED_SOCIAL_STATE.stats);
+
+    // Batch-fetch author display names
+    const authorIds = [...new Set(data.map(p => p.user_id))];
+    const authorMap = {};
+    try {
+      const { data: profiles } = await SB.from("profiles").select("id,display_name,username,avatar_url").in("id", authorIds);
+      (profiles || []).forEach(p => { authorMap[p.id] = p; });
+    } catch { /* fallback to "Membre" */ }
+
+    const AVATAR_COLORS = ["#2563eb","#7c3aed","#0891b2","#059669","#dc2626","#d97706","#db2777","#0d9488"];
+
+    el.innerHTML = data.map(post => {
+      const me = U && post.user_id === U.id;
+      const liked = LIKED.has(post.id);
+      const date = timeAgo(post.created_at);
+      const commentCount = commentCounts[post.id] || 0;
+      const visIcon = post.visibility === "friends" ? "🔒" : "🌍";
+      const imageSrc = imageUrls[post.id] || "";
+      const author = authorMap[post.user_id];
+      const authorName = me ? "Vous" : (author?.display_name || author?.username || "Membre");
+      const authorHandle = !me && author?.username ? `@${escapeHtml(author.username)}` : "";
+      const initial = authorName.charAt(0).toUpperCase();
+      const avatarColor = AVATAR_COLORS[(post.user_id || "").charCodeAt(0) % AVATAR_COLORS.length];
+      const authorAvatar = me ? window._myAvatarUrl : author?.avatar_url;
+      const avatarHtml = authorAvatar
+        ? `<div class="post-card-avatar" style="background:${avatarColor};background-image:url(${JSON.stringify(authorAvatar)});background-size:cover;background-position:center"></div>`
+        : `<div class="post-card-avatar" style="background:${avatarColor}">${initial}</div>`;
+      const rawContent = String(post.content || "");
+      const postType = _communityPostType(post);
+      const visibilityPill = post.visibility === 'friends' ? 'Amis seulement' : 'Public';
+
+      // Recipe post rendering
+      if (rawContent.startsWith("__r__")) {
+        let recipe = null;
+        try { recipe = JSON.parse(rawContent.slice(5)); } catch {}
+        if (recipe) {
+          const n = recipe.n || {};
+          const score = typeof n.score === "number" ? n.score : null;
+          const scoreBadgeClass = score === null ? "neutral" : score >= 75 ? "good" : score >= 50 ? "medium" : "low";
+          const scoreLabel = score === null ? "N/A" : `${score}/100`;
+          const macrosHtml = (n.kcal || n.protein || n.carbs || n.fat) ? `
+            <div class="recipe-macros-row">
+              ${n.kcal ? `<span class="recipe-macro-pill">${n.kcal} kcal</span>` : ""}
+              ${n.protein ? `<span class="recipe-macro-pill">${n.protein}g prot.</span>` : ""}
+              ${n.carbs ? `<span class="recipe-macro-pill">${n.carbs}g gluc.</span>` : ""}
+              ${n.fat ? `<span class="recipe-macro-pill">${n.fat}g lip.</span>` : ""}
+            </div>` : "";
+          const analysisHtml = n.analysis ? `<div class="recipe-analysis-text">${escapeHtml(n.analysis)}</div>` : "";
+          const ingredientsHtml = recipe.ingredients ? `<div class="recipe-ingredients-text"><strong>Ingrédients :</strong> ${escapeHtml(String(recipe.ingredients).slice(0, 200))}${recipe.ingredients.length > 200 ? "…" : ""}</div>` : "";
+          const descHtml = recipe.desc ? `<div class="recipe-desc-text">${escapeHtml(recipe.desc)}</div>` : "";
+          return `
+            <div class="post-card recipe-post-card" id="post-${post.id}">
+              <div class="post-card-header recipe-post-header">
+                ${avatarHtml}
+                <div class="post-card-info">
+                  <div class="post-card-name">${escapeHtml(recipe.name || "Recette")} ${score !== null ? `<span class="recipe-score-badge ${scoreBadgeClass}">${scoreLabel}</span>` : ""}</div>
+                  <div class="post-card-meta">${authorHandle ? `<span class="post-card-handle">${authorHandle}</span> · ` : ""}${escapeHtml(authorName)} · ${visIcon} ${date}</div>
+                </div>
+                ${me ? `<button class="post-card-del" onclick="deletePost('${post.id}')" title="Supprimer">✕</button>` : ""}
+              </div>
+              <div class="recipe-post-body">
+                <div class="feed-post-pills"><span class="feed-post-pill">${postType.emoji} ${postType.label}</span><span class="feed-post-pill">${visIcon} ${visibilityPill}</span><span class="feed-post-pill">❤️ ${post.kudos || 0}</span></div>
+                ${macrosHtml}
+                ${ingredientsHtml}
+                ${descHtml}
+                ${analysisHtml}
+                ${n.strengths?.length ? `<div class="recipe-strengths">${n.strengths.map(s => `<span class="recipe-strength-tag">${escapeHtml(s)}</span>`).join("")}</div>` : ""}
+              </div>
+              <div class="post-card-actions">
+                <button class="kudos-btn ${liked ? "on" : ""}" onclick="giveKudos('${post.id}', ${post.kudos || 0})">${liked ? "❤️" : "🤍"} <span>${post.kudos || 0}</span></button>
+                <button class="comment-btn" onclick="toggleComments('${post.id}')">💬 <span>${commentCount}</span></button>
+              </div>
+              <div class="comments-section" id="comments-${post.id}" style="display:none"></div>
+            </div>`;
+        }
+      }
+
+      return `
+        <div class="post-card" id="post-${post.id}">
+          <div class="post-card-header">
+            ${avatarHtml}
+            <div class="post-card-info">
+              <div class="post-card-name">${escapeHtml(authorName)}${me ? " <span class='post-me-badge'>Vous</span>" : ""}</div>
+              <div class="post-card-meta">${authorHandle ? `<span class="post-card-handle">${authorHandle}</span> · ` : ""}${visIcon} ${date}</div>
+            </div>
+            ${me ? `<button class="post-card-del" onclick="deletePost('${post.id}')" title="Supprimer">✕</button>` : ""}
+          </div>
+          <div class="feed-post-pills"><span class="feed-post-pill">${postType.emoji} ${postType.label}</span><span class="feed-post-pill">${visIcon} ${visibilityPill}</span>${imageSrc ? `<span class="feed-post-pill">📷 Photo</span>` : ""}</div>
+          <div class="post-card-body">${escapeHtml(post.content)}</div>
+          ${imageSrc ? `<img class="feed-img" src="${escapeHtml(imageSrc)}" alt="Photo" loading="lazy"/>` : ""}
+          <div class="post-card-actions">
+            <button class="kudos-btn ${liked ? "on" : ""}" onclick="giveKudos('${post.id}', ${post.kudos || 0})">${liked ? "❤️" : "🤍"} <span>${post.kudos || 0}</span></button>
+            <button class="comment-btn" onclick="toggleComments('${post.id}')">💬 <span>${commentCount}</span></button>
+          </div>
+          <div class="comments-section" id="comments-${post.id}" style="display:none"></div>
+        </div>`;
+    }).join("");
+  } catch (e) {
+    FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+    renderCommunityOverview(FEED_SOCIAL_STATE.stats);
+    el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function loadCommunityRecipes() {
+  const el = document.getElementById("community-recipes-list");
+  if (!el) return;
+  try {
+    const { data, error } = await SB.from("community_posts")
+      .select("id,user_id,content,kudos,created_at")
+      .like("content", "__r__%")
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error) throw error;
+    if (!data?.length) {
+      el.innerHTML = '<div class="meal-info" style="text-align:center;padding:16px 0">Aucune recette partagée pour l\'instant.<br><span style="font-size:.75rem;opacity:.6">Partage ta recette dans la communauté !</span></div>';
+      return;
+    }
+    const authorIds = [...new Set(data.map(p => p.user_id))];
+    const authorMap = {};
+    try {
+      const { data: profiles } = await SB.from("profiles").select("id,display_name,username").in("id", authorIds);
+      (profiles || []).forEach(p => { authorMap[p.id] = p; });
+    } catch {}
+    el.innerHTML = data.map(post => {
+      let recipe = null;
+      try { recipe = JSON.parse(String(post.content).slice(5)); } catch {}
+      if (!recipe) return "";
+      const n = recipe.n || {};
+      const score = typeof n.score === "number" ? n.score : null;
+      const scoreBadgeClass = score === null ? "neutral" : score >= 75 ? "good" : score >= 50 ? "medium" : "low";
+      const author = authorMap[post.user_id];
+      const isMe = U && post.user_id === U.id;
+      const authorName = isMe ? "Vous" : (author?.display_name || author?.username || "Membre");
+      const servings = parseInt(recipe.servings) || 1;
+
+      // Ingredients list
+      const ingredientLines = (recipe.ingredients || "").split(/\n/).map(l => l.trim()).filter(Boolean);
+      const ingredientsHtml = ingredientLines.length ? `
+        <details class="recipe-card-details">
+          <summary>Ingrédients (${servings} portion${servings > 1 ? 's' : ''})</summary>
+          <ul class="recipe-card-ingredients">
+            ${ingredientLines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}
+          </ul>
+        </details>` : '';
+
+      // Steps
+      const stepLines = (recipe.steps || "").split(/\n/).map(l => l.trim()).filter(Boolean);
+      const stepsHtml = stepLines.length ? `
+        <details class="recipe-card-details">
+          <summary>Préparation (${stepLines.length} étape${stepLines.length > 1 ? 's' : ''})</summary>
+          <ol class="recipe-card-steps">
+            ${stepLines.map(l => `<li>${escapeHtml(l.replace(/^\d+[.)]\s*/, ''))}</li>`).join('')}
+          </ol>
+        </details>` : '';
+
+      // Per-serving macros
+      const perServing = servings > 1 ? ` <span style="opacity:.5;font-size:.68rem">/ portion</span>` : '';
+      const kcalPer = n.kcal ? Math.round(n.kcal / servings) : null;
+      const protPer = n.protein ? Math.round(n.protein / servings) : null;
+      const carbsPer = n.carbs ? Math.round(n.carbs / servings) : null;
+      const fatPer = n.fat ? Math.round(n.fat / servings) : null;
+
+      return `
+        <div class="community-recipe-card">
+          <div class="community-recipe-top">
+            <div class="community-recipe-name">${escapeHtml(recipe.name || "Recette")}</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              ${recipe.preptime ? `<span class="recipe-preptime-badge">⏱ ${recipe.preptime}min</span>` : ""}
+              ${score !== null ? `<span class="recipe-score-badge ${scoreBadgeClass}">${score}/100</span>` : ""}
+            </div>
+          </div>
+          ${servings > 1 ? `<div style="font-size:.7rem;color:var(--muted);margin-bottom:4px">${servings} portions — valeurs par portion</div>` : ""}
+          ${(kcalPer || protPer) ? `<div class="recipe-macros-row">
+            ${kcalPer ? `<span class="recipe-macro-pill">${kcalPer} kcal${perServing}</span>` : ""}
+            ${protPer ? `<span class="recipe-macro-pill prot">${protPer}g prot.${perServing}</span>` : ""}
+            ${carbsPer ? `<span class="recipe-macro-pill carb">${carbsPer}g gluc.${perServing}</span>` : ""}
+            ${fatPer ? `<span class="recipe-macro-pill fat">${fatPer}g lip.${perServing}</span>` : ""}
+          </div>` : ""}
+          ${ingredientsHtml}
+          ${stepsHtml}
+          ${n.analysis ? `<div class="recipe-analysis-text">${escapeHtml(n.analysis)}</div>` : ""}
+          ${recipe.desc ? `<div class="recipe-desc-text">${escapeHtml(recipe.desc)}</div>` : ""}
+          <div class="community-recipe-footer">
+            <span class="community-recipe-author">Par ${escapeHtml(authorName)}</span>
+            <span class="community-recipe-date">${timeAgo(post.created_at)}</span>
+          </div>
+        </div>`;
+    }).filter(Boolean).join("");
+  } catch (e) {
+    el.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FRIENDS SYSTEM
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function searchUsers() {
+  const input = document.getElementById("friend-search-input");
+  const query = input ? input.value.trim() : "";
+  const resultEl = document.getElementById("friend-search-results");
+  if (!resultEl) return;
+  if (!query || query.length < 2) { resultEl.innerHTML = '<div class="meal-info">Tapez au moins 2 caractères</div>'; return; }
+
+  try {
+    // Search by username OR display_name (OR filter via PostgREST)
+    const { data, error } = await SB.from("profiles")
+      .select("id,username,display_name")
+      .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
+      .neq("id", U.id)
+      .limit(10);
+    if (error) throw error;
+    if (!data?.length) { resultEl.innerHTML = '<div class="meal-info">Aucun résultat</div>'; return; }
+
+    const snapshot = await _loadFriendshipSnapshot();
+    const accepted = new Set(snapshot.acceptedIds || []);
+    const pendingSent = new Set(snapshot.pendingSentIds || []);
+    const pendingReceived = new Set(snapshot.pendingReceivedIds || []);
+
+    resultEl.innerHTML = data.map(p => {
+      const name = p.display_name || p.username || "Membre";
+      const avatarColor = AVATAR_COLORS[(p.id || "").charCodeAt(0) % AVATAR_COLORS.length];
+      const isAccepted = accepted.has(p.id);
+      const isPendingSent = pendingSent.has(p.id);
+      const isPendingReceived = pendingReceived.has(p.id);
+      const stateText = isAccepted ? 'Déjà ami' : isPendingSent ? 'Demande envoyée' : isPendingReceived ? 'Vous a demandé en ami' : (p.username ? `@${escapeHtml(p.username)}` : 'Profil public');
+      const actionHtml = isAccepted
+        ? '<button class="btn btn-g btn-sm" disabled>Déjà ami</button>'
+        : isPendingSent
+          ? '<button class="btn btn-g btn-sm" disabled>Envoyée</button>'
+          : isPendingReceived
+            ? '<button class="btn btn-p btn-sm" disabled>Regarde les demandes</button>'
+            : `<button class="btn btn-p btn-sm" onclick="sendFriendRequest('${p.id}')">+ Ajouter</button>`;
+      return `
+        <div class="friend-card">
+          <div class="friend-card-avatar" style="background:${avatarColor}">${name.charAt(0).toUpperCase()}</div>
+          <div class="friend-card-info">
+            <div class="friend-card-name">${escapeHtml(name)}</div>
+            <div class="friend-card-meta">${stateText}</div>
+          </div>
+          ${actionHtml}
+        </div>`;
+    }).join("");
+  } catch (e) {
+    resultEl.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function sendFriendRequest(addresseeId) {
+  if (!U) return toast("Connectez-vous.", "err");
+  await guarded(`friend-req-${addresseeId}`, async () => {
+    const { error } = await SB.from("friendships").insert({
+      requester_id: U.id,
+      addressee_id: addresseeId,
+      status: "pending"
+    });
+    if (error) {
+      if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+        return toast("Demande déjà envoyée.", "err");
+      }
+      if (error.message?.includes("relation") || error.message?.includes("does not exist")) {
+        return toast("Migration SQL requise (migration_v3_social.sql)", "err");
+      }
+      throw error;
+    }
+    toast("Demande envoyée ✓", "ok");
+    await loadFriendRequests();
+  }).catch(e => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function acceptFriend(friendshipId) {
+  await guarded(`accept-${friendshipId}`, async () => {
+    const { error } = await SB.from("friendships").update({ status: "accepted", updated_at: new Date().toISOString() }).eq("id", friendshipId).eq("addressee_id", U.id);
+    if (error) throw error;
+    toast("Ami accepté ✓", "ok");
+    await Promise.all([loadFriendRequests(), loadFriends()]);
+  }).catch(e => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function rejectFriend(friendshipId) {
+  await guarded(`reject-${friendshipId}`, async () => {
+    const { error } = await SB.from("friendships").delete().eq("id", friendshipId).eq("addressee_id", U.id);
+    if (error) throw error;
+    toast("Demande refusée", "ok");
+    await loadFriendRequests();
+  }).catch(e => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function removeFriend(friendshipId) {
+  await guarded(`remove-${friendshipId}`, async () => {
+    const { error } = await SB.from("friendships").delete().eq("id", friendshipId);
+    if (error) throw error;
+    toast("Ami retiré", "ok");
+    await loadFriends();
+  }).catch(e => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function loadLeaderboard() {
+  const el = document.getElementById("leaderboard-list");
+  if (!el || !U) return;
+  el.innerHTML = `<div class="empty" style="font-size:.82rem;padding:8px 0">Chargement…</div>`;
+  try {
+    // Get friend IDs
+    const { data: fships } = await SB.from("friendships")
+      .select("requester_id,addressee_id")
+      .eq("status", "accepted")
+      .or(`requester_id.eq.${U.id},addressee_id.eq.${U.id}`);
+    const friendIds = (fships || []).map(f => f.requester_id === U.id ? f.addressee_id : f.requester_id);
+    const allIds = [U.id, ...friendIds];
+
+    // Fetch streaks + profiles for all
+    const [streakRes, profileRes] = await Promise.all([
+      SB.from("user_streaks").select("user_id,current_streak,total_workouts").in("user_id", allIds),
+      SB.from("profiles").select("id,name,username").in("id", allIds)
+    ]);
+    const streakMap = Object.fromEntries((streakRes.data || []).map(r => [r.user_id, r]));
+    const profMap   = Object.fromEntries((profileRes.data || []).map(r => [r.id, r]));
+
+    // Build leaderboard entries — XP ≈ total_workouts * 50 + streak * 10
+    const entries = allIds.map(id => {
+      const s = streakMap[id] || {};
+      const p = profMap[id] || {};
+      const xp = (s.total_workouts || 0) * 50 + (s.current_streak || 0) * 10;
+      const name = p.name || p.username || (id === U.id ? "Toi" : "Ami");
+      const initial = (name[0] || "?").toUpperCase();
+      return { id, name, xp, streak: s.current_streak || 0, workouts: s.total_workouts || 0, initial, isMe: id === U.id };
+    }).sort((a, b) => b.xp - a.xp);
+
+    if (!entries.length) {
+      el.innerHTML = `<div class="empty" style="font-size:.82rem;padding:8px 0">Ajoute des amis pour voir le classement</div>`;
+      return;
+    }
+
+    const rankStyle = ["gold", "silver", "bronze"];
+    el.innerHTML = entries.map((e, i) => `
+      <div class="lb-row${e.isMe ? " lb-me" : ""}">
+        <div class="lb-rank ${rankStyle[i] || ""}">${i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "#" + (i + 1)}</div>
+        <div class="lb-avatar">${e.initial}</div>
+        <div class="lb-info">
+          <div class="lb-name">${escapeHtml(e.name)}${e.isMe ? " <span style='color:#818cf8;font-size:.68rem'>(toi)</span>" : ""}</div>
+          <div class="lb-streak">🔥 ${e.streak}j streak · ${e.workouts} séances</div>
+        </div>
+        <div style="text-align:right">
+          <div class="lb-xp">${e.xp.toLocaleString("fr-FR")} XP</div>
+        </div>
+      </div>`).join("");
+  } catch (e) {
+    console.warn("[leaderboard]", e);
+    el.innerHTML = `<div class="empty" style="font-size:.82rem;padding:8px 0;color:var(--red)">Erreur de chargement</div>`;
+  }
+}
+
+async function loadFriends() {
+  const el = document.getElementById("friends-list");
+  if (!el) return;
+  try {
+    const { data, error } = await SB.from("friendships")
+      .select("id,requester_id,addressee_id")
+      .eq("status", "accepted")
+      .or(`requester_id.eq.${U.id},addressee_id.eq.${U.id}`);
+    if (error) throw error;
+    if (!data?.length) {
+      el.innerHTML = `<div class="friends-empty-state"><div style="font-size:2.4rem;margin-bottom:8px">👥</div><div style="font-weight:700;margin-bottom:4px">Aucun ami pour le moment</div><div style="font-size:.8rem;color:var(--muted)">Recherchez des profils ci-dessus pour commencer</div></div>`;
+      renderFriendsOverview({ snapshot: { acceptedCount: 0, pendingCount: 0, acceptedIds: [], pendingReceivedIds: [] } });
+      loadFriendSuggestions();
+      return;
+    }
+
+    const friendIds = data.map(f => f.requester_id === U.id ? f.addressee_id : f.requester_id);
+    const [profilesRes, streaksRes] = await Promise.all([
+      SB.from("profiles").select("id,username,display_name").in("id", friendIds),
+      SB.from("user_streaks").select("user_id,current_streak,total_workouts").in("user_id", friendIds).catch(() => ({ data: [] }))
+    ]);
+    const profileMap = {};
+    (profilesRes?.data || []).forEach(p => { profileMap[p.id] = p; });
+    const streakMap = {};
+    (streaksRes?.data || []).forEach(s => { streakMap[s.user_id] = s; });
+
+    el.innerHTML = data.map(f => {
+      const friendId = f.requester_id === U.id ? f.addressee_id : f.requester_id;
+      const p = profileMap[friendId] || {};
+      const s = streakMap[friendId] || {};
+      const name = p.display_name || p.username || "Membre";
+      const handle = p.username ? `@${p.username}` : "";
+      const streak = s.current_streak || 0;
+      const totalW = s.total_workouts || 0;
+      const avatarColor = AVATAR_COLORS[(friendId || "").charCodeAt(0) % AVATAR_COLORS.length];
+      const streakBadge = streak > 0 ? `<span class="friend-streak-badge">🔥 ${streak}j</span>` : "";
+      const metaLine = [handle, totalW > 0 ? `${totalW} séances` : ""].filter(Boolean).join(" · ");
+      return `
+        <div class="friend-card">
+          <div class="friend-card-avatar" style="background:${avatarColor}">${name.charAt(0).toUpperCase()}</div>
+          <div class="friend-card-info">
+            <div class="friend-card-name">${escapeHtml(name)}</div>
+            <div class="friend-card-meta">${escapeHtml(metaLine)}${streakBadge}</div>
+          </div>
+          <button class="btn btn-d btn-sm" onclick="removeFriend('${f.id}')" title="Retirer">✕</button>
+        </div>`;
+    }).join("");
+
+    const countEl = document.getElementById("friend-count");
+    if (countEl) countEl.textContent = data.length;
+    renderFriendsOverview({ snapshot: { acceptedCount: data.length, pendingCount: Number(document.getElementById('friend-pending-badge')?.textContent || 0), acceptedIds: friendIds, pendingReceivedIds: [] } });
+    loadFriendSuggestions();
+  } catch (e) {
+    const isTableMissing = e.message?.includes("relation") || e.message?.includes("does not exist") || e.code === "42P01";
+    el.innerHTML = isTableMissing
+      ? '<div class="friends-empty-state"><div style="font-size:2rem">⚙️</div><div>Migration SQL requise</div></div>'
+      : `<div class="friends-empty-state"><div style="font-size:2.4rem">👥</div><div>Aucun ami pour le moment</div></div>`;
+  }
+}
+
+async function loadFriendRequests() {
+  const el = document.getElementById("friend-requests");
+  if (!el) return;
+  try {
+    const { data, error } = await SB.from("friendships")
+      .select("id,requester_id")
+      .eq("addressee_id", U.id)
+      .eq("status", "pending");
+    if (error) throw error;
+    const reqCard = document.getElementById("friend-requests-card");
+    if (!data?.length) {
+      el.innerHTML = '<div style="font-size:.82rem;color:var(--muted);padding:4px 0">Aucune demande en attente</div>';
+      if (reqCard) reqCard.style.display = "none";
+      return;
+    }
+    if (reqCard) reqCard.style.display = "block";
+
+    const requesterIds = data.map(f => f.requester_id);
+    const { data: profiles } = await SB.from("profiles").select("id,username,display_name").in("id", requesterIds);
+    const profileMap = {};
+    (profiles || []).forEach(p => { profileMap[p.id] = p; });
+
+    el.innerHTML = data.map(f => {
+      const p = profileMap[f.requester_id] || {};
+      const name = p.display_name || p.username || "Membre";
+      const avatarColor = AVATAR_COLORS[(f.requester_id || "").charCodeAt(0) % AVATAR_COLORS.length];
+      return `
+        <div class="friend-card">
+          <div class="friend-card-avatar" style="background:${avatarColor}">${name.charAt(0).toUpperCase()}</div>
+          <div class="friend-card-info">
+            <div class="friend-card-name">${escapeHtml(name)}</div>
+            <div class="friend-card-meta">${p.username ? `@${escapeHtml(p.username)}` : ""}</div>
+          </div>
+          <button class="btn btn-p btn-sm" onclick="acceptFriend('${f.id}')" style="margin-right:4px">Accepter</button>
+          <button class="btn btn-d btn-sm" onclick="rejectFriend('${f.id}')">✕</button>
+        </div>`;
+    }).join("");
+
+    const badge = document.getElementById("friend-pending-badge");
+    if (badge) { badge.textContent = data.length; badge.style.display = data.length > 0 ? "inline-flex" : "none"; }
+    renderFriendsOverview({ snapshot: { acceptedCount: Number(document.getElementById('friend-count')?.textContent || 0), pendingCount: data.length, acceptedIds: [], pendingReceivedIds: [] } });
+  } catch (e) {
+    const isTableMissing = e.message?.includes("relation") || e.message?.includes("does not exist") || e.code === "42P01";
+    if (!isTableMissing) {
+      el.innerHTML = '<div class="meal-info">Aucune demande en attente</div>';
+    }
+    // Silently ignore missing table — loadFriends shows the setup hint
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BODY SCAN
+// ══════════════════════════════════════════════════════════════════════════════
+
+function handleDrop(event) {
+  const file = event.dataTransfer?.files?.[0];
+  if (file) handleFile(file);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) return toast("Format image requis.", "err");
+  if (file.size > 6 * 1024 * 1024) return toast("Fichier trop volumineux (max 6MB).", "err");
+  FILE = file;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const scanImg = document.getElementById("scan-img");
+    const scanPreview = document.getElementById("scan-preview");
+    if (scanImg) scanImg.src = reader.result;
+    if (scanPreview) scanPreview.style.display = "flex";
+  };
+  reader.readAsDataURL(file);
+}
+
+function bodyScanLevelMeta(score) {
+  const s = Number(score || 0);
+  if (s >= 92) return { label: "Exceptionnel", hint: "niveau rarissime", tone: "elite" };
+  if (s >= 86) return { label: "Très athlétique", hint: "sec et dense", tone: "athletic" };
+  if (s >= 78) return { label: "Athlétique", hint: "niveau sportif net", tone: "strong" };
+  if (s >= 70) return { label: "Bon niveau", hint: "bonne base visible", tone: "good" };
+  if (s >= 62) return { label: "Actif régulier", hint: "correct mais perfectible", tone: "mid" };
+  if (s >= 52) return { label: "Base correcte", hint: "encore peu marquée", tone: "base" };
+  return { label: "Début de base", hint: "potentiel à construire", tone: "early" };
+}
+
+function bodyScanConfidenceMeta(ext) {
+  const quality = String(ext?.analysis_quality || "acceptable");
+  const count = Array.isArray(ext?.quality_issues) ? ext.quality_issues.length : 0;
+  if (quality === "good" && count === 0) return { label: "Lecture fiable", tone: "good" };
+  if (quality === "poor" || count >= 2) return { label: "Lecture prudente", tone: "warn" };
+  return { label: "Lecture correcte", tone: "mid" };
+}
+
+function bodyScanVerdict(ext, score) {
+  const level = bodyScanLevelMeta(score);
+  if (ext?.body_composition) return String(ext.body_composition);
+  if (level.tone === "athletic" || level.tone === "strong") return "Physique visiblement sportif avec des points encore perfectibles.";
+  if (level.tone === "good") return "Base sérieuse, mais il manque encore de la netteté ou du relief pour monter plus haut.";
+  if (level.tone === "mid") return "Tu es dans une zone active correcte, mais pas encore dans un rendu athlétique marqué.";
+  return "Base en construction. Le score peut grimper vite avec plus de régularité et une meilleure exécution.";
+}
+
+function bodyScanTrendMeta(ext) {
+  const cmp = ext?.comparison || null;
+  const delta = Number(cmp?.delta_score || 0);
+  if (!cmp || !Number.isFinite(delta) || cmp.previous_score == null) return null;
+  if (delta >= 6) return { label: `+${delta} nette progression`, tone: "up" };
+  if (delta >= 2) return { label: `+${delta} progression`, tone: "up" };
+  if (delta <= -6) return { label: `${delta} recul net`, tone: "down" };
+  if (delta <= -2) return { label: `${delta} léger recul`, tone: "down" };
+  return { label: "stable", tone: "flat" };
+}
+
+function bodyScanScoreRail(score) {
+  const s = Math.max(0, Math.min(100, Number(score || 0)));
+  const segments = [
+    { label: 'Base', limit: 52 },
+    { label: 'Actif', limit: 62 },
+    { label: 'Bon', limit: 70 },
+    { label: 'Athl.', limit: 78 },
+    { label: 'Très athl.', limit: 86 },
+    { label: 'Elite', limit: 100 }
+  ];
+  let left = 0;
+  return `<div class="scan-score-rail">${segments.map(seg => {
+    const width = seg.limit - left;
+    const active = s >= seg.limit;
+    const html = `<div class="scan-score-seg${active ? ' active' : ''}" style="width:${width}%"><span>${seg.label}</span></div>`;
+    left = seg.limit;
+    return html;
+  }).join('')}<div class="scan-score-marker" style="left:calc(${s}% - 8px)"></div></div>`;
+}
+
+function bodyScanLoadingCopy(progress) {
+  if (progress < 18) return { title: "Préparation du scan", sub: "On aligne la photo et on vérifie le cadrage." };
+  if (progress < 42) return { title: "Lecture de la posture", sub: "Symétrie, posture et appuis sont en cours d'estimation." };
+  if (progress < 68) return { title: "Analyse corporelle", sub: "On évalue la définition, la composition et le niveau perçu." };
+  if (progress < 90) return { title: "Synthèse coach", sub: "On prépare les axes prioritaires et les recommandations utiles." };
+  return { title: "Finalisation", sub: "Le score calibré et les conseils arrivent." };
+}
+
+function setBodyScanLoading(progress) {
+  const pct = Math.max(0, Math.min(100, Math.round(progress || 0)));
+  const fill = document.getElementById("scan-progress-fill");
+  const pctEl = document.getElementById("scan-progress-percent");
+  const titleEl = document.getElementById("scan-progress-title");
+  const subEl = document.getElementById("scan-progress-sub");
+  const copy = bodyScanLoadingCopy(pct);
+  if (fill) fill.style.width = `${pct}%`;
+  if (pctEl) pctEl.textContent = `${pct}%`;
+  if (titleEl) titleEl.textContent = copy.title;
+  if (subEl) subEl.textContent = copy.sub;
+}
+
+async function doScan() {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+  if (!FILE) return toast("Sélectionnez une image.", "err");
+
+  const btn = document.getElementById("btn-scan");
+  const errEl = document.getElementById("scan-err");
+  if (errEl) {
+    errEl.textContent = "";
+    errEl.style.display = "none";
+  }
+
+  const scanLoading = document.getElementById("scan-loading");
+  const scanPreview = document.getElementById("scan-preview");
+  let progressTimer = null;
+
+  await withButton(btn, "Analyse…", async () => {
+    const ext = (FILE.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").toLowerCase();
+    const path = `${U.id}/bodyscans/${Date.now()}.${ext}`;
+    const token = await getToken();
+    if (!token) throw new Error("Session expirée. Reconnectez-vous.");
+
+    if (scanLoading) scanLoading.style.display = "block";
+    if (scanPreview) scanPreview.classList.add("scan-preview-loading");
+    let visualProgress = 6;
+    setBodyScanLoading(visualProgress);
+    progressTimer = setInterval(() => {
+      visualProgress = Math.min(92, visualProgress + (visualProgress < 40 ? 7 : visualProgress < 70 ? 4 : 2));
+      setBodyScanLoading(visualProgress);
+    }, 650);
+
+    const upload = await SB.storage.from("user_uploads").upload(path, FILE, { contentType: FILE.type });
+    if (upload.error) throw upload.error;
+
+    const ins = await SB.from("body_scans").insert({ user_id: U.id, image_path: path });
+    if (ins.error) throw ins.error;
+    incrementWeeklyQuestMetric("scan_week", 1);
+
+    const r = await fetch("/api/bodyscan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ user_id: U.id, image_path: path })
+    });
+    const j = await safeResponseJson(r);
+    if (!r.ok || !j.ok) throw new Error(j.error || `Erreur serveur (HTTP ${r.status})`);
+
+    clearInterval(progressTimer);
+    setBodyScanLoading(100);
+
+    FILE = null;
+    const fileInput = document.getElementById("file-input");
+    const scanImg = document.getElementById("scan-img");
+    if (fileInput) fileInput.value = "";
+    if (scanImg) scanImg.src = "";
+    setTimeout(() => {
+      if (scanPreview) {
+        scanPreview.style.display = "none";
+        scanPreview.classList.remove("scan-preview-loading");
+      }
+      if (scanLoading) scanLoading.style.display = "none";
+    }, 420);
+    toast("Analyse terminée ✓", "ok");
+    await loadScans();
+    checkAndAwardAchievements().catch(() => {});
+  }).catch((e) => {
+    clearInterval(progressTimer);
+    if (scanPreview) scanPreview.classList.remove("scan-preview-loading");
+    if (scanLoading) scanLoading.style.display = "none";
+    if (errEl) {
+      errEl.textContent = `Erreur: ${e.message}`;
+      errEl.style.display = "block";
+    }
+  });
+}
+
+function parseScanFeedback(text) {
+  if (!text) return { overview: "", strengths: [], improvements: [], recommendations: [] };
+  const lines = text.split(/\n+/).map(l => l.trim()).filter(l => l.length > 3);
+  const strengths = [], improvements = [], recommendations = [];
+  let currentSection = "overview";
+  const overviewLines = [];
+  for (const line of lines) {
+    const low = line.toLowerCase();
+    if (/point[s]?\s*(fort[s]?|positif[s]?|bien|atout)/i.test(line) || low.includes("✓") || low.includes("forces")) { currentSection = "strengths"; continue; }
+    if (/point[s]?\s*(à\s*trav|faible|améliorer|amélioration|progress|axe)/i.test(line) || low.includes("à améliorer") || low.includes("objectif")) { currentSection = "improvements"; continue; }
+    if (/recommand|conseil[s]?|plan|prochaine étape|priorité/i.test(line)) { currentSection = "recommendations"; continue; }
+    const clean = line.replace(/^[-•*→✦✗✓\d).\s]+/, "").trim();
+    if (!clean) continue;
+    if (currentSection === "strengths") strengths.push(clean);
+    else if (currentSection === "improvements") improvements.push(clean);
+    else if (currentSection === "recommendations") recommendations.push(clean);
+    else overviewLines.push(clean);
+  }
+  return { overview: overviewLines.join(" "), strengths, improvements, recommendations };
+}
+
+function scanRing(pct, color, label, valLabel) {
+  const r = 22;
+  const c = +(2 * Math.PI * r).toFixed(1);
+  const filled = +((Math.max(0, Math.min(100, pct || 0)) / 100) * c).toFixed(1);
+  return `<div class="ring-item">
+    <div style="position:relative;width:52px;height:52px">
+      <svg class="ring-svg" width="52" height="52" viewBox="0 0 52 52">
+        <circle class="ring-track" cx="26" cy="26" r="${r}"/>
+        <circle class="ring-fill" cx="26" cy="26" r="${r}" stroke="${color}" stroke-dasharray="${filled} ${c}"/>
+      </svg>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:900;color:${color}">${valLabel}</div>
+    </div>
+    <div class="ring-lbl">${label}</div>
+  </div>`;
+}
+
+function renderPendingScan(scan, date) {
+  return `<div class="scan-v2 scan-v2-pending">
+    <div class="scan-pending-shell">
+      <div class="scan-pending-figure">
+        <div class="scan-pending-grid scan-pending-grid-h"></div>
+        <div class="scan-pending-grid scan-pending-grid-v"></div>
+        <div class="scan-pending-avatar">
+          <span class="scan-pending-eye left"></span>
+          <span class="scan-pending-eye right"></span>
+        </div>
+        <div class="scan-pending-body"></div>
+        <div class="scan-pending-arm left"></div>
+        <div class="scan-pending-arm right"></div>
+        <div class="scan-pending-leg left"></div>
+        <div class="scan-pending-leg right"></div>
+      </div>
+      <div class="scan-pending-copy">
+        <div class="scan-pending-date">${date}</div>
+        <div class="scan-pending-title">Scan en cours d'analyse</div>
+        <div class="scan-pending-sub">La photo est bien reçue. L'IA prépare le score calibré, les points forts et les axes prioritaires.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:420px">
+          <div class="scan-v3-line">① Vérification cadrage</div>
+          <div class="scan-v3-line">② Lecture posture</div>
+          <div class="scan-v3-line">③ Composition / définition</div>
+          <div class="scan-v3-line">④ Synthèse coach</div>
+        </div>
+        <div class="scan-pending-chip">Analyse en cours</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderBodyScanCard(scan, imageUrl) {
+  const ext = scan.extended_analysis || {};
+  const extStrengths = Array.isArray(ext.strengths) ? ext.strengths : [];
+  const extImprovements = Array.isArray(ext.areas_for_improvement) ? ext.areas_for_improvement : [];
+  const extScores = ext.score_breakdown || {};
+  const parsed = extStrengths.length || extImprovements.length
+    ? { strengths: extStrengths, improvements: extImprovements, recommendations: [], overview: "" }
+    : parseScanFeedback(scan.ai_feedback || "");
+  const physScore = Number(scan.physical_score || 0);
+  const date = safeDate(scan.created_at, { day: "numeric", month: "long", year: "numeric" });
+  const level = bodyScanLevelMeta(physScore);
+  const confidence = bodyScanConfidenceMeta(ext);
+  const verdict = bodyScanVerdict(ext, physScore);
+  const trend = bodyScanTrendMeta(ext);
+  const reco = ext.personalized_recommendations || {};
+  const scoreChips = [
+    scan.symmetry_score != null ? scanRing(scan.symmetry_score, "#60a5fa", "Sym.", scan.symmetry_score) : "",
+    extScores.muscle_definition != null ? scanRing(extScores.muscle_definition, "#22c55e", "Défin.", extScores.muscle_definition) : "",
+    extScores.body_composition != null ? scanRing(extScores.body_composition, "#a855f7", "Compo.", extScores.body_composition) : "",
+    scan.posture_score != null ? scanRing(scan.posture_score, "#06b6d4", "Post.", scan.posture_score) : ""
+  ].filter(Boolean).join("");
+  const bodyfat = ext?.estimated_metrics?.bodyfat_range || (scan.bodyfat_proxy != null ? `${scan.bodyfat_proxy}%` : null);
+  const trainingFocus = (reco.training_focus || reco.training || []).slice(0, 3);
+  const nutritionFocus = (reco.nutrition || []).slice(0, 2);
+  const exercises = (reco.exercise_examples || []).slice(0, 4);
+  const improvements = parsed.improvements.slice(0, 3);
+  const strengths = parsed.strengths.slice(0, 3);
+  const previousScore = ext?.comparison?.previous_score;
+
+  return `<div class="scan-v2" id="scan-card-${scan.id}" data-scan-id="${scan.id}">
+    <div class="scan-v2-top scan-v3-top">
+      <div class="scan-v2-photo scan-v3-photo">
+        ${imageUrl ? lazyImg(imageUrl, "Scan", "", "width:100%;height:100%;object-fit:cover;opacity:.96") : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;padding:20px;text-align:center">📷 Photo non disponible</div>`}
+        <div class="scan-v3-cross scan-v3-cross-h"></div>
+        <div class="scan-v3-cross scan-v3-cross-v"></div>
+        <div class="scan-v2-photo-overlay">
+          <span class="scan-v2-pill">${date}</span>
+          <span class="scan-v2-pill">${confidence.label}</span>
+          ${trend ? `<span class="scan-v2-pill" style="background:${trend.tone === 'up' ? 'rgba(34,197,94,.12)' : trend.tone === 'down' ? 'rgba(239,68,68,.12)' : 'rgba(255,255,255,.07)'};color:${trend.tone === 'up' ? '#4ade80' : trend.tone === 'down' ? '#fda4af' : 'var(--text2)'}">${trend.label}</span>` : ''}
+        </div>
+      </div>
+      <div class="scan-v2-right scan-v3-right">
+        <div class="scan-v3-scorecard">
+          <div>
+            <div class="scan-v3-label">Score calibré</div>
+            <div class="scan-v3-score">${physScore}<span>/100</span></div>
+            <div class="scan-v3-level">${level.label} · ${level.hint}</div>
+            ${bodyScanScoreRail(physScore)}
+          </div>
+          <div class="scan-v3-mini">
+            <div class="scan-v3-mini-row"><span>Bodyfat estimé</span><strong>${bodyfat || "—"}</strong></div>
+            <div class="scan-v3-mini-row"><span>Catégorie</span><strong>${ext?.estimated_metrics?.fitness_category ? escapeHtml(String(ext.estimated_metrics.fitness_category)) : "—"}</strong></div>
+            <div class="scan-v3-mini-row"><span>Scan précédent</span><strong>${previousScore != null ? `${previousScore}/100` : '—'}</strong></div>
+            <div class="scan-v3-mini-row"><span>Fiabilité</span><strong>${confidence.label}</strong></div>
+          </div>
+        </div>
+        ${scoreChips ? `<div class="rings-row scan-v3-rings">${scoreChips}</div>` : ""}
+        <div class="scan-v3-verdict">${escapeHtml(verdict)}</div>
+        <div class="scan-v2-2col scan-v3-columns">
+          <div class="scan-v2-strengths">
+            <div class="scan-v2-col-hdr scan-v2-str-hdr">Ce qui soutient la note</div>
+            ${strengths.length ? strengths.map(s => `<div class="scan-v2-pt scan-v2-str-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-str-pt">Base exploitable pour progresser si tu restes régulier.</div>`}
+          </div>
+          <div class="scan-v2-weaknesses">
+            <div class="scan-v2-col-hdr scan-v2-wk-hdr">Ce qui freine vraiment</div>
+            ${improvements.length ? improvements.map(s => `<div class="scan-v2-pt scan-v2-wk-pt">${escapeHtml(s)}</div>`).join("") : `<div class="scan-v2-pt scan-v2-wk-pt">Photo ou lecture trop moyenne pour aller plus haut.</div>`}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scan-v3-bottom">
+      <div class="scan-v3-block">
+        <div class="scan-v3-block-hdr">Priorité entraînement</div>
+        ${trainingFocus.length ? trainingFocus.map(item => `<div class="scan-v3-line">${escapeHtml(item)}</div>`).join("") : `<div class="scan-v3-line">Travail full body propre, posture et régularité.</div>`}
+      </div>
+      <div class="scan-v3-block">
+        <div class="scan-v3-block-hdr">Exercices utiles</div>
+        ${exercises.length ? exercises.map(item => `<div class="scan-v3-pill">${escapeHtml(item)}</div>`).join("") : `<div class="scan-v3-line">Pompes inclinées, rowing, hip hinge, gainage.</div>`}
+      </div>
+      <div class="scan-v3-block">
+        <div class="scan-v3-block-hdr">Nutrition / prochain scan</div>
+        ${nutritionFocus.length ? nutritionFocus.map(item => `<div class="scan-v3-line">${escapeHtml(item)}</div>`).join("") : ""}
+        <div class="scan-v3-line">${escapeHtml(String(reco.frequency_suggestion || "Refais un scan sous 4 à 6 semaines avec le même angle pour comparer proprement."))}</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px 10px;border-top:1px solid var(--border)">
+      <button class="scan-compare-btn" id="scan-cmp-btn-${scan.id}" data-scan-id="${scan.id}" onclick="toggleScanCompare('${scan.id}')">⊞ Comparer</button>
+      <button onclick="deleteBodyScan('${scan.id}')" style="display:flex;align-items:center;gap:5px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:.74rem;font-weight:600;padding:5px 8px;border-radius:8px;transition:color .2s" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        Supprimer
+      </button>
+    </div>
+  </div>`;
+}
+
+// ── Body scan comparison state ────────────────────────────────────────────────
+let _scanAllData = [];
+let _scanAllUrls = {};
+let _scanCompareIds = [];
+
+async function loadScans() {
+
+  if (!U) return;
+  const el = document.getElementById("scans-list");
+  if (!el) return;
+
+  try {
+    const { data, error } = await SB.from("body_scans").select("*").eq("user_id", U.id).order("created_at", { ascending: false }).limit(10);
+    if (error) throw error;
+
+    if (!data?.length) {
+      el.innerHTML = '<div class="empty" style="padding:40px 16px"><span class="empty-ic">🔬</span>Aucune analyse — uploadez une photo ci-dessus</div>';
+      return;
+    }
+
+    const scanImageUrls = {};
+    await Promise.all((data || []).map(async (scan) => {
+      const path = scan.image_url || scan.image_path;
+      if (!path) return;
+      if (/^https?:\/\//i.test(path)) { scanImageUrls[scan.id] = path; return; }
+      try {
+        const { data: signed } = await SB.storage.from("user_uploads").createSignedUrl(path, 3600);
+        if (signed?.signedUrl) scanImageUrls[scan.id] = signed.signedUrl;
+      } catch {}
+    }));
+
+    // Cache globally for comparison
+    _scanAllData = data;
+    _scanAllUrls = scanImageUrls;
+    _scanCompareIds = [];
+
+    el.innerHTML = data.map((scan) => {
+      const date = safeDate(scan.created_at, { day: "numeric", month: "long", year: "numeric" });
+      if (!scan.ai_feedback) return renderPendingScan(scan, date);
+      return renderBodyScanCard(scan, scanImageUrls[scan.id]);
+    }).join('<div style="height:16px"></div>');
+    observeLazyImgs(el);
+  } catch (e) {
+    FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+    renderCommunityOverview(FEED_SOCIAL_STATE.stats);
+    el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+// ── Scan comparison ───────────────────────────────────────────────────────────
+function toggleScanCompare(id) {
+  const idx = _scanCompareIds.indexOf(id);
+  if (idx >= 0) {
+    _scanCompareIds.splice(idx, 1);
+  } else {
+    if (_scanCompareIds.length >= 2) _scanCompareIds.shift();
+    _scanCompareIds.push(id);
+  }
+  _updateScanCompareUI();
+  if (_scanCompareIds.length === 2) showScanComparison();
+}
+
+function _updateScanCompareUI() {
+  document.querySelectorAll('.scan-compare-btn').forEach(btn => {
+    const id = btn.dataset.scanId;
+    const sel = _scanCompareIds.includes(id);
+    btn.classList.toggle('active', sel);
+    btn.textContent = sel ? '✓ Sélectionné' : '⊞ Comparer';
+  });
+  document.querySelectorAll('.scan-v2[data-scan-id]').forEach(card => {
+    card.classList.toggle('scan-selected', _scanCompareIds.includes(card.dataset.scanId));
+  });
+  const bar = document.getElementById('scan-compare-bar');
+  if (!bar) return;
+  if (_scanCompareIds.length === 0) {
+    bar.style.display = 'none';
+  } else if (_scanCompareIds.length === 1) {
+    bar.style.display = 'flex';
+    bar.innerHTML = '<span class="scan-cbar-txt">1 scan sélectionné — choisissez un 2ème</span><button class="scan-cbar-cancel" onclick="_scanCompareIds=[];_updateScanCompareUI()">✕ Annuler</button>';
+  } else {
+    bar.style.display = 'flex';
+    bar.innerHTML = '<span class="scan-cbar-txt">2 scans prêts à comparer</span><button class="scan-cbar-go" onclick="showScanComparison()">Comparer ▶</button><button class="scan-cbar-cancel" onclick="_scanCompareIds=[];_updateScanCompareUI()">✕</button>';
+  }
+}
+
+function showScanComparison() {
+  if (_scanCompareIds.length < 2) return;
+  const [a, b] = _scanCompareIds.map(id => _scanAllData.find(s => s.id === id)).filter(Boolean);
+  if (!a || !b) return;
+  // Sort: older = avant, newer = après
+  const [before, after] = new Date(a.created_at) <= new Date(b.created_at) ? [a, b] : [b, a];
+  const modal = document.getElementById('scan-compare-modal');
+  if (!modal) return;
+  modal.innerHTML = _renderScanCompare(before, _scanAllUrls[before.id] || '', after, _scanAllUrls[after.id] || '');
+  modal.classList.add('open');
+}
+
+function closeScanComparison() {
+  const modal = document.getElementById('scan-compare-modal');
+  if (modal) modal.classList.remove('open');
+}
+
+function _renderScanCompare(before, urlB, after, urlA) {
+  const sB = Number(before.physical_score || 0);
+  const sA = Number(after.physical_score || 0);
+  const delta = sA - sB;
+  const deltaSign = delta > 0 ? '+' : '';
+  const deltaColor = delta > 0 ? '#4ade80' : delta < 0 ? '#f87171' : '#94a3b8';
+  const dateB = safeDate(before.created_at, { day: "numeric", month: "short", year: "numeric" });
+  const dateA = safeDate(after.created_at, { day: "numeric", month: "short", year: "numeric" });
+  const levB = bodyScanLevelMeta(sB); const levA = bodyScanLevelMeta(sA);
+  const extB = before.extended_analysis || {}; const extA = after.extended_analysis || {};
+
+  const getMetric = (scan, ext, key) => {
+    if (key === 'sym') return Number(scan.symmetry_score || 0) || null;
+    if (key === 'post') return Number(scan.posture_score || 0) || null;
+    if (key === 'def') return Number((ext.score_breakdown || {}).muscle_definition || 0) || null;
+    if (key === 'comp') return Number((ext.score_breakdown || {}).body_composition || 0) || null;
+    return null;
+  };
+
+  const metrics = [
+    { key: 'sym',  label: 'Symétrie',    color: '#60a5fa' },
+    { key: 'def',  label: 'Définition',  color: '#22c55e' },
+    { key: 'comp', label: 'Composition', color: '#a855f7' },
+    { key: 'post', label: 'Posture',     color: '#06b6d4' },
+  ];
+
+  const metricsHtml = metrics.map(m => {
+    const vB = getMetric(before, extB, m.key);
+    const vA = getMetric(after, extA, m.key);
+    if (vB == null && vA == null) return '';
+    const d = vB != null && vA != null ? vA - vB : null;
+    const dc = d == null ? '#94a3b8' : d > 0 ? '#4ade80' : d < 0 ? '#f87171' : '#94a3b8';
+    return `<div class="scan-cmp-row">
+      <span class="scan-cmp-row-lbl">${m.label}</span>
+      <div class="scan-cmp-bar-wrap"><div class="scan-cmp-bar-fill" style="width:${vB ?? 0}%;background:${m.color}66"></div></div>
+      <span class="scan-cmp-row-val">${vB ?? '—'}</span>
+      <span class="scan-cmp-row-delta" style="color:${dc}">${d != null ? deltaSign.replace('+', d > 0 ? '+' : '') + (d > 0 ? '+' : '') + d : '—'}</span>
+      <span class="scan-cmp-row-val">${vA ?? '—'}</span>
+      <div class="scan-cmp-bar-wrap"><div class="scan-cmp-bar-fill" style="width:${vA ?? 0}%;background:${m.color}"></div></div>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  const photoCol = (url, score, date, level, tag, tagStyle) => `
+    <div class="scan-cmp-col">
+      <div class="scan-cmp-col-tag" style="${tagStyle}">${tag} · ${date}</div>
+      <div class="scan-cmp-photo">${url
+        ? `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:14px;display:block">`
+        : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:1.4rem">📷</div>`}
+      </div>
+      <div class="scan-cmp-score">${score}<span>/100</span></div>
+      <div class="scan-cmp-level">${level.label}</div>
+    </div>`;
+
+  return `<div class="scan-cmp-wrap">
+    <div class="scan-cmp-header">
+      <span class="scan-cmp-title">Comparaison body scan</span>
+      <button class="scan-cmp-close" onclick="closeScanComparison()">✕</button>
+    </div>
+    <div class="scan-cmp-banner" style="border-color:${deltaColor}33;background:${delta>0?'rgba(74,222,128,.07)':delta<0?'rgba(248,113,113,.07)':'rgba(148,163,184,.06)'}">
+      <div>
+        <div style="font-size:.62rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:2px">Évolution du score</div>
+        <div style="font-size:1.6rem;font-weight:900;color:${deltaColor};line-height:1">${deltaSign}${delta}</div>
+        <div style="font-size:.72rem;color:var(--text2);margin-top:2px">${sB} → ${sA} points sur 100</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:.62rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:2px">Écart temporel</div>
+        <div style="font-size:.88rem;font-weight:800;color:var(--text)">${dateB}</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:2px">→ ${dateA}</div>
+      </div>
+    </div>
+    <div class="scan-cmp-photos">
+      ${photoCol(urlB, sB, dateB, levB, 'Avant', 'background:rgba(148,163,184,.1);color:var(--text2)')}
+      ${photoCol(urlA, sA, dateA, levA, 'Après', `background:${delta>=0?'rgba(74,222,128,.12)':'rgba(248,113,113,.1)'};color:${deltaColor}`)}
+    </div>
+    ${metricsHtml ? `<div class="scan-cmp-metrics">
+      <div class="scan-cmp-metrics-hdr">
+        <span style="font-size:.62rem;color:var(--muted);font-weight:700">SOUS-SCORES</span>
+        <span style="font-size:.62rem;color:var(--muted);margin-left:auto">Avant</span>
+        <span style="font-size:.62rem;color:var(--muted)">Après</span>
+      </div>
+      ${metricsHtml}
+    </div>` : ''}
+    <button class="scan-cmp-close-btn" onclick="closeScanComparison()">Fermer la comparaison</button>
+  </div>`;
+}
+
+window.toggleScanCompare = toggleScanCompare;
+window.showScanComparison = showScanComparison;
+window.closeScanComparison = closeScanComparison;
+
+function formatFeedback(text) {
+  // Convert newlines to <br> and escape HTML
+  return escapeHtml(text).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>");
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROFIL
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function deleteBodyScan(id) {
+  if (!id || !U) return;
+  const confirmed = await confirmModal("Supprimer cette analyse corporelle ?", "Le scan et ses résultats seront supprimés définitivement.");
+  if (!confirmed) return;
+  try {
+    const { error } = await SB.from("body_scans").delete().eq("id", id).eq("user_id", U.id);
+    if (error) throw error;
+    toast("Analyse supprimée", "ok");
+    await loadScans();
+  } catch (e) {
+    toast(`Erreur: ${e.message}`, "err");
+  }
+}
+
+// ── Avatar helpers ────────────────────────────────────────────────────────────
+function _setAvatarEl(el, name, url) {
+  if (!el) return;
+  if (url) {
+    el.style.backgroundImage = `url(${JSON.stringify(url)})`;
+    el.style.backgroundSize  = "cover";
+    el.style.backgroundPosition = "center";
+    el.textContent = "";
+  } else {
+    el.style.backgroundImage = "";
+    el.style.backgroundSize  = "";
+    el.style.backgroundPosition = "";
+    el.textContent = (name || "?").charAt(0).toUpperCase();
+  }
+}
+
+async function _resizeImageBlob(file, maxPx = 400) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(resolve, "image/jpeg", 0.82);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
+async function uploadAvatar(file) {
+  if (!U || !file) return;
+  if (file.size > 5 * 1024 * 1024) return toast("Image trop lourde (max 5 Mo).", "err");
+  const btn = document.getElementById("p-avatar-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "⏳"; }
+  try {
+    const blob = await _resizeImageBlob(file, 400);
+    const path = `${U.id}/avatar.jpg`;
+    const { error: upErr } = await SB.storage
+      .from("avatars")
+      .upload(path, blob, { upsert: true, contentType: "image/jpeg" });
+    if (upErr) throw upErr;
+    const { data: urlData } = SB.storage.from("avatars").getPublicUrl(path);
+    const publicUrl = urlData?.publicUrl;
+    if (!publicUrl) throw new Error("URL publique introuvable");
+    // Bust cache by appending timestamp
+    const finalUrl = publicUrl + "?t=" + Date.now();
+    await SB.from("profiles").upsert({ id: U.id, avatar_url: publicUrl, updated_at: new Date().toISOString() }, { onConflict: "id" });
+    window._myAvatarUrl = finalUrl;
+    _setAvatarEl(document.getElementById("p-avatar"), null, finalUrl);
+    _setAvatarEl(document.getElementById("sidebar-avatar-el"), null, finalUrl);
+    toast("Photo de profil mise à jour ✓", "ok");
+  } catch (e) {
+    const msg = e.message?.includes("Bucket not found") || e.message?.includes("404")
+      ? "Bucket 'avatars' introuvable — créez-le dans Supabase Storage (public)."
+      : `Erreur upload: ${e.message}`;
+    toast(msg, "err");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "📷"; }
+  }
+}
+window.uploadAvatar = uploadAvatar;
+
+async function loadProfile() {
+  if (!U) return;
+  try {
+    const [profileRes, streakRes] = await Promise.all([
+      SB.from("profiles").select("display_name,username,age,weight,height,avatar_url").eq("id", U.id).maybeSingle(),
+      SB.from("user_streaks").select("current_streak").eq("user_id", U.id).maybeSingle()
+    ]);
+    const data = profileRes?.data;
+    const name = data?.display_name || U.email?.split("@")[0] || "Membre";
+    const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    setEl("p-name", name);
+    setEl("p-email", U.email || "");
+    setEl("p-handle", data?.username ? `@${data.username}` : "");
+    const avatarUrl = data?.avatar_url ? data.avatar_url + "?t=" + (window._avatarCacheBust || "") : null;
+    if (avatarUrl) window._myAvatarUrl = avatarUrl;
+    _setAvatarEl(document.getElementById("p-avatar"), name, avatarUrl);
+    _setAvatarEl(document.getElementById("sidebar-avatar-el"), name, avatarUrl);
+    setVal("p-pseudo", data?.display_name || "");
+    setVal("p-username", data?.username || "");
+    setVal("p-age", data?.age || "");
+    setVal("p-weight", data?.weight || "");
+    setVal("p-height", data?.height || "");
+    setVal("p-coach-tone", getCoachTonePreference());
+    const coachToneHint = document.getElementById('coach-tone-current');
+    if (coachToneHint) coachToneHint.textContent = coachToneLabel(getCoachTonePreference());
+    const tu = document.getElementById("tu");
+    if (tu) tu.textContent = name;
+    // Streak pill
+    const streak = streakRes?.data?.current_streak || 0;
+    setEl("p-streak", streak > 0 ? `${streak}🔥` : "0");
+    // BMI
+    const w = parseFloat(data?.weight), h = parseFloat(data?.height);
+    if (w > 0 && h > 0) {
+      const bmi = (w / ((h/100) ** 2)).toFixed(1);
+      setEl("p-bmi", bmi);
+      const bmiEl = document.getElementById("p-bmi");
+      if (bmiEl) bmiEl.style.color = bmi < 18.5 ? "#38bdf8" : bmi < 25 ? "#22c55e" : bmi < 30 ? "#f97316" : "#ef4444";
+    } else {
+      setEl("p-bmi", "—");
+    }
+    if (data?.weight) { USER_WEIGHT = parseFloat(data.weight); renderWater(); }
+
+    // Render weight chart + TDEE with current profile data
+    const goal = (await sbSafeSingle(SB.from('goals').select('type,level').eq('user_id', U.id).maybeSingle()))?.data;
+    renderWeightChart();
+    renderTdeeCard(parseFloat(data?.weight) || 0, parseFloat(data?.height) || 0, parseInt(data?.age) || 0, goal?.type || '');
+
+    // Update XP ring + level chip + trophy counts in profile
+    _updateProfileXpDisplay();
+  } catch (e) { console.error("[Profile] Load error:", e); }
+}
+
+// ── Weight log ────────────────────────────────────────────────────────────────
+const WEIGHT_LOG_KEY = "fitai_weight_log";
+
+function getWeightLog() {
+  try { return JSON.parse(localStorage.getItem(WEIGHT_LOG_KEY) || "[]"); } catch { return []; }
+}
+
+function addWeightEntry(kg) {
+  if (!kg || kg <= 0) return;
+  const log = getWeightLog();
+  const today = new Date().toISOString().slice(0, 10);
+  const idx = log.findIndex(e => e.date === today);
+  if (idx >= 0) log[idx].weight = kg; else log.push({ date: today, weight: kg });
+  log.sort((a, b) => a.date.localeCompare(b.date));
+  const trimmed = log.slice(-16); // keep last 16 entries
+  try { localStorage.setItem(WEIGHT_LOG_KEY, JSON.stringify(trimmed)); } catch {}
+}
+
+function renderWeightChart() {
+  const el = document.getElementById("weight-chart-wrap");
+  if (!el) return;
+  const log = getWeightLog();
+  if (log.length < 2) {
+    el.innerHTML = '<div class="chart-empty" style="font-size:.78rem;padding:8px 0 0">Enregistre ton poids régulièrement pour voir ton évolution.</div>';
+    return;
+  }
+  const data = log.map(e => ({
+    value: e.weight,
+    label: new Date(e.date + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+  }));
+  const minW = Math.min(...data.map(d => d.value));
+  const maxW = Math.max(...data.map(d => d.value));
+  const trend = data[data.length - 1].value - data[0].value;
+  const trendStr = trend === 0 ? "stable" : (trend > 0 ? `+${trend.toFixed(1)} kg` : `${trend.toFixed(1)} kg`);
+  const trendColor = trend < 0 ? "#22c55e" : trend > 0 ? "#f97316" : "#a78bfa";
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <span style="font-size:.72rem;color:var(--muted)">${data[0].label} → ${data[data.length-1].label}</span>
+    <span style="font-size:.72rem;font-weight:800;color:${trendColor}">${trendStr}</span>
+  </div>` + renderSvgChart(data, { color: "#a78bfa", unit: " kg", H: 110, zeroBase: false });
+}
+
+function renderTdeeCard(weight, height, age, goalType) {
+  const el = document.getElementById("tdee-card-body");
+  if (!el) return;
+  if (!weight || !height || !age) {
+    el.innerHTML = '<div style="font-size:.78rem;color:var(--muted)">Complète ton profil (poids, taille, âge) pour voir tes besoins caloriques.</div>';
+    return;
+  }
+  // Mifflin-St Jeor without gender (average of M/F formulas)
+  const bmr = Math.round(10 * weight + 6.25 * height - 5 * age - 78);
+  const activityMult = 1.45; // moderately active default
+  const tdee = Math.round(bmr * activityMult);
+  // Macro targets by goal
+  const goalMap = {
+    "prise de masse": { kcalDelta: +250, proteinPer: 2.2, fatPer: 1.0, label: "Prise de masse" },
+    "perte de poids":  { kcalDelta: -400, proteinPer: 2.2, fatPer: 0.8, label: "Perte de poids" },
+    "cardio":          { kcalDelta: 0,    proteinPer: 1.8, fatPer: 1.0, label: "Cardio / endurance" },
+    "performance":     { kcalDelta: +100, proteinPer: 2.0, fatPer: 1.0, label: "Performance" }
+  };
+  const gk = Object.keys(goalMap).find(k => (goalType || "").toLowerCase().includes(k)) || null;
+  const g = goalMap[gk] || { kcalDelta: 0, proteinPer: 2.0, fatPer: 1.0, label: "Maintien" };
+  const targetKcal = tdee + g.kcalDelta;
+  const protein = Math.round(g.proteinPer * weight);
+  const fat = Math.round(g.fatPer * weight);
+  const carbs = Math.max(0, Math.round((targetKcal - protein * 4 - fat * 9) / 4));
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div class="profile-stat-pill" style="grid-column:1/-1;flex-direction:row;justify-content:space-between;padding:10px 14px">
+        <div>
+          <div style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em">TDEE estimé · ${g.label}</div>
+          <div style="font-size:1.5rem;font-weight:900;color:#f97316;line-height:1.1">${targetKcal} <span style="font-size:.75rem;font-weight:700;color:var(--muted)">kcal/j</span></div>
+        </div>
+        <div style="font-size:.68rem;color:var(--muted);text-align:right;line-height:1.5">BMR ${bmr} kcal<br>× ${activityMult} activité${g.kcalDelta !== 0 ? "<br>" + (g.kcalDelta > 0 ? "+" : "") + g.kcalDelta + " objectif" : ""}</div>
+      </div>
+      <div class="profile-stat-pill">
+        <span class="psp-icon" style="color:#60a5fa">🥩</span>
+        <span class="psp-val" style="color:#60a5fa">${protein}g</span>
+        <span class="psp-lbl">Protéines</span>
+      </div>
+      <div class="profile-stat-pill">
+        <span class="psp-icon" style="color:#fbbf24">🍚</span>
+        <span class="psp-val" style="color:#fbbf24">${carbs}g</span>
+        <span class="psp-lbl">Glucides</span>
+      </div>
+      <div class="profile-stat-pill">
+        <span class="psp-icon" style="color:#f87171">🥑</span>
+        <span class="psp-val" style="color:#f87171">${fat}g</span>
+        <span class="psp-lbl">Lipides</span>
+      </div>
+      <div class="profile-stat-pill" style="background:rgba(167,139,250,.06);border-color:rgba(167,139,250,.2)">
+        <span class="psp-icon">⚖️</span>
+        <span class="psp-val" style="color:#a78bfa">${weight} kg</span>
+        <span class="psp-lbl">Poids actuel</span>
+      </div>
+    </div>
+    <div style="font-size:.65rem;color:var(--muted);line-height:1.5">Estimation Mifflin-St Jeor · activité modérée · ${protein * 4 + carbs * 4 + fat * 9} kcal total macros</div>`;
+}
+
+function _updateProfileXpDisplay() {
+  // Compute XP from completed DEFIS_LIST (uses locally cached metrics — fast)
+  const dailyCompletions = getDailyCompletionCount();
+  const nutritionPlans = getLocalMetric('fitai_nutrition_plans');
+  const recipeCount = getLocalMetric('fitai_recipes_saved');
+  // We can't get DB counts synchronously, so use what we know locally for fast render
+  const defisXP = DEFIS_LIST.reduce((sum, d) => {
+    let current = 0;
+    if (d.metric === "daily_completions") current = dailyCompletions;
+    else if (d.metric === "nutrition_plans") current = nutritionPlans;
+    else if (d.metric === "recipes") current = recipeCount;
+    return current >= d.target ? sum + d.xp : sum;
+  }, 0);
+  const wqXP = WEEKLY_QUESTS.filter(q => getWeeklyQuestData().done.includes(q.id)).reduce((s, q) => s + q.xp, 0);
+  const totalXP = defisXP + wqXP;
+  const level = Math.floor(totalXP / 1000) + 1;
+  const xpInLevel = totalXP % 1000;
+  const pct = xpInLevel / 1000;
+
+  const levelChip = document.getElementById("p-level-chip");
+  if (levelChip) levelChip.textContent = `Niv.${level}`;
+
+  const xpLabel = document.getElementById("profile-xp-label");
+  if (xpLabel) xpLabel.textContent = `${totalXP} XP`;
+
+  const xpBarFill = document.getElementById("profile-xp-bar-fill");
+  if (xpBarFill) xpBarFill.style.width = `${Math.round(pct * 100)}%`;
+
+  const xpArc = document.getElementById("profile-xp-arc");
+  if (xpArc) {
+    const circ = 226;
+    requestAnimationFrame(() => {
+      xpArc.setAttribute("stroke-dasharray", `${(pct * circ).toFixed(1)} ${circ}`);
+    });
+  }
+
+  // Trophy counts
+  const trophyCounts = { bronze: 0, silver: 0, gold: 0, platinum: 0 };
+  const completedTrophies = [];
+  DEFIS_LIST.forEach(d => {
+    let current = 0;
+    if (d.metric === "daily_completions") current = dailyCompletions;
+    else if (d.metric === "nutrition_plans") current = nutritionPlans;
+    else if (d.metric === "recipes") current = recipeCount;
+    if (current >= d.target && d.trophy) {
+      trophyCounts[d.trophy] = (trophyCounts[d.trophy] || 0) + 1;
+      completedTrophies.push(d);
+    }
+  });
+
+  const totalTrophies = completedTrophies.length;
+  const trophyCountEl = document.getElementById("p-trophy-count");
+  if (trophyCountEl) trophyCountEl.textContent = totalTrophies || "—";
+
+  const trophyRow = document.getElementById("profile-trophy-counts");
+  if (trophyRow) {
+    trophyRow.innerHTML = Object.entries(TROPHY_META).map(([key, m]) =>
+      `<div class="trophy-count-pill" style="border-color:${m.color}40;background:${m.bg}">
+        <span>${m.shield}</span>
+        <span style="font-weight:900;color:${m.color}">${trophyCounts[key] || 0}</span>
+        <span style="color:var(--muted)">${m.label}</span>
+      </div>`
+    ).join("");
+  }
+
+  // Achievements list: show completed trophies as cards, or locked if none
+  const achEl = document.getElementById("achievements-list");
+  if (achEl) {
+    if (completedTrophies.length) {
+      achEl.innerHTML = `<div class="trophy-grid">${completedTrophies.map(d => _buildTrophyCard({ ...d, pct: 100, current: d.target, completed: true }, "done")).join("")}</div>`;
+    } else {
+      achEl.innerHTML = `<div style="text-align:center;padding:20px 0;color:var(--muted);font-size:.82rem">Complète des défis pour débloquer des trophées 🏆</div>`;
+    }
+  }
+}
+
+async function saveProfile() {
+  if (!U) return toast("Session expirée.", "err");
+  const pPseudo = document.getElementById("p-pseudo");
+  const pUsername = document.getElementById("p-username");
+  const display_name = pPseudo ? pPseudo.value.trim() : "";
+  const username = pUsername ? pUsername.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "") : "";
+  const age = parseInt(document.getElementById("p-age")?.value || "0", 10) || null;
+  const weight = parseFloat(document.getElementById("p-weight")?.value || "0") || null;
+  const height = parseFloat(document.getElementById("p-height")?.value || "0") || null;
+  const coachTone = String(document.getElementById('p-coach-tone')?.value || 'balanced');
+  if (!display_name) return toast("Pseudo requis.", "err");
+  if (username && username.length < 3) return toast("Username: 3 caractères minimum.", "err");
+
+  const btn = document.getElementById("btn-save-profile");
+  await withButton(btn, "Enregistrement…", async () => {
+    setCoachTonePreference(coachTone);
+    const payload = { id: U.id, display_name, updated_at: new Date().toISOString() };
+    if (username) payload.username = username;
+    if (age) payload.age = age;
+    if (weight) payload.weight = weight;
+    if (height) payload.height = height;
+    const { error } = await SB.from("profiles").upsert(payload, { onConflict: "id" });
+    if (error) {
+      // username column might not exist (migration v4 not applied)
+      if (error.code === "42703" || (error.message?.includes("column") && error.message?.includes("username"))) {
+        delete payload.username;
+        const { error: e2 } = await SB.from("profiles").upsert(payload, { onConflict: "id" });
+        if (e2) throw e2;
+        toast("Pseudo mis à jour. Appliquez migration_v4 pour activer le username.", "ok");
+        await loadProfile();
+        return;
+      }
+      if (error.message?.includes("idx_profiles_username") || error.message?.includes("duplicate")) {
+        return toast("Ce username est déjà pris.", "err");
+      }
+      throw error;
+    }
+    if (weight) addWeightEntry(weight);
+    toast("Profil mis à jour ✓", "ok");
+    DataCache.del('coach_ctx_v2');
+    await loadProfile();
+    await loadCoachStats();
+  }).catch(e => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function loadStats() {
+  if (!U) return;
+  // Show stale data instantly while revalidating
+  const cached = DataCache.get(`stats:${U.id}`);
+  if (cached) applyStats(cached);
+  try {
+    const [sessions, scans, posts] = await Promise.all([
+      SB.from("workout_sessions").select("id", { count: "exact", head: true }).eq("user_id", U.id),
+      SB.from("body_scans").select("id", { count: "exact", head: true }).eq("user_id", U.id),
+      SB.from("community_posts").select("id", { count: "exact", head: true }).eq("user_id", U.id)
+    ]);
+    const data = { sessCount: sessions.count ?? 0, scansCount: scans.count ?? 0, postsCount: posts.count ?? 0 };
+    DataCache.set(`stats:${U.id}`, data, 90000); // 90s TTL
+    applyStats(data);
+  } catch (e) {
+    console.error("[Stats] Load error:", e);
+  }
+}
+
+function applyStats({ sessCount = 0, scansCount = 0, postsCount = 0 } = {}) {
+  const ids = { "st-sess": sessCount, "st-scans": scansCount, "st-posts": postsCount, "db-sess": sessCount, "cs-week": sessCount };
+  Object.entries(ids).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.textContent = val; });
+  const totalSess = document.getElementById("db-total-sessions");
+  if (totalSess) totalSess.textContent = sessCount;
+  animateRing("ring-sess", sessCount, 30);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DÉFIS & SUCCÈS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// trophy rarity: "bronze" | "silver" | "gold" | "platinum"
+const DEFIS_LIST = [
+  { id: "sessions_5",   icon: "🏃", title: "5 séances complétées",       desc: "Sauvegarde 5 séances d'entraînement",                      difficulty: "Facile",    xp: 250,  color: "#22c55e", target: 5,     unit: "séances",   metric: "sessions",          trophy: "bronze"   },
+  { id: "sessions_10",  icon: "💪", title: "10 séances complétées",      desc: "Sauvegarde 10 séances — une vraie routine se forme",       difficulty: "Moyen",     xp: 500,  color: "#f97316", target: 10,    unit: "séances",   metric: "sessions",          trophy: "silver"   },
+  { id: "sessions_30",  icon: "🏋️", title: "30 séances d'entraînement",  desc: "Complète 30 séances au total — athlète confirmé",          difficulty: "Difficile", xp: 1500, color: "#ef4444", target: 30,    unit: "séances",   metric: "sessions",          trophy: "gold"     },
+  { id: "streak_3",     icon: "⚡", title: "Streak 3 jours",             desc: "3 jours consécutifs d'entraînement",                       difficulty: "Facile",    xp: 150,  color: "#38bdf8", target: 3,     unit: "jours",     metric: "streak",            trophy: "bronze"   },
+  { id: "streak_7",     icon: "🔥", title: "Streak 7 jours",             desc: "Entraîne-toi 7 jours de suite sans interruption",          difficulty: "Moyen",     xp: 500,  color: "#f97316", target: 7,     unit: "jours",     metric: "streak",            trophy: "silver"   },
+  { id: "streak_14",    icon: "🌟", title: "Streak 14 jours",            desc: "Deux semaines sans manquer un seul jour",                  difficulty: "Difficile", xp: 900,  color: "#a855f7", target: 14,    unit: "jours",     metric: "streak",            trophy: "gold"     },
+  { id: "streak_30",    icon: "👑", title: "Streak 30 jours",            desc: "Un mois entier de régularité absolue",                     difficulty: "Expert",    xp: 2500, color: "#eab308", target: 30,    unit: "jours",     metric: "streak",            trophy: "platinum" },
+  { id: "scans_1",      icon: "📸", title: "Premier body scan IA",       desc: "Réalise ton premier scan corporel avec l'IA",              difficulty: "Facile",    xp: 200,  color: "#0ea5e9", target: 1,     unit: "scans",     metric: "scans",             trophy: "bronze"   },
+  { id: "scans_5",      icon: "🔬", title: "5 body scans réalisés",      desc: "Suis l'évolution de ton physique sur la durée",            difficulty: "Moyen",     xp: 600,  color: "#06b6d4", target: 5,     unit: "scans",     metric: "scans",             trophy: "silver"   },
+  { id: "scans_10",     icon: "🧬", title: "10 scans comparables",       desc: "Construis un vrai historique de transformation",           difficulty: "Difficile", xp: 1200, color: "#0891b2", target: 10,    unit: "scans",     metric: "scans",             trophy: "gold"     },
+  { id: "daily_7",      icon: "🎯", title: "7 journées de défis",        desc: "Accomplis tous les défis du jour à 7 reprises",            difficulty: "Moyen",     xp: 700,  color: "#84cc16", target: 7,     unit: "journées",  metric: "daily_completions", trophy: "silver"   },
+  { id: "daily_30",     icon: "🏅", title: "30 journées de défis",       desc: "Maîtrise quotidienne pendant un mois entier",              difficulty: "Expert",    xp: 2000, color: "#65a30d", target: 30,    unit: "journées",  metric: "daily_completions", trophy: "platinum" },
+  { id: "recipes_3",    icon: "🍳", title: "3 recettes IA",              desc: "Crée 3 recettes détaillées pour muscler ta cuisine",       difficulty: "Facile",    xp: 220,  color: "#f59e0b", target: 3,     unit: "recettes",  metric: "recipes",           trophy: "bronze"   },
+  { id: "recipes_10",   icon: "🍽️", title: "10 recettes IA",             desc: "Constitue une vraie base de repas utiles",                 difficulty: "Moyen",     xp: 650,  color: "#f97316", target: 10,    unit: "recettes",  metric: "recipes",           trophy: "silver"   },
+  { id: "nutrition_5",  icon: "🥗", title: "5 plans nutrition",          desc: "Teste et affine tes journées nutrition",                   difficulty: "Facile",    xp: 250,  color: "#84cc16", target: 5,     unit: "plans",     metric: "nutrition_plans",   trophy: "bronze"   },
+  { id: "nutrition_20", icon: "📋", title: "20 plans nutrition",         desc: "Construis une vraie routine alimentaire",                  difficulty: "Difficile", xp: 1000, color: "#65a30d", target: 20,    unit: "plans",     metric: "nutrition_plans",   trophy: "gold"     },
+  { id: "water_7",      icon: "💧", title: "7 jours d'hydratation",       desc: "Atteins ton objectif eau 7 jours distincts",              difficulty: "Moyen",     xp: 320,  color: "#38bdf8", target: 7,     unit: "jours",     metric: "water_days",        trophy: "silver"   },
+  { id: "water_21",     icon: "🌊", title: "21 jours bien hydratés",      desc: "Reste propre sur l'hydratation pendant 3 semaines",       difficulty: "Difficile", xp: 900,  color: "#0ea5e9", target: 21,    unit: "jours",     metric: "water_days",        trophy: "gold"     },
+  { id: "social_1",     icon: "📣", title: "Premier post communautaire",  desc: "Partage ta première photo ou message",                    difficulty: "Facile",    xp: 150,  color: "#ec4899", target: 1,     unit: "posts",     metric: "posts",             trophy: "bronze"   },
+  { id: "social_5",     icon: "🤝", title: "5 posts publiés",            desc: "Inspire la communauté avec 5 publications",                difficulty: "Moyen",     xp: 400,  color: "#f43f5e", target: 5,     unit: "posts",     metric: "posts",             trophy: "silver"   },
+  { id: "10kcal",       icon: "🔥", title: "10 000 calories brûlées",    desc: "Cumule 10 000 kcal sur des séances sauvegardées",          difficulty: "Difficile", xp: 1000, color: "#eab308", target: 10000, unit: "kcal",      metric: "calories",          trophy: "gold"     },
+  { id: "5h_week",      icon: "⏱️", title: "5h d'entraînement/semaine",  desc: "Totalise 5 heures de sport sur une même semaine",          difficulty: "Moyen",     xp: 600,  color: "#8b5cf6", target: 300,   unit: "minutes",   metric: "weekly_time",       trophy: "silver"   },
+  { id: "variety",      icon: "🌈", title: "Polyvalence totale",         desc: "3 types d'entraînement différents en une semaine",         difficulty: "Moyen",     xp: 400,  color: "#f97316", target: 3,     unit: "types",     metric: "variety",           trophy: "silver"   },
+  { id: "perfect_week", icon: "💎", title: "Semaine parfaite",           desc: "Entraînement + nutrition suivis 7/7 sur une semaine",      difficulty: "Expert",    xp: 2000, color: "#3b82f6", target: 7,     unit: "jours",     metric: "perfect",           trophy: "platinum" }
+];
+
+// ── WEEKLY QUESTS ──────────────────────────────────────────────────────────────
+const WEEKLY_QUESTS = [
+  { id: "wq_sessions", icon: "💪", title: "3 séances cette semaine",    desc: "Complète et sauvegarde 3 entraînements avant dimanche",    xp: 350,  trophy: "bronze", metric: "sessions_week", target: 3  },
+  { id: "wq_streak5",  icon: "🔥", title: "Streak de 5 jours",         desc: "Enchaîne 5 jours d'entraînement sans interruption",        xp: 600,  trophy: "silver", metric: "streak_week",   target: 5  },
+  { id: "wq_recipe",   icon: "🍳", title: "Chef de la semaine",         desc: "Génère 2 recettes IA cette semaine",                       xp: 250,  trophy: null,     metric: "recipes_week",  target: 2  },
+  { id: "wq_plan",     icon: "📅", title: "Programme établi",           desc: "Génère ton plan d'entraînement de la semaine",             xp: 200,  trophy: null,     metric: "plan_week",     target: 1  },
+  { id: "wq_nutrition",icon: "🥗", title: "Nutrition trackée",          desc: "Enregistre tes repas 3 jours dans la semaine",             xp: 300,  trophy: "bronze", metric: "nutrition_week", target: 3 },
+  { id: "wq_scan",     icon: "📸", title: "Bilan corporel",             desc: "Réalise un body scan IA cette semaine",                    xp: 200,  trophy: null,     metric: "scan_week",     target: 1  },
+];
+
+const TROPHY_META = {
+  bronze:   { label: "Bronze",   color: "#cd7f32", bg: "rgba(205,127,50,.12)",  glow: "rgba(205,127,50,.3)",  shield: "🥉" },
+  silver:   { label: "Argent",   color: "#b0bec5", bg: "rgba(176,190,197,.12)", glow: "rgba(176,190,197,.3)", shield: "🥈" },
+  gold:     { label: "Or",       color: "#ffd700", bg: "rgba(255,215,0,.12)",   glow: "rgba(255,215,0,.3)",   shield: "🥇" },
+  platinum: { label: "Platine",  color: "#a78bfa", bg: "rgba(167,139,250,.12)", glow: "rgba(167,139,250,.35)",shield: "💎" },
+};
+
+function getWeekKey() {
+  // Returns "YYYY-Www" to key localStorage per-week resets
+  const d = new Date();
+  const day = d.getDay() || 7;
+  const mon = new Date(d);
+  mon.setDate(d.getDate() - day + 1);
+  const y = mon.getFullYear();
+  const start = new Date(y, 0, 1);
+  const weekNum = Math.ceil(((mon - start) / 86400000 + start.getDay() + 1) / 7);
+  return `${y}-W${String(weekNum).padStart(2, "0")}`;
+}
+
+function getWeeklyQuestData() {
+  const key = `fitai_wq_${getWeekKey()}`;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { progress: {}, done: [] };
+}
+
+function saveWeeklyQuestData(data) {
+  const key = `fitai_wq_${getWeekKey()}`;
+  try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
+}
+
+// Call this whenever a relevant action happens (save workout, generate recipe, etc.)
+function incrementWeeklyQuestMetric(metric, amount = 1) {
+  const data = getWeeklyQuestData();
+  data.progress[metric] = (data.progress[metric] || 0) + amount;
+  // Check if any quest just completed
+  const newlyDone = [];
+  for (const q of WEEKLY_QUESTS) {
+    if (!data.done.includes(q.id) && (data.progress[q.metric] || 0) >= q.target) {
+      data.done.push(q.id);
+      newlyDone.push(q);
+    }
+  }
+  saveWeeklyQuestData(data);
+  for (const q of newlyDone) {
+    _showTrophyUnlock(q);
+  }
+}
+
+function _showTrophyUnlock(item) {
+  const trophy = item.trophy ? TROPHY_META[item.trophy] : null;
+  const shield = trophy ? trophy.shield : "⭐";
+  const label  = trophy ? trophy.label  : "Quête";
+  const el = document.createElement("div");
+  el.className = "trophy-unlock-toast";
+  el.innerHTML = `<div class="trophy-unlock-inner">
+    <div class="trophy-unlock-icon">${shield}</div>
+    <div>
+      <div class="trophy-unlock-title">Trophée débloqué !</div>
+      <div class="trophy-unlock-name">${escapeHtml(item.title)}</div>
+      <div class="trophy-unlock-badge">${label} · +${item.xp} XP</div>
+    </div>
+  </div>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => {
+    el.classList.remove("show");
+    setTimeout(() => el.remove(), 500);
+  }, 4000);
+}
+
+function getDailyCompletionCount() {
+  try { return Number(localStorage.getItem("fitai_daily_completions") || "0"); }
+  catch { return 0; }
+}
+
+async function loadDefis() {
+  if (!U) return;
+  const el = document.getElementById("defis-list");
+  if (!el) return;
+
+  // Render daily challenges in the défis tab immediately
+  renderDailyChallengesSection();
+
+  // Live countdown: refresh every minute while on this tab
+  if (window._defiCountdownTimer) clearInterval(window._defiCountdownTimer);
+  window._defiCountdownTimer = setInterval(() => {
+    const cdEl = document.getElementById("daily-defi-countdown");
+    if (cdEl) cdEl.textContent = _getMidnightCountdown();
+    else { clearInterval(window._defiCountdownTimer); window._defiCountdownTimer = null; }
+  }, 60000);
+
+  // Load all trackable metrics
+  let totalSessions = 0, currentStreak = 0, longestStreak = 0, totalScans = 0, totalPosts = 0, totalRecipes = 0;
+  try {
+    const [sessRes, streakRes, scansRes, postsRes, recipesRes] = await Promise.all([
+      SB.from("workout_sessions").select("id", { count: "exact", head: true }).eq("user_id", U.id),
+      SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle(),
+      SB.from("body_scans").select("id", { count: "exact", head: true }).eq("user_id", U.id),
+      SB.from("community_posts").select("id", { count: "exact", head: true }).eq("user_id", U.id),
+      SB.from("saved_recipes").select("id", { count: "exact", head: true }).eq("user_id", U.id)
+    ]);
+    totalSessions   = sessRes.count   || 0;
+    currentStreak   = streakRes.data?.current_streak  || 0;
+    longestStreak   = streakRes.data?.longest_streak  || 0;
+    totalScans      = scansRes.count  || 0;
+    totalPosts      = postsRes.count  || 0;
+    totalRecipes    = recipesRes.count || 0;
+  } catch (e) { console.error("[Defis] Stats error:", e); }
+
+  const dailyCompletions = getDailyCompletionCount();
+  const nutritionPlans = getLocalMetric('fitai_nutrition_plans');
+  const waterGoalDays = getLocalMetric('fitai_water_goal_days');
+  const recipeCount = Math.max(totalRecipes, getLocalMetric('fitai_recipes_saved'));
+
+  // Calculate progress for each trophy/defi
+  const defisProgress = DEFIS_LIST.map(d => {
+    let current = 0;
+    if      (d.metric === "sessions")          current = totalSessions;
+    else if (d.metric === "streak")            current = Math.max(currentStreak, longestStreak);
+    else if (d.metric === "scans")             current = totalScans;
+    else if (d.metric === "posts")             current = totalPosts;
+    else if (d.metric === "daily_completions") current = dailyCompletions;
+    else if (d.metric === "recipes")           current = recipeCount;
+    else if (d.metric === "nutrition_plans")   current = nutritionPlans;
+    else if (d.metric === "water_days")        current = waterGoalDays;
+    const pct = Math.min(100, Math.round((current / d.target) * 100));
+    const completed = current >= d.target;
+    return { ...d, current, pct, completed };
+  });
+
+  // XP + level
+  const completedCount = defisProgress.filter(d => d.completed).length;
+  const totalXP = defisProgress.filter(d => d.completed).reduce((a, d) => a + d.xp, 0);
+  const wqData = getWeeklyQuestData();
+  const wqXP = WEEKLY_QUESTS.filter(q => wqData.done.includes(q.id)).reduce((s, q) => s + q.xp, 0);
+  const grandTotalXP = totalXP + wqXP;
+  const level = Math.floor(grandTotalXP / 1000) + 1;
+  const xpInLevel = grandTotalXP % 1000;
+
+  // Trophy counts by rarity
+  const trophyCounts = { bronze: 0, silver: 0, gold: 0, platinum: 0 };
+  defisProgress.filter(d => d.completed && d.trophy).forEach(d => { trophyCounts[d.trophy] = (trophyCounts[d.trophy] || 0) + 1; });
+
+  // Update header stats
+  const elLevel = document.getElementById("defi-level");
+  const elXP = document.getElementById("defi-xp");
+  const elCompleted = document.getElementById("defi-completed");
+  const elProgress = document.getElementById("defi-progress-fill");
+  const elProgressText = document.getElementById("defi-progress-text");
+  if (elLevel) elLevel.textContent = level;
+  const elLevelText = document.getElementById("defi-level-text");
+  if (elLevelText) elLevelText.textContent = level;
+  if (elXP) elXP.textContent = grandTotalXP + " XP";
+  if (elCompleted) elCompleted.textContent = `${completedCount}/${DEFIS_LIST.length} trophées`;
+  if (elProgress) elProgress.style.width = `${(xpInLevel / 1000) * 100}%`;
+  if (elProgressText) elProgressText.textContent = `${xpInLevel} / 1000 XP → Niveau ${level + 1}`;
+
+  // Render trophy counts row
+  const trophyRow = document.getElementById("defi-trophy-counts");
+  if (trophyRow) {
+    trophyRow.innerHTML = Object.entries(TROPHY_META).map(([key, m]) =>
+      `<div class="trophy-count-pill" style="border-color:${m.color}40;background:${m.bg}">
+        <span>${m.shield}</span>
+        <span style="font-weight:900;color:${m.color}">${trophyCounts[key] || 0}</span>
+        <span style="color:var(--muted)">${m.label}</span>
+      </div>`
+    ).join("");
+  }
+
+  // ── WEEKLY QUESTS rendering ──────────────────────────────────────────────
+  renderWeeklyQuests(totalSessions, currentStreak, recipeCount, totalScans, nutritionPlans);
+
+  // ── TROPHIES grid (replaces old defi-card list) ─────────────────────────
+  const completed = defisProgress.filter(d => d.completed);
+  const inProgress = defisProgress.filter(d => !d.completed && d.pct > 0).sort((a,b) => b.pct - a.pct);
+  const locked = defisProgress.filter(d => !d.completed && d.pct === 0);
+
+  el.innerHTML = "";
+
+  // In progress section
+  if (inProgress.length) {
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-section-title">🔄 En cours (${inProgress.length})</div>`);
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-grid">${inProgress.map(d => _buildTrophyCard(d, "progress")).join("")}</div>`);
+  }
+
+  // Unlocked section
+  if (completed.length) {
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-section-title">🏆 Débloqués (${completed.length})</div>`);
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-grid">${completed.map(d => _buildTrophyCard(d, "done")).join("")}</div>`);
+  }
+
+  // Locked section
+  if (locked.length) {
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-section-title">🔒 Verrouillés (${locked.length})</div>`);
+    el.insertAdjacentHTML("beforeend", `<div class="trophy-grid">${locked.map(d => _buildTrophyCard(d, "locked")).join("")}</div>`);
+  }
+}
+
+function _buildTrophyCard(d, state) {
+  const trophy = d.trophy ? TROPHY_META[d.trophy] : null;
+  const isDone = state === "done";
+  const isLocked = state === "locked";
+  const tColor = trophy ? trophy.color : d.color;
+  const tBg = trophy ? trophy.bg : "rgba(255,255,255,.04)";
+  const tGlow = trophy && isDone ? `box-shadow:0 0 16px ${trophy.glow};` : "";
+  const shield = trophy ? trophy.shield : "🏅";
+  const rarity = trophy ? trophy.label : "";
+  return `<div class="trophy-card${isDone ? " trophy-done" : isLocked ? " trophy-locked" : ""}" style="border-color:${isDone ? tColor + "55" : "rgba(255,255,255,.07)"};${tGlow}${isLocked ? "opacity:.45;" : ""}">
+    <div class="trophy-card-top">
+      <div class="trophy-shield" style="background:${isDone ? tBg : "rgba(255,255,255,.04)"}${isDone ? ";border:1.5px solid " + tColor + "50" : ""}">${isDone ? shield : isLocked ? "🔒" : d.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div class="trophy-card-title">${escapeHtml(d.title)}</div>
+        ${rarity ? `<span class="trophy-rarity-badge" style="color:${tColor};background:${tBg};border:1px solid ${tColor}30">${rarity}</span>` : ""}
+      </div>
+      <div class="trophy-xp-tag">+${d.xp}<span style="font-size:.6rem;font-weight:600;opacity:.7"> XP</span></div>
+    </div>
+    <div class="trophy-card-desc">${escapeHtml(d.desc)}</div>
+    ${!isLocked ? `<div class="trophy-prog-row">
+      <div class="trophy-prog-track"><div class="trophy-prog-fill" style="width:${d.pct}%;background:${isDone ? tColor : d.color}${isDone ? "" : "cc"}"></div></div>
+      <span class="trophy-prog-label" style="color:${isDone ? "#4ade80" : "var(--muted)"}">${isDone ? "✓" : d.current + "/" + d.target}</span>
+    </div>` : `<div style="font-size:.68rem;color:var(--muted);margin-top:8px">${escapeHtml(d.desc.slice(0, 40))}…</div>`}
+  </div>`;
+}
+
+function renderWeeklyQuests(totalSessions, currentStreak, recipeCount, totalScans, nutritionPlans) {
+  const el = document.getElementById("weekly-quests-list");
+  if (!el) return;
+
+  const wqData = getWeeklyQuestData();
+  const p = wqData.progress;
+
+  // Auto-sync metrics we can infer
+  const weekStart = getWeekStart();
+  // sessions_week / streak_week can only be tracked by incrementWeeklyQuestMetric elsewhere
+  // Here we just render what we have
+
+  const quests = WEEKLY_QUESTS.map(q => {
+    const current = p[q.metric] || 0;
+    const pct = Math.min(100, Math.round((current / q.target) * 100));
+    const done = wqData.done.includes(q.id);
+    return { ...q, current, pct, done };
+  });
+
+  const doneCount = quests.filter(q => q.done).length;
+  const wqXP = quests.filter(q => q.done).reduce((s, q) => s + q.xp, 0);
+
+  const weekLabel = (() => {
+    const d = new Date(weekStart + "T00:00:00");
+    const end = new Date(d); end.setDate(d.getDate() + 6);
+    const fmt = dt => dt.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+    return `du ${fmt(d)} au ${fmt(end)}`;
+  })();
+
+  el.innerHTML = `<div class="wq-header">
+    <div>
+      <div class="wq-title">⚡ Quêtes de la semaine</div>
+      <div class="wq-sub">${weekLabel}</div>
+    </div>
+    <div class="wq-stats">
+      <span class="wq-done-count">${doneCount}/${quests.length}</span>
+      <span class="wq-xp-earned">${wqXP > 0 ? "+" + wqXP + " XP" : ""}</span>
+    </div>
+  </div>
+  <div class="wq-list">${quests.map(q => {
+    const trophy = q.trophy ? TROPHY_META[q.trophy] : null;
+    const tColor = trophy ? trophy.color : "#818cf8";
+    return `<div class="wq-row${q.done ? " wq-done" : ""}">
+      <div class="wq-icon">${q.icon}</div>
+      <div class="wq-body">
+        <div class="wq-name">${escapeHtml(q.title)}${q.done ? ` <span class="wq-check">✓</span>` : ""}</div>
+        <div class="wq-desc">${escapeHtml(q.desc)}</div>
+        <div class="wq-prog-track"><div class="wq-prog-fill" style="width:${q.pct}%;background:${q.done ? "#4ade80" : tColor}"></div></div>
+        <div class="wq-prog-text" style="color:${q.done ? "#4ade80" : "var(--muted)"}">
+          ${q.done ? "Accompli !" : q.current + " / " + q.target}
+        </div>
+      </div>
+      <div class="wq-rewards">
+        ${trophy ? `<span class="wq-trophy-badge" style="background:${TROPHY_META[q.trophy].bg};color:${TROPHY_META[q.trophy].color};border:1px solid ${TROPHY_META[q.trophy].color}40">${TROPHY_META[q.trophy].shield}</span>` : ""}
+        <span class="wq-xp">+${q.xp}</span>
+      </div>
+    </div>`;
+  }).join("")}</div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONFIRM MODAL
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _confirmResolve = null;
+
+function confirmModal(title, sub = "Cette action est irréversible.", okLabel = "Supprimer") {
+  return new Promise((resolve) => {
+    const overlay  = document.getElementById("confirm-overlay");
+    const titleEl  = document.getElementById("confirm-title");
+    const subEl    = document.getElementById("confirm-sub");
+    const okBtn    = document.getElementById("confirm-ok-btn");
+    if (!overlay) { resolve(window.confirm(title)); return; }
+    if (titleEl) titleEl.textContent  = title;
+    if (subEl)   { subEl.textContent = sub; subEl.style.display = sub ? "block" : "none"; }
+    if (okBtn)   okBtn.textContent   = okLabel;
+    overlay.classList.add("open");
+    _confirmResolve = resolve;
+  });
+}
+
+function confirmOk() {
+  document.getElementById("confirm-overlay")?.classList.remove("open");
+  if (_confirmResolve) { _confirmResolve(true); _confirmResolve = null; }
+}
+
+function confirmCancel() {
+  document.getElementById("confirm-overlay")?.classList.remove("open");
+  if (_confirmResolve) { _confirmResolve(false); _confirmResolve = null; }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UTILITAIRES
+// ══════════════════════════════════════════════════════════════════════════════
+
+function showGlobalLoader(show, text = "Chargement…") {
+  const loader = document.getElementById("global-loader");
+  if (!loader) return;
+  loader.style.display = show ? "flex" : "none";
+  const msg = loader.querySelector(".boot-msg");
+  if (msg) msg.textContent = text;
+}
+
+async function getToken() {
+  if (!SB) return "";
+  try {
+    const { data, error } = await SB.auth.getSession();
+    if (error) {
+      console.error("[Auth] getToken error:", error);
+      AUTH_ERROR_COUNT++;
+      if (AUTH_ERROR_COUNT >= MAX_AUTH_ERRORS) {
+        await clearLocalSession();
+        showAuth();
+      }
+      return "";
+    }
+    return data.session?.access_token || "";
+  } catch (e) {
+    console.error("[Auth] getToken exception:", e);
+    return "";
+  }
+}
+
+function toInt(id) {
+  const el = document.getElementById(id);
+  return parseInt(el?.value || "0", 10) || 0;
+}
+
+function formatDuration(seconds) {
+  const m = Math.round((seconds || 0) / 60);
+  return `${m} min`;
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function safeDate(str, opts) {
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? "récemment" : d.toLocaleDateString("fr-FR", opts);
+}
+
+let toastTimer;
+function toast(message, cls = "ok") {
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.textContent = message;
+  el.className = `on ${cls}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.className = "";
+  }, 3000);
+}
+
+async function withButton(button, label, fn) {
+  if (!button) return fn();
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = label;
+  try {
+    return await fn();
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function guarded(key, fn) {
+  if (ASYNC_LOCKS.has(key)) return;
+  ASYNC_LOCKS.add(key);
+  try {
+    return await fn();
+  } finally {
+    ASYNC_LOCKS.delete(key);
+  }
+}
+
+async function safeResponseJson(res) {
+  const text = await res.text();
+  try { return JSON.parse(text); } catch { return { ok: false, error: text || "Réponse invalide" }; }
+}
+
+
+function normalizeNutritionError(msg, code) {
+  const m = String(msg || "").toLowerCase();
+  if (m.includes("timeout") || m.includes("abort") || m.includes("trop de temps")) {
+    return "La génération du plan a pris trop de temps. Réessaie dans quelques secondes.";
+  }
+  if (code === "RATE_LIMITED" || m.includes("429") || m.includes("rate limit") || m.includes("quota")) {
+    return "Le module nutrition est momentanément surchargé. Réessaie dans 30 secondes.";
+  }
+  if (m.includes("500") || m.includes("503") || m.includes("502") || m.includes("unavailable")) {
+    return "Le plan nutrition n'est pas disponible tout de suite. Réessaie dans un instant.";
+  }
+  if (m.includes("html au lieu de json")) return "Le serveur nutrition a renvoyé une réponse invalide. Réessaie dans un instant.";
+  const clean = String(msg || "").replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
+  return clean.length > 110 ? "Le plan nutrition n'a pas pu être généré. Réessaie dans un instant." : (clean || "Le plan nutrition n'a pas pu être généré.");
+}
+
+function normalizeCoachError(msg, code) {
+  const m = String(msg || "").toLowerCase();
+  // Vercel/infra errors — never leak raw infrastructure details to users
+  if (m.includes("function_invocation_failed") || m.includes("a server error has occurred") ||
+      /[a-z]{2,4}1::[a-z0-9]+-\d+-[a-f0-9]+/.test(String(msg || ""))) {
+    return "Le coach a eu un coup de chaud. Ré-essaie dans un instant.";
+  }
+  if (code === "QUOTA" || m.includes("quota") || m.includes("429") || m.includes("rate limit") || m.includes("resource exhausted")) {
+    return "Le coach est momentanément surchargé. Réessayez dans 30 secondes.";
+  }
+  if (m.includes("timeout") || m.includes("abort") || m.includes("trop de temps")) {
+    return "Le coach n'a pas répondu à temps. Réessayez dans quelques secondes.";
+  }
+  if (m.includes("401") || m.includes("403") || m.includes("api key") || m.includes("auth")) {
+    return "Problème de configuration du coach. Contactez le support.";
+  }
+  if (m.includes("503") || m.includes("502") || m.includes("500") || m.includes("unavailable")) {
+    return "Le service coach est momentanément indisponible. Réessaie dans un instant.";
+  }
+  if (m.includes("error") || m.includes("exception") || m.includes("failed") || m.includes("crash")) {
+    return "Le coach a rencontré une erreur. Réessaie dans un instant.";
+  }
+  const clean = String(msg || "").replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
+  return clean.length > 80 ? "Le coach est momentanément indisponible. Réessaie dans un instant." : (clean || "Le coach est momentanément indisponible.");
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000, errorMapper = normalizeCoachError) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    // Auto-retry once on 5xx
+    let response = await fetch(url, { ...options, signal: controller.signal });
+    if (response.status >= 500) {
+      await new Promise(r => setTimeout(r, 1200));
+      response = await fetch(url, { ...options, signal: controller.signal });
+    }
+    const json = await safeResponseJson(response);
+    if (!response.ok || !json.ok) {
+      const rawErr = json.error || `Erreur serveur (HTTP ${response.status})`;
+      const cleanErr = typeof errorMapper === "function" ? errorMapper(rawErr, json.error_code) : normalizeCoachError(rawErr, json.error_code);
+      throw new Error(cleanErr);
+    }
+    return { response: json, status: response.status };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// SSE streaming fetch for coach chat responses
+async function fetchCoachStream({ url, body, token, onChunk, signal }) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Erreur serveur (HTTP ${response.status})`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6).trim();
+      if (payload === "[DONE]") return fullText;
+      try {
+        const evt = JSON.parse(payload);
+        if (evt.error) throw new Error(evt.error);
+        if (evt.text) {
+          fullText += evt.text;
+          if (typeof onChunk === "function") onChunk(fullText);
+        }
+      } catch (parseErr) {
+        // Only re-throw real errors (not JSON parse failures from non-data lines)
+        if (parseErr instanceof SyntaxError) continue;
+        throw parseErr;
+      }
+    }
+  }
+  return fullText;
+}
+
+function timeAgo(dateStr) {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const seconds = Math.floor((now - date) / 1000);
+
+  if (seconds < 60) return "à l'instant";
+  if (seconds < 3600) return `il y a ${Math.floor(seconds / 60)} min`;
+  if (seconds < 86400) return `il y a ${Math.floor(seconds / 3600)}h`;
+  if (seconds < 604800) return `il y a ${Math.floor(seconds / 86400)}j`;
+  return date.toLocaleDateString("fr-FR");
+}
+
+function stripHtml(html) {
+  return String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function finalizeCoachMessageForDisplay(raw) {
+  let text = String(raw || "").replace(/^```[\w-]*\s*/g, "").replace(/```$/g, "").trim();
+  if (!text) return "";
+  if (/[.!?…]["')\]]*\s*$/.test(text)) return text;
+  text = text.replace(/[,:;\-–—\s]+$/, "").trim();
+  if (!text) return "";
+  const lastLine = text.split(/\n+/).pop().trim();
+  if (lastLine.split(/\s+/).length <= 4 || /\b(et|ou|mais|car|donc|pour|avec|sans|sur|dans|vers|de|du|des|en|au|aux|a|se|te|me|je|tu|il|elle|nous|vous|ils|elles|on)\s*$/i.test(lastLine)) {
+    return `${text}. L'idée clé : reste simple et régulier aujourd'hui.`;
+  }
+  return text + '.';
+}
+
+function formatCoachText(raw) {
+  if (!raw) return "";
+
+  // Split into lines for processing
+  const lines = String(raw).split("\n");
+  const out = [];
+  let inUl = false, inOl = false;
+
+  const closeList = () => {
+    if (inUl) { out.push("</ul>"); inUl = false; }
+    if (inOl) { out.push("</ol>"); inOl = false; }
+  };
+
+  const inlineFormat = (str) => {
+    return escapeHtml(str)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>")
+      .replace(/_(.+?)_/g, "<em>$1</em>");
+  };
+
+  for (const raw_line of lines) {
+    const line = raw_line.trimEnd();
+
+    // H3
+    if (/^###\s+/.test(line)) {
+      closeList();
+      out.push(`<div class="coach-h3">${inlineFormat(line.replace(/^###\s+/, ""))}</div>`);
+      continue;
+    }
+    // H2
+    if (/^##\s+/.test(line)) {
+      closeList();
+      out.push(`<div class="coach-h2">${inlineFormat(line.replace(/^##\s+/, ""))}</div>`);
+      continue;
+    }
+    // H1 (━━ style separators too)
+    if (/^#\s+/.test(line) || /^━{2,}/.test(line)) {
+      closeList();
+      const t = line.replace(/^#\s+/, "").replace(/^━+\s*/, "").replace(/\s*━+$/, "").trim();
+      if (t) out.push(`<div class="coach-h2">${inlineFormat(t)}</div>`);
+      continue;
+    }
+    // Unordered list item: starts with - or • or –
+    if (/^[-•–]\s+/.test(line)) {
+      if (inOl) { out.push("</ol>"); inOl = false; }
+      if (!inUl) { out.push('<ul class="coach-list">'); inUl = true; }
+      out.push(`<li>${inlineFormat(line.replace(/^[-•–]\s+/, ""))}</li>`);
+      continue;
+    }
+    // Ordered list item: starts with digit.
+    if (/^\d+\.\s+/.test(line)) {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      if (!inOl) { out.push('<ol class="coach-list">'); inOl = true; }
+      out.push(`<li>${inlineFormat(line.replace(/^\d+\.\s+/, ""))}</li>`);
+      continue;
+    }
+
+    // Empty line → paragraph break
+    if (line.trim() === "") {
+      closeList();
+      out.push('<div class="coach-gap"></div>');
+      continue;
+    }
+
+    const normalizedHead = line.replace(/^\*\*(.+?)\*\*$/, '$1').trim();
+    if (/^(Réponse directe|Pourquoi|Action du jour|Focus du jour)\s*:?/i.test(normalizedHead)) {
+      closeList();
+      const parts = normalizedHead.split(/:\s+/);
+      const head = parts.shift();
+      const rest = parts.join(": " );
+      out.push(`<div class="coach-h2">${inlineFormat(head || "")}</div>`);
+      if (rest) out.push(`<p class="coach-p">${inlineFormat(rest)}</p>`);
+      continue;
+    }
+
+    // Normal text
+    closeList();
+    out.push(`<p class="coach-p">${inlineFormat(line)}</p>`);
+  }
+
+  closeList();
+  return out.join("");
+}
+
+async function retryLastCoachMessage() {
+  if (!LAST_COACH_PROMPT) return toast("Aucune demande récente à relancer.", "err");
+  return sendCoachMsg(LAST_COACH_PROMPT);
+}
+
+function clearCoachChat() {
+  COACH_HISTORY = [];
+  LAST_COACH_PROMPT = "";
+  try { localStorage.removeItem("fp_coach_history"); } catch {}
+  DataCache.del('coach_ctx_v2');
+  renderCoachChat();
+  const quickEl = document.getElementById("chat-quick");
+  if (quickEl) quickEl.classList.remove("compact");
+  const tog = document.getElementById("chat-suggest-toggle");
+  if (tog) tog.style.display = "none";
+  const planCard = document.getElementById("plan-card");
+  if (planCard) planCard.style.display = "none";
+  PLAN = null;
+}
+
+function useCoachMood(kind) {
+  return sendCoachMsg(coachMoodPrompt(kind));
+}
+window.useCoachMood = useCoachMood;
+
+function toggleCoachSuggestions() {
+  const el = document.getElementById("chat-quick");
+  if (!el) return;
+  const isCompact = el.classList.contains("compact");
+  el.classList.toggle("compact", !isCompact);
+  const tog = document.getElementById("chat-suggest-toggle");
+  if (tog) {
+    const btn = tog.querySelector("button");
+    if (btn) btn.textContent = isCompact ? "Masquer les actions" : "Afficher les actions rapides";
+  }
+}
+
+async function toggleComments(postId) {
+  const section = document.getElementById(`comments-${postId}`);
+  if (!section) return;
+
+  if (section.style.display === "none") {
+    section.style.display = "block";
+    await loadComments(postId);
+  } else {
+    section.style.display = "none";
+  }
+}
+
+async function loadComments(postId) {
+  const section = document.getElementById(`comments-${postId}`);
+  if (!section) return;
+
+  section.innerHTML = '<div class="loading-small">Chargement…</div>';
+
+  try {
+    const { data, error } = await SB.from("comments")
+      .select("id,user_id,content,created_at")
+      .eq("post_id", postId)
+      .order("created_at", { ascending: true })
+      .limit(20);
+    if (error) throw error;
+
+    let html = (data || []).map(c => {
+      const me = U && c.user_id === U.id;
+      return `
+        <div class="comment">
+          <span class="comment-author">${me ? "Vous" : "Membre"}</span>
+          <span class="comment-text">${escapeHtml(c.content)}</span>
+          <span class="comment-time">${timeAgo(c.created_at)}</span>
+          ${me ? `<button class="btn-mini" onclick="deleteComment('${c.id}', '${postId}')">×</button>` : ""}
+        </div>
+      `;
+    }).join("");
+
+    html += `
+      <div class="comment-input">
+        <input type="text" id="ci-${postId}" placeholder="Ajouter un commentaire…"
+               onkeydown="if(event.key==='Enter')addComment('${postId}')">
+        <button class="btn btn-sm btn-p" onclick="addComment('${postId}')">→</button>
+      </div>
+    `;
+
+    section.innerHTML = html;
+  } catch (e) {
+    section.innerHTML = `<div class="error-small">Erreur: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function addComment(postId) {
+  if (!U) return toast("Connectez-vous pour commenter.", "err");
+
+  const input = document.getElementById(`ci-${postId}`);
+  const content = input ? input.value.trim() : "";
+  if (!content) return;
+  if (content.length > 500) return toast("Commentaire trop long (max 500).", "err");
+
+  await guarded(`comment-${postId}`, async () => {
+    const { error } = await SB.from("comments").insert({
+      post_id: postId,
+      user_id: U.id,
+      content
+    });
+    if (error) throw error;
+    if (input) input.value = "";
+    await loadComments(postId);
+  }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function deleteComment(commentId, postId) {
+  if (!U) return;
+  const ok = await confirmModal("Supprimer ce commentaire ?", "");
+  if (!ok) return;
+  await guarded(`delcomment-${commentId}`, async () => {
+    const { error } = await SB.from("comments").delete().eq("id", commentId).eq("user_id", U.id);
+    if (error) throw error;
+    await loadComments(postId);
+  }).catch((e) => toast(`Erreur: ${e.message}`, "err"));
+}
+
+async function loadStreak() {
+  if (!U) return;
+  try {
+    const { data, error } = await SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle();
+    if (error) { console.warn("[Streak] Table may not exist:", error.message); return; }
+    const streak = data || { current_streak: 0, longest_streak: 0, total_workouts: 0 };
+
+    // Update weekly streak quest progress (set to current streak value — clamped to target)
+    const wqData = getWeeklyQuestData();
+    const streakTarget = WEEKLY_QUESTS.find(q => q.id === "wq_streak5")?.target || 5;
+    if ((wqData.progress.streak_week || 0) < streak.current_streak) {
+      wqData.progress.streak_week = Math.min(streak.current_streak, streakTarget);
+      if (!wqData.done.includes("wq_streak5") && streak.current_streak >= streakTarget) {
+        wqData.done.push("wq_streak5");
+        saveWeeklyQuestData(wqData);
+        _showTrophyUnlock(WEEKLY_QUESTS.find(q => q.id === "wq_streak5"));
+      } else {
+        saveWeeklyQuestData(wqData);
+      }
+    }
+
+    const dbStreak = document.getElementById("db-streak");
+    if (dbStreak) dbStreak.textContent = streak.current_streak;
+    animateRing("ring-streak", streak.current_streak, 30);
+
+    const longestEl = document.getElementById("st-longest");
+    if (longestEl) longestEl.textContent = streak.longest_streak;
+
+    // Coach stats
+    const csLevel = document.getElementById("cs-level");
+    if (csLevel) {
+      if (streak.total_workouts >= 50) csLevel.textContent = "Expert";
+      else if (streak.total_workouts >= 20) csLevel.textContent = "Avancé";
+      else if (streak.total_workouts >= 5) csLevel.textContent = "Inter.";
+      else csLevel.textContent = "Début.";
+    }
+
+    // Update coach suggestion card
+    updateCoachCard(streak.current_streak, streak.total_workouts);
+  } catch (e) {
+    console.warn("[Streak] Load error (table may not exist):", e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACHIEVEMENTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+const ACHIEVEMENT_DEFS = [
+  { code: "first_workout", icon: "🏋️", title: "Première séance",   condition: (s) => s.total_workouts >= 1 },
+  { code: "workout_5",     icon: "🔥", title: "5 séances",          condition: (s) => s.total_workouts >= 5 },
+  { code: "workout_20",    icon: "💪", title: "20 séances",         condition: (s) => s.total_workouts >= 20 },
+  { code: "workout_50",    icon: "🏆", title: "50 séances",         condition: (s) => s.total_workouts >= 50 },
+  { code: "streak_3",      icon: "⚡", title: "Streak 3 jours",     condition: (s) => s.current_streak >= 3 },
+  { code: "streak_7",      icon: "🌟", title: "Streak 7 jours",     condition: (s) => s.current_streak >= 7 },
+  { code: "streak_30",     icon: "👑", title: "Streak 30 jours",    condition: (s) => s.current_streak >= 30 },
+  { code: "first_scan",    icon: "📸", title: "Premier bodyscan",   condition: (s) => s.scans >= 1 },
+  { code: "first_post",    icon: "📣", title: "Premier post",       condition: (s) => s.posts >= 1 },
+  { code: "first_recipe",  icon: "🍽️", title: "Première recette",   condition: (s) => s.recipes >= 1 },
+];
+
+async function checkAndAwardAchievements(context = {}) {
+  if (!U) return;
+  try {
+    // Build stats snapshot
+    const { data: streakData } = await SB.from("user_streaks")
+      .select("current_streak,longest_streak,total_workouts")
+      .eq("user_id", U.id).maybeSingle();
+    const { count: scansCount } = await SB.from("body_scans")
+      .select("id", { count: "exact", head: true }).eq("user_id", U.id);
+    const { count: postsCount } = await SB.from("community_posts")
+      .select("id", { count: "exact", head: true }).eq("user_id", U.id);
+
+    const stats = {
+      total_workouts: streakData?.total_workouts || 0,
+      current_streak: streakData?.current_streak || 0,
+      scans: scansCount || 0,
+      posts: postsCount || 0,
+      recipes: context.recipes || 0,
+      ...context
+    };
+
+    // Load already-earned codes
+    const { data: earned } = await SB.from("achievements")
+      .select("code").eq("user_id", U.id);
+    const earnedCodes = new Set((earned || []).map((r) => r.code));
+
+    // Award newly unlocked achievements
+    const toInsert = ACHIEVEMENT_DEFS
+      .filter((def) => !earnedCodes.has(def.code) && def.condition(stats))
+      .map((def) => ({ user_id: U.id, code: def.code, title: def.title }));
+
+    if (toInsert.length > 0) {
+      await SB.from("achievements").insert(toInsert);
+      toInsert.forEach((a) => {
+        const def = ACHIEVEMENT_DEFS.find((d) => d.code === a.code);
+        toast(`${def?.icon || "🏅"} Succès débloqué : ${a.title}`, "ok");
+      });
+      await loadAchievements();
+    }
+  } catch (err) {
+    console.warn("[achievements] check failed:", err);
+  }
+}
+
+async function loadAchievements() {
+  if (!U) return;
+  const el = document.getElementById("achievements-list");
+  if (!el) return;
+  try {
+    const { data, error } = await SB.from("achievements")
+      .select("code,title").eq("user_id", U.id);
+    if (error) throw error;
+    renderAchievements(data || []);
+  } catch (err) {
+    console.warn("[achievements] load failed:", err);
+  }
+}
+
+function renderAchievements(earned) {
+  const el = document.getElementById("achievements-list");
+  if (!el) return;
+  const earnedCodes = new Set(earned.map((r) => r.code));
+  el.innerHTML = ACHIEVEMENT_DEFS.map((def) => {
+    const unlocked = earnedCodes.has(def.code);
+    return `<span class="badge${unlocked ? "" : " locked"}" title="${def.title}">
+      <span class="badge-icon">${def.icon}</span>${def.title}
+    </span>`;
+  }).join("");
+}
+
+function updateCoachCard(streak, totalWorkouts) {
+  const titleEl = document.getElementById("db-coach-title");
+  const subEl   = document.getElementById("db-coach-sub");
+  const btnEl   = document.getElementById("db-coach-btn");
+  if (!titleEl || !subEl) return;
+
+  let title, sub, btnLabel;
+
+  if (streak >= 7) {
+    title = `${streak} jours de streak`;
+    sub   = "Impressionnant ! Maintenez le rythme — demandez au coach votre séance du jour.";
+    btnLabel = "Continuer le streak";
+  } else if (streak >= 3) {
+    title = `Streak de ${streak} jours`;
+    sub   = "Vous êtes lancé — ne cassez pas la dynamique maintenant.";
+    btnLabel = "Séance du jour";
+  } else if (streak === 2) {
+    title = "2 jours d'affilée";
+    sub   = "Bonne lancée ! Une séance de plus et le streak commence à compter.";
+    btnLabel = "Continuer";
+  } else if (totalWorkouts === 0) {
+    title = "Première séance ?";
+    sub   = "Le coach IA génère un programme sur-mesure en quelques secondes.";
+    btnLabel = "Démarrer maintenant";
+  } else if (streak === 0 && totalWorkouts > 0) {
+    title = "Reprenez l'entraînement";
+    sub   = `${totalWorkouts} séance${totalWorkouts > 1 ? "s" : ""} au compteur — il est temps de reprendre.`;
+    btnLabel = "Relancer une séance";
+  } else {
+    title = "Séance du jour";
+    sub   = "Demandez au coach une séance adaptée à votre humeur et vos objectifs.";
+    btnLabel = "Démarrer";
+  }
+
+  titleEl.textContent = title;
+  subEl.textContent   = sub;
+  if (btnEl) btnEl.textContent = "▶ " + btnLabel;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SANITIZE COACH HTML (DOMParser-based, allow safe tags only)
+// ══════════════════════════════════════════════════════════════════════════════
+
+function sanitizeCoachHtml(html) {
+  if (!html) return "";
+  const ALLOWED_TAGS = new Set(["STRONG","EM","DIV","SPAN","UL","OL","LI","BR","P","B","I"]);
+  const ALLOWED_ATTRS = new Set(["style","class"]);
+  // Only allow safe class names (coach-* prefix only)
+  const SAFE_CLASS = /^[\w\s-]*$/;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div>${html}</div>`, "text/html");
+  function clean(node) {
+    const children = Array.from(node.childNodes);
+    children.forEach(child => {
+      if (child.nodeType === 3) return; // text node OK
+      if (child.nodeType === 1) {
+        if (!ALLOWED_TAGS.has(child.tagName)) {
+          // Replace with text content
+          const text = document.createTextNode(child.textContent);
+          node.replaceChild(text, child);
+          return;
+        }
+        // Remove disallowed attributes
+        Array.from(child.attributes).forEach(attr => {
+          if (!ALLOWED_ATTRS.has(attr.name)) { child.removeAttribute(attr.name); return; }
+          if (attr.name === "style" && /expression|javascript|url\s*\(/i.test(attr.value)) {
+            child.removeAttribute("style");
+          }
+          if (attr.name === "class" && !SAFE_CLASS.test(attr.value)) {
+            child.removeAttribute("class");
+          }
+        });
+        clean(child);
+      } else {
+        node.removeChild(child);
+      }
+    });
+  }
+  const root = doc.body.firstChild;
+  clean(root);
+  return root.innerHTML;
+}
+
+
+function nutritionGoalLabel(goal) {
+  return ({ maintenance: "Maintien", perte_de_poids: "Perte de poids", prise_de_masse: "Prise de masse" })[goal] || "Maintien";
+}
+
+function nutritionDayLabel(dayType) {
+  return dayType === 'rest' ? 'Jour calme' : 'Jour entraînement';
+}
+
+function normalizeNutritionPlanPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const nutrition = payload.nutrition || {};
+  const plan = payload.plan || {};
+  return {
+    goal: payload.goal || 'maintenance',
+    day_type: payload.day_type || plan.day_type || 'training',
+    fallback: !!payload.fallback,
+    nutrition: {
+      calories: Number(nutrition.calories || 0),
+      protein: Number(nutrition.protein || 0),
+      carbs: Number(nutrition.carbs || 0),
+      fats: Number(nutrition.fats || 0),
+      notes: String(nutrition.notes || '').trim()
+    },
+    plan: {
+      title: String(plan.title || 'Plan nutrition du jour').trim(),
+      summary: String(plan.summary || '').trim(),
+      hydration_liters: Number(plan.hydration_liters || payload.hydration_liters || 0),
+      coach_note: String(plan.coach_note || '').trim(),
+      training_note: String(plan.training_note || '').trim(),
+      tips: Array.isArray(plan.tips) ? plan.tips.filter(Boolean) : [],
+      substitutions: Array.isArray(plan.substitutions) ? plan.substitutions.filter(Boolean) : [],
+      meals: Array.isArray(plan.meals) ? plan.meals.filter(Boolean) : [],
+      shopping_list: plan.shopping_list && typeof plan.shopping_list === 'object' ? plan.shopping_list : null,
+      meal_prep: plan.meal_prep && typeof plan.meal_prep === 'object' ? plan.meal_prep : null
+    }
+  };
+}
+
+function buildNutritionShoppingList(plan) {
+  const raw = plan?.shopping_list;
+  if (raw && Array.isArray(raw.categories) && raw.categories.length) return raw;
+  const bucket = {};
+  const pushItem = (category, name, qty='1 à 2 portions') => {
+    if (!name) return;
+    bucket[category] ||= [];
+    if (!bucket[category].some((item) => item.name.toLowerCase() === name.toLowerCase())) {
+      bucket[category].push({ name, qty });
+    }
+  };
+  const classify = (label) => {
+    const t = String(label || '').toLowerCase();
+    if (/(poulet|dinde|boeuf|saumon|thon|oeuf|tofu|tempeh|skyr|yaourt|fromage blanc|whey|poisson)/.test(t)) return ['Protéines', /(oeuf)/.test(t) ? '6 à 12' : '2 à 3 portions'];
+    if (/(riz|quinoa|pâtes|semoule|avoine|granola|pain|galettes|pommes de terre)/.test(t)) return ['Glucides utiles', /(pommes de terre)/.test(t) ? '1 à 2 kg' : '1 sachet / 500 g'];
+    if (/(banane|pomme|poire|kiwi|orange|fruit|fruits rouges|légumes|brocoli|salade|courgette|avocat)/.test(t)) return ['Fruits & légumes', '4 à 8 unités'];
+    if (/(huile|amande|noix|graines|beurre d'amande|olive)/.test(t)) return ['Extras intelligents', '1 paquet / flacon'];
+    return ['Bases', '1 à 2 unités'];
+  };
+  (Array.isArray(plan?.meals) ? plan.meals : []).forEach((meal) => {
+    (Array.isArray(meal.items) ? meal.items : []).forEach((item) => {
+      const [cat, qty] = classify(item);
+      pushItem(cat, String(item).split(/[↔>/]/)[0].trim(), qty);
+    });
+    (Array.isArray(meal.swap_options) ? meal.swap_options : []).forEach((swap) => {
+      const base = String(swap).split(/[↔>/]/)[0].trim();
+      const [cat, qty] = classify(base);
+      pushItem(cat, base, qty);
+    });
+  });
+  return {
+    title: 'Liste de courses',
+    prep_tips: Array.isArray(plan?.tips) ? plan.tips.slice(0, 2) : [],
+    quick_swaps: Array.isArray(plan?.substitutions) ? plan.substitutions.slice(0, 3) : [],
+    categories: Object.entries(bucket).map(([title, items]) => ({ title, items }))
+  };
+}
+
+function mergeNutritionShoppingList(base, extra) {
+  const out = {
+    title: extra?.title || base?.title || 'Liste de courses',
+    prep_tips: [...(Array.isArray(base?.prep_tips) ? base.prep_tips : []), ...(Array.isArray(extra?.prep_tips) ? extra.prep_tips : [])],
+    quick_swaps: [...(Array.isArray(base?.quick_swaps) ? base.quick_swaps : []), ...(Array.isArray(extra?.quick_swaps) ? extra.quick_swaps : [])],
+    categories: []
+  };
+  const byTitle = new Map();
+  const pushGroup = (group) => {
+    const title = String(group?.title || 'Courses').trim();
+    if (!byTitle.has(title)) byTitle.set(title, []);
+    const arr = byTitle.get(title);
+    (Array.isArray(group?.items) ? group.items : []).forEach((item) => {
+      const name = String(item?.name || item || '').trim();
+      if (!name) return;
+      if (!arr.some((x) => String(x.name).toLowerCase() === name.toLowerCase())) arr.push({ name, qty: String(item?.qty || 'à prévoir') });
+    });
+  };
+  (Array.isArray(base?.categories) ? base.categories : []).forEach(pushGroup);
+  (Array.isArray(extra?.categories) ? extra.categories : []).forEach(pushGroup);
+  out.categories = Array.from(byTitle.entries()).map(([title, items]) => ({ title, items }));
+  out.prep_tips = Array.from(new Set(out.prep_tips.filter(Boolean))).slice(0, 6);
+  out.quick_swaps = Array.from(new Set(out.quick_swaps.filter(Boolean))).slice(0, 6);
+  return out;
+}
+
+function addRecipeToNutritionShoppingList(idx = 0) {
+  const recipe = (window._lastRecipes && window._lastRecipes[idx]) || window._lastRecipe;
+  if (!recipe) return toast('Aucune recette à ajouter.', 'err');
+
+  // Ensure a nutrition plan payload exists (create minimal one if needed)
+  let payload = loadStoredNutritionPlanPayload();
+  if (!payload || !payload.plan) {
+    payload = {
+      goal: 'maintenance', day_type: 'training', fallback: true,
+      nutrition: { calories: 2000, protein: 150, carbs: 220, fats: 65, notes: '' },
+      plan: { title: 'Liste de courses', summary: '', hydration_liters: 2.5,
+        coach_note: '', training_note: '', tips: [], substitutions: [], meals: [],
+        shopping_list: null, meal_prep: null }
+    };
+  }
+
+  const recipeShopping = recipe.shopping_list && typeof recipe.shopping_list === 'object'
+    ? recipe.shopping_list
+    : { title: 'Courses recette', categories: [{ title: recipe.name || 'Recette', items: (recipe.ingredients_list || []).map((name) => ({ name, qty: 'à prévoir' })) }] };
+  payload.plan.shopping_list = mergeNutritionShoppingList(payload.plan.shopping_list || buildNutritionShoppingList(payload.plan), recipeShopping);
+  saveNutritionPlanPayload(payload);
+  renderNutritionPlanPayload(payload, { status: 'Ingrédients ajoutés à ta liste de courses.', statusType: 'ok' });
+
+  // Open the shopping accordion so the user actually sees the list
+  const acc = document.getElementById('nutrition-shopping-acc');
+  if (acc) acc.open = true;
+  // If on a different tab, switch to nutrition
+  const nutritionTab = document.querySelector('[data-tab="nutrition"]');
+  if (nutritionTab && !document.getElementById('nutrition-shopping-acc')?.offsetParent) {
+    nutritionTab.click();
+    setTimeout(() => {
+      const a = document.getElementById('nutrition-shopping-acc');
+      if (a) { a.open = true; a.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    }, 300);
+  } else if (acc) {
+    acc.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  toast('Ingrédients ajoutés à la liste de courses ✓', 'ok');
+}
+
+function setNutritionGeneratedState({ loading = false, visible = false, status = '', statusType = '', payload = null } = {}) {
+  const shell = document.getElementById('nutrition-generated-card');
+  const loadingEl = document.getElementById('nutrition-plan-loading');
+  const grid = document.getElementById('nutrition-plan-grid');
+  const statusEl = document.getElementById('nutrition-plan-status');
+  const titleEl = document.getElementById('nutrition-plan-title');
+  const summaryEl = document.getElementById('nutrition-plan-summary');
+  const badgesEl = document.getElementById('nutrition-plan-badges');
+  const mealsEl = document.getElementById('nutrition-meals-compact');
+  const detailEl = document.getElementById('nutrition-details-body');
+  const sideEl = document.getElementById('nutrition-side-points');
+  const shopEl = document.getElementById('nutrition-shopping-body');
+  const prepEl = document.getElementById('nutrition-prep-body');
+  const snackEl = document.getElementById('nutrition-snack-body');
+  if (!shell) return;
+  shell.style.display = visible || loading ? 'grid' : 'none';
+  if (loadingEl) loadingEl.style.display = loading ? 'grid' : 'none';
+  if (grid) grid.style.display = loading ? 'none' : 'grid';
+  if (statusEl) {
+    statusEl.className = 'nutr-status';
+    statusEl.textContent = status || '';
+    if (status && statusType) statusEl.classList.add(statusType);
+  }
+  if (!payload) {
+    if (titleEl) titleEl.textContent = 'Plan nutrition du jour';
+    if (summaryEl) summaryEl.textContent = loading ? "Préparation d'un plan plus propre et plus lisible…" : 'Aucun plan généré pour le moment.';
+    if (badgesEl) badgesEl.innerHTML = '';
+    if (mealsEl) mealsEl.innerHTML = '';
+    if (detailEl) detailEl.innerHTML = '';
+    if (sideEl) sideEl.innerHTML = '';
+    if (shopEl) shopEl.innerHTML = '';
+    if (prepEl) prepEl.innerHTML = '';
+    if (snackEl) snackEl.innerHTML = '';
+  }
+}
+
+function saveNutritionPlanPayload(payload) {
+  LAST_NUTRITION_PLAN = payload;
+  try { localStorage.setItem(NUTRITION_PLAN_STORAGE_KEY, JSON.stringify(payload)); } catch {}
+}
+
+function loadStoredNutritionPlanPayload() {
+  if (LAST_NUTRITION_PLAN) return LAST_NUTRITION_PLAN;
+  try {
+    const raw = localStorage.getItem(NUTRITION_PLAN_STORAGE_KEY);
+    if (!raw) return null;
+    LAST_NUTRITION_PLAN = JSON.parse(raw);
+    return LAST_NUTRITION_PLAN;
+  } catch { return null; }
+}
+
+function renderNutritionPlanPayload(payload, options = {}) {
+  const data = normalizeNutritionPlanPayload(payload);
+  if (!data) return setNutritionGeneratedState({ visible: false });
+  const shell = document.getElementById('nutrition-generated-card');
+  const titleEl = document.getElementById('nutrition-plan-title');
+  const summaryEl = document.getElementById('nutrition-plan-summary');
+  const badgesEl = document.getElementById('nutrition-plan-badges');
+  const mealsEl = document.getElementById('nutrition-meals-compact');
+  const detailEl = document.getElementById('nutrition-details-body');
+  const sideEl = document.getElementById('nutrition-side-points');
+  const shopEl = document.getElementById('nutrition-shopping-body');
+  const prepEl = document.getElementById('nutrition-prep-body');
+  const snackEl = document.getElementById('nutrition-snack-body');
+  const statusEl = document.getElementById('nutrition-plan-status');
+  setNutritionGeneratedState({ visible: true, loading: false, status: options.status || '', statusType: options.statusType || 'ok', payload: data });
+  if (shell) shell.style.display = 'grid';
+  if (titleEl) titleEl.textContent = data.plan.title || 'Plan nutrition du jour';
+  if (summaryEl) summaryEl.textContent = data.plan.summary || data.nutrition.notes || "Plan prêt à suivre aujourd'hui.";
+  if (badgesEl) {
+    badgesEl.innerHTML = [
+      `<span class="nutr-chip">🎯 ${escapeHtml(nutritionGoalLabel(data.goal))}</span>`,
+      `<span class="nutr-chip">⚡ ${escapeHtml(nutritionDayLabel(data.day_type))}</span>`,
+      `<span class="nutr-chip">🔥 ${Math.round(data.nutrition.calories || 0)} kcal</span>`,
+      `<span class="nutr-chip">💧 ${(Number(data.plan.hydration_liters || 0) || 0).toFixed(1)} L</span>`
+    ].join('');
+  }
+  const meals = Array.isArray(data.plan.meals) ? data.plan.meals : [];
+  if (mealsEl) {
+    mealsEl.innerHTML = meals.map((meal, idx) => `
+      <div class="nutr-meal-item">
+        <div class="nutr-meal-top">
+          <div>
+            <div class="nutr-meal-name">${escapeHtml(meal.name || `Repas ${idx + 1}`)}</div>
+            <div class="nutr-meal-meta">${escapeHtml(meal.time || '')} · ${Math.round(Number(meal.calories || 0))} kcal · ${Math.round(Number(meal.protein || 0))} g prot</div>
+          </div>
+          ${meal.focus ? `<span class="nutr-chip">${escapeHtml(meal.focus)}</span>` : ''}
+        </div>
+        <div class="nutr-meal-items">${(meal.items || []).slice(0,4).map((item) => `<span class="nutr-item-pill">${escapeHtml(item)}</span>`).join('')}</div>
+      </div>`).join('');
+  }
+  if (detailEl) {
+    detailEl.innerHTML = meals.map((meal, idx) => `
+      <div class="nutr-meal-item" style="margin-top:10px">
+        <div class="nutr-meal-top">
+          <div>
+            <div class="nutr-meal-name">${escapeHtml(meal.name || `Repas ${idx + 1}`)}</div>
+            <div class="nutr-meal-meta">${escapeHtml(meal.time || '')} · ${Math.round(Number(meal.calories || 0))} kcal · ${Math.round(Number(meal.protein || 0))} g protéines</div>
+          </div>
+        </div>
+        <div class="nutr-side-list">${(meal.items || []).map((item) => `<div class="nutr-side-point">${escapeHtml(item)}</div>`).join('')}</div>
+        ${meal.coach_tip ? `<div class="nutr-side-point" style="margin-top:8px">${escapeHtml(meal.coach_tip)}</div>` : ''}
+        ${(meal.swap_options || []).length ? `<div class="nutr-meal-items" style="margin-top:10px">${meal.swap_options.map((swap) => `<span class="nutr-item-pill">${escapeHtml(swap)}</span>`).join('')}</div>` : ''}
+      </div>`).join('');
+  }
+  if (sideEl) {
+    const points = [];
+    if (data.plan.coach_note) points.push(data.plan.coach_note);
+    if (data.plan.training_note) points.push(data.plan.training_note);
+    (data.plan.tips || []).slice(0, 3).forEach((tip) => points.push(tip));
+    if (!points.length && data.nutrition.notes) points.push(data.nutrition.notes);
+    sideEl.innerHTML = points.map((p) => `<div class="nutr-side-point">${escapeHtml(p)}</div>`).join('');
+  }
+  if (prepEl) {
+    const prep = data.plan.meal_prep || null;
+    prepEl.innerHTML = prep ? `
+      <div class="nutr-shopping-group">
+        <div class="nutr-shopping-title">${escapeHtml(prep.title || 'Meal prep express')}</div>
+        ${(prep.batch_cook || []).map((x) => `<div class="nutr-side-point">🍱 ${escapeHtml(x)}</div>`).join('')}
+      </div>
+      ${(prep.packing_tips || []).length ? `<div class="nutr-shopping-group"><div class="nutr-shopping-title">Organisation</div>${prep.packing_tips.map((x) => `<div class="nutr-side-point">${escapeHtml(x)}</div>`).join('')}</div>` : ''}
+      ${(prep.containers || []).length ? `<div class="nutr-shopping-group"><div class="nutr-shopping-title">À préparer</div><div class="nutr-meal-items">${prep.containers.map((x) => `<span class="nutr-item-pill">${escapeHtml(x)}</span>`).join('')}</div></div>` : ''}
+    ` : '<div class="nutr-side-point">Prépare 1 protéine, 1 glucide simple et une collation pratique pour gagner du temps.</div>';
+  }
+  if (snackEl) {
+    const rescueItems = buildSnackRescueItems(data.plan, data.goal, data.day_type);
+    snackEl.innerHTML = rescueItems.map((item) => `<div class="nutr-side-point">⚡ ${escapeHtml(item)}</div>`).join('') + `<div class="nutr-side-point">🕒 Garde 1 snack de secours dans ton sac ou ton bureau pour éviter le craquage improvisé.</div>`;
+  }
+  const shopping = buildNutritionShoppingList(data.plan);
+  if (shopEl) {
+    shopEl.innerHTML = (shopping.categories || []).map((group) => `
+      <div class="nutr-shopping-group">
+        <div class="nutr-shopping-title">${escapeHtml(group.title || 'Courses')}</div>
+        ${(group.items || []).map((item) => `
+          <div class="nutr-shopping-item" data-item="${escapeHtml(item.name || '')}">
+            <label><input type="checkbox" data-shopping="${escapeHtml(item.name || '')}"/> <span>${escapeHtml(item.name || '')}</span></label>
+            <small>${escapeHtml(item.qty || '')}</small>
+          </div>`).join('')}
+      </div>`).join('') + ((shopping.prep_tips || []).length ? `<div class="nutr-shopping-group"><div class="nutr-shopping-title">Prep</div>${shopping.prep_tips.map((tip) => `<div class="nutr-side-point">${escapeHtml(tip)}</div>`).join('')}</div>` : '') + ((shopping.quick_swaps || []).length ? `<div class="nutr-shopping-group"><div class="nutr-shopping-title">Swaps</div><div class="nutr-meal-items">${shopping.quick_swaps.map((swap) => `<span class="nutr-item-pill">${escapeHtml(swap)}</span>`).join('')}</div></div>` : '');
+    _shoppingCheckedInit(shopEl);
+  }
+  saveNutritionPlanPayload(data);
+}
+
+function _shoppingCheckedInit(container) {
+  const STORE_KEY = 'shopping_checked';
+  let checked = {};
+  try { checked = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
+  container.querySelectorAll('input[type="checkbox"][data-shopping]').forEach(cb => {
+    const key = cb.dataset.shopping;
+    if (checked[key]) {
+      cb.checked = true;
+      const row = cb.closest('.nutr-shopping-item');
+      if (row) row.classList.add('checked-item');
+    }
+    cb.addEventListener('change', () => {
+      const row = cb.closest('.nutr-shopping-item');
+      if (cb.checked) {
+        checked[key] = true;
+        if (row) row.classList.add('checked-item');
+      } else {
+        delete checked[key];
+        if (row) row.classList.remove('checked-item');
+      }
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(checked)); } catch {}
+    });
+  });
+}
+
+function buildSnackRescueItems(plan, goal, dayType) {
+  const labels = [];
+  if (goal === 'prise_de_masse') {
+    labels.push('Skyr + banane + granola');
+    labels.push('Wrap dinde / fromage frais');
+    labels.push("Shake whey + flocons d'avoine");
+  } else if (goal === 'perte_de_poids') {
+    labels.push('Skyr + fruits rouges');
+    labels.push('Pomme + fromage blanc');
+    labels.push('Oeufs durs + crudités');
+  } else {
+    labels.push('Yaourt grec + fruit');
+    labels.push('Toast complet + œufs');
+    labels.push('Shake protéiné simple');
+  }
+  if (dayType === 'training') labels.push('Banane + whey juste après la séance');
+  return labels.slice(0, 4);
+}
+
+function copyNutritionShoppingList() {
+  const payload = loadStoredNutritionPlanPayload();
+  if (!payload?.plan) return toast('Aucune liste de courses à copier.', 'warn');
+  const shopping = buildNutritionShoppingList(payload.plan);
+  const lines = [];
+  (shopping.categories || []).forEach((group) => {
+    lines.push(group.title || 'Courses');
+    (group.items || []).forEach((item) => {
+      lines.push(`- ${item.name || ''}${item.qty ? ` — ${item.qty}` : ''}`);
+    });
+    lines.push('');
+  });
+  if ((shopping.prep_tips || []).length) {
+    lines.push('Prep');
+    shopping.prep_tips.forEach((tip) => lines.push(`- ${tip}`));
+    lines.push('');
+  }
+  if ((shopping.quick_swaps || []).length) {
+    lines.push('Swaps');
+    shopping.quick_swaps.forEach((tip) => lines.push(`- ${tip}`));
+  }
+  const text = lines.join('\n').trim();
+  if (!text) return toast('Liste vide.', 'warn');
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(() => toast('Liste copiée ✓', 'ok')).catch(() => toast('Copie impossible', 'err'));
+  } else {
+    toast('Copie non disponible sur cet appareil.', 'warn');
+  }
+}
+
+function toggleNutritionChecklist(checked) {
+  document.querySelectorAll('#nutrition-shopping-body input[type="checkbox"]').forEach((el) => {
+    el.checked = !!checked;
+    const row = el.closest('.nutr-shopping-item');
+    if (row) row.classList.toggle('checked-item', !!checked);
+  });
+  if (!checked) {
+    try { localStorage.removeItem('shopping_checked'); } catch {}
+  }
+}
+window.copyNutritionShoppingList = copyNutritionShoppingList;
+window.toggleNutritionChecklist = toggleNutritionChecklist;
+
+function loadNutritionPlanFromStorage() {
+  const payload = loadStoredNutritionPlanPayload();
+  if (payload) renderNutritionPlanPayload(payload, { status: 'Dernier plan enregistré', statusType: 'ok' });
+  else setNutritionGeneratedState({ visible: false });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GÉNÉRATION PLAN NUTRITION IA
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function generateNutrition() {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+
+  const goalEl     = document.getElementById("nutr-gen-goal");
+  const actEl      = document.getElementById("nutr-gen-activity");
+  const btn        = document.getElementById("btn-gen-nutrition");
+  const errEl      = document.getElementById("nutrition-gen-err");
+  const reqSeq     = ++NUTRITION_REQUEST_SEQ;
+
+  if (errEl) { errEl.textContent = ""; errEl.style.display = "none"; }
+  setNutritionGeneratedState({ loading: true, visible: true, status: '', statusType: '' });
+
+  await withButton(btn, "Génération en cours…", async () => {
+    const token = await getToken();
+    if (!token) throw new Error("Session expirée. Reconnectez-vous.");
+
+    const { response: j } = await fetchJsonWithTimeout("/api/generate-nutrition", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        goal:           goalEl?.value || "maintenance",
+        activity_level: actEl?.value  || "moderate"
+      })
+    }, 14000, normalizeNutritionError);
+
+    if (reqSeq !== NUTRITION_REQUEST_SEQ) return;
+
+    renderNutritionPlanPayload(j, {
+      status: j.fallback ? "Plan nutrition prêt — basé sur ton profil." : "Nouveau plan généré pour aujourd'hui.",
+      statusType: j.fallback ? "ok" : "ok"
+    });
+    await loadNutritionTargets();
+    incrementLocalMetric('fitai_nutrition_plans', 1);
+    incrementWeeklyQuestMetric("nutrition_week", 1);
+    toast("Plan nutrition généré ✓", "ok");
+  }).catch((e) => {
+    if (reqSeq !== NUTRITION_REQUEST_SEQ) return;
+    const msg = e.message || "Erreur génération";
+    setNutritionGeneratedState({ visible: false, loading: false });
+    if (errEl) { errEl.textContent = `Erreur: ${msg}`; errEl.style.display = "block"; }
+    toast(`Erreur: ${msg}`, "err");
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RECETTE IA (Nutrition)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function generateRecipe() {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+
+  const ingredientsEl = document.getElementById("recipe-ingredients");
+  const ingredients = ingredientsEl ? ingredientsEl.value.trim() : "";
+  if (!ingredients) return toast("Listez vos ingrédients disponibles.", "err");
+
+  const goal = document.getElementById("recipe-goal")?.value || "equilibre";
+  const targetKcal = parseInt(document.getElementById("recipe-kcal")?.value || "500") || 500;
+  const servings = parseInt(document.getElementById("recipe-servings")?.value || "2") || 2;
+  const recipeStyle = document.getElementById("recipe-style")?.value || "fast";
+  const resultEl = document.getElementById("recipe-result");
+  const errEl = document.getElementById("recipe-err");
+  if (errEl) errEl.style.display = "none";
+
+  const goalLabels = {
+    equilibre: "repas équilibré",
+    hyperproteine: "repas hyperprotéiné (max de protéines)",
+    low_carb: "repas low carb (très peu de glucides)",
+    prise_de_masse: "repas prise de masse (calorique et protéiné)",
+    seche: "repas de sèche (peu calorique, riche en protéines)"
+  };
+
+  const btn = document.getElementById("btn-recipe");
+  // Clear previous result immediately so there's no ambiguous stale state during generation
+  if (resultEl) {
+    resultEl.style.display = "block";
+    resultEl.innerHTML = `<div class="recipe-v2"><div class="recipe-v2-tag">🍳 Génération</div><div class="recipe-v2-name">Je te prépare une version healthy et protéinée…</div><div class="recipe-v2-tip">Objectif: ${escapeHtml(goalLabels[goal] || 'repas équilibré')} · ${servings} portion(s)</div></div>`;
+  }
+  if (errEl) errEl.style.display = "none";
+  await withButton(btn, "Génération…", async () => {
+    const token = await getToken();
+    if (!token) throw new Error("Session expirée. Reconnectez-vous.");
+
+    const { response: j } = await fetchJsonWithTimeout("/api/generate-recipe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ ingredients, goal, targetKcal, servings, recipeStyle })
+    }, 28000);
+
+    // Normalize response: supports new { recipes: [...] } and legacy { recipe, data }
+    let recipes = [];
+    if (Array.isArray(j.recipes) && j.recipes.length) recipes = j.recipes;
+    else if (j.recipe && typeof j.recipe === "object" && j.recipe.name) recipes = [j.recipe];
+    else if (j.data && typeof j.data === "object" && j.data.name) recipes = [j.data];
+    else if (j.type === "recipe" && j.data) recipes = [j.data];
+
+    checkAndAwardAchievements({ recipes: 1 }).catch(() => {});
+
+    if (!recipes.length) {
+      if (resultEl) {
+        resultEl.style.display = "block";
+        resultEl.innerHTML = `<div class="card" style="border-left:3px solid var(--green)"><div style="font-weight:700;margin-bottom:8px">Recette générée</div><div style="font-size:.84rem;line-height:1.6;white-space:pre-wrap">${escapeHtml(JSON.stringify(j, null, 2).slice(0, 1000))}</div></div>`;
+      }
+      return;
+    }
+
+    const renderRecipeCard = (recipe, idx) => {
+      const name = recipe.name || "Recette";
+      const foodArt = recipeFoodArt(name);
+      const stepsHtml = Array.isArray(recipe.steps)
+        ? recipe.steps.map((s, i) => `<li class="recipe-v2-step"><div class="recipe-v2-step-n">${i + 1}</div><span>${escapeHtml(s)}</span></li>`).join("")
+        : "";
+      const ingredientsHtml = Array.isArray(recipe.ingredients_list) && recipe.ingredients_list.length
+        ? `<div class="recipe-v2-block"><div class="recipe-v2-block-title">Ingrédients</div><div class="recipe-v2-ing-list">${recipe.ingredients_list.map((it) => `<span class="recipe-v2-ing">${escapeHtml(it)}</span>`).join('')}</div></div>`
+        : '';
+      const twistHtml = recipe.healthy_twist ? `<div class="recipe-v2-tip">✨ ${escapeHtml(recipe.healthy_twist)}</div>` : '';
+      const coachNoteHtml = recipe.coach_note ? `<div class="recipe-v2-coach">🧠 ${escapeHtml(recipe.coach_note)}</div>` : '';
+      return `
+        <div class="recipe-v2">
+          <div class="recipe-v2-art">${foodArt}</div>
+          <div class="recipe-v2-tag">${recipeRequestBadge(ingredients)}${recipe.prep_time ? ` · ⏱ ${escapeHtml(recipe.prep_time)}` : ""}</div>
+          <div class="recipe-v2-name">${escapeHtml(name)}</div>
+          <div class="recipe-pills">
+            ${recipe.calories ? `<span class="macro-pill mp-kcal">🔥 ${recipe.calories} kcal</span>` : ""}
+            ${recipe.protein ? `<span class="macro-pill mp-prot">💪 ${recipe.protein}g prot.</span>` : ""}
+            ${recipe.carbs ? `<span class="macro-pill mp-carb">🌾 ${recipe.carbs}g gluc.</span>` : ""}
+            ${recipe.fat ? `<span class="macro-pill mp-fat">🥑 ${recipe.fat}g lip.</span>` : ""}
+          </div>
+          ${twistHtml}
+          ${coachNoteHtml}
+          ${ingredientsHtml}
+          ${stepsHtml ? `<ul class="recipe-v2-steps">${stepsHtml}</ul>` : ""}
+          ${recipe.batch_prep ? `<div class="recipe-v2-tip">📦 ${escapeHtml(recipe.batch_prep)}</div>` : ""}
+          ${recipe.tips ? `<div class="recipe-v2-tip">💡 ${escapeHtml(recipe.tips)}</div>` : ""}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+            <button class="btn btn-p btn-sm btn-full" onclick="addRecipeAsMeal(${idx})">➕ Ajouter comme repas</button>
+            <button class="btn btn-g btn-sm btn-full" onclick="addRecipeToNutritionShoppingList(${idx})">🛒 Ajouter aux courses</button>
+          </div>
+        </div>`;
+    };
+
+    if (resultEl) {
+      resultEl.style.display = "block";
+      if (recipes.length > 1) {
+        // Tab carousel: show one recipe at a time
+        const tabsHtml = recipes.map((r, i) => {
+          const food = recipeFoodArt(r.name || "");
+          return `<button class="recipe-tab-btn${i === 0 ? " active" : ""}" onclick="switchRecipeTab(${i})" id="recipe-tab-btn-${i}" title="${escapeHtml(r.name || "")}">
+            <span class="recipe-tab-art">${food}</span>
+            <span class="recipe-tab-num">${i + 1}</span>
+          </button>`;
+        }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
+        const panelsHtml = recipes.map((r, i) =>
+          `<div class="recipe-tab-panel${i === 0 ? " active" : ""}" id="recipe-panel-${i}">${renderRecipeCard(r, i)}</div>`
+        ).join("");
+        resultEl.innerHTML = `
+          <div class="recipe-tabs-header">
+            <div class="recipe-tabs-count">✨ ${recipes.length} recettes générées</div>
+            <div class="recipe-tabs-strip">${tabsHtml}</div>
+          </div>
+          <div class="recipe-tabs-body">${panelsHtml}</div>`;
+      } else {
+        resultEl.innerHTML = renderRecipeCard(recipes[0], 0);
+      }
+    }
+
+    // Store recipes for "add as meal" / "add to shopping list"
+    window._lastRecipes = recipes;
+    window._lastRecipe = recipes[0];
+    // Save all to DB history (fire-and-forget)
+    recipes.forEach(r => saveRecipeToHistory(r).catch(() => {}));
+  }).catch((e) => {
+    if (errEl) {
+      const msg = (e.name === "AbortError" || /abort/i.test(e.message))
+        ? "La génération a pris trop longtemps. Réessaie dans quelques secondes."
+        : `Erreur: ${e.message}`;
+      errEl.textContent = msg;
+      errEl.style.display = "block";
+    }
+  });
+}
+
+async function saveRecipeToHistory(recipe) {
+  if (!U || !recipe?.name) return;
+  try {
+    await SB.from("saved_recipes").upsert({
+      user_id:   U.id,
+      name:      recipe.name,
+      calories:  recipe.calories  || null,
+      protein:   recipe.protein   || null,
+      carbs:     recipe.carbs     || null,
+      fat:       recipe.fat       || null,
+      prep_time: recipe.prep_time || null,
+      steps:            Array.isArray(recipe.steps) ? recipe.steps : [],
+      ingredients_list: Array.isArray(recipe.ingredients_list) ? recipe.ingredients_list : [],
+      tips:             recipe.tips      || null,
+      saved_at:  new Date().toISOString()
+    }, { onConflict: "user_id,name" });
+    incrementLocalMetric('fitai_recipes_saved', 1);
+    incrementWeeklyQuestMetric("recipes_week", 1);
+    await loadRecipeHistory();
+  } catch (err) { console.warn("[recipe-history] save failed:", err); }
+}
+
+async function loadRecipeHistory() {
+  if (!U) return;
+  const el = document.getElementById("recipe-history-list");
+  if (!el) return;
+  try {
+    const { data, error } = await SB.from("saved_recipes")
+      .select("id,name,calories,protein,carbs,fat,prep_time,steps,ingredients_list,tips,saved_at")
+      .eq("user_id", U.id)
+      .order("saved_at", { ascending: false })
+      .limit(10);
+    if (error) throw error;
+    window._recipeHistoryCache = data || [];
+    renderRecipeHistory(data || []);
+  } catch (err) { console.warn("[recipe-history] load failed:", err); }
+}
+
+function renderRecipeHistory(items) {
+  const el = document.getElementById("recipe-history-list");
+  if (!el) return;
+  if (!items.length) {
+    el.innerHTML = '<div class="empty" style="font-size:.82rem;padding:8px 0">Aucune recette générée pour l\'instant.</div>';
+    return;
+  }
+  el.innerHTML = items.map((r, i) => `
+    <div class="recipe-hist-item" style="flex-direction:column;align-items:stretch;gap:0;padding-bottom:0">
+      <div style="display:flex;align-items:center;gap:10px;padding-bottom:8px">
+        <div class="recipe-hist-icon">${recipeFoodArt(r.name)}</div>
+        <div style="flex:1;min-width:0">
+          <div class="recipe-hist-name">${escapeHtml(r.name)}</div>
+          <div class="recipe-hist-macros">
+            ${r.calories ? `🔥 ${r.calories} kcal` : ""}
+            ${r.protein  ? ` · 💪 ${r.protein}g prot.` : ""}
+            ${r.prep_time ? ` · ⏱ ${escapeHtml(r.prep_time)}` : ""}
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding-top:2px;padding-bottom:10px">
+        <button class="btn btn-g btn-sm" onclick="reloadHistoryRecipe(${i})">📖 Voir</button>
+        <button class="btn btn-g btn-sm" onclick="addHistoryRecipeToShopping(${i})">🛒 Courses</button>
+        <button class="btn btn-g btn-sm" onclick="shareHistoryRecipe(${i})">🌍 Partager</button>
+      </div>
+    </div>`).join("");
+}
+
+function reloadHistoryRecipe(idx) {
+  const r = window._recipeHistoryCache?.[idx];
+  if (!r) return toast("Recette introuvable.", "err");
+  // Build a minimal recipe object compatible with the coach card renderer
+  const recipe = {
+    name: r.name,
+    calories: r.calories,
+    protein: r.protein,
+    carbs: r.carbs,
+    fat: r.fat,
+    prep_time: r.prep_time,
+    steps: Array.isArray(r.steps) ? r.steps : [],
+    ingredients_list: Array.isArray(r.ingredients_list) ? r.ingredients_list : [],
+    tips: r.tips || ""
+  };
+  window._lastRecipe = recipe;
+  window._lastRecipes = [recipe];
+  gotoTab("coach");
+  const now = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  let html = `<div class="coach-card-head"><span class="coach-card-kicker">Recette sauvegardée</span><strong>${escapeHtml(recipe.name)}</strong></div>`;
+  const pills = [
+    recipe.calories ? `🔥 ${recipe.calories} kcal` : "",
+    recipe.protein  ? `💪 ${recipe.protein}g prot.` : "",
+    recipe.prep_time ? `⏱ ${recipe.prep_time}` : ""
+  ].filter(Boolean);
+  if (pills.length) html += `<div class="coach-mini-pills">${pills.map(p => `<span class="coach-mini-pill">${escapeHtml(p)}</span>`).join("")}</div>`;
+  if (recipe.ingredients_list.length) {
+    html += `<div style="margin:10px 0 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Ingrédients</div>`;
+    html += `<div class="coach-mini-pills" style="flex-wrap:wrap">`;
+    recipe.ingredients_list.forEach(ing => { html += `<span class="coach-mini-pill">${escapeHtml(ing)}</span>`; });
+    html += `</div>`;
+  }
+  if (recipe.steps.length) {
+    html += `<div style="margin:10px 0 4px;font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Préparation</div>`;
+    html += '<ol class="coach-list">';
+    recipe.steps.forEach(step => { html += `<li>${escapeHtml(step)}</li>`; });
+    html += '</ol>';
+  }
+  if (recipe.tips) html += `<div class="coach-inline-tip">💡 ${escapeHtml(recipe.tips)}</div>`;
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+    <button class="btn btn-g btn-sm btn-full" onclick="addRecipeToNutritionShoppingList(0)">🛒 Ajouter aux courses</button>
+    <button class="btn btn-p btn-sm btn-full" onclick="addRecipeAsMeal(0)">➕ Ajouter comme repas</button>
+  </div>`;
+  COACH_HISTORY.push({ role: "ai", content: html, time: now });
+  saveCoachHistory();
+  renderCoachChat();
+}
+
+function addHistoryRecipeToShopping(idx) {
+  const r = window._recipeHistoryCache?.[idx];
+  if (!r) return toast("Recette introuvable.", "err");
+  const recipe = { name: r.name, calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat, prep_time: r.prep_time, steps: Array.isArray(r.steps) ? r.steps : [], ingredients_list: Array.isArray(r.ingredients_list) ? r.ingredients_list : [], tips: r.tips || "" };
+  window._lastRecipe = recipe;
+  window._lastRecipes = [recipe];
+  addRecipeToNutritionShoppingList(0);
+}
+
+async function shareHistoryRecipe(idx) {
+  if (!U) return toast("Session expirée. Reconnectez-vous.", "err");
+  const r = window._recipeHistoryCache?.[idx];
+  if (!r) return toast("Recette introuvable.", "err");
+  try {
+    const ingredients = Array.isArray(r.ingredients_list) && r.ingredients_list.length
+      ? r.ingredients_list.join(", ")
+      : "";
+    const recipePayload = {
+      _t: "recipe",
+      name: r.name,
+      desc: r.tips || "",
+      ingredients,
+      servings: 2,
+      steps: Array.isArray(r.steps) ? r.steps.join(" | ") : null,
+      preptime: null,
+      n: { score: null, kcal: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat }
+    };
+    const content = "__r__" + JSON.stringify(recipePayload);
+    const { error } = await SB.from("community_posts").insert({
+      user_id: U.id, content, visibility: "public",
+      image_url: null, created_at: new Date().toISOString(), kudos: 0
+    });
+    if (error) throw error;
+    toast(`"${r.name}" partagée dans la communauté 🎉`, "ok");
+  } catch (e) {
+    toast(`Erreur: ${e.message}`, "err");
+  }
+}
+window.shareHistoryRecipe = shareHistoryRecipe;
+
+function recipeFoodArt(name) {
+  const n = (name || "").toLowerCase();
+  if (/poulet|chicken|dinde|turkey/.test(n)) return "🍗";
+  if (/boeuf|steak|beef|viande/.test(n)) return "🥩";
+  if (/saumon|thon|poisson|fish|crevette|shrimp/.test(n)) return "🐟";
+  if (/oeuf|egg|omelette/.test(n)) return "🍳";
+  if (/pâtes|pasta|spaghetti|tagliatelle/.test(n)) return "🍝";
+  if (/riz|bowl|buddha/.test(n)) return "🥣";
+  if (/salade|salad/.test(n)) return "🥗";
+  if (/burger|sandwich/.test(n)) return "🍔";
+  if (/pizza/.test(n)) return "🍕";
+  if (/soupe|soup|bouillon/.test(n)) return "🍲";
+  if (/wrap|burrito|tacos/.test(n)) return "🌯";
+  if (/smoothie|shake|protein/.test(n)) return "🥤";
+  return "🍽️";
+}
+
+function recipeRequestBadge(text) {
+  const t = String(text || '').toLowerCase();
+  if (/(cr[eê]pes?|pancakes?)/.test(t))                        return '🥞 Version healthy';
+  if (/(cookies?|brownie|muffins?|cake|dessert|gateau)/.test(t)) return '🍪 Version fit';
+  if (/(burger|sandwich|bagel)/.test(t))                        return '🍔 Twist clean';
+  if (/(pizza)/.test(t))                                        return '🍕 Healthy';
+  if (/(tacos?|wrap|burrito|quesadilla)/.test(t))              return '🌯 Fit & frais';
+  if (/(bowl|buddha|poke)/.test(t))                            return '🥣 Bowl fit';
+  if (/(omelette|oeuf|frittata)/.test(t))                      return '🍳 Protéiné';
+  if (/(salade|salad)/.test(t))                                return '🥗 Légère';
+  if (/(p[aâ]tes?|pasta|spaghetti|rigatoni|tagliatelle)/.test(t)) return '🍝 Fit';
+  if (/(risotto)/.test(t))                                     return '🍚 Version légère';
+  if (/(wok|poele|saute|stir.?fry)/.test(t))                  return '🥢 Express';
+  if (/(smoothie|shake|blend)/.test(t))                        return '🥤 Boost';
+  if (/(soupe|veloute|bouillon|potage)/.test(t))               return '🍲 Récup';
+  if (/(porridge|bouillie|avoine|overnight)/.test(t))          return '🥛 Énergie';
+  if (/(galette|tortilla|blinis?)/.test(t))                    return '🫓 Léger';
+  if (/(tartine|toast|bruschetta)/.test(t))                    return '🥑 Simple';
+  if (/(quiche|tarte|gratin)/.test(t))                         return '🥧 Twist light';
+  if (/(meatball|boulette|kefta)/.test(t))                     return '🧆 Protéiné';
+  if (/(poulet|chicken|dinde|turkey)/.test(t))                 return '🍗 Volaille fit';
+  if (/(saumon|thon|poisson|fish)/.test(t))                    return '🐟 Mer & santé';
+  if (/(post.?workout|après.*sport|recovery)/.test(t))         return '⚡ Post-workout';
+  return '🍽️ Recette coach';
+}
+
+function setRecipeIdea(value) {
+  const input = document.getElementById('recipe-ingredients');
+  if (!input) return;
+  input.value = value;
+  input.focus();
+}
+window.setRecipeIdea = setRecipeIdea;
+
+function switchRecipeTab(idx) {
+  document.querySelectorAll(".recipe-tab-btn").forEach((b, i) => b.classList.toggle("active", i === idx));
+  document.querySelectorAll(".recipe-tab-panel").forEach((p, i) => p.classList.toggle("active", i === idx));
+}
+window.switchRecipeTab = switchRecipeTab;
+
+function addRecipeAsMeal(idx = 0) {
+  const r = (window._lastRecipes && window._lastRecipes[idx]) || window._lastRecipe;
+  if (!r) return toast("Aucune recette à ajouter.", "err");
+  const nameEl = document.getElementById("n-name");
+  const kcalEl = document.getElementById("n-kcal");
+  const protEl = document.getElementById("n-prot");
+  const carbEl = document.getElementById("n-carb");
+  const fatEl = document.getElementById("n-fat");
+  if (nameEl) nameEl.value = r.name || "Recette IA";
+  if (kcalEl) kcalEl.value = r.calories || "";
+  if (protEl) protEl.value = r.protein || "";
+  if (carbEl) carbEl.value = r.carbs || "";
+  if (fatEl) fatEl.value = r.fat || "";
+  toast("Recette ajoutée au formulaire. Cliquez sur 'Ajouter ce repas'.", "ok");
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PLANNING SEMAINE
+// ══════════════════════════════════════════════════════════════════════════════
+
+const DAY_NAMES = ["L", "M", "M", "J", "V", "S", "D"];
+const INTENSITY_ICONS = { low: "🟢", easy: "🟢", medium: "🟡", high: "🔴", hard: "🔴", repos: "😴" };
+const WORKOUT_ICONS = {
+  push: "🏋️", pull: "💪", legs: "🦵", upper: "🏋️", lower: "🦵", full: "🔥",
+  cardio: "🏃", force: "🏋️", hiit: "⚡", yoga: "🧘", natation: "🏊",
+  vélo: "🚴", repos: "😴", récupération: "🛁", mobilité: "🤸", sport: "⚽"
+};
+
+function getWeekStart() {
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun
+  const diff = (day === 0) ? -6 : 1 - day; // go back to Monday
+  const mon = new Date(d);
+  mon.setDate(d.getDate() + diff);
+  return mon.toISOString().slice(0, 10);
+}
+
+function getTodayDayOfWeek() {
+  const d = new Date().getDay();
+  return d === 0 ? 7 : d; // 1=Mon … 7=Sun
+}
+
+function workoutIcon(type) {
+  const t = (type || "").toLowerCase();
+  return Object.entries(WORKOUT_ICONS).find(([k]) => t.includes(k))?.[1] || "💪";
+}
+
+async function generateWeeklyPlan() {
+  if (!U) return toast("Connectez-vous d'abord.", "err");
+  const btn = document.getElementById("btn-gen-plan");
+  if (btn) { btn.disabled = true; btn.textContent = "Génération…"; }
+  try {
+    const token = await getToken();
+    const storedSessions = parseInt(localStorage.getItem("fitai_goal_sessions") || "", 10);
+    const payload = {
+      user_id: U.id,
+      sessions_per_week: Number.isFinite(storedSessions) ? storedSessions : undefined,
+      cycle_length_weeks: _sanitizeProgDuration(_progDuration || _loadProgDuration()),
+      preferred_week_number: Math.max(1, parseInt(_progWeek || 1, 10) || 1)
+    };
+    const r = await fetch("/api/generate-plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.error || `Erreur (HTTP ${r.status})`);
+    _saveLatestPlanMeta(j);
+    const phaseLabel = j.phase ? ` — Phase ${j.phase}` : "";
+    const sourceLabel = j.source === "evidence_engine+ai_polish" ? " · plan personnalisé premium" : (j.source === "evidence_engine" ? " · plan personnalisé" : "");
+    toast(`Programme semaine ${j.week_number || "1"}/${j.cycle_length_weeks || _progDuration || 8} généré${phaseLabel}${sourceLabel} ✓`, "ok");
+    incrementWeeklyQuestMetric("plan_week", 1);
+    renderWeeklyPlan(j.plan || [], j.week_number, j.phase);
+  } catch (e) {
+    toast(`Erreur planning : ${e.message}`, "err");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Générer"; }
+  }
+}
+
+async function loadWeeklyPlan() {
+  if (!U) return;
+  try {
+    const weekStart = getWeekStart();
+    const { data, error } = await SB.from("training_schedule")
+      .select("day_of_week,workout_type,intensity,notes")
+      .eq("user_id", U.id)
+      .eq("week_start_date", weekStart)
+      .order("day_of_week", { ascending: true });
+    if (error) { console.warn("[plan] load error:", error.message); }
+    if (data && data.length) {
+      renderWeeklyPlan(data);
+    } else {
+      _showOfflineWeeklyPlan();
+    }
+  } catch (e) {
+    console.warn("[plan] load exception:", e);
+    _showOfflineWeeklyPlan();
+  }
+}
+
+function _showOfflineWeeklyPlan() {
+  // Build synthetic weekly plan from the 8-week offline programme
+  const prog = _loadStoredProg();
+  const goal = prog?.goal || "remise_en_forme";
+  const weekly = PROG_WEEKLY[goal] || PROG_WEEKLY.remise_en_forme;
+  const typeToIntensity = {
+    push:"medium", pull:"medium", legs:"hard", fullbody:"medium",
+    hiit:"hard", cardio:"medium", core:"medium", mobilite:"easy", rest:"easy"
+  };
+  const plan = weekly.map(item => ({
+    day_of_week: item.d,
+    workout_type: item.label,
+    intensity: typeToIntensity[item.type] || "medium",
+    notes: ""
+  }));
+  renderWeeklyPlan(plan);
+}
+
+function renderWeeklyPlan(plan, weekNum, phase) {
+  const grid     = document.getElementById("plan-day-grid");
+  const emptyEl  = document.getElementById("plan-empty");
+  const labelEl  = document.getElementById("plan-week-label");
+  if (!grid) return;
+
+  // Remove existing focus card
+  const prevFocus = document.getElementById("plan-today-focus");
+  if (prevFocus) prevFocus.remove();
+
+  if (!plan.length) {
+    grid.innerHTML = "";
+    if (emptyEl) emptyEl.style.display = "block";
+    if (labelEl) labelEl.textContent = "";
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = "none";
+
+  const weekStart = getWeekStart();
+  if (labelEl) {
+    const d = new Date(weekStart + "T00:00:00");
+    const end = new Date(d); end.setDate(d.getDate() + 6);
+    const fmt = (dt) => dt.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+    let label = `du ${fmt(d)} au ${fmt(end)}`;
+    if (phase) label += ` · ${phase}`;
+    labelEl.textContent = label;
+  }
+  const badgeEl = document.getElementById("plan-week-badge");
+  if (badgeEl) badgeEl.textContent = `Semaine ${weekNum || 1}/${(weekNum && _loadLatestPlanMeta()?.cycle_length_weeks) || _progDuration || 8}`;
+
+  const today = getTodayDayOfWeek();
+  const byDay = Object.fromEntries(plan.map(p => [p.day_of_week, p]));
+  const DAY_FULL = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const INTENSITY_CLASS = { low: "intensity-low", easy: "intensity-low", medium: "intensity-medium", hard: "intensity-high", high: "intensity-high" };
+
+  grid.innerHTML = Array.from({ length: 7 }, (_, i) => {
+    const day    = i + 1;
+    const item   = byDay[day];
+    const isToday = day === today;
+    const isRest  = !item || /repos|rest/i.test(item.workout_type || "");
+    const ico     = item ? workoutIcon(item.workout_type) : "😴";
+    const intKey  = (item?.intensity || "").toLowerCase();
+    const intCls  = !isRest ? (INTENSITY_CLASS[intKey] || "") : "";
+    const label   = item ? escapeHtml(item.workout_type.slice(0, 9)) : "Repos";
+    return `<div class="plan-day${isToday ? " today" : ""}${isRest ? " rest" : ""}${intCls ? " " + intCls : ""}" title="${escapeHtml(item?.notes || "")}">
+      <div class="plan-day-lbl">${DAY_FULL[i]}</div>
+      <div class="plan-day-ico">${ico}</div>
+      <div class="plan-day-txt">${label}</div>
+      <div class="plan-day-dot"></div>
+    </div>`;
+  }).join("");
+
+  // Today's focus card
+  const gridContainer = document.getElementById("weekly-plan-grid");
+  if (gridContainer) {
+    const todayItem = byDay[today];
+    const focusEl = document.createElement("div");
+    focusEl.id = "plan-today-focus";
+    const isRestToday = !todayItem || /repos|rest/i.test(todayItem?.workout_type || "");
+    if (!isRestToday && todayItem) {
+      const ico = workoutIcon(todayItem.workout_type);
+      const intLabelMap = { low: "Léger", easy: "Léger", medium: "Modéré", hard: "Intense", high: "Intense" };
+      const intLabel = intLabelMap[(todayItem.intensity || "").toLowerCase()] || "Modéré";
+      focusEl.innerHTML = `<div class="plan-today-focus">
+        <div class="plan-today-focus-kicker">Aujourd'hui</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:${todayItem.notes ? "7px" : "0"}">
+          <span style="font-size:1.5rem">${ico}</span>
+          <div>
+            <div class="plan-today-focus-type">${escapeHtml(todayItem.workout_type)}</div>
+            <span class="weekly-plan-badge">${intLabel}</span>
+          </div>
+        </div>
+        ${todayItem.notes ? `<div class="plan-today-focus-notes">${escapeHtml(todayItem.notes)}</div>` : ""}
+      </div>`;
+    } else {
+      focusEl.innerHTML = `<div class="plan-today-focus" style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:1.6rem">😴</span>
+        <div>
+          <div style="font-size:.82rem;font-weight:800;color:var(--text2)">Repos aujourd'hui</div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:2px">Récupère bien — tu reprends demain</div>
+        </div>
+      </div>`;
+    }
+    gridContainer.appendChild(focusEl);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DÉMARRAGE
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Exports globaux pour les événements HTML onclick
+window.boot = boot;
+window.authTab = authMode;
+window.doAuth = doAuth;
+window.doLogout = doLogout;
+window.gotoTab = gotoTab;
+window.goalEdit = goalEdit;
+window.saveGoal = saveGoal;
+window.selectGoalType = selectGoalType;
+window.selectGoalLevel = selectGoalLevel;
+window.selectGoalSessions = selectGoalSessions;
+window.selectGoalEquip = selectGoalEquip;
+window.setPostTemplate = setPostTemplate;
+window.sendCoachMsg = sendCoachMsg;
+window.retryLastCoachMessage = retryLastCoachMessage;
+window.generateWorkout = generateWorkout;
+window.saveSession = saveSession;
+window.clearCoachChat = clearCoachChat;
+window.toggleCoachSuggestions = toggleCoachSuggestions;
+
+
+function _saveLatestPlanMeta(payload) {
+  try {
+    const slim = {
+      week_number: payload?.week_number || null,
+      phase: payload?.phase || "",
+      source: payload?.source || "",
+      week_summary: payload?.week_summary || null,
+      coach_priority: payload?.coach_priority || "",
+      progression_rule: payload?.progression_rule || "",
+      recovery_target: payload?.recovery_target || "",
+      pain_rule: payload?.pain_rule || "",
+      cycle_length_weeks: payload?.cycle_length_weeks || _progDuration || 8,
+      saved_at: new Date().toISOString()
+    };
+    localStorage.setItem('fitai_latest_plan_meta_v1', JSON.stringify(slim));
+  } catch {}
+}
+
+function _loadLatestPlanMeta() {
+  try { return JSON.parse(localStorage.getItem('fitai_latest_plan_meta_v1') || 'null'); } catch { return null; }
+}
+window.replaySession = replaySession;
+window.reloadHistoryRecipe = reloadHistoryRecipe;
+window.addHistoryRecipeToShopping = addHistoryRecipeToShopping;
+window.addMeal = addMeal;
+window.deleteMeal = deleteMeal;
+window.createPost = createPost;
+window.giveKudos = giveKudos;
+window.deletePost = deletePost;
+window.previewPostPhoto = previewPostPhoto;
+window.handleFile = handleFile;
+window.handleDrop = handleDrop;
+window.doScan = doScan;
+window.selectMood = selectMood;
+window.startWithMood = startWithMood;
+window.saveProfile = saveProfile;
+window.addWeightEntry = addWeightEntry;
+window.renderWeightChart = renderWeightChart;
+window.deleteBodyScan = deleteBodyScan;
+window.generateRecipe    = generateRecipe;
+window.generateNutrition = generateNutrition;
+window.addRecipeToNutritionShoppingList = addRecipeToNutritionShoppingList;
+window.addRecipeAsMeal = addRecipeAsMeal;
+window.toggleComments = toggleComments;
+window.addComment = addComment;
+window.deleteComment = deleteComment;
+window.loadDefis = loadDefis;
+window.loadFeed = loadFeed;
+window.generateWeeklyPlan = generateWeeklyPlan;
+window.confirmOk     = confirmOk;
+window.confirmCancel = confirmCancel;
+window.loadLeaderboard = loadLeaderboard;
+// New
+window.searchUsers = searchUsers;
+window.sendFriendRequest = sendFriendRequest;
+window.acceptFriend = acceptFriend;
+window.rejectFriend = rejectFriend;
+window.removeFriend = removeFriend;
+window.setFeedFilter = setFeedFilter;
+window.toggleRecipeMode = toggleRecipeMode;
+window.shareRecipe = shareRecipe;
+window.loadCommunityRecipes = loadCommunityRecipes;
+window.startWorkoutSession = startWorkoutSession;
+window.closeWorkoutSession = closeWorkoutSession;
+window.woNav = woNav;
+window.woToggle = woToggle;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// WORKOUT SESSION TIMER
+// ══════════════════════════════════════════════════════════════════════════════
+
+let WO_STATE = null; // { exercises[], currentIdx, timerInterval, secondsLeft, phase:"work"|"rest", running }
+
+function _parseRepTarget(raw) {
+  const txt = String(raw || '').trim();
+  const nums = txt.match(/\d+/g);
+  if (!nums || !nums.length) return 10;
+  const ints = nums.map(n => parseInt(n, 10)).filter(Boolean);
+  if (!ints.length) return 10;
+  return Math.round(ints.reduce((a, b) => a + b, 0) / ints.length);
+}
+
+function _deriveGuidedWorkSeconds(ex) {
+  const name = String(ex.name || ex.n || '').toLowerCase();
+  if (Number(ex.duration) > 0) return Math.max(20, Math.min(75, Number(ex.duration)));
+  if (/planche|plank|gainage|hollow|wall sit/.test(name)) return 35;
+  if (/burpee|mountain|jump|sprint|corde|hiit/.test(name)) return 30;
+  const reps = _parseRepTarget(ex.reps || ex.r);
+  const tempo = /squat|fente|rowing|tirage|souleve|thrust/.test(name) ? 3.6 : /pompe|dip|developpe/.test(name) ? 3.2 : 2.8;
+  return Math.max(25, Math.min(60, Math.round(reps * tempo + 8)));
+}
+
+function _deriveGuidedRestSeconds(ex) {
+  const given = Number(ex.rest || ex.rest_sec || 0);
+  if (given > 0) return Math.max(15, Math.min(45, given));
+  const name = String(ex.name || ex.n || '').toLowerCase();
+  if (/burpee|mountain|jump|sprint|hiit/.test(name)) return 25;
+  if (/squat|souleve|hip thrust|fente/.test(name)) return 30;
+  return 20;
+}
+
+function _normalizeGuidedExercise(ex, idx) {
+  const name = ex.name || ex.n || `Exercice ${idx + 1}`;
+  const muscle = ex.muscle || ex.m || '';
+  const sets = Number(ex.sets || 0) || 0;
+  const reps = ex.reps || ex.r || '';
+  const legacyPrescription = [sets > 0 ? `${sets} séries` : '', reps ? `${reps} reps` : ''].filter(Boolean).join(' • ');
+  const lowered = String(name).toLowerCase();
+  const guideSeconds = _deriveGuidedWorkSeconds(ex);
+  const restSeconds = _deriveGuidedRestSeconds(ex);
+  let personalWhy = ex.personalWhy || ex.description || '';
+  if (!personalWhy) {
+    if (/squat|fente|step|leg|jamb/.test(lowered)) personalWhy = 'On te met du bas du corps pour construire une base solide et utile au quotidien.';
+    else if (/pompe|press|developpe|dips/.test(lowered)) personalWhy = 'Mouvement choisi pour pousser proprement sans te griller trop vite.';
+    else if (/row|tirage|traction|pull/.test(lowered)) personalWhy = 'On équilibre le haut du corps et la posture avec un tirage contrôlé.';
+    else if (/gainage|planche|abdo|twist/.test(lowered)) personalWhy = 'Ce bloc sécurise ton tronc et rend le reste de la séance plus propre.';
+    else personalWhy = 'Bloc choisi pour ton objectif, ton niveau et ton état du jour.';
+  }
+  return {
+    ...ex,
+    name,
+    n: name,
+    muscle,
+    m: muscle,
+    targetGoal: ex.targetGoal || ex.goal || '',
+    guideSeconds,
+    restSeconds,
+    personalWhy,
+    legacyPrescription,
+    hydrationCue: /burpee|mountain|jump|sprint|hiit|high knees/.test(lowered) ? '💧 Bois 2-3 gorgées et reprends ton souffle.' : '💧 Bois quelques gorgées et prépare le prochain mouvement.'
+  };
+}
+
+function _buildGuidedTimeline(exercises, durationMin) {
+  const base = (exercises || []).map((ex, idx) => ({
+    ex,
+    blockIdx: idx,
+    workSeconds: Math.max(20, Number(ex.guideSeconds || 40)),
+    restSeconds: Math.max(10, Number(ex.restSeconds || 20))
+  }));
+  if (!base.length) return [];
+
+  const baseCycle = base.reduce((sum, item) => sum + item.workSeconds + item.restSeconds, 0);
+  const explicitTarget = Math.max(0, Math.round(Number(durationMin || 0) * 60));
+  const target = explicitTarget > 0 ? explicitTarget : baseCycle;
+
+  const floorRounds = Math.max(1, Math.floor(target / baseCycle));
+  const ceilRounds = Math.max(1, Math.ceil(target / baseCycle));
+  const floorDiff = Math.abs(baseCycle * floorRounds - target);
+  const ceilDiff = Math.abs(baseCycle * ceilRounds - target);
+  const rounds = Math.min(8, floorDiff <= ceilDiff ? floorRounds : ceilRounds);
+
+  const scaledTotal = baseCycle * rounds;
+  const scale = explicitTarget > 0 ? Math.max(0.82, Math.min(1.18, target / Math.max(1, scaledTotal))) : 1;
+
+  const timeline = [];
+  for (let round = 1; round <= rounds; round += 1) {
+    base.forEach((item) => {
+      timeline.push({
+        ex: {
+          ...item.ex,
+          guideSeconds: Math.max(20, Math.round(item.workSeconds * scale)),
+          restSeconds: Math.max(10, Math.round(item.restSeconds * scale))
+        },
+        round,
+        blockIndex: timeline.length,
+        totalBlocks: rounds * base.length,
+        roundBlocks: base.length
+      });
+    });
+  }
+  if (timeline.length) {
+    timeline[timeline.length - 1].ex.restSeconds = 0;
+  }
+  return timeline;
+}
+
+function _wtCurrentBlock() {
+  return _wtTimeline[_wtTimelineIdx] || null;
+}
+
+function _wtNextBlock() {
+  return _wtTimeline[_wtTimelineIdx + 1] || null;
+}
+
+function _wtRenderNextPreview() {
+  const wrap = document.getElementById('wt-next-preview');
+  if (!wrap) return;
+  const next = _wtNextBlock();
+  if (!next || !next.ex) {
+    wrap.innerHTML = '<div class="wt-next-empty">Dernier bloc de la séance — termine proprement.</div>';
+    return;
+  }
+  const ex = next.ex;
+  wrap.innerHTML = `<div class="wt-next-card"><div><div class="wt-next-kicker">Ensuite</div><div class="wt-next-name">${escapeHtml(ex.n || ex.name || 'Exercice')}</div><div class="wt-next-meta">${Math.max(20, Number(ex.guideSeconds || 0))}s effort · ${Math.max(0, Number(ex.restSeconds || 0))}s pause${next.round ? ` · Tour ${next.round}` : ''}</div></div><div class="wt-next-mini">${_animatedExerciseDemoHtml(ex.n || ex.name || '', 'wt-next-shell', 'preview', 'Ensuite')}</div></div>`;
+  _wtApplyDemoState(_wtPhase || 'ready');
+}
+
+function _wtSetSessionMeta(block, phaseSeconds) {
+  const totalRemainEl = document.getElementById('wt-total-remaining');
+  const blockEl = document.getElementById('wt-block-progress');
+  const roundEl = document.getElementById('wt-round-chip');
+  const phaseEl = document.getElementById('wt-phase-chip');
+  const total = Math.max(0, _wtWorkoutTargetSeconds - _wtElapsedSeconds + (phaseSeconds > 0 ? 0 : 0));
+  if (totalRemainEl) totalRemainEl.textContent = `Temps restant · ${_wtFormatClock(total)}`;
+  if (blockEl) blockEl.textContent = block ? `Bloc ${_wtTimelineIdx + 1}/${_wtTimeline.length}` : 'Bloc 0/0';
+  if (roundEl) roundEl.textContent = block ? `Tour ${block.round}` : 'Tour —';
+  if (phaseEl) {
+    const map = { ready: 'Préparation', work: 'Effort', rest: 'Pause' };
+    phaseEl.textContent = map[_wtPhase] || 'Guidé';
+  }
+  const fillEl = document.getElementById('wt-progress-fill');
+  if (fillEl && _wtWorkoutTargetSeconds > 0) {
+    fillEl.style.width = Math.min(100, Math.round((_wtElapsedSeconds / _wtWorkoutTargetSeconds) * 100)) + '%';
+  }
+}
+
+function _wtStartReadyCountdown(seconds) {
+  const block = _wtCurrentBlock();
+  if (!block) return;
+  const ex = block.ex;
+  _wtPhase = 'ready';
+  _wtSecondsLeft = Math.max(2, Number(seconds || 3));
+  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
+  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
+  _wtSetPrimaryLabel('⏸ Pause');
+  _wtUpdateStage({
+    phase: 'ready',
+    kicker: 'Préparation',
+    title: `On lance ${ex.n} dans ${_wtSecondsLeft}s`,
+    sub: 'Place-toi, regarde la démo et laisse la séance dérouler automatiquement comme une vidéo guidée.',
+    timer: _wtFormatClock(_wtSecondsLeft)
+  });
+  _wtSetSessionMeta(block, _wtSecondsLeft);
+  _wtReadyTimer = setInterval(() => {
+    _wtSecondsLeft = Math.max(0, _wtSecondsLeft - 1);
+    _wtUpdateStage({
+      phase: 'ready',
+      kicker: 'Préparation',
+      title: _wtSecondsLeft > 0 ? `On lance ${ex.n} dans ${_wtSecondsLeft}s` : `C'est parti pour ${ex.n}`,
+      sub: _wtSecondsLeft > 0 ? 'Prépare ton amplitude et ton rythme.' : 'Suis la démo et garde le mouvement propre.',
+      timer: _wtFormatClock(_wtSecondsLeft)
+    });
+    _wtSetSessionMeta(block, _wtSecondsLeft);
+    if (_wtSecondsLeft <= 0) {
+      clearInterval(_wtReadyTimer); _wtReadyTimer = null;
+      _wtStartWork(false);
+    }
+  }, 1000);
+}
+
+function startWorkoutSession() {
+  if (!PLAN || !Array.isArray(PLAN.exercises) || !PLAN.exercises.length) {
+    return toast("Aucune séance à démarrer.", "err");
+  }
+  const exs = PLAN.exercises.map((ex, idx) => _normalizeGuidedExercise(ex, idx));
+  startWorkout(PLAN.title || 'Séance coach', exs, { guided: true, durationMin: Number(PLAN.duration || 0) || 0, sessionStyle: PLAN.session_style || PLAN.daily_focus || '' });
+}
+
+function closeWorkoutSession() {
+  closeWorkoutTimer();
+}
+
+function woToggle() { startWorkoutSession(); }
+function woNav(dir) { if (dir > 0) nextWtExercise(); else prevWtExercise(); }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SVG CHART ENGINE — pure SVG, no library
+// ══════════════════════════════════════════════════════════════════════════════
+
+function renderSvgChart(data, opts) {
+  opts = opts || {};
+  var color    = opts.color    || "#2563eb";
+  var unit     = opts.unit     || "";
+  var H        = opts.H        || 130;
+  var zeroBase = !!opts.zeroBase; // force baseline at 0
+  if (!data || data.length < 2) {
+    return "<div class=\"chart-empty\">Continuez a utiliser l'app pour voir votre evolution ici.</div>";
+  }
+  var vals  = data.map(function(d) { return d.value; });
+  var minV  = zeroBase ? 0 : Math.max(0, Math.min.apply(null, vals) * 0.85);
+  var maxV  = Math.max.apply(null, vals);
+  if (maxV === minV) maxV = minV + 1;
+  var range = maxV - minV;
+  var W = 340, padT = 22, padR = 16, padB = 30, padL = 40;
+  var cw = W - padL - padR, ch = H - padT - padB;
+  var pts = data.map(function(d, i) {
+    return {
+      x: padL + (i / (data.length - 1)) * cw,
+      y: padT + ch - ((d.value - minV) / range) * ch,
+      d: d
+    };
+  });
+  var linePath = pts.reduce(function(acc, p, i) {
+    if (i === 0) return "M" + p.x.toFixed(1) + "," + p.y.toFixed(1);
+    var prev = pts[i - 1];
+    var cpx  = (prev.x + p.x) / 2;
+    return acc + " C" + cpx.toFixed(1) + "," + prev.y.toFixed(1) + " " + cpx.toFixed(1) + "," + p.y.toFixed(1) + " " + p.x.toFixed(1) + "," + p.y.toFixed(1);
+  }, "");
+  var baseline = padT + ch;
+  var firstSeg = linePath.indexOf(" ");
+  var areaPath = "M" + padL + "," + baseline + " L" + pts[0].x.toFixed(1) + "," + pts[0].y.toFixed(1)
+    + (firstSeg >= 0 ? linePath.slice(firstSeg) : "") + " L" + pts[pts.length - 1].x.toFixed(1) + "," + baseline + " Z";
+  // Y axis: 3 ticks
+  var yTickVals = [minV, (minV + maxV) / 2, maxV];
+  var yTicks = yTickVals.map(function(v) {
+    var y = padT + ch - ((v - minV) / range) * ch;
+    var label = v >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v) + unit;
+    return "<text x=\"" + (padL - 7) + "\" y=\"" + y.toFixed(1) + "\" text-anchor=\"end\" dominant-baseline=\"middle\" fill=\"currentColor\" opacity=\".38\" font-size=\"8.5\">" + label + "</text>"
+      + "<line x1=\"" + padL + "\" y1=\"" + y.toFixed(1) + "\" x2=\"" + (padL + cw).toFixed(1) + "\" y2=\"" + y.toFixed(1) + "\" stroke=\"currentColor\" opacity=\".07\" stroke-width=\"1\"/>";
+  }).join("");
+  // X axis: up to 5 evenly-spaced labels
+  var xCount  = Math.min(5, data.length);
+  var xIdxs   = Array.from({ length: xCount }, function(_, k) { return Math.round(k * (data.length - 1) / (xCount - 1 || 1)); });
+  xIdxs = xIdxs.filter(function(v, i, a) { return a.indexOf(v) === i; });
+  var xTicks = xIdxs.map(function(i) {
+    var p = pts[i];
+    return "<text x=\"" + p.x.toFixed(1) + "\" y=\"" + (baseline + 14).toFixed(1) + "\" text-anchor=\"middle\" fill=\"currentColor\" opacity=\".38\" font-size=\"8.5\">" + escapeHtml(String(data[i].label || "")) + "</text>";
+  }).join("");
+  var last    = pts[pts.length - 1];
+  var lastVal = data[data.length - 1].value;
+  var lastLabel = lastVal >= 1000 ? (lastVal / 1000).toFixed(1) + "k" + unit : lastVal + unit;
+  var gradId  = "cg" + Math.random().toString(36).slice(2, 8);
+  return "<svg viewBox=\"0 0 " + W + " " + H + "\" xmlns=\"http://www.w3.org/2000/svg\" style=\"width:100%;display:block;color:var(--muted);overflow:visible\">"
+    + "<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0%\" stop-color=\"" + color + "\" stop-opacity=\"0.28\"/><stop offset=\"80%\" stop-color=\"" + color + "\" stop-opacity=\"0.04\"/><stop offset=\"100%\" stop-color=\"" + color + "\" stop-opacity=\"0\"/></linearGradient></defs>"
+    + "<path d=\"" + areaPath + "\" fill=\"url(#" + gradId + ")\"/>"
+    + "<path d=\"" + linePath + "\" fill=\"none\" stroke=\"" + color + "\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+    + yTicks + xTicks
+    + "<circle cx=\"" + last.x.toFixed(1) + "\" cy=\"" + last.y.toFixed(1) + "\" r=\"5\" fill=\"" + color + "\" stroke=\"var(--surf)\" stroke-width=\"2.5\"/>"
+    + "<text x=\"" + last.x.toFixed(1) + "\" y=\"" + (last.y - 12).toFixed(1) + "\" text-anchor=\"middle\" fill=\"" + color + "\" font-size=\"11\" font-weight=\"800\">" + lastLabel + "</text>"
+    + "</svg>";
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROGRESS TAB
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadProgress() {
+  if (!U) return;
+
+  // Build 30-day date range for mood
+  var moodSince = new Date();
+  moodSince.setDate(moodSince.getDate() - 29);
+
+  var results = await Promise.allSettled([
+    SB.from("workout_sessions").select("id,created_at,duration").eq("user_id", U.id).order("created_at", { ascending: true }).limit(80),
+    SB.from("body_scans").select("created_at,physical_score").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
+    SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(100),
+    SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle(),
+    SB.from("daily_moods").select("mood_level,mood_label,date").eq("user_id", U.id)
+      .gte("date", moodSince.toISOString().slice(0, 10)).order("date", { ascending: true }).limit(30)
+  ]);
+
+  var sessions = results[0].status === "fulfilled" ? (results[0].value.data || []) : [];
+  var scans    = results[1].status === "fulfilled" ? (results[1].value.data || []) : [];
+  var meals    = results[2].status === "fulfilled" ? (results[2].value.data || []) : [];
+  var streak   = results[3].status === "fulfilled" ? (results[3].value.data || {}) : {};
+  var moods    = results[4].status === "fulfilled" ? (results[4].value.data || []) : [];
+
+  var elStreak = document.getElementById("prog-streak");
+  var elSub    = document.getElementById("prog-streak-sub");
+  var elTotal  = document.getElementById("prog-sessions-total");
+  var elBest   = document.getElementById("prog-best-score");
+  if (elStreak) elStreak.textContent = streak.current_streak != null ? streak.current_streak : sessions.length;
+  if (elSub)    elSub.textContent    = streak.current_streak != null ? "jours consecutifs" : "seances total";
+  if (elTotal)  elTotal.textContent  = sessions.length;
+  var bestScore = scans.reduce(function(m, s) { return s.physical_score > m ? s.physical_score : m; }, 0);
+  if (elBest)   elBest.textContent   = bestScore > 0 ? bestScore : "—";
+
+  // Mood stat in progress header
+  var elMoodStat = document.getElementById("prog-mood-stat");
+  if (elMoodStat && moods.length) {
+    var last = moods[moods.length - 1];
+    elMoodStat.textContent = last.mood_label || "—";
+  }
+
+  var sessChart = buildWeeklySessionData(sessions, 8);
+  var sessEl    = document.getElementById("chart-sessions-svg");
+  var sessHead  = document.getElementById("chart-sessions-headline");
+  if (sessEl)   sessEl.innerHTML   = renderSvgChart(sessChart, { color: "#2563eb" });
+  if (sessHead) sessHead.textContent = sessions.length + " seances total";
+
+  var scanData = scans.filter(function(s) { return s.physical_score > 0; }).map(function(s) {
+    return { value: s.physical_score, label: safeDate(s.created_at, { day: "numeric", month: "short" }) };
+  });
+  var scanEl   = document.getElementById("chart-scan-svg");
+  var scanHead = document.getElementById("chart-scan-headline");
+  if (scanEl)  scanEl.innerHTML  = renderSvgChart(scanData, { color: "#9333ea", unit: "/100" });
+  if (scanHead) {
+    var ls = scans[scans.length - 1];
+    scanHead.textContent = ls && ls.physical_score ? "Dernier score: " + ls.physical_score + "/100" : scans.length + " scan(s) effectue(s)";
+  }
+
+  var calData  = buildDailyCalData(meals, 14);
+  var calEl    = document.getElementById("chart-calories-svg");
+  var calHead  = document.getElementById("chart-calories-headline");
+  if (calEl)   calEl.innerHTML = renderSvgChart(calData, { color: "#f97316", unit: " kcal", H: 110 });
+  if (calHead) {
+    var avg = calData.length ? Math.round(calData.reduce(function(s, d) { return s + d.value; }, 0) / calData.length) : 0;
+    calHead.textContent = avg > 0 ? "Moyenne: " + avg + " kcal / jour" : "Enregistrez vos repas pour voir l'evolution";
+  }
+
+  // Mood history dots
+  renderMoodDots(moods);
+}
+
+// ── Mood colours matching SVG faces ──────────────────────────────────────────
+var MOOD_COLORS = { 1: "#f87171", 2: "#fb923c", 3: "#fbbf24", 4: "#4ade80", 5: "#60a5fa" };
+
+function renderMoodDots(moods) {
+  var el = document.getElementById("chart-mood-dots");
+  var head = document.getElementById("chart-mood-headline");
+  if (!el) return;
+
+  if (!moods.length) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:.82rem">Sélectionnez votre humeur chaque jour pour voir l\'évolution ici.</div>';
+    if (head) head.textContent = "Pas encore de données";
+    return;
+  }
+
+  // Build 14-day grid (today = rightmost)
+  var today = new Date();
+  var days = 14;
+  var grid = [];
+  for (var i = days - 1; i >= 0; i--) {
+    var d = new Date(today);
+    d.setDate(today.getDate() - i);
+    var dateStr = d.toISOString().slice(0, 10);
+    var entry = moods.find(function(m) { return m.date === dateStr; });
+    grid.push({ date: d, dateStr: dateStr, entry: entry || null });
+  }
+
+  // Render as dot matrix row
+  var html = '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">';
+  grid.forEach(function(cell) {
+    var lvl = cell.entry ? cell.entry.mood_level : 0;
+    var color = lvl ? MOOD_COLORS[lvl] : "rgba(255,255,255,.07)";
+    var label = cell.entry ? cell.entry.mood_label : "Pas de donnée";
+    var dayLabel = cell.date.toLocaleDateString("fr-FR", { weekday: "short" }).slice(0, 1).toUpperCase();
+    html += '<div style="display:flex;flex-direction:column;align-items:center;gap:5px">';
+    html += '<div title="' + cell.dateStr + ' — ' + label + '" style="width:32px;height:32px;border-radius:50%;background:' + color + ';' + (lvl ? 'box-shadow:0 0 8px ' + color + '55' : 'border:2px solid rgba(255,255,255,.1)') + ';transition:transform .2s;cursor:default" onmouseenter="this.style.transform=\'scale(1.2)\'" onmouseleave="this.style.transform=\'scale(1)\'"></div>';
+    html += '<div style="font-size:.55rem;color:rgba(255,255,255,.3);font-weight:700">' + dayLabel + '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+
+  // Compute average mood
+  var filled = moods.filter(function(m) { return m.mood_level >= 1; });
+  if (head && filled.length) {
+    var avg = (filled.reduce(function(s, m) { return s + m.mood_level; }, 0) / filled.length).toFixed(1);
+    var avgLabel = MOOD_LABELS[Math.round(avg)] || avg + "/5";
+    head.textContent = filled.length + " jour(s) suivi(s) — humeur moy.: " + avgLabel;
+  }
+}
+
+function buildWeeklySessionData(sessions, weeks) {
+  var now = new Date(), result = [];
+  for (var w = weeks - 1; w >= 0; w--) {
+    var ws = new Date(now);
+    ws.setDate(now.getDate() - w * 7 - now.getDay());
+    ws.setHours(0, 0, 0, 0);
+    var we = new Date(ws);
+    we.setDate(ws.getDate() + 7);
+    var count = sessions.filter(function(s) { var d = new Date(s.created_at); return d >= ws && d < we; }).length;
+    result.push({ value: count, label: ws.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) });
+  }
+  return result;
+}
+
+function buildDailyCalData(meals, days) {
+  var now = new Date(), result = [];
+  for (var d = days - 1; d >= 0; d--) {
+    var day = new Date(now);
+    day.setDate(now.getDate() - d);
+    day.setHours(0, 0, 0, 0);
+    var de = new Date(day);
+    de.setDate(day.getDate() + 1);
+    var total = meals.filter(function(m) { var md = new Date(m.created_at); return md >= day && md < de; })
+                     .reduce(function(s, m) { return s + (Number(m.calories) || 0); }, 0);
+    result.push({ value: total, label: day.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) });
+  }
+  var start = 0;
+  while (start < result.length - 2 && result[start].value === 0) start++;
+  return result.slice(start);
+}
+
+window.loadProgress = loadProgress;
+window.toggleCoachSuggestions = toggleCoachSuggestions;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// THEME TOGGLE — Light / Dark
+// ══════════════════════════════════════════════════════════════════════════════
+
+function applyStoredTheme() {
+  var saved = localStorage.getItem("fitai_theme") || "dark";
+  applyTheme(saved);
+}
+
+function applyTheme(mode) {
+  var isLight = mode === "light";
+  document.body.classList.toggle("light", isLight);
+  var icon  = document.getElementById("theme-icon");
+  var label = document.getElementById("theme-label");
+  if (icon)  icon.textContent  = isLight ? "☀️" : "🌙";
+  if (label) label.textContent = isLight ? "Mode clair" : "Mode sombre";
+  try { localStorage.setItem("fitai_theme", mode); } catch {}
+}
+
+function toggleTheme() {
+  var isLight = document.body.classList.contains("light");
+  applyTheme(isLight ? "dark" : "light");
+}
+
+window.toggleTheme = toggleTheme;
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DAILY CHALLENGES — reset each day, stored in localStorage
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EAU — COMPTEUR JOURNALIER
+// ══════════════════════════════════════════════════════════════════════════════
+
+const WATER_KEY = "fitai_water";
+
+function getWaterTarget() {
+  // 0.033L per kg bodyweight, rounded to nearest glass (250ml), min 6, max 16
+  if (USER_WEIGHT && USER_WEIGHT > 0) {
+    return Math.max(6, Math.min(16, Math.round((USER_WEIGHT * 0.033) / 0.25)));
+  }
+  return 8; // default = 2L
+}
+
+function getWaterData() {
+  const today = getTodayKey();
+  try {
+    const d = JSON.parse(localStorage.getItem(WATER_KEY) || "{}");
+    if (d.date === today) return d;
+  } catch {}
+  const fresh = { date: getTodayKey(), count: 0 };
+  try { localStorage.setItem(WATER_KEY, JSON.stringify(fresh)); } catch {}
+  return fresh;
+}
+
+function glassesToL(n) {
+  return (n * 0.25).toFixed(1).replace(/\.0$/, "");
+}
+
+function _applyWaterCount(newCount, animIdx = -1) {
+  const target = getWaterTarget();
+  const d      = getWaterData();
+  d.count = Math.max(0, Math.min(target, newCount));
+  try { localStorage.setItem(WATER_KEY, JSON.stringify(d)); } catch {}
+  renderWater(animIdx);
+  if (d.count === target) {
+    bumpDailyMetricOnce('fitai_water_goal_days');
+    toast(`💧 Objectif atteint ! ${glassesToL(target)}L bu.`, "ok");
+  }
+}
+
+function adjustWater(delta) {
+  const oldCount = getWaterData().count;
+  _applyWaterCount(oldCount + delta, delta > 0 ? oldCount : -1);
+  // Sync programme tab water if visible
+  if (typeof syncProgWater === "function") syncProgWater();
+}
+
+function setWaterCount(n) {
+  const oldCount = getWaterData().count;
+  const newCount = (oldCount === n) ? n - 1 : n;
+  _applyWaterCount(newCount, newCount > oldCount ? newCount - 1 : -1);
+}
+
+function renderWater(newlyFilledIdx = -1) {
+  const d      = getWaterData();
+  const count  = d.count;
+  const target = getWaterTarget();
+
+  const glassesEl   = document.getElementById("water-glasses");
+  const barEl       = document.getElementById("water-bar");
+  const summEl      = document.getElementById("water-summary");
+  const litersEl    = document.getElementById("water-liters");
+  const pctEl       = document.getElementById("water-pct-label");
+  const countEl     = document.getElementById("water-count");
+  const targetLblEl = document.getElementById("water-target-lbl");
+
+  if (!glassesEl) return;
+
+  glassesEl.innerHTML = Array.from({ length: target }, (_, i) => {
+    const filled = i < count;
+    const isNew  = i === newlyFilledIdx;
+    return `<div class="water-glass${filled ? " filled" : ""}${isNew ? " done-pop" : ""}"
+      onclick="setWaterCount(${i + 1})" title="${filled ? "Retirer" : "Marquer bu"}">
+      <div class="wg-water"></div>
+      <div class="wg-shine"></div>
+    </div>`;
+  }).join("");
+
+  const pct = Math.round((count / target) * 100);
+
+  // Motivational text
+  const motivEl = document.getElementById("water-motivation");
+  if (motivEl) {
+    const msgs = [
+      { t: "Commence à t'hydrater 💧",   c: "var(--muted)" },
+      { t: "Bon début, continue !",       c: "#38bdf8" },
+      { t: "Tu es sur la bonne voie 🌊",  c: "#38bdf8" },
+      { t: "Plus que la moitié ! 💪",     c: "#22d3ee" },
+      { t: "Presque au but ! 🏁",         c: "#34d399" },
+      { t: "Objectif atteint ! 🎉",       c: "#34d399" },
+    ];
+    const m = msgs[Math.min(5, Math.floor(pct / 20))];
+    motivEl.textContent = m.t;
+    motivEl.style.color = m.c;
+  }
+
+  if (barEl)       barEl.style.width       = `${pct}%`;
+  if (countEl)     countEl.textContent     = count;
+  if (targetLblEl) targetLblEl.textContent = `/ ${target} verres`;
+  if (litersEl)    litersEl.textContent    = `${glassesToL(count)} L / ${glassesToL(target)} L`;
+  if (summEl)      summEl.textContent      = `${count} / ${target} verres`;
+  if (pctEl)       pctEl.textContent       = `${pct}%`;
+}
+
+window.adjustWater  = adjustWater;
+window.setWaterCount = setWaterCount;
+
+const DAILY_POOL = [
+  { id: "pushups_100", title: "100 pompes", desc: "En autant de séries que nécessaire", icon: "💪", xp: 150, category: "Force" },
+  { id: "abs_100", title: "100 abdos", desc: "Crunchs, planche, bicycle — à toi de choisir", icon: "🔥", xp: 100, category: "Core" },
+  { id: "steps_10k", title: "10 000 pas", desc: "Marche, course, montées d'escaliers", icon: "🚶", xp: 120, category: "Cardio" },
+  { id: "water_2L", title: "2L d'eau aujourd'hui", desc: "Hydrate-toi tout au long de la journée", icon: "💧", xp: 80, category: "Lifestyle" },
+  { id: "squat_100", title: "100 squats", desc: "Poids du corps, pause en bas pour la qualité", icon: "🏋️", xp: 150, category: "Force" },
+  { id: "plank_5min", title: "5 min de planche cumulative", desc: "Tiens la planche, cumule les séries", icon: "⚡", xp: 130, category: "Core" },
+  { id: "run_5k", title: "Run 5km", desc: "En une seule sortie ou en plusieurs segments", icon: "🏃", xp: 200, category: "Cardio" },
+  { id: "stretch_15", title: "15 min d'étirements", desc: "Flexibilité et récupération active", icon: "🧘", xp: 90, category: "Récup" },
+  { id: "pullups_30", title: "30 tractions", desc: "En autant de séries que nécessaire", icon: "🧗", xp: 180, category: "Force" },
+  { id: "burpees_50", title: "50 burpees", desc: "Full body, intensité maximale", icon: "🔥", xp: 200, category: "HIIT" },
+  { id: "lunges_100", title: "100 fentes", desc: "50 par jambe, alterner", icon: "🦵", xp: 140, category: "Force" },
+  { id: "no_sugar", title: "Zéro sucre ajouté", desc: "Pas de soda, bonbons, ou desserts sucrés aujourd'hui", icon: "🥗", xp: 100, category: "Nutrition" },
+  { id: "sleep_8h", title: "8h de sommeil", desc: "Couche-toi tôt, récupère vraiment", icon: "😴", xp: 80, category: "Récup" },
+  { id: "dips_50", title: "50 dips", desc: "Sur chaise, barre parallèle ou banc", icon: "💪", xp: 140, category: "Force" },
+  { id: "jump_200", title: "200 sauts à la corde", desc: "Ou 200 jumping jacks si pas de corde", icon: "🪢", xp: 110, category: "Cardio" },
+  { id: "gainage_10", title: "10 min de gainage", desc: "Planches, gainage latéral, bird-dog — core béton", icon: "🧱", xp: 120, category: "Core" },
+  { id: "walk_1h", title: "1h de marche active", desc: "Allure soutenue, posture droite, respiration calme", icon: "🚶‍♂️", xp: 130, category: "Cardio" },
+  { id: "meditation", title: "10 min de respiration calme", desc: "Ralentis le mental et récupère mieux", icon: "🫁", xp: 90, category: "Mental" },
+  { id: "veggies_day", title: "Légumes à chaque repas", desc: "Ajoute du volume et des fibres à tes repas du jour", icon: "🥦", xp: 95, category: "Nutrition" },
+  { id: "no_screen", title: "Pas d'écran 1h avant de dormir", desc: "Favorise un meilleur sommeil et une meilleure récup", icon: "📵", xp: 80, category: "Lifestyle" },
+  { id: "mountain_3x50", title: "3 × 50 mountain climbers", desc: "Gainage + cardio combinés, enchaîner sans pause", icon: "🌋", xp: 165, category: "HIIT" },
+  { id: "mobility_20", title: "20 min de mobilité", desc: "Hanches, épaules, chevilles — travail articulaire", icon: "🤸", xp: 100, category: "Récup" },
+  { id: "stairs_sprint", title: "10 min d'escaliers", desc: "Escaliers ou step-ups, rythme franc mais propre", icon: "🪜", xp: 130, category: "Cardio" },
+  { id: "meal_prep", title: "Prépare ton repas de demain", desc: "Gagne une journée de discipline d'avance", icon: "🥡", xp: 110, category: "Nutrition" },
+  { id: "sunlight_15", title: "15 min dehors sans téléphone", desc: "Marche légère, lumière naturelle, tête vide", icon: "☀️", xp: 85, category: "Mental" },
+  { id: "protein_each_meal", title: "Protéines à chaque repas", desc: "Sécurise ta satiété et ta récupération sur toute la journée", icon: "🍳", xp: 115, category: "Nutrition" },
+  { id: "cold_finish", title: "30 sec d'eau fraîche en fin de douche", desc: "Petit défi mental, grand effet réveil", icon: "🧊", xp: 70, category: "Lifestyle" },
+  { id: "mobility_desk", title: "3 pauses mobilité de 3 min", desc: "Débloque dos, hanches et nuque dans la journée", icon: "🪑", xp: 90, category: "Récup" },
+  { id: "walk_call", title: "Passe un appel en marchant", desc: "Transforme une habitude passive en activité", icon: "📞", xp: 75, category: "Lifestyle" },
+  { id: "silent_meal", title: "Un repas sans écran", desc: "Mange lentement, pose les couverts, respire", icon: "🍽️", xp: 75, category: "Mental" },
+  { id: "farmer_carry", title: "4 x 40m de farmer carry", desc: "Sacs lourds ou haltères, gainage et grip", icon: "🛍️", xp: 140, category: "Force" },
+  { id: "dance_15", title: "15 min de cardio fun", desc: "Danse, shadow boxing ou corde — mais tu bouges", icon: "🕺", xp: 110, category: "HIIT" },
+  { id: "perfect_plate", title: "Une assiette propre et complète", desc: "Protéines + légumes + glucides utiles à au moins un repas", icon: "🍱", xp: 90, category: "Nutrition" },
+  { id: "recovery_walk", title: "20 min de marche récup", desc: "Après séance ou après repas, sans te cramer", icon: "🌿", xp: 85, category: "Récup" },
+  { id: "journal_3wins", title: "Écris 3 petites victoires", desc: "Même minuscules — on construit l'élan", icon: "✍️", xp: 70, category: "Mental" },
+  { id: "wall_sit", title: "3 min de chaise cumulée", desc: "Brûlure propre, posture stable, dos au mur", icon: "🪑", xp: 105, category: "Force" },
+  { id: "scan_posture", title: "Refais ta posture 2 fois", desc: "2 mini checks : épaules basses, nuque longue, bassin neutre", icon: "🪞", xp: 75, category: "Lifestyle" },
+  { id: "social_support", title: "Envoie ton objectif du jour à quelqu'un", desc: "La discipline aime la responsabilité", icon: "🤝", xp: 65, category: "Mental" },
+  { id: "hiit_7", title: "7 min de HIIT express", desc: "Court, propre, sans négociation", icon: "⏳", xp: 115, category: "HIIT" },
+  { id: "glutes_activation", title: "5 min d'activation fessiers", desc: "Ponts, abductions, bird-dogs avant ta séance", icon: "🍑", xp: 85, category: "Récup" },
+  { id: "fruit_instead", title: "Dessert fruit au lieu d'un snack", desc: "Swap simple qui compte vraiment", icon: "🍎", xp: 70, category: "Nutrition" }
+];
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getLocalMetric(key) {
+  try { return Number(localStorage.getItem(key) || '0') || 0; } catch { return 0; }
+}
+
+function incrementLocalMetric(key, delta = 1) {
+  try {
+    const next = Math.max(0, getLocalMetric(key) + Number(delta || 0));
+    localStorage.setItem(key, String(next));
+    return next;
+  } catch { return 0; }
+}
+
+function bumpDailyMetricOnce(key) {
+  const today = getTodayKey();
+  const markerKey = `${key}:last`;
+  try {
+    if (localStorage.getItem(markerKey) === today) return false;
+    localStorage.setItem(markerKey, today);
+    incrementLocalMetric(key, 1);
+    return true;
+  } catch { return false; }
+}
+
+function pickDailyChallengeMix(pool, count = 4) {
+  const buckets = [
+    ["Force", "Cardio", "HIIT", "Core"],
+    ["Nutrition"],
+    ["Récup", "Mental", "Lifestyle"],
+    []
+  ];
+  const source = Array.isArray(pool) ? pool.slice() : [];
+  const used = new Set();
+  const picks = [];
+  for (const bucket of buckets) {
+    const options = source.filter(ch => !used.has(ch.id) && (!bucket.length || bucket.includes(ch.category)));
+    if (!options.length) continue;
+    const picked = options[Math.floor(Math.random() * options.length)];
+    used.add(picked.id);
+    picks.push(picked.id);
+  }
+  while (picks.length < count) {
+    const remaining = source.filter(ch => !used.has(ch.id));
+    if (!remaining.length) break;
+    const picked = remaining[Math.floor(Math.random() * remaining.length)];
+    used.add(picked.id);
+    picks.push(picked.id);
+  }
+  return picks.slice(0, count);
+}
+
+function getDailyChallenges() {
+  const today = getTodayKey();
+  const stored = (() => {
+    try { return JSON.parse(localStorage.getItem("fitai_daily") || "{}"); }
+    catch { return {}; }
+  })();
+
+  if (stored.date !== today) {
+    const picks = pickDailyChallengeMix(DAILY_POOL, 4);
+    const fresh = { date: today, picks, done: [] };
+    try { localStorage.setItem("fitai_daily", JSON.stringify(fresh)); } catch {}
+    return fresh;
+  }
+  return stored;
+}
+
+function completeDailyChallenge(challengeId, _ctx) {
+  const data = getDailyChallenges();
+  if (data.done.includes(challengeId)) return;
+  data.done.push(challengeId);
+  try { localStorage.setItem("fitai_daily", JSON.stringify(data)); } catch {}
+
+  // XP feedback
+  const ch = DAILY_POOL.find(c => c.id === challengeId);
+  if (ch) toast(`+${ch.xp} XP — Défi accompli !`, "ok");
+
+  // Update streak bonus if all 3 done
+  if (data.done.length >= data.picks.length) {
+    toast("🔥 Tous les défis du jour accomplis ! Streak maintenu.", "ok");
+    updateDailyStreak();
+    // Increment global daily completion counter (for "daily_completions" défi)
+    try {
+      const prev = Number(localStorage.getItem("fitai_daily_completions") || "0");
+      localStorage.setItem("fitai_daily_completions", String(prev + 1));
+    } catch {}
+    checkAndAwardAchievements().catch(() => {});
+  }
+
+  // Re-render daily section
+  renderDailyChallengesSection();
+}
+
+async function updateDailyStreak({ incrementWorkouts = false } = {}) {
+  if (!U) return;
+  try {
+    const today = getTodayKey();
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+    const { data } = await SB.from("user_streaks")
+      .select("current_streak,longest_streak,last_active,total_workouts")
+      .eq("user_id", U.id)
+      .maybeSingle();
+
+    const prev = data || { current_streak: 0, longest_streak: 0, last_active: null, total_workouts: 0 };
+
+    let newStreak = Number(prev.current_streak) || 0;
+    if (prev.last_active === today) {
+      // Déjà actif aujourd'hui — pas de changement de streak
+    } else if (prev.last_active === yesterday) {
+      // Jour consécutif
+      newStreak += 1;
+    } else {
+      // Rupture ou premier jour
+      newStreak = 1;
+    }
+
+    const newLongest = Math.max(newStreak, Number(prev.longest_streak) || 0);
+    const newTotal = incrementWorkouts ? (Number(prev.total_workouts) || 0) + 1 : (Number(prev.total_workouts) || 0);
+
+    await SB.from("user_streaks").upsert({
+      user_id: U.id,
+      current_streak: newStreak,
+      longest_streak: newLongest,
+      total_workouts: newTotal,
+      last_active: today,
+      updated_at: new Date().toISOString()
+    }, { onConflict: "user_id" });
+  } catch (err) {
+    console.warn("[streak] update failed:", err);
+  }
+}
+
+// Category color map for daily challenges
+const CAT_COLORS = {
+  "Force":     { bg: "rgba(239,68,68,.12)",   fg: "#f87171" },
+  "Core":      { bg: "rgba(168,85,247,.12)",  fg: "#c084fc" },
+  "Cardio":    { bg: "rgba(59,130,246,.12)",  fg: "#60a5fa" },
+  "HIIT":      { bg: "rgba(251,146,60,.12)",  fg: "#fb923c" },
+  "Récup":     { bg: "rgba(34,197,94,.12)",   fg: "#4ade80" },
+  "Nutrition": { bg: "rgba(250,204,21,.12)",  fg: "#fbbf24" },
+  "Lifestyle": { bg: "rgba(20,184,166,.12)",  fg: "#2dd4bf" },
+  "Mental":    { bg: "rgba(99,102,241,.12)",  fg: "#818cf8" },
+};
+
+function _getMidnightCountdown() {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const diff = Math.max(0, midnight - now);
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h > 0) return `Nouveau défi dans ${h}h${m.toString().padStart(2, "0")}`;
+  return `Nouveau défi dans ${m} min`;
+}
+
+function _buildChallengeRowHtml(ch, done, context) {
+  const cat = CAT_COLORS[ch.category] || { bg: "rgba(255,255,255,.08)", fg: "var(--muted)" };
+  const btnOrDone = done
+    ? `<span style="font-size:.75rem;color:#4ade80;font-weight:800">✓ Fait</span>`
+    : `<button class="daily-ch-btn" onclick="completeDailyChallenge('${ch.id}','${context}')">Marquer ✓</button>`;
+  return `<div class="daily-ch-row${done ? " done" : ""}">
+    <div class="daily-ch-icon">${ch.icon}</div>
+    <div class="daily-ch-body">
+      <div class="daily-ch-name">${escapeHtml(ch.title)}</div>
+      <div class="daily-ch-desc">${escapeHtml(ch.desc)}</div>
+    </div>
+    <div class="daily-ch-right">
+      <span class="daily-ch-xp">+${ch.xp} XP</span>
+      <span class="daily-ch-cat" style="background:${cat.bg};color:${cat.fg}">${ch.category}</span>
+      ${btnOrDone}
+    </div>
+  </div>`;
+}
+
+function renderDailyChallengesSection() {
+  const data = getDailyChallenges();
+  const challenges = data.picks.map(id => DAILY_POOL.find(c => c.id === id)).filter(Boolean);
+  const doneCount = data.done.length;
+  const allDone = doneCount >= challenges.length;
+
+  // ── Dashboard widget ────────────────────────────────────────────────────────
+  const dashEl = document.getElementById("daily-challenges-container");
+  if (dashEl) {
+    const totalXp   = challenges.reduce((s, c) => s + (c.xp || 0), 0);
+    const earnedXp  = challenges.filter(c => data.done.includes(c.id)).reduce((s, c) => s + (c.xp || 0), 0);
+    const xpPct     = totalXp > 0 ? Math.round((earnedXp / totalXp) * 100) : 0;
+    const xpLabel   = allDone ? `🏆 ${totalXp} XP gagnés !` : `${earnedXp} / ${totalXp} XP`;
+    dashEl.innerHTML = `<div class="daily-ch-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-weight:800;font-size:.92rem;color:var(--text)">⚡ Défis du jour</div>
+        <div style="font-size:.7rem;color:${allDone ? "#4ade80" : "var(--muted)"};font-weight:700">${doneCount}/${challenges.length} accomplis</div>
+      </div>
+      <div class="xp-prog-row">
+        <div class="xp-prog-bar"><div class="xp-prog-fill" style="width:${xpPct}%"></div></div>
+        <div class="xp-prog-label">${xpLabel}</div>
+      </div>
+      <div style="margin-top:12px">${challenges.map(ch => _buildChallengeRowHtml(ch, data.done.includes(ch.id), "dash")).join("")}</div>
+      ${allDone ? `<div style="text-align:center;padding:10px;font-size:.8rem;font-weight:700;color:#4ade80;background:rgba(34,197,94,.06);border-radius:12px;border:1px solid rgba(34,197,94,.2);margin-top:8px">🏆 Parfait ! Tous les défis accomplis aujourd'hui.</div>` : ""}
+    </div>`;
+  }
+
+  // ── Défis tab full panel ────────────────────────────────────────────────────
+  const defisCards = document.getElementById("daily-defi-cards");
+  const defisCount = document.getElementById("daily-defi-done-count");
+  const defisCountdown = document.getElementById("daily-defi-countdown");
+  if (defisCards) {
+    defisCards.innerHTML = challenges.map(ch => _buildChallengeRowHtml(ch, data.done.includes(ch.id), "defis")).join("") +
+      (allDone ? `<div style="text-align:center;padding:10px;font-size:.8rem;font-weight:700;color:#4ade80;background:rgba(34,197,94,.06);border-radius:10px;border:1px solid rgba(34,197,94,.2);margin-top:4px">🏆 Tous accomplis — streak maintenu !</div>` : "");
+  }
+  if (defisCount) defisCount.textContent = `${doneCount} / ${challenges.length}`;
+  if (defisCountdown) defisCountdown.textContent = _getMidnightCountdown();
+}
+
+window.completeDailyChallenge = completeDailyChallenge;
+window.renderDailyChallengesSection = renderDailyChallengesSection;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FOOD JOURNAL AI
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Offline food database — 120+ French aliments (per 100g or per unit noted)
+const FOOD_OFFLINE_DB = {
+  // ── Proteins ──
+  "oeuf":           { cal:78,  p:6,    c:0.6, f:5,   u:"unité" },
+  "oeufs":          { cal:78,  p:6,    c:0.6, f:5,   u:"unité" },
+  "blanc oeuf":     { cal:17,  p:3.6,  c:0.2, f:0,   u:"unité" },
+  "oeuf dur":       { cal:78,  p:6,    c:0.6, f:5,   u:"unité" },
+  "poulet":         { cal:165, p:31,   c:0,   f:3.6, u:"100g" },
+  "poulet grille":  { cal:165, p:31,   c:0,   f:3.6, u:"100g" },
+  "filet poulet":   { cal:110, p:24,   c:0,   f:1.2, u:"100g" },
+  "blanc poulet":   { cal:110, p:24,   c:0,   f:1.2, u:"100g" },
+  "thon":           { cal:132, p:29,   c:0,   f:1,   u:"100g" },
+  "thon boite":     { cal:132, p:29,   c:0,   f:1,   u:"100g" },
+  "saumon":         { cal:208, p:20,   c:0,   f:13,  u:"100g" },
+  "saumon fume":    { cal:170, p:18,   c:0,   f:10,  u:"100g" },
+  "boeuf":          { cal:250, p:26,   c:0,   f:15,  u:"100g" },
+  "steak":          { cal:250, p:26,   c:0,   f:15,  u:"100g" },
+  "viande hachee":  { cal:230, p:22,   c:0,   f:15,  u:"100g" },
+  "steack haché":   { cal:230, p:22,   c:0,   f:15,  u:"100g" },
+  "dinde":          { cal:135, p:29,   c:0,   f:1,   u:"100g" },
+  "jambon":         { cal:105, p:17,   c:1.5, f:3.5, u:"100g" },
+  "jambon blanc":   { cal:105, p:17,   c:1.5, f:3.5, u:"100g" },
+  "jambon serrano": { cal:143, p:27,   c:0.3, f:4,   u:"100g" },
+  "saucisse":       { cal:301, p:12,   c:1,   f:27,  u:"100g" },
+  "crevettes":      { cal:99,  p:21,   c:0,   f:1.1, u:"100g" },
+  "cabillaud":      { cal:82,  p:18,   c:0,   f:0.7, u:"100g" },
+  "thon rouge":     { cal:144, p:23,   c:0,   f:5,   u:"100g" },
+  "sardines":       { cal:208, p:25,   c:0,   f:11,  u:"100g" },
+  "maquereau":      { cal:205, p:19,   c:0,   f:14,  u:"100g" },
+  "tofu":           { cal:76,  p:8,    c:1.9, f:4.2, u:"100g" },
+  "tempeh":         { cal:193, p:19,   c:9,   f:11,  u:"100g" },
+  "seitan":         { cal:370, p:75,   c:14,  f:1.9, u:"100g" },
+  "lentilles":      { cal:116, p:9,    c:20,  f:0.4, u:"100g cuit" },
+  "pois chiche":    { cal:164, p:9,    c:27,  f:2.6, u:"100g cuit" },
+  "haricots rouges":{ cal:127, p:8.7,  c:22,  f:0.5, u:"100g cuit" },
+  "haricots blancs":{ cal:139, p:9,    c:25,  f:0.5, u:"100g cuit" },
+  "edamame":        { cal:122, p:11,   c:10,  f:5,   u:"100g" },
+  "whey":           { cal:120, p:24,   c:3,   f:2,   u:"scoop 30g" },
+  "proteine":       { cal:120, p:24,   c:3,   f:2,   u:"scoop 30g" },
+  "barre proteinee":{ cal:210, p:20,   c:20,  f:7,   u:"barre 60g" },
+  // ── Dairy ──
+  "fromage":        { cal:350, p:25,   c:1,   f:28,  u:"100g" },
+  "emmental":       { cal:382, p:29,   c:0.5, f:30,  u:"100g" },
+  "comté":          { cal:415, p:27,   c:0.2, f:34,  u:"100g" },
+  "camembert":      { cal:300, p:20,   c:0.5, f:24,  u:"100g" },
+  "brie":           { cal:334, p:21,   c:0.5, f:27,  u:"100g" },
+  "mozzarella":     { cal:280, p:18,   c:2,   f:22,  u:"100g" },
+  "parmesan":       { cal:431, p:38,   c:3,   f:29,  u:"100g" },
+  "feta":           { cal:264, p:14,   c:4,   f:21,  u:"100g" },
+  "fromage blanc":  { cal:80,  p:8,    c:4,   f:3,   u:"100g" },
+  "yaourt":         { cal:59,  p:3.5,  c:4.7, f:3.2, u:"100g" },
+  "yaourt grec":    { cal:97,  p:9,    c:3.6, f:5,   u:"100g" },
+  "skyr":           { cal:65,  p:11,   c:4,   f:0.2, u:"100g" },
+  "cottage":        { cal:98,  p:11,   c:3.4, f:4.3, u:"100g" },
+  "lait":           { cal:61,  p:3.2,  c:4.8, f:3.3, u:"100ml" },
+  "lait entier":    { cal:61,  p:3.2,  c:4.8, f:3.3, u:"100ml" },
+  "lait ecreme":    { cal:35,  p:3.5,  c:5,   f:0.1, u:"100ml" },
+  "lait vegetal":   { cal:40,  p:1.5,  c:5.5, f:1.5, u:"100ml" },
+  "lait amande":    { cal:24,  p:1,    c:3,   f:1.1, u:"100ml" },
+  "lait avoine":    { cal:47,  p:1.5,  c:7,   f:1.5, u:"100ml" },
+  "creme fraiche":  { cal:292, p:2.5,  c:3,   f:30,  u:"100g" },
+  "beurre":         { cal:717, p:0.9,  c:0.1, f:81,  u:"100g",  srv:0.12 },
+  // ── Carbs & Grains ──
+  "pâtes":          { cal:158, p:5.8,  c:31,  f:0.9, u:"100g cuit" },
+  "pates":          { cal:158, p:5.8,  c:31,  f:0.9, u:"100g cuit" },
+  "pates completes":{ cal:150, p:6,    c:29,  f:1,   u:"100g cuit" },
+  "riz":            { cal:130, p:2.7,  c:28,  f:0.3, u:"100g cuit" },
+  "riz complet":    { cal:123, p:2.9,  c:25,  f:1,   u:"100g cuit" },
+  "riz basmati":    { cal:130, p:2.7,  c:28,  f:0.3, u:"100g cuit" },
+  "quinoa":         { cal:120, p:4.4,  c:22,  f:1.9, u:"100g cuit" },
+  "boulgour":       { cal:112, p:3.8,  c:23,  f:0.7, u:"100g cuit" },
+  "couscous":       { cal:112, p:3.8,  c:23,  f:0.7, u:"100g cuit" },
+  "avoine":         { cal:389, p:17,   c:66,  f:7,   u:"100g sec" },
+  "flocons avoine": { cal:389, p:17,   c:66,  f:7,   u:"100g sec" },
+  "pain":           { cal:265, p:9,    c:49,  f:3.2, u:"100g" },
+  "pain complet":   { cal:247, p:9,    c:45,  f:3.5, u:"100g" },
+  "baguette":       { cal:265, p:9,    c:49,  f:3.2, u:"100g" },
+  "pain de mie":    { cal:278, p:8,    c:50,  f:4,   u:"100g" },
+  "pain grille":    { cal:312, p:11,   c:59,  f:3.8, u:"100g" },
+  "biscottes":      { cal:406, p:12,   c:74,  f:7,   u:"100g" },
+  "granola":        { cal:460, p:10,   c:65,  f:18,  u:"100g" },
+  "muesli":         { cal:380, p:10,   c:62,  f:7,   u:"100g" },
+  "croissant":      { cal:406, p:8,    c:45,  f:21,  u:"100g" },
+  "crepe":          { cal:202, p:6,    c:27,  f:8,   u:"100g" },
+  "pomme de terre": { cal:77,  p:2,    c:17,  f:0.1, u:"100g" },
+  "patate douce":   { cal:86,  p:1.6,  c:20,  f:0.1, u:"100g" },
+  "patates douces": { cal:86,  p:1.6,  c:20,  f:0.1, u:"100g" },
+  "frites":         { cal:312, p:3.4,  c:41,  f:15,  u:"100g" },
+  "chips":          { cal:530, p:7,    c:53,  f:33,  u:"100g" },
+  // ── Fats & Nuts ──
+  "avocat":         { cal:160, p:2,    c:9,   f:15,  u:"100g" },
+  "amandes":        { cal:579, p:21,   c:22,  f:50,  u:"100g" },
+  "noix":           { cal:654, p:15,   c:14,  f:65,  u:"100g" },
+  "noix cajou":     { cal:553, p:18,   c:30,  f:44,  u:"100g" },
+  "cacahuetes":     { cal:567, p:26,   c:16,  f:49,  u:"100g" },
+  "beurre cacahu":  { cal:588, p:25,   c:20,  f:50,  u:"100g" },
+  "beurre amande":  { cal:614, p:21,   c:19,  f:56,  u:"100g" },
+  "huile olive":    { cal:884, p:0,    c:0,   f:100, u:"100ml", srv:0.1  },
+  "graines chia":   { cal:486, p:17,   c:42,  f:31,  u:"100g" },
+  "graines lin":    { cal:534, p:18,   c:29,  f:42,  u:"100g" },
+  "huile coco":     { cal:862, p:0,    c:0,   f:100, u:"100ml" },
+  // ── Fruits ──
+  "banane":         { cal:89,  p:1.1,  c:23,  f:0.3, u:"unité" },
+  "pomme":          { cal:52,  p:0.3,  c:14,  f:0.2, u:"unité" },
+  "poire":          { cal:57,  p:0.4,  c:15,  f:0.1, u:"unité" },
+  "orange":         { cal:47,  p:0.9,  c:12,  f:0.1, u:"unité" },
+  "clémentine":     { cal:47,  p:0.9,  c:12,  f:0.1, u:"unité" },
+  "fraises":        { cal:32,  p:0.7,  c:7.7, f:0.3, u:"100g" },
+  "myrtilles":      { cal:57,  p:0.7,  c:14,  f:0.3, u:"100g" },
+  "framboises":     { cal:52,  p:1.2,  c:12,  f:0.7, u:"100g" },
+  "kiwi":           { cal:61,  p:1.1,  c:15,  f:0.5, u:"unité" },
+  "mangue":         { cal:65,  p:0.5,  c:17,  f:0.3, u:"100g" },
+  "ananas":         { cal:50,  p:0.5,  c:13,  f:0.1, u:"100g" },
+  "raisins":        { cal:69,  p:0.7,  c:18,  f:0.2, u:"100g" },
+  "pastèque":       { cal:30,  p:0.6,  c:7.6, f:0.2, u:"100g" },
+  "cerise":         { cal:63,  p:1,    c:16,  f:0.2, u:"100g" },
+  "peche":          { cal:39,  p:0.9,  c:9.5, f:0.3, u:"unité" },
+  "abricot":        { cal:48,  p:1.4,  c:11,  f:0.4, u:"unité" },
+  // ── Vegetables ──
+  "brocoli":        { cal:34,  p:2.8,  c:7,   f:0.4, u:"100g" },
+  "epinards":       { cal:23,  p:2.9,  c:3.6, f:0.4, u:"100g" },
+  "épinards":       { cal:23,  p:2.9,  c:3.6, f:0.4, u:"100g" },
+  "tomate":         { cal:18,  p:0.9,  c:3.9, f:0.2, u:"100g" },
+  "tomates":        { cal:18,  p:0.9,  c:3.9, f:0.2, u:"100g" },
+  "courgette":      { cal:17,  p:1.2,  c:3.1, f:0.3, u:"100g" },
+  "salade":         { cal:15,  p:1.4,  c:2.9, f:0.2, u:"100g" },
+  "laitue":         { cal:15,  p:1.4,  c:2.9, f:0.2, u:"100g" },
+  "carotte":        { cal:41,  p:0.9,  c:10,  f:0.2, u:"100g" },
+  "carottes":       { cal:41,  p:0.9,  c:10,  f:0.2, u:"100g" },
+  "poivron":        { cal:31,  p:1,    c:6,   f:0.3, u:"100g" },
+  "concombre":      { cal:16,  p:0.6,  c:3.6, f:0.1, u:"100g" },
+  "celeri":         { cal:16,  p:0.7,  c:3,   f:0.2, u:"100g" },
+  "champignon":     { cal:22,  p:3.1,  c:3.3, f:0.3, u:"100g" },
+  "champignons":    { cal:22,  p:3.1,  c:3.3, f:0.3, u:"100g" },
+  "haricots verts": { cal:35,  p:1.9,  c:7,   f:0.1, u:"100g" },
+  "petits pois":    { cal:81,  p:5.4,  c:14,  f:0.4, u:"100g" },
+  "mais":           { cal:86,  p:3.3,  c:19,  f:1.4, u:"100g" },
+  "aubergine":      { cal:25,  p:1,    c:5.7, f:0.2, u:"100g" },
+  "ail":            { cal:149, p:6,    c:33,  f:0.5, u:"100g" },
+  "oignon":         { cal:40,  p:1.1,  c:9,   f:0.1, u:"100g" },
+  // ── Drinks ──
+  "eau":            { cal:0,   p:0,    c:0,   f:0,   u:"verre" },
+  "café":           { cal:5,   p:0.3,  c:0,   f:0,   u:"tasse" },
+  "cafe":           { cal:5,   p:0.3,  c:0,   f:0,   u:"tasse" },
+  "lait cafe":      { cal:35,  p:2,    c:3.5, f:1.5, u:"tasse" },
+  "the":            { cal:2,   p:0,    c:0.5, f:0,   u:"tasse" },
+  "thé":            { cal:2,   p:0,    c:0.5, f:0,   u:"tasse" },
+  "jus orange":     { cal:45,  p:0.7,  c:10,  f:0.2, u:"100ml" },
+  "jus pomme":      { cal:46,  p:0.1,  c:11,  f:0.1, u:"100ml" },
+  "smoothie":       { cal:70,  p:1.5,  c:16,  f:0.5, u:"100ml" },
+  "coca":           { cal:42,  p:0,    c:10.6,f:0,   u:"100ml" },
+  "coca zero":      { cal:1,   p:0,    c:0,   f:0,   u:"100ml" },
+  "biere":          { cal:43,  p:0.5,  c:3.6, f:0,   u:"100ml" },
+  "vin":            { cal:85,  p:0.1,  c:2.6, f:0,   u:"100ml" },
+  // ── Misc & Meals ──
+  "chocolat noir":  { cal:598, p:7.8,  c:46,  f:43,  u:"100g" },
+  "chocolat":       { cal:535, p:7.7,  c:60,  f:30,  u:"100g" },
+  "chocolat lait":  { cal:535, p:7.7,  c:60,  f:30,  u:"100g" },
+  "pizza":          { cal:266, p:11,   c:33,  f:10,  u:"100g" },
+  "burger":         { cal:295, p:17,   c:24,  f:14,  u:"100g" },
+  "quiche":         { cal:298, p:11,   c:19,  f:20,  u:"100g" },
+  "omelette":       { cal:154, p:11,   c:0.5, f:12,  u:"100g" },
+  "soupe":          { cal:55,  p:2,    c:9,   f:1.5, u:"100ml" },
+  "soupe legumes":  { cal:55,  p:2,    c:9,   f:1.5, u:"100ml" },
+  "vinaigrette":    { cal:450, p:0,    c:5,   f:48,  u:"100ml", srv:0.2  },
+  "mayonnaise":     { cal:680, p:1.5,  c:1.5, f:75,  u:"100g",  srv:0.15 },
+  "confiture":      { cal:250, p:0.5,  c:65,  f:0.1, u:"100g",  srv:0.15 },
+  "miel":           { cal:304, p:0.3,  c:82,  f:0,   u:"100g",  srv:0.15 },
+  "sucre":          { cal:400, p:0,    c:100, f:0,   u:"100g",  srv:0.05 },
+  "nutella":        { cal:539, p:6,    c:57,  f:31,  u:"100g",  srv:0.2  },
+  // ── Compound French meals (per typical serving — matched before individual ingredients) ──
+  "tartine beurre miel":      { cal:200, p:3,   c:32, f:7,  u:"tartine" },
+  "tartine beurre confiture": { cal:185, p:3,   c:30, f:7,  u:"tartine" },
+  "tartine nutella":          { cal:205, p:4,   c:28, f:9,  u:"tartine" },
+  "tartine beurre":           { cal:155, p:3,   c:18, f:9,  u:"tartine" },
+  "tartine confiture":        { cal:150, p:3,   c:28, f:2,  u:"tartine" },
+  "tartine miel":             { cal:140, p:3,   c:26, f:1,  u:"tartine" },
+  "tartine avocat":           { cal:175, p:4,   c:20, f:9,  u:"tartine" },
+  "tartine":                  { cal:85,  p:3,   c:18, f:1,  u:"tartine" },
+  "toast beurre miel":        { cal:200, p:3,   c:32, f:7,  u:"toast" },
+  "toast beurre":             { cal:155, p:3,   c:18, f:9,  u:"toast" },
+  "pain beurre confiture":    { cal:220, p:4,   c:35, f:8,  u:"tranche" },
+  "pain beurre":              { cal:165, p:3,   c:20, f:9,  u:"tranche" },
+  "pain chocolat":            { cal:420, p:7,   c:46, f:23, u:"pièce" },
+  "croque monsieur":          { cal:380, p:22,  c:30, f:18, u:"pièce" },
+  "croque madame":            { cal:440, p:26,  c:30, f:24, u:"pièce" },
+  "cafe au lait":             { cal:65,  p:3.5, c:5,  f:3,  u:"bol" },
+  "cafe creme":               { cal:80,  p:3,   c:6,  f:4,  u:"tasse" },
+  "bol cereales lait":        { cal:280, p:9,   c:48, f:6,  u:"bol" },
+  "cereales lait":            { cal:280, p:9,   c:48, f:6,  u:"bol" },
+  "riz poulet legumes":       { cal:420, p:36,  c:40, f:7,  u:"assiette" },
+  "riz poulet":               { cal:380, p:34,  c:38, f:6,  u:"assiette" },
+  "pates bolognaise":         { cal:420, p:26,  c:50, f:12, u:"assiette" },
+  "pates carbonara":          { cal:520, p:24,  c:48, f:24, u:"assiette" },
+  "pates pesto":              { cal:450, p:14,  c:50, f:20, u:"assiette" },
+  "salade nicoise":           { cal:320, p:24,  c:18, f:18, u:"assiette" },
+  "salade cesar":             { cal:380, p:22,  c:20, f:24, u:"assiette" },
+  "poulet riz":               { cal:380, p:34,  c:38, f:6,  u:"assiette" },
+  "bowl poulet":              { cal:450, p:38,  c:42, f:10, u:"bowl" },
+  "oeuf a la coque":          { cal:78,  p:6,   c:0.6,f:5,  u:"unité" },
+  "oeufs brouilles":          { cal:210, p:14,  c:1,  f:16, u:"portion" },
+  "omelette jambon fromage":  { cal:310, p:22,  c:3,  f:23, u:"omelette" },
+  "omelette legumes":         { cal:180, p:14,  c:6,  f:11, u:"omelette" },
+  "smoothie fruits":          { cal:160, p:3,   c:35, f:1,  u:"verre" },
+  "smoothie banane":          { cal:180, p:4,   c:38, f:2,  u:"verre" },
+  "porridge avoine":          { cal:280, p:10,  c:46, f:6,  u:"bol" },
+};
+
+function _offlineAnalyzeFood(description) {
+  const normalize = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  // Replace French number words with digits before matching
+  const FR_NUMS = {
+    'un ': 1, 'une ': 1, 'deux ': 2, 'trois ': 3, 'quatre ': 4, 'cinq ': 5,
+    'six ': 6, 'sept ': 7, 'huit ': 8, 'demi ': 0.5, 'moitie ': 0.5, 'quart ': 0.25
+  };
+  let normDesc = normalize(description);
+  for (const [word, val] of Object.entries(FR_NUMS)) {
+    normDesc = normDesc.replace(new RegExp('\\b' + word.trim() + '\\b', 'g'), `${val} `);
+  }
+  // "de beurre et miel" → keep "et"/"avec" as separators, they don't break compound matching
+  const text = normDesc;
+  const items = [];
+  let totCal = 0, totP = 0, totC = 0, totF = 0;
+  // Sort keys longest-first → compound entries ("tartine beurre miel") match before parts ("beurre", "miel")
+  const keys = Object.keys(FOOD_OFFLINE_DB).sort((a, b) => b.length - a.length);
+  const matched = new Set();
+  // Track char positions already consumed by a compound match
+  const usedRanges = [];
+  const overlaps = (start, end) => usedRanges.some(([s, e]) => start < e && end > s);
+
+  for (const key of keys) {
+    const normKey = normalize(key);
+    let idx = text.indexOf(normKey);
+    if (idx === -1 || matched.has(key)) continue;
+    if (overlaps(idx, idx + normKey.length)) continue;
+
+    matched.add(key);
+    // Mark compound multi-word keys as used to prevent sub-ingredient double-counting
+    if (normKey.includes(' ')) usedRanges.push([idx, idx + normKey.length]);
+
+    const d = FOOD_OFFLINE_DB[key];
+    // Look for a numeric quantity in a window around the match
+    const around = text.slice(Math.max(0, idx - 14), idx + normKey.length + 12);
+    const nm = around.match(/(\d+(?:[,.]\d+)?)/);
+    let qty;
+    if (nm) {
+      qty = Math.min(20, Math.max(0.1, parseFloat(nm[1].replace(",", "."))));
+    } else if (d.srv) {
+      // Condiment / topping with known typical portion (fraction of 100g/ml)
+      qty = d.srv;
+    } else {
+      qty = 1;
+    }
+
+    const unit = d.u || "100g";
+    const dispQty = d.srv && !nm
+      ? `~${Math.round(d.srv * 100)}g`
+      : qty !== 1 ? `${qty}× ${unit}` : `1 ${unit}`;
+
+    items.push({
+      name:     key.charAt(0).toUpperCase() + key.slice(1),
+      quantity: dispQty,
+      calories: Math.round(d.cal * qty),
+      protein:  Math.round(d.p   * qty * 10) / 10,
+      carbs:    Math.round(d.c   * qty * 10) / 10,
+      fat:      Math.round(d.f   * qty * 10) / 10
+    });
+    totCal += d.cal * qty; totP += d.p * qty; totC += d.c * qty; totF += d.f * qty;
+  }
+  if (!items.length) {
+    items.push({ name: "Repas estimé", quantity: "1 portion", calories: 450, protein: 22, carbs: 50, fat: 16 });
+    totCal = 450; totP = 22; totC = 50; totF = 16;
+  }
+  const protRatio = (totP * 4) / (totCal || 1);
+  let score = 60;
+  if (protRatio > 0.25) score += 20; else if (protRatio < 0.1) score -= 15;
+  if (totCal > 1200) score -= 20; else if (totCal > 800) score -= 8;
+  if (/brocoli|epinard|tomate|courgette|salade|carotte/.test(text)) score += 10;
+  if (/pizza|burger|frites|chips/.test(text)) score -= 20;
+  score = Math.max(10, Math.min(100, Math.round(score)));
+  const comment = score >= 75 ? "Excellent équilibre nutritionnel !" : score >= 55 ? "Repas correct, enrichis en protéines/légumes." : "Repas calorique — pense à équilibrer.";
+  return { items, total: { calories: Math.round(totCal), protein: Math.round(totP * 10) / 10, carbs: Math.round(totC * 10) / 10, fat: Math.round(totF * 10) / 10 }, quality_score: score, comment, source: "offline" };
+}
+
+async function analyzeFood() {
+  const inputEl = document.getElementById("food-journal-input");
+  const errEl = document.getElementById("food-analysis-err");
+  const loadEl = document.getElementById("food-analysis-loading");
+  const resultEl = document.getElementById("food-analysis-result");
+  const btnEl = document.getElementById("btn-analyze-food");
+  if (errEl) errEl.textContent = "";
+  if (resultEl) resultEl.style.display = "none";
+
+  const description = (inputEl?.value || "").trim();
+  if (!description) {
+    if (errEl) errEl.textContent = "Décris ce que tu as mangé.";
+    return;
+  }
+
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = "⏳ Analyse…"; }
+  if (loadEl) loadEl.style.display = "block";
+
+  let result = null;
+  try {
+    const authHeader = U ? `Bearer ${(await SB.auth.getSession()).data.session?.access_token}` : "";
+    const resp = await fetch("/api/analyze-food", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+      body: JSON.stringify({ description, date: new Date().toISOString().slice(0, 10) }),
+      signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined
+    });
+    if (!resp.ok) throw new Error("API error " + resp.status);
+    result = await resp.json();
+  } catch (e) {
+    // Offline fallback
+    result = _offlineAnalyzeFood(description);
+    result.source = "offline";
+  }
+
+  if (loadEl) loadEl.style.display = "none";
+  if (btnEl) { btnEl.disabled = false; btnEl.textContent = "🔍 Analyser mes repas"; }
+
+  if (!result || !result.items) {
+    if (errEl) errEl.textContent = "Impossible d'analyser. Réessaie.";
+    return;
+  }
+
+  // Store last result for save action
+  window._lastFoodAnalysis = result;
+
+  // Render quality badge
+  const score = result.quality_score || 60;
+  const qBadge = document.getElementById("food-quality-badge");
+  const qLabel = document.getElementById("food-quality-label");
+  const qScore = document.getElementById("food-quality-score");
+  const qComment = document.getElementById("food-quality-comment");
+  const cls = score >= 75 ? "good" : score >= 50 ? "ok" : "bad";
+  const lbl = score >= 75 ? "Excellent" : score >= 50 ? "Correct" : "À améliorer";
+  if (qBadge) { qBadge.className = `quality-badge-wrap ${cls}`; }
+  if (qLabel) { qLabel.className = `quality-label ${cls}`; qLabel.textContent = lbl; }
+  if (qScore) qScore.textContent = score;
+  if (qComment) qComment.textContent = result.comment || "";
+
+  // Render totals
+  const t = result.total || {};
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setTxt("food-total-cal", (t.calories || 0) + " kcal");
+  setTxt("food-total-prot", (t.protein || 0) + "g");
+  setTxt("food-total-carbs", (t.carbs || 0) + "g");
+  setTxt("food-total-fat", (t.fat || 0) + "g");
+
+  // Render items list with per-item macro bars
+  const listEl = document.getElementById("food-items-list");
+  const maxCalItem = Math.max(...(result.items || []).map(i => i.calories || 0), 1);
+  if (listEl) {
+    listEl.innerHTML = (result.items || []).map(item => {
+      const calPct  = Math.round(((item.calories || 0) / maxCalItem) * 100);
+      const protPct = Math.min(100, Math.round(((item.protein || 0) * 4 / (item.calories || 1)) * 100));
+      return `<div class="food-item-row">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+            <div class="food-item-name">${escapeHtml(item.name || "")}</div>
+            <span class="food-macro-chip food-macro-cal" style="flex-shrink:0">${item.calories || 0} kcal</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:3px">
+            <span class="food-item-qty" style="flex-shrink:0">${escapeHtml(item.quantity || "")}</span>
+            <span style="font-size:.68rem;color:#4ade80;font-weight:700">P ${item.protein || 0}g</span>
+            <span style="font-size:.68rem;color:#fbbf24;font-weight:700">G ${item.carbs || 0}g</span>
+            <span style="font-size:.68rem;color:#f87171;font-weight:700">L ${item.fat || 0}g</span>
+          </div>
+          <div style="display:flex;gap:2px;margin-top:5px;height:4px;border-radius:99px;overflow:hidden;background:rgba(255,255,255,.06)">
+            <div style="width:${calPct}%;background:rgba(99,102,241,.5);transition:width .6s ease;border-radius:99px"></div>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  if (resultEl) { resultEl.style.display = "block"; resultEl.style.animation = "fadeIn .3s ease"; }
+}
+
+// ── Meal type selection ───────────────────────────────────────────────────────
+// Calorie budget per meal type (rough target split from 2200 kcal default)
+const MEAL_CAL_BUDGETS = { petit_dej: 450, collation: 220, midi: 680, soir: 580 };
+const MEAL_TYPE_LABELS = { petit_dej: "Petit-déjeuner", collation: "Collation", midi: "Déjeuner", soir: "Dîner" };
+let _selectedMealType = "midi";
+
+function selectMealType(type) {
+  _selectedMealType = type;
+  document.querySelectorAll(".meal-type-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.type === type);
+  });
+  const budget = MEAL_CAL_BUDGETS[type] || 600;
+  const budgetEl = document.getElementById("meal-cal-budget");
+  if (budgetEl) budgetEl.textContent = budget;
+  // Update placeholder
+  const placeholders = {
+    petit_dej: "Ex: 2 œufs brouillés, fromage blanc, une tranche de pain complet, café…",
+    collation: "Ex: une pomme, 30g d'amandes, un yaourt grec…",
+    midi: "Ex: riz complet, poulet grillé 150g, brocoli vapeur, huile d'olive…",
+    soir: "Ex: saumon rôti, patate douce, salade verte, vinaigrette…"
+  };
+  const ta = document.getElementById("food-journal-input");
+  if (ta) ta.placeholder = placeholders[type] || ta.placeholder;
+}
+
+async function saveFoodAnalysis() {
+  if (!U) return toast("Connecte-toi pour sauvegarder.", "err");
+  const res = window._lastFoodAnalysis;
+  if (!res) return toast("Analyse d'abord ton repas avant d'enregistrer.", "err");
+  const today = new Date().toISOString().slice(0, 10);
+
+  const t = res.total || {};
+  const typeLabel = MEAL_TYPE_LABELS[_selectedMealType] || "Repas";
+  const rawDesc = (document.getElementById("food-journal-input")?.value || "").slice(0, 40);
+  const name = rawDesc ? `${typeLabel}: ${rawDesc}` : typeLabel;
+
+  try {
+    const { error } = await SB.from("meals").insert({
+      user_id: U.id,
+      name: name.slice(0, 80),
+      calories: t.calories || 0,
+      protein: t.protein || 0,
+      carbs: t.carbs || 0,
+      fat: t.fat || 0,
+      date: today,
+      source: "ai_journal"
+    });
+    if (error) throw error;
+    toast(`${typeLabel} ajouté ! ${t.calories || 0} kcal`, "ok");
+    loadMeals();
+    loadNutritionWeekChart();
+    // Clear
+    const ta = document.getElementById("food-journal-input");
+    if (ta) ta.value = "";
+    const resultEl = document.getElementById("food-analysis-result");
+    if (resultEl) resultEl.style.display = "none";
+  } catch (e) {
+    toast("Erreur: " + e.message, "err");
+  }
+}
+
+async function loadNutritionWeekChart() {
+  const svg = document.getElementById("nutr-week-svg");
+  if (!svg) return;
+
+  const today = new Date();
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    days.push(d.toISOString().slice(0, 10));
+  }
+
+  let mealsData = [];
+  let targetCal = 2200;
+  let targetProt = 140;
+
+  if (U) {
+    try {
+      const [mealsRes, targetRes] = await Promise.all([
+        SB.from("meals").select("date,calories,protein").eq("user_id", U.id).gte("date", days[0]).lte("date", days[6]),
+        SB.from("nutrition_targets").select("calories,protein").eq("user_id", U.id).maybeSingle()
+      ]);
+      mealsData = mealsRes.data || [];
+      if (targetRes.data) { targetCal = targetRes.data.calories || 2200; targetProt = targetRes.data.protein || 140; }
+    } catch { /* offline */ }
+  }
+
+  // Group by day
+  const dayTotals = days.map(date => {
+    const dayMeals = mealsData.filter(m => m.date === date);
+    return {
+      date,
+      cal: dayMeals.reduce((s, m) => s + (m.calories || 0), 0),
+      prot: dayMeals.reduce((s, m) => s + (m.protein || 0), 0)
+    };
+  });
+
+  _renderNutritionWeekChart(svg, dayTotals, targetCal, targetProt);
+}
+
+function _renderNutritionWeekChart(svg, dayTotals, targetCal, targetProt) {
+  const W = 340, H = 160, PAD_L = 28, PAD_R = 10, PAD_T = 12, PAD_B = 28;
+  const chartW = W - PAD_L - PAD_R;
+  const chartH = H - PAD_T - PAD_B;
+  const n = dayTotals.length;
+  const barW = Math.floor(chartW / n) - 4;
+  const maxCal = Math.max(targetCal * 1.2, ...dayTotals.map(d => d.cal), 100);
+  const maxProt = Math.max(targetProt * 1.3, ...dayTotals.map(d => d.prot), 10);
+  const dayLabels = ["D-6","D-5","D-4","D-3","D-2","Hier","Auj"];
+
+  const calToY = v => PAD_T + chartH - (v / maxCal) * chartH;
+  const protToY = v => PAD_T + chartH - (v / maxProt) * chartH;
+
+  let html = "";
+
+  // Grid line at target
+  const targetY = calToY(targetCal);
+  html += `<line x1="${PAD_L}" y1="${targetY}" x2="${W - PAD_R}" y2="${targetY}" stroke="rgba(255,255,255,.2)" stroke-width="1" stroke-dasharray="4,3"/>`;
+
+  // Calorie bars
+  dayTotals.forEach((d, i) => {
+    const x = PAD_L + i * (chartW / n) + 2;
+    const barH = Math.max(2, (d.cal / maxCal) * chartH);
+    const y = PAD_T + chartH - barH;
+    const overTarget = d.cal > targetCal;
+    const hasData = d.cal > 0;
+    const fill = hasData ? (overTarget ? "rgba(248,113,113,.7)" : "rgba(99,102,241,.7)") : "rgba(255,255,255,.06)";
+    html += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="3" fill="${fill}" class="nutr-chart-cal-bar"/>`;
+    // Day label
+    html += `<text x="${x + barW / 2}" y="${H - PAD_B + 12}" text-anchor="middle" class="nutr-chart-day-lbl">${dayLabels[i]}</text>`;
+  });
+
+  // Protein line
+  const protPoints = dayTotals.map((d, i) => {
+    const x = PAD_L + i * (chartW / n) + barW / 2 + 2;
+    const y = protToY(d.prot);
+    return `${x},${y}`;
+  });
+  if (dayTotals.some(d => d.prot > 0)) {
+    html += `<polyline points="${protPoints.join(" ")}" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+    // Dots
+    dayTotals.forEach((d, i) => {
+      if (d.prot > 0) {
+        const x = PAD_L + i * (chartW / n) + barW / 2 + 2;
+        const y = protToY(d.prot);
+        html += `<circle cx="${x}" cy="${y}" r="3" fill="#4ade80" stroke="#0f172a" stroke-width="1.5"/>`;
+      }
+    });
+  }
+
+  // Y axis label
+  html += `<text x="${PAD_L - 4}" y="${PAD_T + chartH / 2}" text-anchor="middle" fill="rgba(255,255,255,.25)" font-size="8" font-family="inherit" transform="rotate(-90 ${PAD_L - 4} ${PAD_T + chartH / 2})">kcal</text>`;
+
+  svg.innerHTML = html;
+}
+
+window.analyzeFood = analyzeFood;
+window.saveFoodAnalysis = saveFoodAnalysis;
+window.loadNutritionWeekChart = loadNutritionWeekChart;
+window.selectMealType = selectMealType;
+
+// ── Sync water counter in programme tab ──────────────────────────────────────
+function syncProgWater() {
+  const today = new Date().toDateString();
+  const dateKey = localStorage.getItem("fitai_water_date");
+  const count = dateKey === today ? parseInt(localStorage.getItem("fitai_water_count") || "0", 10) : 0;
+  const target = parseInt(localStorage.getItem("fitai_water_target") || "8", 10);
+
+  const countEl = document.getElementById("prog-water-count");
+  const targetEl = document.getElementById("prog-water-target");
+  const barEl = document.getElementById("prog-water-bar");
+  const glassesEl = document.getElementById("prog-water-glasses");
+
+  if (countEl) countEl.textContent = count;
+  if (targetEl) targetEl.textContent = `/ ${target} verres`;
+  if (barEl) barEl.style.width = Math.min(100, Math.round((count / target) * 100)) + "%";
+  if (glassesEl) {
+    glassesEl.innerHTML = Array.from({ length: target }, (_, i) => {
+      const filled = i < count;
+      return `<div class="water-glass${filled ? " filled" : ""}"
+        onclick="adjustWater(${filled ? i : i + 1});syncProgWater()" title="${filled ? "Retirer" : "Marquer bu"}">
+        <div class="wg-water"></div><div class="wg-shine"></div>
+      </div>`;
+    }).join("");
+  }
+}
+window.syncProgWater = syncProgWater;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// WORKOUT TIMER — Interactive séance player
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _wtExercises = [];  // [{n, m, sets, reps, rest}]
+let _wtExIdx = 0;       // current exercise index
+let _wtSetsDone = 0;    // sets done for current exercise
+let _wtSetsTotal = 0;   // total sets for current exercise
+let _wtRestTimer = null; // interval id
+let _wtRestLeft = 0;
+
+function _wtFormatClock(seconds) {
+  const s = Math.max(0, Math.round(seconds || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+let _wtPhase = "ready"; // ready | work | rest
+let _wtPhaseTimer = null;
+let _wtSecondsLeft = 0;
+let _wtCurrentDone = false;
+let _wtAutoKickoff = null;
+let _wtTimeline = [];
+let _wtTimelineIdx = 0;
+let _wtWorkoutTargetSeconds = 0;
+let _wtElapsedSeconds = 0;
+let _wtReadyTimer = null;
+
+function startWorkout(dayLabel, exercises, params) {
+  params = params || {};
+  _wtExercises = (exercises || []).map((ex, idx) => _normalizeGuidedExercise(ex, idx));
+  _wtTimeline = _buildGuidedTimeline(_wtExercises, Number(params.durationMin || params.duration || 0));
+  _wtTimelineIdx = 0;
+  _wtExIdx = 0;
+  _wtElapsedSeconds = 0;
+  _wtWorkoutTargetSeconds = _wtTimeline.reduce((sum, block) => sum + Number(block.ex.guideSeconds || 0) + Number(block.ex.restSeconds || 0), 0);
+  _wtPhase = 'ready';
+  _wtSecondsLeft = 0;
+  _wtCurrentDone = false;
+  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
+  if (_wtAutoKickoff) { clearTimeout(_wtAutoKickoff); _wtAutoKickoff = null; }
+  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
+
+  const overlay = document.getElementById("wt-overlay");
+  const titleEl = document.getElementById("wt-title");
+  const phaseEl = document.getElementById("wt-phase-label");
+  if (titleEl) titleEl.textContent = dayLabel || 'Séance guidée';
+  if (phaseEl) phaseEl.textContent = `${Math.max(1, Math.round(_wtWorkoutTargetSeconds / 60))} min guidées • auto-run • effort/pause/hydratation${params.sessionStyle ? ` • ${params.sessionStyle}` : ''}`;
+  _wtLockPageScroll();
+  if (overlay) overlay.classList.add("open");
+  _wtEnsureWorkoutVisible();
+  _wtRenderExercise();
+  _wtStartReadyCountdown(3);
+}
+
+function _muscleSVG(muscle) {
+  const m = (muscle || "").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  const dim  = "rgba(255,255,255,.07)";
+  const hi   = "#6366f1";
+  const hiM  = "rgba(99,102,241,.55)";
+  const hi2  = "#4ade80";
+
+  const chest    = /pec|poitrine/.test(m);
+  const shoulder = /epaule|delt/.test(m) && !/arriere/.test(m);
+  const rearDelt = /arriere|oiseau|face.pull/.test(m);
+  const back     = /dos|dorsal|lat|trap|romb/.test(m);
+  const bicep    = /bicep/.test(m);
+  const tricep   = /tricep|dips/.test(m);
+  const core     = /core|abdo|obliqu|gainage|crunch|hollow|planche/.test(m);
+  const glute    = /fess|glute|hip|hanche/.test(m);
+  const quad     = /quad|jamb|squat/.test(m) && !glute;
+  const hamstr   = /ischio|hamilton/.test(m);
+  const calf     = /mollet/.test(m);
+  const cardio   = /cardio|full|hiit/.test(m);
+  const arms     = bicep || tricep || /bras/.test(m);
+
+  // Assign colors per segment
+  const C = (test, full, mid) => test ? (full || hi) : mid ? hiM : dim;
+
+  const shl = C(shoulder, hi);
+  const cht = C(chest, hi);
+  const arm = C(arms);
+  const fab = C(core, hi);
+  const glU = C(glute, hi);
+  const qd  = C(quad || (cardio && !glute), hi, cardio);
+  const cl  = C(calf, hi, quad || cardio);
+  const bck = C(back || rearDelt, hi);
+  const frm = C(arms, null, true); // forearms dim when arms highlighted
+
+  const glow = (c) => c !== dim ? `filter:drop-shadow(0 0 5px ${c})` : "";
+
+  return `<svg viewBox="0 0 88 138" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;overflow:visible">
+    <circle cx="44" cy="12" r="10" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.18)" stroke-width="1.3"/>
+    <rect x="40" y="21" width="8" height="8" rx="3" fill="rgba(255,255,255,.06)"/>
+    <ellipse cx="23" cy="33" rx="11" ry="7" fill="${shl}" style="${glow(shl)}"/>
+    <ellipse cx="65" cy="33" rx="11" ry="7" fill="${shl}" style="${glow(shl)}"/>
+    <path d="M31 28 L57 28 L61 54 L27 54 Z" fill="${cht}" rx="4" style="${glow(cht)}"/>
+    <rect x="30" y="54" width="28" height="27" rx="5" fill="${fab}" style="${glow(fab)}"/>
+    <path d="M29 81 Q44 94 59 81 L59 93 Q44 104 29 93 Z" fill="${glU}" style="${glow(glU)}"/>
+    <rect x="11" y="28" width="11" height="30" rx="5" fill="${arm}" style="${glow(arm)}"/>
+    <rect x="66" y="28" width="11" height="30" rx="5" fill="${arm}" style="${glow(arm)}"/>
+    <rect x="10" y="59" width="10" height="26" rx="4" fill="${frm}"/>
+    <rect x="68" y="59" width="10" height="26" rx="4" fill="${frm}"/>
+    <rect x="28" y="84" width="14" height="31" rx="6" fill="${qd}" style="${glow(qd)}"/>
+    <rect x="46" y="84" width="14" height="31" rx="6" fill="${qd}" style="${glow(qd)}"/>
+    <rect x="29" y="117" width="12" height="20" rx="5" fill="${cl}" style="${glow(cl)}"/>
+    <rect x="47" y="117" width="12" height="20" rx="5" fill="${cl}" style="${glow(cl)}"/>
+    ${(back||rearDelt) ? `<rect x="30" y="29" width="28" height="26" rx="4" fill="rgba(99,102,241,.25)" stroke="rgba(99,102,241,.4)" stroke-width="1" stroke-dasharray="3,2"/>` : ""}
+  </svg>`;
+}
+
+// ── Animated stick figure for exercise movements ──────────────────────────────
+function _stickFigureSVG(name) {
+  const nm = (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  // Near (right/front) limb — bright, thick
+  const st  = 'stroke="rgba(255,255,255,.92)" stroke-width="2.6" stroke-linecap="round" fill="none"';
+  // Far (left/back) limb — dim, thin
+  const stF = 'stroke="rgba(255,255,255,.38)" stroke-width="1.9" stroke-linecap="round" fill="none"';
+  // Mid (torso structural lines)
+  const stM = 'stroke="rgba(255,255,255,.65)" stroke-width="2.1" stroke-linecap="round" fill="none"';
+
+  // Ground shadow ellipse + floor line
+  const FLR = '<ellipse cx="41" cy="77" rx="22" ry="3.5" fill="rgba(0,0,0,.3)"/>' +
+    '<line x1="6" y1="76" x2="76" y2="76" stroke="rgba(255,255,255,.1)" stroke-width="1"/>';
+
+  // SVG defs: drop shadow filter + head radial gradient
+  const DEFS = `<defs>
+    <filter id="sf" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="rgba(0,0,40,.55)"/>
+    </filter>
+    <radialGradient id="hg" cx="36%" cy="34%" r="58%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="60%" stop-color="#c8d4ff" stop-opacity=".93"/>
+      <stop offset="100%" stop-color="#5a6ab0" stop-opacity=".88"/>
+    </radialGradient>
+  </defs>`;
+
+  const open  = `<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;overflow:visible">${DEFS}<g filter="url(#sf)">`;
+  const close = `</g></svg>`;
+
+  // ── Equipment SVG shapes ───────────────────────────────────────────────────
+  const DB = (x=62,y=72,op=".5") =>
+    `<g opacity="${op}">` +
+    `<rect x="${x-5}" y="${y-1.5}" width="10" height="3" rx="1" fill="rgba(255,255,255,.7)"/>` +
+    `<rect x="${x-7}" y="${y-3.5}" width="2.5" height="7" rx=".8" fill="white"/>` +
+    `<rect x="${x+4.5}" y="${y-3.5}" width="2.5" height="7" rx=".8" fill="white"/>` +
+    `</g>`;
+  const BB = (x=40,y=72,op=".5") =>
+    `<g opacity="${op}">` +
+    `<line x1="${x-16}" y1="${y}" x2="${x+16}" y2="${y}" stroke="rgba(255,255,255,.7)" stroke-width="2.4" stroke-linecap="round"/>` +
+    `<rect x="${x-19}" y="${y-4}" width="3" height="8" rx="1" fill="rgba(255,255,255,.8)"/>` +
+    `<rect x="${x-16}" y="${y-5.5}" width="3" height="11" rx="1" fill="rgba(255,255,255,.9)"/>` +
+    `<rect x="${x+13}" y="${y-5.5}" width="3" height="11" rx="1" fill="rgba(255,255,255,.9)"/>` +
+    `<rect x="${x+16}" y="${y-4}" width="3" height="8" rx="1" fill="rgba(255,255,255,.8)"/>` +
+    `</g>`;
+
+  // MUSCLE(cx,cy,col): pulsing muscle group indicator dot
+  const MUSCLE = (cx,cy,col="#f97316") =>
+    `<circle cx="${cx}" cy="${cy}" r="4.5" fill="${col}" opacity=".22" stroke="${col}" stroke-width="1">` +
+    `<animate attributeName="r" values="4.5;8;4.5" dur="1.8s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>` +
+    `<animate attributeName="opacity" values=".22;.04;.22" dur="1.8s" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" repeatCount="indefinite"/>` +
+    `</circle>`;
+
+  const ARC = (d,col="rgba(99,102,241,.28)") =>
+    `<path d="${d}" stroke="${col}" stroke-width="1.5" fill="none" stroke-dasharray="3,2.5" stroke-linecap="round"/>`;
+  const ARRUP = (x,y) => `<g stroke="rgba(255,255,255,.32)" stroke-width="1.3" stroke-linecap="round"><line x1="${x}" y1="${y+7}" x2="${x}" y2="${y}"/><line x1="${x-3.5}" y1="${y+3.5}" x2="${x}" y2="${y}"/><line x1="${x+3.5}" y1="${y+3.5}" x2="${x}" y2="${y}"/></g>`;
+  const ARRDN = (x,y) => `<g stroke="rgba(255,255,255,.32)" stroke-width="1.3" stroke-linecap="round"><line x1="${x}" y1="${y}" x2="${x}" y2="${y+7}"/><line x1="${x-3.5}" y1="${y+3.5}" x2="${x}" y2="${y+7}"/><line x1="${x+3.5}" y1="${y+3.5}" x2="${x}" y2="${y+7}"/></g>`;
+
+  // ── 3D head: filled gradient circle + specular highlight ──
+  const HEAD = (cx, cy, r=7) =>
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1"/>` +
+    `<circle cx="${cx-r*.3}" cy="${cy-r*.28}" r="${r*.18}" fill="rgba(255,255,255,.42)"/>`;
+
+  // ── Joint dot (shoulder, hip, elbow, knee) ────────────────
+  const J = (cx, cy, r=2.4) =>
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(200,215,255,.65)" stroke="rgba(255,255,255,.25)" stroke-width=".8"/>`;
+
+  // ── 3D Torso (static parallelogram) ──────────────────────
+  // sfx,sfy = far(left) shoulder; snx,sny = near(right) shoulder
+  // hfx,hfy = far(left) hip;      hnx,hny = near(right) hip
+  const TORSO = (sfx=32,sfy=21,snx=50,sny=21,hfx=34,hfy=46,hnx=48,hny=46) =>
+    `<polygon points="${sfx},${sfy} ${snx},${sny} ${hnx},${hny} ${hfx},${hfy}" fill="rgba(255,255,255,.07)" stroke="none"/>` +
+    `<line x1="${sfx}" y1="${sfy}" x2="${hfx}" y2="${hfy}" ${stF}/>` +
+    `<line x1="${snx}" y1="${sny}" x2="${hnx}" y2="${hny}" ${st}/>` +
+    `<line x1="${sfx}" y1="${sfy}" x2="${snx}" y2="${sny}" ${stM}/>` +
+    `<line x1="${hfx}" y1="${hfy}" x2="${hnx}" y2="${hny}" ${stM}/>`;
+
+  // ── Animated 3D Torso: sYs=shoulder Ys/frame, hYs=hip Ys/frame ──────────
+  // X positions fixed: far shoulder x=32, near shoulder x=50, far hip x=34, near hip x=48
+  const TORSOA = (sYs, hYs, d="1.8s") => {
+    const N = sYs.length;
+    const sYL = [...sYs, sYs[0]], hYL = [...hYs, hYs[0]];
+    const kt = sYL.map((_,i) => (i/(sYL.length-1)).toFixed(4)).join(";");
+    const ks = Array(N).fill("0.42 0 0.58 1").join("; ");
+    const A = (attr, vals) =>
+      `<animate attributeName="${attr}" values="${vals.join(";")}" dur="${d}" calcMode="spline" keyTimes="${kt}" keySplines="${ks}" repeatCount="indefinite"/>`;
+    const fs = `<line x1="32" y1="${sYs[0]}" x2="34" y2="${hYs[0]}" ${stF}>${A("y1",sYL)}${A("y2",hYL)}</line>`;
+    const ns = `<line x1="50" y1="${sYs[0]}" x2="48" y2="${hYs[0]}" ${st}>${A("y1",sYL)}${A("y2",hYL)}</line>`;
+    const sl = `<line x1="32" y1="${sYs[0]}" x2="50" y2="${sYs[0]}" ${stM}>${A("y1",sYL)}${A("y2",sYL)}</line>`;
+    const hl = `<line x1="34" y1="${hYs[0]}" x2="48" y2="${hYs[0]}" ${stM}>${A("y1",hYL)}${A("y2",hYL)}</line>`;
+    return fs + sl + ns + hl;
+  };
+
+  // ── 2-frame helpers (A→B→A) ───────────────────────────────
+  const KS2 = 'calcMode="spline" keySplines="0.42 0 0.58 1; 0.42 0 0.58 1" repeatCount="indefinite"';
+
+  // L: near-limb 2-frame line
+  const L = (x1,y1,x2,y2, x1b,y1b,x2b,y2b, d="1.5s") => {
+    let el = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${st}>`;
+    if(x1!==x1b) el+=`<animate attributeName="x1" values="${x1};${x1b};${x1}" dur="${d}" ${KS2}/>`;
+    if(y1!==y1b) el+=`<animate attributeName="y1" values="${y1};${y1b};${y1}" dur="${d}" ${KS2}/>`;
+    if(x2!==x2b) el+=`<animate attributeName="x2" values="${x2};${x2b};${x2}" dur="${d}" ${KS2}/>`;
+    if(y2!==y2b) el+=`<animate attributeName="y2" values="${y2};${y2b};${y2}" dur="${d}" ${KS2}/>`;
+    return el + `</line>`;
+  };
+  // LF: same but far-limb style
+  const LF = (x1,y1,x2,y2, x1b,y1b,x2b,y2b, d="1.5s") => {
+    let el = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${stF}>`;
+    if(x1!==x1b) el+=`<animate attributeName="x1" values="${x1};${x1b};${x1}" dur="${d}" ${KS2}/>`;
+    if(y1!==y1b) el+=`<animate attributeName="y1" values="${y1};${y1b};${y1}" dur="${d}" ${KS2}/>`;
+    if(x2!==x2b) el+=`<animate attributeName="x2" values="${x2};${x2b};${x2}" dur="${d}" ${KS2}/>`;
+    if(y2!==y2b) el+=`<animate attributeName="y2" values="${y2};${y2b};${y2}" dur="${d}" ${KS2}/>`;
+    return el + `</line>`;
+  };
+
+  // C: animated circle (head/joint) — now uses HEAD for r>=6
+  const C = (cx,cy,r,cyB,d="1.5s") => {
+    if (r >= 6) {
+      // 3D head with vertical animation
+      const KS2h = 'calcMode="spline" keySplines="0.42 0 0.58 1; 0.42 0 0.58 1" repeatCount="indefinite"';
+      const headAnim = cy !== cyB
+        ? `<animate attributeName="cy" values="${cy};${cyB};${cy}" dur="${d}" ${KS2h}/>`
+        : "";
+      const hilAnim = cy !== cyB
+        ? `<animate attributeName="cy" values="${cy-r*.28};${cyB-r*.28};${cy-r*.28}" dur="${d}" ${KS2h}/>`
+        : "";
+      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1">${headAnim}</circle>` +
+        `<circle cx="${cx-r*.3}" cy="${cy-r*.28}" r="${r*.18}" fill="rgba(255,255,255,.42)">${hilAnim}</circle>`;
+    }
+    const anim = cy!==cyB ? `<animate attributeName="cy" values="${cy};${cyB};${cy}" dur="${d}" ${KS2}/>` : "";
+    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(200,215,255,.58)" stroke="rgba(255,255,255,.5)" stroke-width=".9">${anim}</circle>`;
+  };
+
+  // ── N-frame helpers — smooth multi-keyframe SMIL ──────────
+  const _LM_build = (frames, d, style) => {
+    const N = frames.length;
+    const loop = [...frames, frames[0]];
+    const kt = loop.map((_,i) => (i/(loop.length-1)).toFixed(4)).join(";");
+    const ks = Array(N).fill("0.42 0 0.58 1").join("; ");
+    const SM = `calcMode="spline" keyTimes="${kt}" keySplines="${ks}" repeatCount="indefinite"`;
+    const a = (attr, idx) => {
+      const vals = loop.map(f => f[idx]).join(";");
+      if (loop.every(f => f[idx] === loop[0][idx])) return "";
+      return `<animate attributeName="${attr}" values="${vals}" dur="${d}" ${SM}/>`;
+    };
+    const f0 = frames[0];
+    return `<line x1="${f0[0]}" y1="${f0[1]}" x2="${f0[2]}" y2="${f0[3]}" ${style}>${a("x1",0)}${a("y1",1)}${a("x2",2)}${a("y2",3)}</line>`;
+  };
+  // LM: near-limb N-frame
+  const LM  = (frames, d="1.6s") => _LM_build(frames, d, st);
+  // LMF: far-limb N-frame (dimmer)
+  const LMF = (frames, d="1.6s") => _LM_build(frames, d, stF);
+
+  // CM: animated circle (joint/head) N-frame
+  const CM = (cxs, cys, r, d="1.6s") => {
+    const N = cxs.length;
+    const cxL = [...cxs, cxs[0]], cyL = [...cys, cys[0]];
+    const kt = cxL.map((_,i) => (i/(cxL.length-1)).toFixed(4)).join(";");
+    const ks = Array(N).fill("0.42 0 0.58 1").join("; ");
+    const SM = `calcMode="spline" keyTimes="${kt}" keySplines="${ks}" repeatCount="indefinite"`;
+    const acx = cxs.every(v=>v===cxs[0]) ? "" : `<animate attributeName="cx" values="${cxL.join(";")}" dur="${d}" ${SM}/>`;
+    const acy = cys.every(v=>v===cys[0]) ? "" : `<animate attributeName="cy" values="${cyL.join(";")}" dur="${d}" ${SM}/>`;
+    if (r >= 6) {
+      const hilX = cxs[0] - r*.3, hilY0 = cys[0] - r*.28;
+      const acxH = cxs.every(v=>v===cxs[0]) ? "" : `<animate attributeName="cx" values="${cxL.map(v=>v-r*.3).join(";")}" dur="${d}" ${SM}/>`;
+      const acyH = cys.every(v=>v===cys[0]) ? "" : `<animate attributeName="cy" values="${cyL.map(v=>v-r*.28).join(";")}" dur="${d}" ${SM}/>`;
+      return `<circle cx="${cxs[0]}" cy="${cys[0]}" r="${r}" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1">${acx}${acy}</circle>` +
+        `<circle cx="${hilX}" cy="${hilY0}" r="${r*.18}" fill="rgba(255,255,255,.42)">${acxH}${acyH}</circle>`;
+    }
+    return `<circle cx="${cxs[0]}" cy="${cys[0]}" r="${r}" fill="rgba(200,215,255,.58)" stroke="rgba(255,255,255,.5)" stroke-width=".9">${acx}${acy}</circle>`;
+  };
+
+  // ── Crossfade (2 full-body poses, CSS opacity) ─────────────
+  const XF = (d="1.6s") => `<style>.sfa{animation:sfa ${d} ease-in-out infinite}.sfb{animation:sfb ${d} ease-in-out infinite}@keyframes sfa{0%,35%{opacity:1}48%,85%{opacity:0}100%{opacity:1}}@keyframes sfb{0%,35%{opacity:0}48%,85%{opacity:1}100%{opacity:0}}</style>`;
+
+  // ── Push-up — side view, 3D near/far arms ────────────────────────────────
+  if (/pompe|push.?up|pike.?push/.test(nm)) {
+    const PU_KT = 'keyTimes="0;0.35;0.65;1;1"';
+    const PU_KSP = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite" dur="1.6s"';
+    const puAnim = (attr, vals) => `<animate attributeName="${attr}" values="${vals}" ${PU_KT} ${PU_KSP}/>`;
+    const sYv = "40;51;59;64;40";
+    const headCY = "32;43;51;56;32";
+    const floor = `<line x1="4" y1="66" x2="76" y2="66" stroke="rgba(255,255,255,.18)" stroke-width="1.2"/>`;
+    const handL = `<circle cx="22" cy="66" r="3" fill="rgba(255,255,255,.5)"/>`;
+    const handR = `<circle cx="46" cy="66" r="2.2" fill="rgba(255,255,255,.28)"/>`;
+    const body = `<line x1="22" y1="40" x2="58" y2="40" ${st}>${puAnim("y1",sYv)}${puAnim("y2",sYv)}</line>`;
+    const head = `<circle cx="10" cy="32" r="6" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1">${puAnim("cy",headCY)}</circle>` +
+      `<circle cx="8" cy="30" r="1.1" fill="rgba(255,255,255,.42)">${puAnim("cy","28;39;47;52;28")}</circle>`;
+    const neck = `<line x1="14" y1="34" x2="22" y2="40" ${st}>${puAnim("y1","26;37;45;50;26")}${puAnim("y2",sYv)}</line>`;
+    // Far arm (back, dimmer)
+    const armFar = `<line x1="46" y1="40" x2="46" y2="66" ${stF}>${puAnim("y1",sYv)}</line>`;
+    // Near arm (front, bright)
+    const armNear = `<line x1="22" y1="40" x2="22" y2="66" ${st}>${puAnim("y1",sYv)}</line>`;
+    const leg  = `<line x1="58" y1="40" x2="64" y2="66" ${st}>${puAnim("y1",sYv)}</line>`;
+    const arrows = ARRUP(70,38) + ARRDN(70,50);
+    const mus = MUSCLE(34,52,"#60a5fa");
+    return open + floor + mus + armFar + handR + head + neck + body + armNear + leg + handL + arrows + close;
+  }
+
+  // ── Squat — 3/4 view, 4 frames ───────────────────────────────────────────
+  if (/squat/.test(nm)) {
+    const sYs=[21,26,31,36], hYs=[46,51,55,58];
+    return open + FLR + MUSCLE(41,50,"#f97316") +
+      CM([42,42,42,42],[11,15,19,23],7,"1.8s") +
+      LM([[41,14,41,21],[41,18,41,26],[41,22,41,31],[41,26,41,36]],"1.8s") +
+      TORSOA(sYs, hYs, "1.8s") +
+      LMF([[32,21,28,34],[32,26,28,38],[32,31,28,42],[32,36,28,46]],"1.8s") +
+      LM([[50,21,54,34],[50,26,54,38],[50,31,54,42],[50,36,54,46]],"1.8s") +
+      LMF([[34,46,28,63],[34,51,26,63],[34,55,22,63],[34,58,18,62]],"1.8s") +
+      LMF([[28,63,24,76],[26,63,22,76],[22,63,18,76],[18,62,16,76]],"1.8s") +
+      LM([[48,46,52,63],[48,51,56,63],[48,55,60,63],[48,58,62,62]],"1.8s") +
+      LM([[52,63,56,76],[56,63,60,76],[60,63,64,76],[62,62,66,76]],"1.8s") +
+      J(34,46) + J(48,46) + ARRDN(40,5) + close;
+  }
+
+  // ── Planche — 3D side profile ─────────────────────────────────────────────
+  if (/planche|plank/.test(nm)) {
+    return open +
+      `<line x1="4" y1="54" x2="76" y2="54" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
+      HEAD(10,36) +
+      `<line x1="16" y1="38" x2="62" y2="38" ${stM}/>` +
+      `<line x1="24" y1="38" x2="24" y2="41" ${stM}/>` +
+      `<line x1="40" y1="38" x2="40" y2="41" ${stM}/>` +
+      `<line x1="55" y1="38" x2="55" y2="41" ${stM}/>` +
+      `<line x1="30" y1="38" x2="30" y2="54" ${stF}/>` +
+      `<line x1="46" y1="38" x2="46" y2="54" ${st}/>` +
+      `<line x1="62" y1="38" x2="68" y2="30" ${stF}/>` +
+      `<line x1="62" y1="38" x2="68" y2="46" ${st}/>` +
+      J(62,38) + J(30,54) + J(46,54) + MUSCLE(40,38,"#60a5fa") +
+      `<circle cx="40" cy="38" r="4" stroke="rgba(99,102,241,.55)" fill="rgba(99,102,241,.1)" stroke-width="1.5">` +
+      `<animate attributeName="r" values="4;7;4" dur="2.2s" ${KS2}/>` +
+      `<animate attributeName="opacity" values=".9;.2;.9" dur="2.2s" ${KS2}/></circle>` + close;
+  }
+
+  // ── Tractions — 3/4 view, 4 frames ───────────────────────────────────────
+  if (/traction|pull.?up|chin.?up/.test(nm)) {
+    const sYs=[36,28,20,16], hYs=[61,53,45,41];
+    return open +
+      `<line x1="8" y1="8" x2="72" y2="8" stroke="rgba(255,255,255,.45)" stroke-width="3" stroke-linecap="round"/>` +
+      `<circle cx="28" cy="8" r="3.5" fill="rgba(255,255,255,.28)"/>` +
+      `<circle cx="52" cy="8" r="3.5" fill="rgba(255,255,255,.55)"/>` +
+      MUSCLE(41,42,"#818cf8") + ARRUP(40,2) +
+      CM([42,42,42,42],[26,18,10,6],7,"1.4s") +
+      LM([[41,29,41,36],[41,21,41,28],[41,13,41,20],[41,9,41,16]],"1.4s") +
+      TORSOA(sYs, hYs, "1.4s") +
+      LMF([[32,36,28,8],[32,28,28,8],[32,20,28,8],[32,16,28,8]],"1.4s") +
+      LM([[50,36,52,8],[50,28,52,8],[50,20,52,8],[50,16,52,8]],"1.4s") +
+      LMF([[34,61,30,72],[34,53,30,65],[34,45,32,58],[34,41,34,56]],"1.4s") +
+      LMF([[30,72,28,76],[30,65,28,70],[32,58,30,64],[34,56,34,60]],"1.4s") +
+      LM([[48,61,52,72],[48,53,52,65],[48,45,50,58],[48,41,48,56]],"1.4s") +
+      LM([[52,72,54,76],[52,65,54,70],[50,58,52,64],[48,56,50,60]],"1.4s") +
+      J(32,36) + J(50,36) + close;
+  }
+
+  // ── Fentes — 3/4 view, 4 frames ──────────────────────────────────────────
+  if (/fente|lunge/.test(nm)) {
+    return open + FLR + MUSCLE(41,50,"#f97316") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LMF([[32,21,26,36],[32,21,26,32],[32,21,28,36],[32,21,28,32]],"1.8s") +
+      LMF([[26,36,22,48],[26,32,22,44],[28,36,24,48],[28,32,24,44]],"1.8s") +
+      LM([[50,21,56,36],[50,21,56,32],[50,21,54,36],[50,21,54,32]],"1.8s") +
+      LM([[56,36,62,48],[56,32,62,44],[54,36,60,48],[54,32,60,44]],"1.8s") +
+      LMF([[34,46,26,62],[34,46,20,62],[34,46,44,60],[34,46,38,62]],"1.8s") +
+      LMF([[26,62,20,76],[20,62,14,76],[44,60,52,76],[38,62,40,76]],"1.8s") +
+      LM([[48,46,54,62],[48,46,60,56],[48,46,34,56],[48,46,42,60]],"1.8s") +
+      LM([[54,62,60,76],[60,56,68,72],[34,56,26,70],[42,60,44,76]],"1.8s") +
+      J(34,46) + J(48,46) + close;
+  }
+
+  // ── Hip thrust — 3/4 view, 4 frames ──────────────────────────────────────
+  if (/hip.?thrust|thrust/.test(nm)) {
+    const sYs=[46,41,37,33], hYs=[52,47,42,38];
+    return open + FLR +
+      `<rect x="4" y="42" width="16" height="6" rx="2" stroke="rgba(255,255,255,.3)" stroke-width="1.5" fill="rgba(255,255,255,.05)"/>` +
+      MUSCLE(41,38,"#f97316") + ARRUP(72,28) +
+      CM([42,42,42,42],[36,31,27,23],7,"1.4s") +
+      LM([[41,32,41,36],[41,27,41,31],[41,23,41,27],[41,19,41,23]],"1.4s") +
+      TORSOA(sYs, hYs, "1.4s") +
+      LMF([[32,46,28,58],[32,41,28,53],[32,37,28,50],[32,33,28,46]],"1.4s") +
+      LM([[50,46,54,58],[50,41,54,53],[50,37,54,50],[50,33,54,46]],"1.4s") +
+      LMF([[34,52,28,62],[34,47,28,58],[34,42,28,54],[34,38,28,50]],"1.4s") +
+      LMF([[28,62,22,76],[28,58,22,76],[28,54,22,76],[28,50,22,76]],"1.4s") +
+      LM([[48,52,54,62],[48,47,54,58],[48,42,54,54],[48,38,54,50]],"1.4s") +
+      LM([[54,62,60,76],[54,58,60,76],[54,54,60,76],[54,50,60,76]],"1.4s") +
+      J(34,52) + J(48,52) + close;
+  }
+
+  // ── Crunch — 4 frames: flat → quarter → half → full ──────
+  if (/crunch|abdo|sit.?up|hollow/.test(nm)) {
+    return open +
+      `<line x1="4" y1="66" x2="76" y2="66" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
+      MUSCLE(36,46,"#f97316") +
+      CM([14,18,22,26],[54,48,42,38],6,"1.4s") +
+      LM([[20,54,62,54],[26,48,60,55],[30,44,58,56],[34,41,58,57]],"1.4s") +
+      LMF([[62,54,70,46],[60,55,66,47],[58,56,64,47],[58,57,64,47]],"1.4s") +
+      LM([[62,54,70,62],[60,55,66,63],[58,56,64,63],[58,57,64,63]],"1.4s") +
+      LMF([[30,54,26,66],[34,52,28,64],[38,50,30,63],[40,54,28,64]],"1.4s") +
+      LM([[46,54,50,66],[48,54,52,66],[50,54,52,66],[50,57,52,66]],"1.4s") +
+      close;
+  }
+
+  // ── Mountain climbers — 3D side profile ──────────────────────────────────
+  if (/mountain|climber/.test(nm)) {
+    return open +
+      `<line x1="0" y1="50" x2="80" y2="50" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
+      HEAD(10,32) +
+      `<line x1="16" y1="34" x2="58" y2="34" ${stM}/>` +
+      `<line x1="24" y1="34" x2="24" y2="38" ${stM}/>` +
+      `<line x1="40" y1="34" x2="40" y2="38" ${stM}/>` +
+      `<line x1="58" y1="34" x2="64" y2="26" ${stF}/>` +
+      `<line x1="58" y1="34" x2="64" y2="42" ${st}/>` +
+      `<line x1="30" y1="34" x2="30" y2="50" ${stF}/>` +
+      `<line x1="46" y1="34" x2="46" y2="50" ${st}/>` +
+      J(58,34) + J(30,50) + J(46,50) +
+      LMF([[30,50,20,44],[30,50,28,50],[30,50,40,50],[30,50,32,46]],"0.8s") +
+      LM([[46,50,56,44],[46,50,50,50],[46,50,36,44],[46,50,42,46]],"0.8s") +
+      close;
+  }
+
+  // ── Burpees — 3D jump ↔ plank crossfade ─────────────────────────────────
+  if (/burpee/.test(nm)) {
+    return open + XF("1.8s") +
+      `<g class="sfa">${HEAD(42,8)}` +
+        `<line x1="41" y1="15" x2="41" y2="21" ${stM}/>` +
+        `<polygon points="32,21 50,21 48,38 34,38" fill="rgba(255,255,255,.07)" stroke="none"/>` +
+        `<line x1="32" y1="21" x2="50" y2="21" ${stM}/>` +
+        `<line x1="34" y1="38" x2="48" y2="38" ${stM}/>` +
+        `<line x1="32" y1="21" x2="34" y2="38" ${stF}/>` +
+        `<line x1="50" y1="21" x2="48" y2="38" ${st}/>` +
+        `<line x1="32" y1="21" x2="24" y2="14" ${stF}/>` +
+        `<line x1="50" y1="21" x2="58" y2="14" ${st}/>` +
+        `<line x1="34" y1="38" x2="28" y2="54" ${stF}/>` +
+        `<line x1="48" y1="38" x2="54" y2="54" ${st}/>` +
+      `</g>` +
+      `<g class="sfb">${HEAD(10,40)}` +
+        `<line x1="16" y1="42" x2="58" y2="42" ${stM}/>` +
+        `<line x1="24" y1="42" x2="24" y2="46" ${stM}/>` +
+        `<line x1="40" y1="42" x2="40" y2="46" ${stM}/>` +
+        `<line x1="30" y1="42" x2="30" y2="58" ${stF}/>` +
+        `<line x1="46" y1="42" x2="46" y2="58" ${st}/>` +
+        `<line x1="58" y1="42" x2="64" y2="35" ${stF}/>` +
+        `<line x1="58" y1="42" x2="64" y2="49" ${st}/>` +
+      `</g>` +
+      `<line x1="0" y1="58" x2="80" y2="58" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` + close;
+  }
+
+  // ── Dips — 3/4 view, 4 frames ────────────────────────────────────────────
+  if (/dips?/.test(nm)) {
+    const sYs=[16,20,25,30], hYs=[41,45,50,55];
+    return open +
+      `<line x1="14" y1="10" x2="14" y2="64" stroke="rgba(255,255,255,.18)" stroke-width="2.5" stroke-linecap="round"/>` +
+      `<line x1="66" y1="10" x2="66" y2="64" stroke="rgba(255,255,255,.3)" stroke-width="2.5" stroke-linecap="round"/>` +
+      `<line x1="8" y1="14" x2="20" y2="14" stroke="rgba(255,255,255,.22)" stroke-width="2"/>` +
+      `<line x1="60" y1="14" x2="72" y2="14" stroke="rgba(255,255,255,.38)" stroke-width="2"/>` +
+      MUSCLE(41,32,"#f59e0b") + ARRDN(41,72) +
+      CM([42,42,42,42],[6,10,15,20],7,"1.3s") +
+      LM([[41,9,41,16],[41,13,41,20],[41,18,41,25],[41,23,41,30]],"1.3s") +
+      TORSOA(sYs, hYs, "1.3s") +
+      LMF([[32,16,14,16],[32,20,14,20],[32,25,14,26],[32,30,14,30]],"1.3s") +
+      LM([[50,16,66,16],[50,20,66,20],[50,25,66,26],[50,30,66,30]],"1.3s") +
+      LMF([[34,41,32,58],[34,45,32,62],[34,50,32,66],[34,55,32,70]],"1.3s") +
+      LM([[48,41,50,58],[48,45,50,62],[48,50,50,66],[48,55,50,70]],"1.3s") +
+      J(32,16) + J(50,16) + close;
+  }
+
+  // ── Curl — 4 frames: bicep curl, 3/4 view, no dumbbell ──────
+  if (/curl/.test(nm)) {
+    return open + FLR +
+      MUSCLE(50,28,"#818cf8") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      // Far arm static hanging
+      LF(32,21,28,38, 32,21,28,38) + LF(28,38,26,48, 28,38,26,48) +
+      // Near arm: upper arm static, forearm curls up
+      LM([[50,21,56,34],[50,21,56,34],[50,21,56,34],[50,21,56,34]],"1.4s") +
+      LM([[56,34,60,48],[56,34,58,38],[56,34,54,26],[56,34,58,38]],"1.4s") +
+      // Legs static
+      L(34,46,30,68, 34,46,30,68) + L(48,46,52,68, 48,46,52,68) +
+      L(30,68,26,76, 30,68,26,76) + L(52,68,56,76, 52,68,56,76) +
+      J(50,21) + J(56,34) + J(34,46) + J(48,46) + close;
+  }
+
+  // ── Rowing — bent-over pull, 3/4 view, no dumbbell ─────────
+  if (/rowing|tirage|row|pull.?over|oiseau/.test(nm)) {
+    // Bent-over: torso ~45° forward, shoulders at (28,26)/(46,26), hips at (30,46)/(48,46)
+    return open + FLR +
+      MUSCLE(38,30,"#818cf8") +
+      HEAD(20,20) +
+      `<line x1="24" y1="24" x2="28" y2="26" ${stM}/>` +
+      TORSO(28,26,46,26,30,46,48,46) +
+      // Far arm pulls back: elbow (22,36) → (30,30) → (36,24)
+      LMF([[28,26,20,36],[28,26,24,30],[28,26,32,22],[28,26,24,30]],"1.3s") +
+      LMF([[20,36,16,46],[24,30,20,40],[32,22,34,32],[24,30,20,40]],"1.3s") +
+      // Near arm pulls back
+      LM([[46,26,54,36],[46,26,56,28],[46,26,58,20],[46,26,56,28]],"1.3s") +
+      LM([[54,36,58,46],[56,28,60,36],[58,20,62,30],[56,28,60,36]],"1.3s") +
+      // Legs bent stance
+      LMF([[30,46,24,66],[30,46,24,66],[30,46,24,66],[30,46,24,66]],"1.3s") +
+      LM([[48,46,54,66],[48,46,54,66],[48,46,54,66],[48,46,54,66]],"1.3s") +
+      J(28,26) + J(46,26) + J(30,46) + J(48,46) + close;
+  }
+
+  // ── Deadlift — 4 frames: deep bend → mid → almost up → upright, 3/4 view
+  if (/souleve|deadlift|terre|sumo|roumain/.test(nm)) {
+    // Torso hinges from bent (sY=36,hY=46) to upright (sY=21,hY=46)
+    const sYs=[36,30,24,21], hYs=[46,46,46,46];
+    return open + FLR +
+      MUSCLE(40,35,"#22c55e") +
+      ARRUP(72,30) +
+      CM([30,35,38,42],[36,26,18,11],7,"1.8s") +
+      `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` +
+      TORSOA(sYs, hYs, "1.8s") +
+      // Far arm hangs down toward floor
+      LMF([[32,36,28,56],[32,30,28,50],[32,24,28,44],[32,21,28,40]],"1.8s") +
+      LMF([[28,56,26,70],[28,50,26,64],[28,44,26,60],[28,40,26,56]],"1.8s") +
+      // Near arm hangs down toward floor
+      LM([[50,36,54,56],[50,30,54,50],[50,24,54,44],[50,21,54,40]],"1.8s") +
+      LM([[54,56,56,70],[54,50,56,64],[54,44,56,60],[54,40,56,56]],"1.8s") +
+      // Legs (knee bend at bottom, straight at top)
+      LMF([[34,46,26,62],[34,46,27,64],[34,46,28,66],[34,46,30,68]],"1.8s") +
+      LM([[48,46,56,62],[48,46,55,64],[48,46,54,66],[48,46,52,68]],"1.8s") +
+      J(34,46) + J(48,46) + close;
+  }
+
+  // ── Press — 4 frames: start → quarter → half → lockout, 3/4 view ───
+  if (/develop|bench|militaire|overhead|press|presse|ecarté|ecarte/.test(nm)) {
+    return open + FLR +
+      MUSCLE(41,22,"#60a5fa") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      ARRUP(42,6) +
+      // Far arm presses overhead: shoulder(32,21) → elbow → hand
+      LMF([[32,21,24,34],[32,21,22,26],[32,21,20,18],[32,21,22,10]],"1.4s") +
+      LMF([[24,34,20,46],[22,26,18,36],[20,18,18,26],[22,10,20,14]],"1.4s") +
+      // Near arm presses overhead
+      LM([[50,21,58,34],[50,21,60,26],[50,21,62,18],[50,21,60,10]],"1.4s") +
+      LM([[58,34,62,46],[60,26,64,36],[62,18,66,26],[60,10,62,14]],"1.4s") +
+      // Legs static
+      L(34,46,30,68, 34,46,30,68) + L(48,46,52,68, 48,46,52,68) +
+      L(30,68,26,76, 30,68,26,76) + L(52,68,56,76, 52,68,56,76) +
+      J(32,21) + J(50,21) + J(34,46) + J(48,46) + close;
+  }
+
+  // ── Jump squat — 3/4 view, 4 frames ─────────────────────────────────────
+  if (/jump|saut/.test(nm)) {
+    const sYs=[26,19,9,17], hYs=[50,42,30,40];
+    return open + FLR +
+      CM([42,42,42,42],[16,9,0,8],7,"1.2s") +
+      LM([[41,19,41,26],[41,12,41,19],[41,3,41,9],[41,11,41,17]],"1.2s") +
+      TORSOA(sYs, hYs, "1.2s") +
+      LMF([[32,26,24,38],[32,19,24,28],[32,9,22,12],[32,17,24,24]],"1.2s") +
+      LM([[50,26,58,38],[50,19,56,28],[50,9,58,10],[50,17,56,24]],"1.2s") +
+      LMF([[34,50,28,66],[34,42,28,58],[34,30,32,44],[34,40,28,58]],"1.2s") +
+      LMF([[28,66,24,76],[28,58,24,72],[32,44,30,54],[28,58,24,70]],"1.2s") +
+      LM([[48,50,54,66],[48,42,54,58],[48,30,50,44],[48,40,54,58]],"1.2s") +
+      LM([[54,66,58,76],[54,58,60,72],[50,44,54,54],[54,58,58,70]],"1.2s") +
+      J(34,50) + J(48,50) + close;
+  }
+
+  // ── Running — 4-frame stride cycle (3D near/far limbs) ──
+  if (/course|run|sprint|jog/.test(nm)) {
+    return open +
+      `<line x1="6" y1="68" x2="74" y2="68" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
+      CM([42,42,42,42],[11,11,11,11],7,"0.7s") +
+      `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LMF([[32,21,22,32],[32,21,28,30],[32,21,38,26],[32,21,34,24]],"0.7s") +
+      LM([[50,21,60,28],[50,21,56,30],[50,21,46,34],[50,21,50,32]],"0.7s") +
+      LMF([[34,46,28,62],[34,46,32,62],[34,46,40,60],[34,46,36,62]],"0.7s") +
+      LMF([[28,62,22,68],[32,62,26,68],[40,60,50,68],[36,62,32,68]],"0.7s") +
+      LM([[48,46,54,60],[48,46,50,62],[48,46,40,64],[48,46,44,62]],"0.7s") +
+      LM([[54,60,60,68],[50,62,52,68],[40,64,34,68],[44,62,46,68]],"0.7s") +
+      J(34,46) + J(48,46) + close;
+  }
+
+  // ── Élévations latérales — 3/4 view ──────────────────────────────────────
+  if (/elevation|raise|oiseau.invers|face.pull|shrug/.test(nm)) {
+    return open + FLR + MUSCLE(41,24,"#60a5fa") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LMF([[32,21,24,36],[32,21,18,28],[32,21,14,22],[32,21,18,28]],"1.4s") +
+      LM([[50,21,58,36],[50,21,64,28],[50,21,68,22],[50,21,64,28]],"1.4s") +
+      L(34,46,30,68, 34,46,30,68) + L(48,46,52,68, 48,46,52,68) +
+      L(30,68,26,76, 30,68,26,76) + L(52,68,56,76, 52,68,56,76) +
+      close;
+  }
+
+  // ── Extension triceps — 3/4 view ─────────────────────────────────────────
+  if (/extension.tricep|tricep.push|skull/.test(nm)) {
+    return open + FLR + MUSCLE(38,26,"#f59e0b") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LF(32,21,26,14, 32,21,26,14) +
+      LM([[26,14,20,24],[26,14,26,18],[26,14,36,12],[26,14,40,10]],"1.3s") +
+      LMF([[50,21,56,14],[50,21,56,14],[50,21,58,14],[50,21,58,14]],"1.3s") +
+      L(34,46,30,68, 34,46,30,68) + L(48,46,52,68, 48,46,52,68) +
+      L(30,68,26,76, 30,68,26,76) + L(52,68,56,76, 52,68,56,76) + close;
+  }
+
+  // ── Jumping jacks — 3/4 view ─────────────────────────────────────────────
+  if (/jumping.?jack|ecart|jumping/.test(nm)) {
+    return open + FLR +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LMF([[32,21,28,38],[32,21,14,18],[32,21,28,38],[32,21,14,18]],"0.8s") +
+      LMF([[28,38,24,48],[14,18,8,26],[28,38,24,48],[14,18,8,26]],"0.8s") +
+      LM([[50,21,54,38],[50,21,68,18],[50,21,54,38],[50,21,68,18]],"0.8s") +
+      LM([[54,38,58,48],[68,18,74,26],[54,38,58,48],[68,18,74,26]],"0.8s") +
+      LMF([[34,46,28,68],[34,46,16,62],[34,46,28,68],[34,46,16,62]],"0.8s") +
+      LM([[48,46,54,68],[48,46,66,62],[48,46,54,68],[48,46,66,62]],"0.8s") +
+      J(32,21) + J(50,21) + J(34,46) + J(48,46) + close;
+  }
+
+  // ── Gainage latéral — side plank hold with hip pulse ──────
+  if (/gainage.lat|side.?plank|lateral/.test(nm)) {
+    const slKS = 'calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1" repeatCount="indefinite"';
+    const hipY = `<animate attributeName="cy" values="42;38;42" dur="2.2s" ${slKS}/>`;
+    const hipYl = `<animate attributeName="y1" values="42;38;42" dur="2.2s" ${slKS}/>`;
+    const hipYl2 = `<animate attributeName="y2" values="42;38;42" dur="2.2s" ${slKS}/>`;
+    return open +
+      `<line x1="4" y1="62" x2="76" y2="62" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
+      MUSCLE(50,38,"#f97316") +
+      // Head
+      `<circle cx="10" cy="36" r="6" fill="url(#hg)" stroke="rgba(255,255,255,.65)" stroke-width="1.1"/>` +
+      `<circle cx="8.2" cy="34.3" r="1.1" fill="rgba(255,255,255,.42)"/>` +
+      // Neck + torso (horizontal)
+      `<line x1="16" y1="38" x2="68" y2="38" ${st}>` +
+      `<animate attributeName="y1" values="38;34;38" dur="2.2s" ${slKS}/>` +
+      `<animate attributeName="y2" values="38;34;38" dur="2.2s" ${slKS}/></line>` +
+      // Top arm straight up (near)
+      `<line x1="38" y1="38" x2="38" y2="22" ${st}>` +
+      `<animate attributeName="y1" values="38;34;38" dur="2.2s" ${slKS}/></line>` +
+      // Bottom arm (far, supporting)
+      `<line x1="16" y1="38" x2="16" y2="62" ${stF}>` +
+      `<animate attributeName="y1" values="38;34;38" dur="2.2s" ${slKS}/></line>` +
+      // Hip pulse circle
+      `<circle cx="68" cy="42" r="3" fill="rgba(200,215,255,.55)" stroke="rgba(255,255,255,.22)" stroke-width=".7">${hipY}</circle>` +
+      // Legs
+      `<line x1="68" y1="42" x2="68" y2="62" ${stF}>${hipYl}</line>` +
+      `<line x1="68" y1="42" x2="76" y2="62" ${st}>${hipYl}</line>` +
+      ARRUP(72,14) +
+      close;
+  }
+
+  // ── Step-up — drive knee on bench / box ───────────────────────────────
+  if (/step.?up|montee.?banc|bench.?step/.test(nm)) {
+    return open + FLR +
+      `<rect x="48" y="52" width="20" height="8" rx="3" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.18)" stroke-width="1"/>` +
+      MUSCLE(42,48,"#f97316") +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      LMF([[32,21,26,36],[32,21,26,32],[32,21,26,36],[32,21,26,32]],"1.2s") +
+      LM([[50,21,56,36],[50,21,56,32],[50,21,56,36],[50,21,56,32]],"1.2s") +
+      LMF([[34,46,26,62],[34,46,26,62],[34,46,28,58],[34,46,28,58]],"1.2s") +
+      LMF([[26,62,20,76],[26,62,20,76],[28,58,24,76],[28,58,24,76]],"1.2s") +
+      LM([[48,46,56,58],[48,46,56,52],[48,46,56,58],[48,46,56,52]],"1.2s") +
+      LM([[56,58,62,52],[56,52,62,46],[56,58,62,52],[56,52,62,46]],"1.2s") + close;
+  }
+
+  // ── Dips — bench dip bodyweight, side / 3-4 view ───────────────────────
+  if (/dip|dips|bench.?dip/.test(nm)) {
+    return open +
+      `<rect x="12" y="54" width="16" height="6" rx="2" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.18)" stroke-width="1"/>` +
+      `<line x1="4" y1="66" x2="76" y2="66" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
+      MUSCLE(34,36,"#60a5fa") +
+      HEAD(52,28) +
+      `<line x1="46" y1="34" x2="28" y2="40" ${stM}/>` +
+      `<line x1="28" y1="40" x2="20" y2="56" ${stF}><animate attributeName="y2" values="56;62;56" dur="1.2s" ${KS2}/></line>` +
+      `<line x1="32" y1="38" x2="28" y2="56" ${st}><animate attributeName="y2" values="56;62;56" dur="1.2s" ${KS2}/></line>` +
+      `<line x1="46" y1="34" x2="60" y2="56" ${stF}/>` +
+      `<line x1="46" y1="34" x2="68" y2="54" ${st}/>` +
+      close;
+  }
+
+  // ── High knees — alternating drive ──────────────────────────────────────
+  if (/high.?knees|montee.?genou/.test(nm)) {
+    return open + FLR +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      MUSCLE(42,50,"#f97316") +
+      LMF([[32,21,24,34],[32,21,28,30],[32,21,24,34],[32,21,28,30]],"0.8s") +
+      LM([[50,21,58,34],[50,21,54,30],[50,21,58,34],[50,21,54,30]],"0.8s") +
+      LMF([[34,46,26,60],[34,46,38,50],[34,46,26,60],[34,46,38,50]],"0.8s") +
+      LM([[48,46,56,60],[48,46,42,50],[48,46,56,60],[48,46,42,50]],"0.8s") + close;
+  }
+
+  // ── Russian twist / seated core rotation ────────────────────────────────
+  if (/russian.?twist|twist|rotation/.test(nm)) {
+    return open +
+      `<line x1="4" y1="66" x2="76" y2="66" stroke="rgba(255,255,255,.12)" stroke-width="1"/>` +
+      MUSCLE(38,46,"#f97316") +
+      CM([30,30,30,30],[42,42,42,42],6,"1.3s") +
+      LM([[30,48,46,40],[30,48,42,44],[30,48,18,44],[30,48,46,40]],"1.3s") +
+      LMF([[28,52,22,66],[28,52,24,66],[28,52,22,66],[28,52,24,66]],"1.3s") +
+      LM([[40,52,52,66],[40,52,48,66],[40,52,52,66],[40,52,48,66]],"1.3s") +
+      ARRUP(58,32) + ARRDN(14,32) + close;
+  }
+
+  // ── Mollets / calf raises ───────────────────────────────────────────────
+  if (/mollet|calf/.test(nm)) {
+    return open + FLR +
+      HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+      MUSCLE(42,68,"#22c55e") +
+      LMF([[32,21,28,38],[32,21,28,38],[32,21,28,38],[32,21,28,38]],"1.1s") +
+      LM([[50,21,54,38],[50,21,54,38],[50,21,54,38],[50,21,54,38]],"1.1s") +
+      LMF([[34,46,30,68],[34,46,30,64],[34,46,30,68],[34,46,30,64]],"1.1s") +
+      LM([[48,46,52,68],[48,46,52,64],[48,46,52,68],[48,46,52,64]],"1.1s") +
+      close;
+  }
+
+  // ── Étirement / Stretch — slow arm reach + torso tilt, 3/4 view ─────
+  if (/etir|stretch|mobilit|yoga|souplesse/.test(nm)) {
+    const sYs=[21,21,21,21], hYs=[46,46,46,46];
+    return open + FLR +
+      CM([42,42,42,42],[10,10,10,8],7,"2.4s") +
+      `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` +
+      TORSOA(sYs, hYs, "2.4s") +
+      // Far arm: reaches across and down
+      LMF([[32,21,22,32],[32,21,20,28],[32,21,18,26],[32,21,22,32]],"2.4s") +
+      // Near arm: sweeps up overhead
+      LM([[50,21,58,30],[50,21,62,20],[50,21,66,12],[50,21,58,30]],"2.4s") +
+      // Far leg: slight step back
+      LMF([[34,46,28,68],[34,46,26,68],[34,46,24,68],[34,46,28,68]],"2.4s") +
+      // Near leg: static
+      LM([[48,46,54,68],[48,46,54,68],[48,46,54,68],[48,46,54,68]],"2.4s") +
+      J(32,21) + J(50,21) + J(34,46) + J(48,46) + close;
+  }
+
+  // ── Generic — 4-frame arm swing, 3/4 view ───────────────────────────
+  return open + FLR +
+    HEAD(42,11) + `<line x1="41" y1="18" x2="41" y2="21" ${stM}/>` + TORSO() +
+    LMF([[32,21,22,30],[32,21,26,34],[32,21,38,32],[32,21,28,36]],"1.5s") +
+    LM([[50,21,60,30],[50,21,56,34],[50,21,44,32],[50,21,54,36]],"1.5s") +
+    L(34,46,30,68, 34,46,30,68) + L(48,46,52,68, 48,46,52,68) +
+    L(30,68,26,76, 30,68,26,76) + L(52,68,56,76, 52,68,56,76) +
+    J(32,21) + J(50,21) + J(34,46) + J(48,46) +
+    close;
+}
+
+// ── Drinking stick figure (shown during rest periods) ─────────────────────────
+function _stickFigureDrinking() {
+  const st = 'stroke="rgba(255,255,255,.88)" stroke-width="2.2" stroke-linecap="round" fill="none"';
+  // 5-keyframe timeline: idle → raise → drink → lower → idle  (dur=2.8s)
+  const KT = 'keyTimes="0;0.12;0.42;0.72;0.88;1"';
+  const KSP = 'calcMode="spline" keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.2 0.8 0.3 1; 0.4 0 0.6 1; 0.4 0 0.6 1"';
+  const dur = 'dur="2.8s" repeatCount="indefinite"';
+  const a = (attr, vals) => `<animate attributeName="${attr}" values="${vals}" ${KT} ${KSP} ${dur}/>`;
+
+  // Bottle follows right arm tip: idle(58,44) → raise(48,20) → drink(46,16) → lower back
+  const bottleX = a("x", "54;54;42;40;54;54");
+  const bottleY = a("y", "40;40;14;10;40;40");
+
+  // Water drops appear only during drink phase (keyTimes 0.42-0.72)
+  const dropA = (cx, cy, delay) => `<circle cx="${cx}" fill="rgba(64,196,255,.9)" r="2">
+    <animate attributeName="cy" values="${cy};${cy};${cy};${cy+12};${cy+18};${cy+20}" ${KT} ${KSP} ${dur}/>
+    <animate attributeName="opacity" values="0;0;0;1;0.4;0" ${KT} ${KSP} ${dur}/>
+    <animate attributeName="r" values="2;2;2;1.8;1.2;0" ${KT} ${KSP} ${dur}/>
+  </circle>`;
+
+  return `<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;overflow:visible">
+    <!-- Standing figure -->
+    <circle cx="40" r="7" ${st}>${a("cy","10;10;14;14;10;10")}</circle>
+    <line x1="40" y1="17" x2="40" y2="44" ${st}/>
+    <!-- Left arm static -->
+    <line x1="40" y1="28" x2="22" y2="44" ${st}/>
+    <!-- Right arm raises bottle to mouth -->
+    <line x1="40" y1="28" ${st}>
+      ${a("x2","58;58;48;46;58;58")}${a("y2","44;44;22;18;44;44")}
+    </line>
+    <!-- Legs -->
+    <line x1="40" y1="44" x2="32" y2="68" ${st}/>
+    <line x1="40" y1="44" x2="48" y2="68" ${st}/>
+    <line x1="32" y1="68" x2="28" y2="76" ${st}/>
+    <line x1="48" y1="68" x2="52" y2="76" ${st}/>
+    <!-- Water bottle/glass following arm -->
+    <rect width="8" height="11" rx="2" stroke="rgba(64,196,255,.7)" stroke-width="1.5" fill="rgba(64,196,255,.18)">${bottleX}${bottleY}</rect>
+    <!-- Water drops (only during drinking phase) -->
+    ${dropA(46,18,0)} ${dropA(44,20,0)} ${dropA(48,19,0)}
+    <!-- Floor -->
+    <line x1="4" y1="76" x2="76" y2="76" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+  </svg>`;
+}
+
+// ── Exercise technique tips ───────────────────────────────────────────────────
+const EXERCISE_TIPS = {
+  "développé couché":    "Pieds à plat. Omoplate serrées. Descends à 3s, explose à la montée.",
+  "développé militaire": "Gainage solide. Pousse vers le haut et légèrement en arrière. Coudes ni trop écartés ni trop fermés.",
+  "développé incliné":  "Banc à 30-45°. Focus sur le haut des pecs. Contrôle la descente.",
+  "pompes":             "Corps gainé comme une planche. Mains sous les épaules. Coudes à 45°.",
+  "pike push":          "Hanches hautes. Tête entre les bras à la descente. Force épaules.",
+  "dips":               "Coudes arrière. Penche légèrement le buste pour cibler les pecs.",
+  "élévations lat":     "Légère flexion des coudes. Lève jusqu'à l'horizontal. Pas d'élan.",
+  "tractions":          "Prise pronation. Initie avec les dorsaux. Montée explosive, descente contrôlée.",
+  "tirage poitrine":    "Dos légèrement arqué. Amène la barre vers le haut de la poitrine.",
+  "rowing barre":       "Dos parallèle au sol. Tire vers le nombril. Coudes proches du corps.",
+  "rowing haltère":     "Appui sur un banc. Tire le coude vers le plafond. Rotation épaule.",
+  "curl haltères":      "Coudes fixes. Tourne le poignet en montant (supination). Descente lente.",
+  "extension triceps":  "Coudes immobiles. Étend les bras complètement. Contraction en bas.",
+  "squat barre":        "Pieds largeur épaules. Genoux dans l'axe des pieds. Descend sous la parallèle.",
+  "squat poids":        "Même chose. Bras devant pour l'équilibre. Descends lentement (3s).",
+  "soulevé de terre":   "Dos neutre. Pousse le sol avec les pieds. Barre proche du corps.",
+  "fentes":             "Genou avant à 90°. Genou arrière effleure le sol. Buste droit.",
+  "hip thrust":         "Appui sur un banc. Pousse avec les talons. Contraction fessiers en haut.",
+  "planche":            "Corps droit. Fesses ni trop hautes ni trop basses. Contracte le ventre.",
+  "crunch":             "Mains sur les tempes. Exhale en montant. Dos bas au sol. Lent et contrôlé.",
+  "burpees":            "Saute-pompe-saut. Rythme régulier. Explose à chaque saut.",
+  "mountain climbers":  "Planche stable. Genoux alternatifs vers la poitrine. Rythme soutenu.",
+  "jump squats":        "Atterris en souplesse (avant-pied d'abord). Amortis la réception.",
+  "course":             "Zone 2 : tu peux parler. FC 60-70% max. Respiration nasale si possible.",
+  "vélo":               "Selle à hauteur de hanche. Cadence 80-90 RPM. Dos droit, léger.",
+  "pigeon yoga":        "Hanche avant fléchie à 90°. Descends progressivement. Respiration profonde.",
+  "cat-cow":            "En quadrupédie. Expire en arrondissant (cat). Inspire en creusant (cow).",
+};
+
+function _getExerciseTip(exName) {
+  if (!exName) return "";
+  const key = exName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  for (const [k, tip] of Object.entries(EXERCISE_TIPS)) {
+    if (key.includes(k)) return tip;
+  }
+  return "";
+}
+
+function _wtSetPrimaryLabel(label) {
+  const btn = document.getElementById('wt-set-btn');
+  if (btn) btn.textContent = label;
+}
+
+
+function _wtLockPageScroll() {
+  document.documentElement.classList.add('workout-open');
+  document.body.classList.add('workout-open');
+}
+
+function _wtUnlockPageScroll() {
+  document.documentElement.classList.remove('workout-open');
+  document.body.classList.remove('workout-open');
+}
+
+function _wtResetScrollHost() {
+  const overlay = document.getElementById('wt-overlay');
+  const modal = document.getElementById('wt-modal');
+  if (overlay) overlay.scrollTop = 0;
+  if (modal) modal.scrollTop = 0;
+}
+
+function _wtEnsureWorkoutVisible() {
+  _wtResetScrollHost();
+  try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+}
+
+function _exerciseMotionType(label = '') {
+  const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/jump|burpee|high knees|run|cardio|jack|sprint|montee.*genou|corde.*sauter|tabata|hiit|box jump/.test(t)) return 'cardio';
+  if (/squat|lunge|fente|split squat|step-up|bulgare|calf|mollet|leg press/.test(t)) return 'lower';
+  if (/pompe|push|bench|developpe.*couch|developpe.*inclin|developpe.*militaire|dips|pike push|press|shoulder|eleva/.test(t)) return 'upper';
+  if (/deadlift|souleve|hinge|hip thrust|bridge|pont|romanian|sumo|good morning|nordic|row|tirage|traction|pull|rowing/.test(t)) return 'hinge';
+  if (/plank|planche|gainage|abdo|hollow|mountain|russian twist|twist|crunch|bicycle|bird|dog|superman|deadbug|ab wheel|rollout/.test(t)) return 'core';
+  if (/stretch|mobilite|rotation|respiration|yoga|pigeon|cat.cow|foam|hip flex|thread/.test(t)) return 'mobility';
+  return 'flow';
+}
+
+function _animatedExerciseDemoHtml(label = '', cls = 'wt-demo-shell', state = 'ready', tag = 'Démo mouvement') {
+  const motion = _exerciseMotionType(label);
+  return `<div class="${cls} wt-motion-shell motion-${motion}" data-motion="${motion}" data-motion-state="${state}"><div class="wt-demo-state-badge">${escapeHtml(tag)}</div><div class="wt-demo-gif">${_exerciseDemoSvg(label)}</div></div>`;
+}
+
+function _wtApplyDemoState(state) {
+  document.querySelectorAll('.wt-motion-shell').forEach((el) => {
+    const isNext = el.classList.contains('wt-next-shell');
+    const nextState = isNext ? 'preview' : state;
+    el.setAttribute('data-motion-state', nextState);
+    const badge = el.querySelector('.wt-demo-state-badge');
+    if (badge) badge.textContent = isNext ? 'Ensuite' : (nextState === 'work' ? 'En mouvement' : nextState === 'paused' ? 'Pause' : nextState === 'rest' ? 'Respire / eau' : 'Prépare-toi');
+  });
+}
+
+function _wtUpdateStage(opts) {
+  const card = document.getElementById('wt-stage-card');
+  const kicker = document.getElementById('wt-stage-kicker');
+  const title = document.getElementById('wt-stage-title');
+  const sub = document.getElementById('wt-stage-sub');
+  const timer = document.getElementById('wt-stage-timer');
+  if (!card || !kicker || !title || !sub || !timer) return;
+  card.classList.toggle('resting', opts.phase === 'rest');
+  card.classList.toggle('paused', !!opts.paused);
+  kicker.textContent = opts.kicker || 'Exécution guidée';
+  title.textContent = opts.title || '';
+  sub.textContent = opts.sub || '';
+  timer.textContent = opts.timer || '0:00';
+}
+
+function _wtRenderExercise() {
+  const block = _wtCurrentBlock();
+  const ex = block?.ex;
+  if (!ex) { closeWorkoutTimer(); return; }
+
+  _wtExIdx = block.blockIndex;
+  const total = _wtTimeline.length || 1;
+  const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setEl('wt-ex-num', `Bloc ${_wtTimelineIdx + 1} / ${total}`);
+  setEl('wt-ex-name', ex.n || '—');
+  setEl('wt-ex-muscle', ex.m || 'Mouvement guidé');
+  setEl('wt-ex-detail', `${ex.guideSeconds}s d'effort • ${ex.restSeconds || 0}s de pause` + (block.round ? ` • Tour ${block.round}` : '') + (ex.targetGoal ? ` • objectif ${String(ex.targetGoal).replace(/_/g, ' ')}` : '') + (ex.legacyPrescription ? ` • repère ${ex.legacyPrescription}` : '') + (ex.sessionStyle ? ` • ${ex.sessionStyle}` : ''));
+  _wtSetSessionMeta(block, ex.guideSeconds);
+  _wtRenderNextPreview();
+
+  const imgWrap = document.getElementById('wt-ex-img-wrap');
+  if (imgWrap) {
+    imgWrap.innerHTML = `<div class="wt-visual-main">${_animatedExerciseDemoHtml(ex.n || '', 'wt-demo-shell', 'ready', 'Démo mouvement')}</div><div class="wt-visual-muscle"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(ex.m || ex.n || '')}</div>`;
+    _wtApplyDemoState(_wtPhase || 'ready');
+  }
+
+  const cue = exerciseCuePack({ name: ex.n || '', muscle: ex.m || '' });
+  const tip = _getExerciseTip(ex.n || '');
+  const tipEl = document.getElementById('wt-ex-tip');
+  if (tipEl) {
+    tipEl.innerHTML = `<div class="wt-tip-grid"><div><span>Départ</span><p>${escapeHtml(cue.start)}</p></div><div><span>Mouvement</span><p>${escapeHtml(cue.move)}</p></div><div><span>À sentir</span><p>${escapeHtml(cue.focus)}</p></div><div><span>Respiration</span><p>${escapeHtml(cue.breathe)}</p></div><div><span>Tempo</span><p>${ex.guideSeconds}s guidées, avec rythme calé sur ton niveau du jour.</p></div><div><span>Erreur à éviter</span><p>${escapeHtml((tip || cue.breathe).replace(/^Inspire/i, 'Ne te précipite pas. Inspire'))}</p></div><div><span>Pourquoi toi</span><p>${escapeHtml(ex.personalWhy || 'Sélectionné pour ton objectif, ton niveau et ton état de récupération.')}</p></div><div><span>Cible</span><p>${escapeHtml(ex.targetGoal ? String(ex.targetGoal).replace(/_/g, ' ') : 'séance utile et tenable')}</p></div></div>`;
+  }
+
+  const restArea = document.getElementById('wt-rest-area');
+  if (restArea) restArea.style.display = 'none';
+  const setsRow = document.getElementById('wt-sets-row');
+  if (setsRow) setsRow.style.display = 'none';
+  _wtPhase = 'ready';
+  _wtApplyDemoState('ready');
+  _wtSecondsLeft = ex.guideSeconds;
+  _wtCurrentDone = false;
+  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
+  _wtUpdateStage({
+    phase: 'ready',
+    kicker: 'Préparation',
+    title: `Démo ${ex.n}`,
+    sub: 'Le mouvement démarre tout seul après le petit compte à rebours, puis la pause hydratation enchaîne automatiquement.',
+    timer: _wtFormatClock(ex.guideSeconds)
+  });
+  _wtSetPrimaryLabel('⏸ Pause');
+  const prevBtn = document.getElementById('wt-prev-btn');
+  const nextBtn = document.getElementById('wt-next-btn');
+  if (prevBtn) prevBtn.disabled = _wtTimelineIdx === 0;
+  if (nextBtn) nextBtn.disabled = _wtTimelineIdx >= total - 1;
+}
+
+function _wtStartWork(resume) {
+  const block = _wtCurrentBlock();
+  const ex = block?.ex;
+  if (!ex) return;
+  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
+  if (!resume) _wtSecondsLeft = ex.guideSeconds;
+  _wtPhase = 'work';
+  _wtSetPrimaryLabel('⏸ Pause');
+  _wtUpdateStage({ phase: 'work', kicker: 'Exercice en cours', title: ex.n, sub: "Suis la démo, garde l'amplitude propre et laisse le timer enchaîner la récupération.", timer: _wtFormatClock(_wtSecondsLeft) });
+  _wtSetSessionMeta(block, _wtSecondsLeft);
+  if (_wtPhaseTimer) clearInterval(_wtPhaseTimer);
+  _wtPhaseTimer = setInterval(() => {
+    _wtSecondsLeft = Math.max(0, _wtSecondsLeft - 1);
+    _wtElapsedSeconds += 1;
+    _wtUpdateStage({ phase: 'work', kicker: 'Exercice en cours', title: ex.n, sub: 'Continue. Qualité > vitesse.', timer: _wtFormatClock(_wtSecondsLeft) });
+    _wtSetSessionMeta(block, _wtSecondsLeft);
+    if (_wtSecondsLeft <= 0) {
+      clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; _wtCurrentDone = true;
+      if ((ex.restSeconds || 0) > 0) {
+        _startRestTimer(ex.restSeconds, () => {
+          _wtTimelineIdx += 1;
+          if (_wtTimelineIdx >= _wtTimeline.length) { closeWorkoutTimer(); toast('🎉 Séance terminée !', 'ok'); return; }
+          _wtRenderExercise();
+          _wtStartReadyCountdown(2);
+        });
+      } else {
+        _wtTimelineIdx += 1;
+        if (_wtTimelineIdx >= _wtTimeline.length) { closeWorkoutTimer(); toast('🎉 Séance terminée !', 'ok'); return; }
+        _wtRenderExercise();
+        _wtStartReadyCountdown(2);
+      }
+    }
+  }, 1000);
+}
+
+function wtDoneSet() {
+  const block = _wtCurrentBlock();
+  const ex = block?.ex;
+  if (!ex) return;
+  if (_wtPhase === 'ready') {
+    if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
+    return _wtStartWork(false);
+  }
+  if (_wtPhase === 'work') {
+    if (_wtPhaseTimer) {
+      clearInterval(_wtPhaseTimer); _wtPhaseTimer = null;
+      _wtApplyDemoState('paused');
+      _wtUpdateStage({ phase: 'work', paused: true, kicker: 'Pause exercice', title: ex.n, sub: 'Respire, replace-toi puis reprends quand tu veux.', timer: _wtFormatClock(_wtSecondsLeft) });
+      return _wtSetPrimaryLabel('▶ Reprendre');
+    }
+    return _wtStartWork(true);
+  }
+  if (_wtPhase === 'rest') return skipRestTimer();
+}
+
+function wtClickSet(idx) { return; }
+
+function _startRestTimer(seconds, onDone) {
+  const block = _wtCurrentBlock();
+  const ex = block?.ex;
+  _wtPhase = 'rest';
+  _wtSecondsLeft = seconds;
+  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
+  const restArea = document.getElementById('wt-rest-area');
+  const countdown = document.getElementById('wt-rest-countdown');
+  const restMsg = document.getElementById('wt-rest-msg');
+  const imgWrap = document.getElementById('wt-ex-img-wrap');
+  if (restArea) restArea.style.display = 'block';
+  _wtApplyDemoState('rest');
+  if (imgWrap) imgWrap.innerHTML = _stickFigureDrinking();
+  if (restMsg) restMsg.textContent = ex?.hydrationCue || '💧 Bois quelques gorgées et respire.';
+  _wtSetPrimaryLabel('⏭ Passer la pause');
+  _wtRenderNextPreview();
+  _wtUpdateStage({ phase: 'rest', kicker: 'Pause / hydratation', title: 'Récupère avant le prochain exercice', sub: 'Bois, relâche les épaules et prépare la transition.', timer: _wtFormatClock(seconds) });
+  _wtSetSessionMeta(block, seconds);
+  let breathToggle = false;
+  const breathLabel = document.getElementById('wt-breath-label');
+  if (breathLabel) breathLabel.textContent = 'Expire…';
+  if (window._breathLabelTimer) clearInterval(window._breathLabelTimer);
+  window._breathLabelTimer = setInterval(() => {
+    breathToggle = !breathToggle;
+    if (breathLabel) breathLabel.textContent = breathToggle ? 'Inspire…' : 'Expire…';
+  }, 2000);
+  const updateCountdown = (t) => {
+    if (countdown) countdown.textContent = t;
+    _wtUpdateStage({ phase: 'rest', kicker: 'Pause / hydratation', title: 'Récupère avant le prochain exercice', sub: t > 6 ? 'Bois et replace-toi.' : 'On repart dans quelques secondes…', timer: _wtFormatClock(t) });
+    _wtSetSessionMeta(block, t);
+  };
+  updateCountdown(seconds);
+  _wtPhaseTimer = setInterval(() => {
+    _wtSecondsLeft = Math.max(0, _wtSecondsLeft - 1);
+    _wtElapsedSeconds += 1;
+    updateCountdown(_wtSecondsLeft);
+    if (_wtSecondsLeft <= 0) {
+      clearInterval(_wtPhaseTimer); _wtPhaseTimer = null;
+      if (window._breathLabelTimer) { clearInterval(window._breathLabelTimer); window._breathLabelTimer = null; }
+      if (restArea) restArea.style.display = 'none';
+      if (onDone) onDone();
+    }
+  }, 1000);
+}
+
+function skipRestTimer() {
+  if (_wtPhase !== 'rest') return;
+  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
+  if (window._breathLabelTimer) { clearInterval(window._breathLabelTimer); window._breathLabelTimer = null; }
+  const restArea = document.getElementById('wt-rest-area');
+  if (restArea) restArea.style.display = 'none';
+  _wtTimelineIdx += 1;
+  if (_wtTimelineIdx >= _wtTimeline.length) { closeWorkoutTimer(); toast('🎉 Séance terminée !', 'ok'); return; }
+  _wtRenderExercise();
+  _wtStartReadyCountdown(2);
+}
+
+function prevWtExercise() {
+  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
+  if (_wtAutoKickoff) { clearTimeout(_wtAutoKickoff); _wtAutoKickoff = null; }
+  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
+  const restArea = document.getElementById('wt-rest-area');
+  if (restArea) restArea.style.display = 'none';
+  _wtTimelineIdx = Math.max(0, _wtTimelineIdx - 1);
+  _wtRenderExercise();
+  _wtStartReadyCountdown(2);
+}
+
+function nextWtExercise() {
+  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
+  if (_wtAutoKickoff) { clearTimeout(_wtAutoKickoff); _wtAutoKickoff = null; }
+  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
+  const restArea = document.getElementById('wt-rest-area');
+  if (restArea) restArea.style.display = 'none';
+  _wtTimelineIdx = Math.min(_wtTimeline.length - 1, _wtTimelineIdx + 1);
+  _wtRenderExercise();
+  _wtStartReadyCountdown(2);
+}
+
+function closeWorkoutTimer() {
+  if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
+  if (_wtRestTimer) { clearInterval(_wtRestTimer); _wtRestTimer = null; }
+  if (_wtAutoKickoff) { clearTimeout(_wtAutoKickoff); _wtAutoKickoff = null; }
+  if (_wtReadyTimer) { clearInterval(_wtReadyTimer); _wtReadyTimer = null; }
+  if (window._breathLabelTimer) { clearInterval(window._breathLabelTimer); window._breathLabelTimer = null; }
+  _wtPhase = 'ready';
+  const overlay = document.getElementById("wt-overlay");
+  if (overlay) overlay.classList.remove("open");
+  _wtUnlockPageScroll();
+  _wtApplyDemoState('ready');
+}
+
+function wtOverlayClick(e) {
+  if (e.target === document.getElementById("wt-overlay")) closeWorkoutTimer();
+}
+
+window.startWorkout = startWorkout;
+window.wtDoneSet = wtDoneSet;
+window.wtClickSet = wtClickSet;
+window.skipRestTimer = skipRestTimer;
+window.prevWtExercise = prevWtExercise;
+window.nextWtExercise = nextWtExercise;
+window.closeWorkoutTimer = closeWorkoutTimer;
+window.wtOverlayClick = wtOverlayClick;
+
+// ══════════════════════════════════════════════════════════════════════════════
+
+const PROG_DURATION_OPTIONS = [1, 4, 8, 12];
+const PROG_DURATION_KEY = "fitai_prog_duration_weeks_v1";
+
+const PROG_PHASE_LIBRARY = {
+  1: [
+    { name:"Semaine cible", short:"S1", color:"#6366f1", volume:58, intensity:64, rpe:"6-7", desc:"Une semaine structurée, personnalisée et durable. Volume utile, récupération prévue et priorité à l'adhérence.",
+      note:{ theme:"Semaine personnalisée", focus:"Microcycle utile, équilibré et réaliste. Progression douce, exécution propre et récupération suivie.", cue:"Une bonne semaine bien tenue vaut mieux qu’un gros plan impossible à suivre." },
+      params:{ sets:4, reps:"8-12", rest:90 }, exCount:6, tempo:"3-1-2 (contrôlé)" }
+  ],
+  4: [
+    { name:"Adaptation", short:"S1", color:"#6366f1", volume:52, intensity:58, rpe:"6-7", desc:"On installe la routine, la technique et la tolérance à l’effort sans te cramer.", note:{ theme:"Entrer dans le rythme", focus:"Priorité à la technique, au rythme hebdo et à des charges faciles à tenir.", cue:"Sors de chaque séance avec la sensation d’en garder encore un peu." }, params:{ sets:3, reps:"8-12", rest:75 }, exCount:5, tempo:"3-1-2" },
+    { name:"Montée en charge", short:"S2", color:"#3b82f6", volume:62, intensity:67, rpe:"7", desc:"On augmente légèrement le volume ou l’intensité selon tes sensations.", note:{ theme:"Progression simple", focus:"Ajoute 1 rep ou un peu de charge sur les mouvements principaux si la technique reste propre.", cue:"Mieux vaut une petite progression répétable qu’un gros saut instable." }, params:{ sets:4, reps:"8-12", rest:90 }, exCount:6, tempo:"2-1-1" },
+    { name:"Consolidation", short:"S3", color:"#8b5cf6", volume:64, intensity:72, rpe:"7-8", desc:"Semaine la plus productive du mini-cycle, sans aller à l’échec.", note:{ theme:"Travail utile", focus:"Garde de la qualité sur les composés et termine frais mentalement.", cue:"La constance propre construit plus que la fatigue pour la fatigue." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-0-1" },
+    { name:"Deload", short:"S4", color:"#22c55e", volume:42, intensity:56, rpe:"6", desc:"On réduit la fatigue pour repartir fort sur le bloc suivant.", note:{ theme:"Récupérer pour progresser", focus:"Réduis volontairement le volume et conserve de la marge sur chaque série.", cue:"Une bonne semaine légère est un accélérateur pour la suite." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" }
+  ],
+  8: [
+    { name:"Adaptation", short:"S1", color:"#6366f1", volume:50, intensity:56, rpe:"6-7", desc:"Apprentissage des repères, installation du rythme et montée douce de la charge.", note:{ theme:"Base solide", focus:"Priorité à la technique et à la constance. Cherche des reps propres et répétables.", cue:"Tu dois finir les séances avec l’impression d’avoir travaillé, pas de t’être détruit." }, params:{ sets:3, reps:"8-12", rest:75 }, exCount:5, tempo:"3-1-2" },
+    { name:"Hypertrophie I", short:"S2", color:"#3b82f6", volume:62, intensity:66, rpe:"7", desc:"Plus de volume utile pour construire masse maigre, coordination et capacité de travail.", note:{ theme:"Accumuler du bon travail", focus:"Ajoute un peu de volume et garde 1 à 3 reps en réserve.", cue:"Travail propre, amplitude complète et repos sérieux entre les séries." }, params:{ sets:4, reps:"8-12", rest:90 }, exCount:6, tempo:"2-1-1" },
+    { name:"Hypertrophie II", short:"S3", color:"#2563eb", volume:68, intensity:72, rpe:"7-8", desc:"Bloc plus dense : intensité modérée-haute avec contrôle et bonne récupération.", note:{ theme:"Densifier sans casser", focus:"Monte légèrement la charge ou baisse le nombre de reps, mais reste propre.", cue:"Si la technique se dégrade, ce n’est pas une vraie progression." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-0-1" },
+    { name:"Deload", short:"S4", color:"#22c55e", volume:42, intensity:55, rpe:"6", desc:"Baisse du volume pour absorber la fatigue et améliorer la fraîcheur.", note:{ theme:"Assimilation", focus:"Réduis volontairement la charge de travail et récupère mieux.", cue:"Le deload fait partie du progrès, ce n’est pas une régression." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" },
+    { name:"Force I", short:"S5", color:"#f59e0b", volume:58, intensity:80, rpe:"8", desc:"Retour plus lourd : moins de reps, plus de qualité de tension et de repos.", note:{ theme:"Tension de qualité", focus:"Concentre-toi sur le mouvement principal et des reps nettes.", cue:"Repose-toi vraiment avant les séries importantes." }, params:{ sets:5, reps:"4-6", rest:165 }, exCount:5, tempo:"2-0-1" },
+    { name:"Force II", short:"S6", color:"#f97316", volume:54, intensity:84, rpe:"8-9", desc:"Semaine lourde contrôlée, basée sur une exécution stable et reproductible.", note:{ theme:"Lourd mais propre", focus:"Seulement de petites hausses de charge si la technique reste excellente.", cue:"La meilleure série est celle qui reste rapide et maîtrisée." }, params:{ sets:5, reps:"3-5", rest:180 }, exCount:5, tempo:"2-0-1" },
+    { name:"Puissance", short:"S7", color:"#ef4444", volume:46, intensity:78, rpe:"7-8", desc:"On garde de la vitesse et de l’explosivité sans accumuler trop de fatigue.", note:{ theme:"Vitesse et fraîcheur", focus:"Recherche de l’intention maximale sur chaque rep, pas de la brûlure musculaire.", cue:"Arrête la série dès que le mouvement ralentit franchement." }, params:{ sets:4, reps:"3-5", rest:180 }, exCount:4, tempo:"Explosif" },
+    { name:"Consolidation & test", short:"S8", color:"#ec4899", volume:48, intensity:74, rpe:"7", desc:"On consolide les acquis, on note les repères et on prépare le prochain cycle.", note:{ theme:"Capitaliser", focus:"Observe tes progrès, note tes charges et ta récupération.", cue:"Un bon plan laisse des traces mesurables : reps, charges, sensations, constance." }, params:{ sets:3, reps:"3-5", rest:150 }, exCount:4, tempo:"2-0-1" }
+  ],
+  12: []
+};
+PROG_PHASE_LIBRARY[12] = [...PROG_PHASE_LIBRARY[8],
+  { name:"Accumulation II", short:"S9", color:"#14b8a6", volume:64, intensity:72, rpe:"7-8", desc:"Nouveau bloc de volume utile avec davantage de maîtrise technique.", note:{ theme:"Deuxième souffle", focus:"Reviens sur du volume de qualité, sans négliger la récupération.", cue:"Mets l’accent sur l’amplitude et la stabilité." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-1-1" },
+  { name:"Intensification", short:"S10", color:"#06b6d4", volume:56, intensity:82, rpe:"8", desc:"On reconstruit un peu plus lourd après le travail de volume.", note:{ theme:"Intensifier sans forcer", focus:"Augmente un peu les charges sur les mouvements qui restent stables.", cue:"Laisse toujours 1 à 2 reps en réserve sur les premières séries." }, params:{ sets:5, reps:"4-6", rest:165 }, exCount:5, tempo:"2-0-1" },
+  { name:"Deload II", short:"S11", color:"#84cc16", volume:40, intensity:54, rpe:"6", desc:"Deuxième semaine de récupération active pour dissiper la fatigue accumulée.", note:{ theme:"Respirer", focus:"Dors, mange bien et réduis franchement le volume.", cue:"L’objectif est d’arriver frais, pas d’ajouter du stress." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" },
+  { name:"Peak & bilan", short:"S12", color:"#a855f7", volume:46, intensity:76, rpe:"7-8", desc:"Dernière semaine pour consolider, tester légèrement et préparer le prochain bloc.", note:{ theme:"Bilan utile", focus:"Valide quelques repères sans t’épuiser : technique, charges, ressenti.", cue:"Finis le cycle avec des données claires et l’envie d’enchaîner." }, params:{ sets:3, reps:"3-6", rest:150 }, exCount:4, tempo:"2-0-1" }
+];
+function _sanitizeProgDuration(v){ const n=parseInt(v,10); return PROG_DURATION_OPTIONS.includes(n)?n:8; }
+function _loadProgDuration(){ try{return _sanitizeProgDuration(localStorage.getItem(PROG_DURATION_KEY));}catch{} return 8; }
+function _getProgPhases(){ return PROG_PHASE_LIBRARY[_sanitizeProgDuration(_progDuration)] || PROG_PHASE_LIBRARY[8]; }
+function _getProgPhaseBundle(weekNum){ const phases=_getProgPhases(); return phases[Math.max(0, Math.min(phases.length-1, (weekNum||1)-1))] || phases[0]; }
+
+// Descente - Pause - Montée
+
+function _progProgressionHint(weekNum) {
+  const phase = _getProgPhaseBundle(weekNum);
+  if (!phase) return "Cherche une progression sobre : +1 rep, meilleure amplitude ou charge légèrement plus haute si tout reste propre.";
+  if (/Deload/i.test(phase.name)) return "Semaine légère : réduis le volume et garde de la marge sur chaque série.";
+  if (/Force|Intensification/i.test(phase.name)) return "Ajoute un peu de charge seulement si toutes les reps restent nettes et stables.";
+  if (/Puissance/i.test(phase.name)) return "Cherche surtout la vitesse d’exécution et arrête avant que le mouvement ralentisse.";
+  return "Cherche une progression sobre : +1 rep, meilleure amplitude ou charge légèrement plus haute si tout reste propre.";
+}
+
+// Each type has TWO pools (A/B) of exercises — A for first occurrence in week, B for second.
+// _renderProgDays picks A or B based on how many times the type has appeared in the week so far.
+const PROG_EXERCISES = {
+  push: [
+    // Pool A (pecs focus)
+    { n:"Développé couché barre",      m:"Pecs",       pool:"A" },
+    { n:"Développé incliné haltères",  m:"Pecs haut",  pool:"A" },
+    { n:"Écarté haltères couché",      m:"Pecs",       pool:"A" },
+    { n:"Développé militaire barre",   m:"Épaules",    pool:"A" },
+    { n:"Élévations latérales",        m:"Deltoïdes",  pool:"A" },
+    { n:"Extension triceps poulie",    m:"Triceps",    pool:"A" },
+    { n:"Dips lestés",                 m:"Triceps",    pool:"A" },
+    // Pool B (épaules / triceps focus)
+    { n:"Développé militaire haltères",m:"Épaules",    pool:"B" },
+    { n:"Développé incliné barre",     m:"Pecs haut",  pool:"B" },
+    { n:"Oiseau inversé haltères",     m:"Épaules arrière", pool:"B" },
+    { n:"Élévations frontales",        m:"Deltoïdes",  pool:"B" },
+    { n:"Extension triceps 1 bras",    m:"Triceps",    pool:"B" },
+    { n:"Pompes lestées",              m:"Pecs/Triceps",pool:"B" },
+    { n:"Cable crossover pec deck",    m:"Pecs",       pool:"B" },
+  ],
+  push_home: [
+    { n:"Pompes mains larges",         m:"Pecs",       pool:"A" },
+    { n:"Pompes inclinées (pieds hauts)", m:"Pecs haut",pool:"A" },
+    { n:"Pike push-ups",               m:"Épaules",    pool:"A" },
+    { n:"Dips sur chaise",             m:"Triceps",    pool:"A" },
+    { n:"Pompes diamant",              m:"Triceps",    pool:"A" },
+    { n:"Pompes archer",               m:"Pecs",       pool:"A" },
+    { n:"Élévations lat haltères",     m:"Deltoïdes",  pool:"A" },
+    { n:"Pompes décoés (asymétrique)", m:"Pecs/Épaules",pool:"B" },
+    { n:"Pike push-up explosif",       m:"Épaules",    pool:"B" },
+    { n:"Pompes pieds surélevés",      m:"Pecs haut",  pool:"B" },
+    { n:"Dips entre 2 chaises",        m:"Triceps",    pool:"B" },
+    { n:"Shoulder tap pompe",          m:"Core/Épaules",pool:"B" },
+    { n:"Pompes lentes (4-0-4)",       m:"Pecs",       pool:"B" },
+  ],
+  pull: [
+    { n:"Tractions prise large",       m:"Grand dorsal",pool:"A" },
+    { n:"Rowing barre penché",         m:"Dos",        pool:"A" },
+    { n:"Tirage poulie haute",         m:"Grand dorsal",pool:"A" },
+    { n:"Curl barre EZ",               m:"Biceps",     pool:"A" },
+    { n:"Face pull câble",             m:"Épaules arrière",pool:"A" },
+    { n:"Rowing machine assise",       m:"Dos moyen",  pool:"A" },
+    { n:"Shrugs barre",                m:"Trapèzes",   pool:"A" },
+    { n:"Tractions prise serrée",      m:"Dos/Biceps", pool:"B" },
+    { n:"Rowing haltère 1 bras",       m:"Grand dorsal",pool:"B" },
+    { n:"Tirage poitrine câble",       m:"Dos",        pool:"B" },
+    { n:"Curl haltères alterné",       m:"Biceps",     pool:"B" },
+    { n:"Oiseau haltères penché",      m:"Épaules arrière",pool:"B" },
+    { n:"Pull-over haltère",           m:"Grand dorsal",pool:"B" },
+    { n:"Curl marteau",                m:"Biceps brachial",pool:"B" },
+  ],
+  pull_home: [
+    { n:"Tractions (barre de porte)",  m:"Grand dorsal",pool:"A" },
+    { n:"Inverted row sous table",     m:"Dos moyen",  pool:"A" },
+    { n:"Superman dos au sol",         m:"Bas du dos", pool:"A" },
+    { n:"Bird dog",                    m:"Core/Lombaires",pool:"A" },
+    { n:"Good morning poids de corps", m:"Lombaires/Ischios",pool:"A" },
+    { n:"Reverse snow angel au sol",   m:"Épaules arrière",pool:"A" },
+    { n:"Tractions prise serrée",      m:"Dos/Biceps", pool:"B" },
+    { n:"Inverted row prise large",    m:"Dos moyen",  pool:"B" },
+    { n:"Deadbug",                     m:"Core/Stabilité",pool:"B" },
+    { n:"Hyperextensions au sol",      m:"Bas du dos", pool:"B" },
+    { n:"Prone cobra (activation dos)",m:"Dos/Épaules",pool:"B" },
+    { n:"Hollow body hold",            m:"Core/Dos",   r:"20-30s", pool:"B" },
+  ],
+  legs: [
+    { n:"Squat barre",                 m:"Quadriceps", pool:"A" },
+    { n:"Soulevé de terre roumain",    m:"Ischios/Fessiers",pool:"A" },
+    { n:"Presse à cuisses",            m:"Quadriceps", pool:"A" },
+    { n:"Fentes marchées haltères",    m:"Fessiers",   pool:"A" },
+    { n:"Leg curl couché",             m:"Ischios",    pool:"A" },
+    { n:"Extensions mollets presse",   m:"Mollets",    pool:"A" },
+    { n:"Hip thrust barre",            m:"Fessiers",   pool:"A" },
+    { n:"Front squat barre",           m:"Quadriceps", pool:"B" },
+    { n:"Soulevé de terre sumo",       m:"Fessiers/Dos",pool:"B" },
+    { n:"Hack squat machine",          m:"Quadriceps", pool:"B" },
+    { n:"Fentes bulgares haltères",    m:"Quadriceps/Fessiers",pool:"B" },
+    { n:"Leg extension machine",       m:"Quadriceps", pool:"B" },
+    { n:"Relevés de mollets debout",   m:"Mollets",    pool:"B" },
+    { n:"Abducteur machine",           m:"Fessiers/Abducteurs",pool:"B" },
+  ],
+  legs_home: [
+    { n:"Squat poids de corps",        m:"Quadriceps", pool:"A" },
+    { n:"Pont fessier unilatéral",     m:"Fessiers",   pool:"A" },
+    { n:"Fentes avant haltères",       m:"Quadriceps/Fessiers",pool:"A" },
+    { n:"Step-ups dynamiques",         m:"Fessiers",   pool:"A" },
+    { n:"Relevés de mollets",          m:"Mollets",    pool:"A" },
+    { n:"Nordic curl (serviette)",      m:"Ischios",    pool:"A" },
+    { n:"Squat sauté",                 m:"Jambes/Cardio",pool:"A" },
+    { n:"Squat bulgare chaise",        m:"Quadriceps/Fessiers",pool:"B" },
+    { n:"Hip thrust au sol",           m:"Fessiers",   pool:"B" },
+    { n:"Fentes latérales",            m:"Adducteurs/Fessiers",pool:"B" },
+    { n:"Wall sit (isométrique)",      m:"Quadriceps", pool:"B" },
+    { n:"Pont fessier marchant",       m:"Fessiers",   pool:"B" },
+    { n:"Single leg deadlift",         m:"Ischios/Fessiers",pool:"B" },
+  ],
+  fullbody: [
+    // Pool A — push dominant + hinge
+    { n:"Squat poids de corps",           m:"Jambes",              pool:"A" },
+    { n:"Pompes",                          m:"Pecs/Triceps",        pool:"A" },
+    { n:"Fentes avant",                    m:"Jambes/Fessiers",     pool:"A" },
+    { n:"Planche",                         m:"Core",      r:"30-45s",pool:"A" },
+    { n:"Hip thrust au sol",               m:"Fessiers",            pool:"A" },
+    { n:"Pompes pike",                     m:"Épaules/Triceps",     pool:"A" },
+    { n:"Good morning poids de corps",     m:"Dos/Jambes",          pool:"A" },
+    { n:"Dips sur chaise",                 m:"Triceps",             pool:"A" },
+    { n:"Hollow body hold",                m:"Core/Abdos", r:"20-30s",pool:"A" },
+    // Pool B — pull dominant + cardio
+    { n:"Squat bulgare chaise",            m:"Quadriceps/Fessiers", pool:"B" },
+    { n:"Pompes inclinées (pieds hauts)",  m:"Pecs haut",           pool:"B" },
+    { n:"Inverted row sous table",         m:"Dos/Biceps",          pool:"B" },
+    { n:"Mountain climbers",               m:"Core/Cardio", r:"30s", pool:"B" },
+    { n:"Nordic curl assisté",             m:"Ischios",             pool:"B" },
+    { n:"Pompes diamant",                  m:"Triceps/Pecs",        pool:"B" },
+    { n:"Bird dog",                        m:"Core/Lombaires",      pool:"B" },
+    { n:"Gainage latéral",                 m:"Obliques",  r:"25-35s",pool:"B" },
+    { n:"Squat sauté",                     m:"Jambes/Cardio",       pool:"B" },
+  ],
+  hiit: [
+    // Pool A — Tabata-style
+    { n:"Burpees",                     m:"Full body",    r:"20s ×8", pool:"A" },
+    { n:"Mountain climbers",           m:"Core/Cardio",  r:"30s / 10s", pool:"A" },
+    { n:"Jump squats",                 m:"Jambes",       r:"30s / 15s", pool:"A" },
+    { n:"Pompes explosives",           m:"Pecs/Cardio",  r:"15s max",   pool:"A" },
+    { n:"Montées de genoux",           m:"Cardio",       r:"30s sprint",pool:"A" },
+    { n:"Box jumps (squat sauté)",     m:"Jambes/Cardio",r:"8 reps",    pool:"A" },
+    { n:"Sprint en place",             m:"Cardio",       r:"20s / 10s", pool:"A" },
+    // Pool B — AMRAP-style
+    { n:"Planche dynamique",           m:"Core",         r:"40s / 20s", pool:"B" },
+    { n:"Corde à sauter (simulation)", m:"Cardio",       r:"1 min",     pool:"B" },
+    { n:"Burpee modifié (sans saut)",  m:"Full body",    r:"40s",       pool:"B" },
+    { n:"Fentes sautées alternées",    m:"Jambes/Cardio",r:"30s",       pool:"B" },
+    { n:"Pompes + rotation",           m:"Pecs/Épaules", r:"10 reps",   pool:"B" },
+    { n:"Skater jumps",                m:"Jambes/Cardio",r:"30s",       pool:"B" },
+    { n:"Hollow rock",                 m:"Core",         r:"20 reps",   pool:"B" },
+  ],
+  cardio: [
+    { n:"Course / marche rapide",      m:"Cardio",      r:"35 min zone 2" },
+    { n:"Vélo / elliptique",           m:"Cardio",      r:"30 min cadence stable" },
+    { n:"Natation",                    m:"Cardio",      r:"20-30 min" },
+    { n:"Rameur",                      m:"Cardio/Dos",  r:"20 min intervalles" },
+    { n:"Marche nordique",             m:"Cardio",      r:"45 min" },
+    { n:"Corde à sauter",              m:"Cardio",      r:"15-20 min" },
+    { n:"Vélo HIIT",                   m:"Cardio",      r:"8× (30s sprint / 30s récup)" },
+  ],
+  core: [
+    // Pool A — planches + gainage
+    { n:"Planche avant",               m:"Core",        r:"30-60s",  pool:"A" },
+    { n:"Crunchs bicycle",             m:"Obliques",                 pool:"A" },
+    { n:"Hollow body hold",            m:"Core",        r:"20-30s",  pool:"A" },
+    { n:"Bird dog",                    m:"Core/Stabilisateurs",      pool:"A" },
+    { n:"Gainage latéral",             m:"Obliques",    r:"30s/côté",pool:"A" },
+    { n:"Ab wheel rollout",            m:"Core",                     pool:"A" },
+    // Pool B — crunchs + rotation
+    { n:"Russian twist",               m:"Obliques",                 pool:"B" },
+    { n:"Dead bug",                    m:"Core",                     pool:"B" },
+    { n:"Crunch inversé",              m:"Abdos bas",                pool:"B" },
+    { n:"Planche avec toucher épaule", m:"Core/Épaules",             pool:"B" },
+    { n:"Mountain climbers lents",     m:"Core/Cardio", r:"30s",     pool:"B" },
+    { n:"Scissors (ciseaux couchés)",  m:"Abdos bas",                pool:"B" },
+  ],
+  mobilite: [
+    // Pool A — hanches et bas du dos
+    { n:"Pigeon yoga (hanche)",        m:"Hanches",     r:"90s/côté", pool:"A" },
+    { n:"Cat-cow rachis",              m:"Dos",         r:"10 cycles",pool:"A" },
+    { n:"Hip flexors — fente basse",   m:"Hanches/Psoas",r:"90s/côté",pool:"A" },
+    { n:"Thread the needle rotation",  m:"Dos/Épaules", r:"8/côté",  pool:"A" },
+    { n:"Squat profond 90-90",         m:"Hanches/Mollets",r:"2 min",  pool:"A" },
+    // Pool B — haut du corps et mollets
+    { n:"Étirement quadriceps debout", m:"Quadriceps",  r:"60s/côté", pool:"B" },
+    { n:"Foam roller thoracique",      m:"Haut du dos", r:"2 min",    pool:"B" },
+    { n:"Étirement pectoraux porte",   m:"Pecs/Épaules",r:"60s",      pool:"B" },
+    { n:"World's greatest stretch",    m:"Corps entier",r:"6/côté",   pool:"B" },
+    { n:"Relâchement ischio debout",   m:"Ischios",     r:"60s/côté", pool:"B" },
+  ],
+  rest: []
+};
+
+const PROG_WEEKLY = {
+  prise_de_masse: [
+    { d:1, label:"Push — Pecs / Épaules / Triceps", type:"push",     icon:"🏋️" },
+    { d:2, label:"Pull — Dos / Biceps",              type:"pull",     icon:"💪" },
+    { d:3, label:"Jambes + Fessiers",                type:"legs",     icon:"🦵" },
+    { d:4, label:"Repos actif / Mobilité",           type:"mobilite", icon:"🧘" },
+    { d:5, label:"Push — Épaules / Triceps focus",  type:"push",     icon:"🏋️" },
+    { d:6, label:"Pull — Dos accessoires",           type:"pull",     icon:"💪" },
+    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+  ],
+  perte_de_poids: [
+    { d:1, label:"HIIT Full Body",                   type:"hiit",     icon:"⚡" },
+    { d:2, label:"Cardio LISS",                      type:"cardio",   icon:"🏃" },
+    { d:3, label:"Full Body Circuit",                type:"fullbody", icon:"🔥" },
+    { d:4, label:"Repos actif / Marche",             type:"mobilite", icon:"🧘" },
+    { d:5, label:"HIIT Tabata",                      type:"hiit",     icon:"⚡" },
+    { d:6, label:"Cardio + Core",                    type:"core",     icon:"🏊" },
+    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+  ],
+  remise_en_forme: [
+    { d:1, label:"Full Body A",                      type:"fullbody", icon:"🏋️" },
+    { d:2, label:"Cardio modéré",                    type:"cardio",   icon:"🏃" },
+    { d:3, label:"Full Body B",                      type:"fullbody", icon:"🏋️" },
+    { d:4, label:"Repos",                            type:"rest",     icon:"😴" },
+    { d:5, label:"Full Body A (variante)",           type:"fullbody", icon:"🏋️" },
+    { d:6, label:"Mobilité + Étirements",            type:"mobilite", icon:"🧘" },
+    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+  ],
+  force: [
+    { d:1, label:"Squat + Accessoires jambes",       type:"legs",     icon:"🏋️" },
+    { d:2, label:"Repos",                            type:"rest",     icon:"😴" },
+    { d:3, label:"Développé couché + Push",         type:"push",     icon:"💪" },
+    { d:4, label:"Repos",                            type:"rest",     icon:"😴" },
+    { d:5, label:"Soulevé de terre + Pull",          type:"pull",     icon:"🏋️" },
+    { d:6, label:"Accessoires + Core",               type:"core",     icon:"🔥" },
+    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+  ],
+  endurance: [
+    { d:1, label:"Course — endurance",               type:"cardio",   icon:"🏃" },
+    { d:2, label:"Full Body léger",                  type:"fullbody", icon:"💪" },
+    { d:3, label:"Intervalles HIIT",                 type:"hiit",     icon:"⚡" },
+    { d:4, label:"Repos actif",                      type:"mobilite", icon:"🧘" },
+    { d:5, label:"Course longue",                    type:"cardio",   icon:"🏃" },
+    { d:6, label:"Force fonctionnelle",              type:"fullbody", icon:"🏋️" },
+    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+  ]
+};
+
+function _progExType(type, equipment) {
+  const eq = String(equipment || "").toLowerCase();
+  const gym = eq.includes("salle") || eq.includes("gym") || eq.includes("barre") || eq.includes("complet");
+  if (!gym) {
+    if (type === "push") return "push_home";
+    if (type === "pull") return "pull_home";
+    if (type === "legs") return "legs_home";
+  }
+  return type;
+}
+
+function _progGetWeekly(goal) {
+  return PROG_WEEKLY[String(goal || "").toLowerCase()] || PROG_WEEKLY.remise_en_forme;
+}
+
+const PROG_STORAGE_KEY = "fitai_prog_v5_flexible";
+const PROG_WEEK_KEY = "fitai_prog_week_v5";
+const PROG_LEGACY_STORAGE_KEYS = ["fitai_prog_v4_1w", "fitai_prog_v3_8w", "fitai_prog_v2", "fitai_prog_v1"];
+const PROG_LEGACY_WEEK_KEYS = ["fitai_prog_week_1w", "fitai_prog_week_8w", "fitai_prog_week"];
+
+function _normalizeProgData(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    goal: raw.goal || raw.type || "remise_en_forme",
+    level: raw.level || "beginner",
+    equipment: raw.equipment || raw.text || "",
+    name: raw.name || raw.display_name || "",
+    generatedAt: Number(raw.generatedAt) || Date.now(),
+    weeks: _sanitizeProgDuration(raw.weeks || raw.durationWeeks || raw.cycle_length_weeks || _progDuration || 8),
+    version: raw.version || "flex-v1"
+  };
+}
+
+function _loadStoredProg() {
+  try {
+    const current = localStorage.getItem(PROG_STORAGE_KEY);
+    if (current) {
+      const parsed = _normalizeProgData(JSON.parse(current));
+      if (parsed) return parsed;
+    }
+  } catch {}
+  for (const key of PROG_LEGACY_STORAGE_KEYS) {
+    try {
+      const legacy = localStorage.getItem(key);
+      if (!legacy) continue;
+      const parsed = _normalizeProgData(JSON.parse(legacy));
+      if (!parsed) continue;
+      localStorage.setItem(PROG_STORAGE_KEY, JSON.stringify(parsed));
+      return parsed;
+    } catch {}
+  }
+  return null;
+}
+
+function _loadStoredProgWeek() {
+  try {
+    const raw = parseInt(localStorage.getItem(PROG_WEEK_KEY), 10);
+    if (Number.isFinite(raw)) return Math.min(_getProgTotalWeeks(), Math.max(1, raw));
+  } catch {}
+  for (const key of PROG_LEGACY_WEEK_KEYS) {
+    try {
+      const raw = parseInt(localStorage.getItem(key), 10);
+      if (Number.isFinite(raw)) {
+        const clamped = Math.min(_getProgTotalWeeks(), Math.max(1, raw));
+        localStorage.setItem(PROG_WEEK_KEY, String(clamped));
+        return clamped;
+      }
+    } catch {}
+  }
+  return 1;
+}
+
+// Build / reload program from profile (offline)
+function buildOfflineProgram() {
+  let goal = "remise_en_forme", level = "beginner", equipment = "", name = "";
+  try {
+    const gc = localStorage.getItem("fitai_goal_ctx");
+    if (gc) { const o = JSON.parse(gc); goal = o.type || o.goal || goal; level = o.level || level; equipment = o.equipment || o.text || equipment; }
+    const pp = localStorage.getItem("fitai_profile");
+    if (pp) { const o = JSON.parse(pp); name = o.display_name || ""; }
+  } catch {}
+  return { goal, level, equipment, name, generatedAt: Date.now(), weeks: _sanitizeProgDuration(_progDuration), version: "flex-v1" };
+}
+
+let _progDuration = 8;
+let _progWeek = 1;
+let _prog = null;
+
+function _getProgTotalWeeks() { return _getProgPhases().length; }
+function _syncProgDurationUI() {
+  const title=document.getElementById("prog-title-main");
+  const titleCard=document.getElementById("prog-title-card");
+  const cycleLabel=document.getElementById("prog-cycle-range-label");
+  const weekTotal=document.getElementById("prog-week-total");
+  if (title) title.textContent = `Programme ${_progDuration} ${_progDuration > 1 ? 'semaines' : 'semaine'}`;
+  if (titleCard) titleCard.textContent = `🗓️ Programme ${_progDuration} ${_progDuration > 1 ? 'semaines' : 'semaine'}`;
+  if (cycleLabel) cycleLabel.textContent = `${_progDuration} ${_progDuration > 1 ? 'semaines' : 'semaine'}`;
+  if (weekTotal) weekTotal.textContent = _progDuration;
+  document.querySelectorAll('[data-prog-duration]').forEach((btn) => {
+    const val = parseInt(btn.getAttribute('data-prog-duration') || '', 10);
+    btn.classList.toggle('active', val === _progDuration);
+  });
+}
+function loadProgramme() {
+  _progDuration = _loadProgDuration();
+  _prog = _loadStoredProg();
+  if (!_prog) { _prog = buildOfflineProgram(); _saveProg(); }
+  _prog.weeks = _progDuration;
+  _progWeek = Math.min(_getProgTotalWeeks(), _loadStoredProgWeek());
+  _syncProgDurationUI();
+  renderProgramme(_progWeek);
+  syncProgWater();
+}
+function _saveProg() {
+  try {
+    _prog = _normalizeProgData({ ...(_prog || {}), weeks: _sanitizeProgDuration(_progDuration) }) || buildOfflineProgram();
+    _prog.weeks = _progDuration;
+    localStorage.setItem(PROG_STORAGE_KEY, JSON.stringify(_prog));
+    localStorage.setItem(PROG_WEEK_KEY, String(Math.min(_getProgTotalWeeks(), Math.max(1, _progWeek))));
+    localStorage.setItem(PROG_DURATION_KEY, String(_progDuration));
+  } catch {}
+}
+function progPrevWeek() { if (_progWeek > 1) { _progWeek--; _saveProg(); renderProgramme(_progWeek); } }
+function progNextWeek() { if (_progWeek < _getProgTotalWeeks()) { _progWeek++; _saveProg(); renderProgramme(_progWeek); } }
+function progSetWeek(w)  { _progWeek = Math.min(_getProgTotalWeeks(), Math.max(1, parseInt(w, 10) || 1)); _saveProg(); renderProgramme(_progWeek); }
+function progSetDuration(weeks) {
+  const next = _sanitizeProgDuration(weeks);
+  if (next === _progDuration) return;
+  _progDuration = next;
+  _progWeek = 1;
+  _prog = { ...(_prog || buildOfflineProgram()), weeks: next, generatedAt: Date.now(), version: `flex-${next}w-v1` };
+  _saveProg();
+  _syncProgDurationUI();
+  renderProgramme(1);
+  toast(`Programme ${next} ${next > 1 ? 'semaines' : 'semaine'} sélectionné ✓`, 'ok');
+}
+function progRegenerate() { _prog = buildOfflineProgram(); _prog.weeks = _progDuration; _progWeek = 1; _saveProg(); renderProgramme(1); toast("Programme régénéré ✓", "ok"); }
+
+function _progGoalLabel(goal) {
+  return ({ prise_de_masse:"Prise de masse", perte_de_poids:"Perte de poids", remise_en_forme:"Remise en forme", force:"Force", endurance:"Endurance", maintien:"Maintien" })[String(goal || "").toLowerCase()] || "Remise en forme";
+}
+
+function _progEquipmentLabel(equipment) {
+  const eq = String(equipment || "").trim();
+  return eq ? eq : "Poids du corps";
+}
+
+function _progDailyObjective(type, weekNum, goal) {
+  const phase = PROG_PHASES[(weekNum || 1) - 1] || PROG_PHASES[0];
+  const t = String(type || "").toLowerCase();
+  if (t === 'rest') return 'Ralentis volontairement pour absorber la charge de travail et arriver frais sur la prochaine séance.';
+  if (t === 'mobilite') return 'Déverrouille les hanches, le haut du dos et la respiration. Recherche de la fluidité, pas de fatigue.';
+  if (t === 'cardio') return goal === 'perte_de_poids' ? 'Monte la dépense énergétique sans te cramer. Garde un effort régulier et durable.' : 'Travaille l’endurance de base et la récupération active.';
+  if (t === 'hiit') return 'Qualité d’effort maximale sur peu de temps. Reste explosif mais propre sur chaque répétition.';
+  if (t === 'core') return 'Verrouille le tronc et la respiration pour transférer plus de force sur tous les autres mouvements.';
+  if (t === 'push') return phase.name.includes('Force') ? 'Priorité au mouvement principal lourd, puis accessoires propres et stables.' : 'Accumule du volume sur les poussées avec amplitude complète et contrôle.';
+  if (t === 'pull') return phase.name.includes('Force') ? 'Tire lourd sans perdre le gainage. Chaque rep doit finir proprement.' : 'Travaille le dos avec une excentrique lente et des omoplates actives.';
+  if (t === 'legs') return phase.name.includes('Puissance') ? 'Pousse vite, garde la posture et un appui solide sur chaque rep.' : 'Construis des jambes fortes avec amplitude, stabilité et contrôle.';
+  return 'Séance structurée, propre et progressive. Garde 1 à 2 reps en réserve sur les premières séries.';
+}
+
+function _progExerciseCoachHint(ex, weekNum, itemType, isPrimary) {
+  if (!ex) return '';
+  const t = String(itemType || '').toLowerCase();
+  const m = String(ex.m || '').toLowerCase();
+  if (isPrimary) {
+    if (t === 'legs') return 'Cherche une amplitude complète et un tronc verrouillé.';
+    if (t === 'push') return 'Scapulas stables, contrôle la descente puis pousse franchement.';
+    if (t === 'pull') return 'Poitrine sortie, tire avec les coudes et garde le cou relâché.';
+    if (t === 'core') return 'Respiration basse et bassin neutre sur toute la série.';
+  }
+  if (/fess|ischio|quad|mollet/.test(m)) return 'Contrôle la descente et évite de rebondir.';
+  if (/pec|epaul|delto/.test(m)) return 'Amplitude propre, pas d’élan inutile.';
+  if (/dos|biceps/.test(m)) return 'Marque une demi-seconde en fin de tirage.';
+  if (/abdo|core|gainage/.test(m)) return 'Expire sur l’effort et garde les côtes abaissées.';
+  return weekNum >= 5 ? 'Repose-toi vraiment entre les séries lourdes.' : 'Cherche surtout la qualité de mouvement.';
+}
+
+function _progSessionFinisher(type, weekNum) {
+  const t = String(type || '').toLowerCase();
+  if (t === 'rest') return '';
+  if (t === 'mobilite') return 'Fin de séance : 3 minutes de respiration lente pour redescendre.';
+  if (t === 'cardio') return 'Fin de séance : 5 minutes retour au calme + hydratation.';
+  if (t === 'hiit') return 'Fin de séance : 4 minutes de marche et respiration profonde avant de repartir.';
+  if (t === 'core') return 'Fin de séance : 1 série bonus de gainage léger si la technique reste propre.';
+  return weekNum >= 5 ? 'Fin de séance : note ta charge du mouvement principal pour battre ta référence la semaine prochaine.' : 'Fin de séance : 5 minutes de mobilité ciblée sur la zone travaillée.';
+}
+
+function _progDisplayExerciseCount(type, weekNum) {
+  const base = (_getProgPhaseBundle(weekNum).exCount) || 5;
+  const t = String(type || '').toLowerCase();
+  if (t === 'mobilite') return Math.min(5, base);
+  if (t === 'cardio' || t === 'hiit') return Math.min(6, base);
+  if (t === 'core') return Math.min(5, base);
+  return base;
+}
+
+function renderProgramme(weekNum) {
+  if (!_prog) { _prog = buildOfflineProgram(); _saveProg(); }
+  const phaseBundle = _getProgPhaseBundle(weekNum);
+  const phase = { ...phaseBundle, w: weekNum };
+  const params = phaseBundle.params || { sets:4, reps:"8-12", rest:90 };
+
+  // Subtitle
+  const sub = document.getElementById("prog-subtitle");
+  if (sub) sub.textContent = (_prog.name ? _prog.name + " · " : "") + _progGoalLabel(_prog.goal) + ` · cycle ${_progDuration} ${_progDuration > 1 ? "semaines" : "semaine"} · ${phase.name} · RPE ` + phase.rpe;
+
+  // Phase timeline
+  const strip = document.getElementById("prog-phases-strip");
+  if (strip) {
+    strip.innerHTML = _getProgPhases().map((p, idx) => { const pWeek = idx + 1;
+      const active = pWeek === weekNum;
+      const past = pWeek < weekNum;
+      return `<div class="prog-tl-seg${active ? " active" : ""}${past ? " past" : ""}"
+        style="--pc:${p.color}" onclick="progSetWeek(${pWeek})" title="${p.name} — Semaine ${pWeek}">
+        <div class="prog-tl-bar"></div>
+        <span class="prog-tl-lbl">${p.short}</span>
+      </div>`;
+    }).join("");
+  }
+
+  // Cycle progress bar
+  const bar = document.getElementById("prog-cycle-bar");
+  const lbl = document.getElementById("prog-cycle-label");
+  if (bar) bar.style.width = ((weekNum / _getProgTotalWeeks()) * 100) + "%";
+  if (lbl) lbl.textContent = `Semaine ${weekNum} / ${_getProgTotalWeeks()} — ${phase.name}`;
+
+  // Today hero card
+  const heroEl = document.getElementById("prog-today-hero");
+  if (heroEl) {
+    const weekly = _progGetWeekly(_prog.goal);
+    const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
+    const todayDayIdx = weekly.findIndex(item => item.d === todayDow);
+    const todayItem = weekly[todayDayIdx];
+    if (todayItem && todayItem.type !== "rest") {
+      const exType = _progExType(todayItem.type, _prog.equipment || "");
+      const allEx = PROG_EXERCISES[exType] || [];
+      const priorCount = weekly.slice(0, todayDayIdx).filter(d => _progExType(d.type, _prog.equipment || "") === exType).length;
+      const pool = priorCount % 2 === 0 ? "A" : "B";
+      const pooled = allEx.filter(e => !e.pool || e.pool === pool);
+      const exList = (pooled.length >= 5 ? pooled : allEx).slice(0, 7);
+      const doneKey = `fitai_prog_done_${new Date().toISOString().slice(0, 10)}`;
+      let doneSets = {};
+      try { doneSets = JSON.parse(localStorage.getItem(doneKey) || "{}"); } catch {}
+      const doneCount = exList.filter((_, ei) => doneSets[`${todayDayIdx}_${ei}`]).length;
+      const pct = exList.length ? Math.round((doneCount / exList.length) * 100) : 0;
+      const allDone = doneCount === exList.length && exList.length > 0;
+      heroEl.style.display = "block";
+      heroEl.innerHTML = `
+        <div class="prog-today-hero">
+          <div class="prog-today-hero-top">
+            <div class="prog-today-hero-icon">${todayItem.icon}</div>
+            <div style="flex:1">
+              <div class="prog-today-hero-kicker">Séance du jour · ${phase.name}</div>
+              <div class="prog-today-hero-title">${todayItem.label}</div>
+              <div class="prog-today-hero-meta">${exList.length} exercices · RPE ${phase.rpe} · ${params.sets}×${params.reps} · ${_progGoalLabel(_prog.goal)}</div><div style="margin-top:6px;font-size:.72rem;color:rgba(255,255,255,.78)">${_progDailyObjective(todayItem.type, weekNum, _prog.goal)}</div>
+            </div>
+            ${allDone ? '<span class="prog-today-done-badge">✓ Terminée</span>' : ''}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <div class="progress-track" style="flex:1;height:5px">
+              <div class="progress-fill" style="width:${pct}%;background:linear-gradient(90deg,#3b82f6,#6366f1);transition:width .35s"></div>
+            </div>
+            <span style="font-size:.65rem;color:#60a5fa;font-weight:800;white-space:nowrap">${doneCount}/${exList.length} faits</span>
+          </div>
+          <button class="prog-start-btn" onclick="progStartWorkout(${todayDayIdx})">▶ Commencer la séance</button>
+        </div>`;
+    } else if (todayItem && todayItem.type === "rest") {
+      heroEl.style.display = "block";
+      heroEl.innerHTML = `
+        <div class="prog-today-hero prog-today-rest">
+          <div class="prog-today-hero-top">
+            <div class="prog-today-hero-icon">😴</div>
+            <div>
+              <div class="prog-today-hero-kicker">Aujourd'hui</div>
+              <div class="prog-today-hero-title">Repos complet</div>
+              <div class="prog-today-hero-meta">Récupération musculaire · Hydratation · Étirements légers</div><div style="margin-top:6px;font-size:.72rem;color:rgba(255,255,255,.78)">${_progDailyObjective("rest", weekNum, _prog.goal)}</div>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      heroEl.style.display = "none";
+    }
+  }
+
+  // SVG Chart
+  _renderProgChart(weekNum);
+
+  // Week info
+  const sw = document.getElementById("prog-sel-week");
+  const sp = document.getElementById("prog-sel-phase");
+  const wd = document.getElementById("prog-week-desc");
+  if (sw) sw.textContent = weekNum;
+  if (sp) { sp.textContent = phase.name; sp.style.color = phase.color; }
+  if (wd) wd.textContent = phase.desc;
+
+  // Coach note for the week
+  const noteEl = document.getElementById("prog-coach-note");
+  if (noteEl) {
+    const note = phaseBundle.note || { theme: phase.name, focus: phase.desc, cue: _progProgressionHint(weekNum) };
+    const latestMeta = _loadLatestPlanMeta();
+    const summary = latestMeta && latestMeta.week_number === weekNum ? latestMeta.week_summary : null;
+    const extra = summary ? `
+      <div class="prog-cn-focus"><strong>Priorité de la semaine :</strong> ${escapeHtml(summary.objective || latestMeta.coach_priority || '')}</div>
+      <div class="prog-cn-focus"><strong>Progression :</strong> ${escapeHtml(latestMeta.progression_rule || summary.progression || '')}</div>
+      <div class="prog-cn-focus"><strong>Récupération :</strong> ${escapeHtml(latestMeta.recovery_target || summary.recovery || '')}</div>
+      <div class="prog-cn-cue">${escapeHtml(latestMeta.pain_rule || summary.pain_rule || note.cue)}</div>` : `
+      <div class="prog-cn-focus">${escapeHtml(note.focus)}</div>
+      <div class="prog-cn-cue">"${escapeHtml(note.cue)}"</div>`;
+    noteEl.innerHTML = `
+      <div class="prog-cn-theme">🎯 ${escapeHtml(note.theme)}</div>${extra}`;
+  }
+
+  // Phase stats strip
+  const statsEl = document.getElementById("prog-phase-stats");
+  if (statsEl) {
+    const restSec = params.rest;
+    const restStr = restSec >= 60 ? `${Math.floor(restSec / 60)}min${restSec % 60 ? (restSec % 60) + "s" : ""}` : `${restSec}s`;
+    statsEl.innerHTML = `
+      <div class="prog-stat-pill" style="border-color:${phase.color}22;color:${phase.color}"><span>RPE</span><strong>${phase.rpe}</strong></div>
+      <div class="prog-stat-pill"><span>Sets × Reps</span><strong>${params.sets}×${params.reps}</strong></div>
+      <div class="prog-stat-pill"><span>Repos</span><strong>${restStr}</strong></div>
+      <div class="prog-stat-pill"><span>Tempo</span><strong>${phaseBundle.tempo || "2-1-1"}</strong></div>
+      <div class="prog-stat-pill"><span>Progression</span><strong>${_progProgressionHint(weekNum)}</strong></div>
+      <div class="prog-stat-pill"><span>Matériel</span><strong>${_progEquipmentLabel(_prog.equipment)}</strong></div>
+    `;
+  }
+
+  // Days
+  _renderProgDays(weekNum, params);
+}
+
+function _renderProgChart(currentWeek) {
+  const svg = document.getElementById("prog-svg-chart");
+  if (!svg) return;
+  const W = 300, H = 90, pL = 22, pR = 10, pT = 8, pB = 18;
+  const cW = W - pL - pR, cH = H - pT - pB;
+  const toX = i => pL + (i / 7) * cW;
+  const toY = v => pT + cH - (v / 100) * cH;
+
+  const progPhases = _getProgPhases();
+  const vols = progPhases.map(p => p.volume);
+  const ints = progPhases.map(p => p.intensity);
+
+  function line(vals, color, id) {
+    const pts = vals.map((v, i) => toX(i).toFixed(1) + "," + toY(v).toFixed(1)).join(" ");
+    const area = toX(0).toFixed(1) + "," + toY(0).toFixed(1) + " " + pts + " " + toX(7).toFixed(1) + "," + toY(0).toFixed(1);
+    const dots = vals.map((v, i) => {
+      const isCur = i + 1 === currentWeek;
+      return `<circle cx="${toX(i).toFixed(1)}" cy="${toY(v).toFixed(1)}" r="${isCur ? 4 : 2.5}" fill="${color}" ${isCur ? 'stroke="#fff" stroke-width="1.5"' : ""}/>`;
+    }).join("");
+    return `<polygon points="${area}" fill="${color}" opacity="0.08"/>
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      ${dots}`;
+  }
+
+  // Grid lines
+  const grid = [0, 25, 50, 75, 100].map(v => {
+    const y = toY(v).toFixed(1);
+    return `<line x1="${pL}" y1="${y}" x2="${W - pR}" y2="${y}" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+      <text x="${(pL - 2)}" y="${(parseFloat(y) + 3).toFixed(1)}" text-anchor="end" fill="rgba(255,255,255,.25)" font-size="6">${v}</text>`;
+  }).join("");
+
+  // Current week marker
+  const cx = toX(currentWeek - 1).toFixed(1);
+  const markerColor = (progPhases[currentWeek - 1] || progPhases[0] || { color: "#6366f1" }).color;
+  const marker = `<line x1="${cx}" y1="${pT}" x2="${cx}" y2="${pT + cH}" stroke="${markerColor}" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.6"/>`;
+
+  // X labels
+  const xlabels = progPhases.map((p, i) =>
+    `<text x="${toX(i).toFixed(1)}" y="${H - 3}" text-anchor="middle" fill="rgba(255,255,255,.35)" font-size="7">${p.short}</text>`
+  ).join("");
+
+  svg.innerHTML = grid + marker + line(vols, "#2563eb") + line(ints, "#f97316") + xlabels;
+}
+
+function _renderProgDays(weekNum, params) {
+  const cont = document.getElementById("prog-days-list");
+  if (!cont || !_prog) return;
+  const weekly = _progGetWeekly(_prog.goal);
+  const eq = _prog.equipment || "";
+  const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
+  const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const doneKey = `fitai_prog_done_${new Date().toISOString().slice(0, 10)}`;
+  let doneSets = {};
+  try { doneSets = JSON.parse(localStorage.getItem(doneKey) || "{}"); } catch {}
+
+  // Count how many times each exercise type has appeared so far in the week (for A/B pool rotation)
+  const typeCount = {};
+
+  cont.innerHTML = weekly.map((item, dayIdx) => {
+    const isToday = item.d === todayDow;
+    const isRest  = item.type === "rest";
+    const exType  = _progExType(item.type, eq);
+    typeCount[exType] = (typeCount[exType] || 0);
+    const pool = typeCount[exType] % 2 === 0 ? "A" : "B";
+    typeCount[exType]++;
+    const allEx = PROG_EXERCISES[exType] || [];
+    // Prefer pool-matched exercises, fall back to non-pool items (fullbody, hiit, etc.)
+    const pooled = allEx.filter(e => !e.pool || e.pool === pool);
+    const exCount = isRest ? 0 : _progDisplayExerciseCount(item.type, weekNum);
+    const displayPool = (pooled.length >= 4 ? pooled : allEx);
+    const displaySeed = ((weekNum || 1) * 1000) + (dayIdx + 1) * 37;
+    const exList  = _seededShuffle(displayPool, displaySeed).slice(0, exCount);
+
+    let exHtml = "";
+    const muscleColors = {
+      Pecs: "#3b82f6", "Pecs haut": "#60a5fa", Triceps: "#8b5cf6", "Deltoïdes": "#14b8a6",
+      Épaules: "#06b6d4", "Épaules arrière": "#0ea5e9", Dos: "#2563eb", Biceps: "#6366f1",
+      "Biceps/Avant-bras": "#818cf8", Ischio: "#f97316", Fessiers: "#f59e0b",
+      Quadriceps: "#eab308", Mollets: "#fb923c", Core: "#22d3ee", Abdos: "#34d399",
+      Gainage: "#4ade80", Lombaires: "#a78bfa", Fullbody: "#e879f9", HIIT: "#f472b6",
+    };
+    const doneCount = isRest ? 0 : exList.filter((_, ei) => doneSets[`${dayIdx}_${ei}`]).length;
+    const tempo = _getProgPhaseBundle(weekNum).tempo || "";
+    const progHint = _progProgressionHint(weekNum);
+    if (isRest) {
+      exHtml = `<div class="prog-rest-msg">😴 Repos complet — récupération musculaire et mentale. Hydratation, sommeil, étirements légers.</div>
+        <div style="margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(15,23,42,.42);font-size:.78rem;color:var(--text-muted)">${_progDailyObjective('rest', weekNum, _prog.goal)}</div>`;
+    } else {
+      const needSets = !["hiit","cardio","mobilite","core"].includes(item.type);
+      const objectiveHtml = `<div style="margin-bottom:10px;padding:10px 12px;border-radius:14px;background:rgba(37,99,235,.12);border:1px solid rgba(96,165,250,.18);font-size:.78rem;line-height:1.45;color:#dbeafe"><strong style="color:#93c5fd">Objectif du jour</strong><br>${_progDailyObjective(item.type, weekNum, _prog.goal)}</div>`;
+      // Warm-up reminder for force/power phases
+      const warmupHtml = weekNum >= 5 && needSets
+        ? `<div class="prog-warmup-note">🔥 Échauffement obligatoire : 2 séries légères avant le composé principal (50% puis 75% charge)</div>`
+        : '';
+      exHtml = objectiveHtml + warmupHtml + exList.map((ex, exIdx) => {
+        const detail = ex.r ? ex.r : (needSets ? params.sets + "×" + params.reps + " · " + (params.rest >= 60 ? Math.floor(params.rest/60) + "min" : params.rest + "s") + " repos" : params.reps);
+        const isDone = doneSets[`${dayIdx}_${exIdx}`];
+        const mColor = muscleColors[ex.m] || "var(--muted)";
+        const isPrimary = exIdx === 0 && needSets;
+        return `<div class="prog-ex-row${isDone ? " done" : ""}${isPrimary ? " prog-ex-primary" : ""}">
+          <div class="prog-ex-check${isDone ? " checked" : ""}" onclick="progToggleExDone(event,${dayIdx},${exIdx})">${isDone ? "✓" : ""}</div>
+          <div class="prog-ex-body">
+            <div class="prog-ex-name-row">
+              ${isPrimary ? `<span class="prog-ex-primary-tag">⭐ Principal</span>` : ''}
+              <span class="prog-ex-name">${ex.n}</span>
+            </div>
+            <div class="prog-ex-sub-row">
+              <span class="prog-ex-detail">${detail}</span>
+              ${isPrimary && tempo ? `<span class="prog-ex-tempo">Tempo ${tempo}</span>` : ''}
+              <span class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33">${ex.m}</span>
+            </div>
+            ${isPrimary ? `<div class="prog-ex-hint">${progHint}</div>` : ''}
+            <div style="margin-top:6px;font-size:.72rem;color:var(--text-muted);line-height:1.35">${_progExerciseCoachHint(ex, weekNum, item.type, isPrimary)}</div>
+          </div>
+        </div>`;
+      }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
+    }
+
+    // Build JS array for timer
+    const exForTimer = JSON.stringify(exList.map(ex => ({ n: ex.n, m: ex.m, r: ex.r || null })));
+    const startBtn = !isRest
+      ? `<button class="prog-start-btn${isToday ? "" : " prog-start-btn-dim"}" onclick="event.stopPropagation();progStartWorkout(${dayIdx})" data-exlist='${exForTimer}'>${isToday ? "▶ Commencer la séance" : "▶ Lancer quand même"}</button>`
+      : "";
+
+    const doneProgressBadge = (!isRest && exList.length)
+      ? `<span class="prog-done-badge${doneCount === exList.length ? " complete" : ""}">${doneCount}/${exList.length}</span>`
+      : "";
+
+    // Auto-expand today's card (empty = class display:flex applies; "display:none" = hidden)
+    const exStyle = isRest ? "margin-top:8px" : (isToday ? "" : "display:none");
+
+    return `<div class="prog-day-card${isToday ? " prog-day-today" : ""}${isRest ? " prog-day-rest" : ""}"${isRest ? "" : ` onclick="progToggleDay(this)"`}>
+      <div class="prog-day-header">
+        <span class="prog-day-num">${dayNames[item.d - 1]}</span>
+        <span class="prog-day-icon" style="margin-left:4px">${item.icon}</span>
+        <span class="prog-day-label">${item.label}</span>
+        ${isToday ? '<span class="prog-today-badge">Aujourd\'hui</span>' : ""}
+        ${doneProgressBadge}
+        ${!isRest ? `<span class="prog-expand-arrow" style="margin-left:auto;font-size:.6rem;color:var(--muted)">${isToday ? "▲" : "▼"}</span>` : ""}
+      </div>
+      <div class="prog-day-exercises" style="${exStyle}">${exHtml}${startBtn}</div>
+    </div>`;
+  }).join("");
+}
+
+function progToggleDay(el) {
+  const ex = el.querySelector(".prog-day-exercises");
+  const arrow = el.querySelector(".prog-expand-arrow");
+  if (!ex) return;
+  const open = ex.style.display !== "none";
+  ex.style.display = open ? "none" : "flex";
+  if (arrow) arrow.textContent = open ? "▼" : "▲";
+}
+
+function progToggleExDone(event, dayIdx, exIdx) {
+  event.stopPropagation();
+  const doneKey = `fitai_prog_done_${new Date().toISOString().slice(0, 10)}`;
+  let doneSets = {};
+  try { doneSets = JSON.parse(localStorage.getItem(doneKey) || "{}"); } catch {}
+  const k = `${dayIdx}_${exIdx}`;
+  doneSets[k] = !doneSets[k];
+  localStorage.setItem(doneKey, JSON.stringify(doneSets));
+  // Re-render just the days
+  const params = (_getProgPhaseBundle(_progWeek || 1).params) || { sets:4, reps:"8-12", rest:90 };
+  _renderProgDays(_progWeek || 1, params);
+}
+
+function _seededShuffle(arr, seed) {
+  const a = [...arr];
+  let s = (seed >>> 0) || 1;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
+    s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
+    const j = s % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function progStartWorkout(dayIdx) {
+  const weekly = _progGetWeekly(_prog?.goal || "");
+  const item = weekly[dayIdx];
+  if (!item || item.type === "rest") return;
+  const eq = _prog?.equipment || "";
+  const exType = _progExType(item.type, eq);
+  // Count occurrences of this type before dayIdx to determine pool
+  const priorCount = weekly.slice(0, dayIdx).filter(d => _progExType(d.type, eq) === exType).length;
+  const pool = priorCount % 2 === 0 ? "A" : "B";
+  const allEx = PROG_EXERCISES[exType] || [];
+  const pooled = allEx.filter(e => !e.pool || e.pool === pool);
+  const base = pooled.length >= 5 ? pooled : allEx;
+  // Daily seed: changes each calendar day so exercises rotate automatically
+  const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const seed = parseInt(todayStr, 10) + dayIdx * 31 + (_progWeek || 1) * 97;
+  const shuffled = _seededShuffle(base, seed);
+  const exCount = _progDisplayExerciseCount(item.type, _progWeek || 1);
+  const exList = shuffled.slice(0, exCount);
+  if (!exList || exList.length === 0) {
+    return toast("Aucun exercice disponible pour cette séance.", "err");
+  }
+  const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
+  // Calculate target duration so _buildGuidedTimeline fills enough rounds
+  const avgWorkSec = 40;
+  const cappedRest = Math.min(90, params.rest || 30);
+  const sets = params.sets || 3;
+  const durationMin = Math.max(20, Math.ceil(exList.length * sets * (avgWorkSec + cappedRest) / 60));
+  const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const label = `${item.icon} ${item.label} · ${dayNames[item.d - 1]}`;
+  startWorkout(label, exList, { ...params, durationMin });
+}
+
+window.loadProgramme    = loadProgramme;
+window.progPrevWeek     = progPrevWeek;
+window.progNextWeek     = progNextWeek;
+window.progSetWeek      = progSetWeek;
+window.progSetDuration  = progSetDuration;
+window.progRegenerate   = progRegenerate;
+window.progToggleDay    = progToggleDay;
+window.progToggleExDone = progToggleExDone;
+window.progStartWorkout = progStartWorkout;
+
+document.addEventListener("DOMContentLoaded", boot);
+
+// Pause feed auto-refresh when tab/app is hidden (battery & quota friendly)
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    _stopFeedRefresh();
+  } else if (document.getElementById("t-community")?.classList.contains("on")) {
+    _startFeedRefresh();
+  }
+});
