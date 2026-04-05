@@ -742,6 +742,7 @@ async function loadDashboard() {
     if (greetEl && U) {
       try {
         const { data } = await SB.from("profiles").select("display_name,username,age,weight,height").eq("id", U.id).maybeSingle();
+        if (data?.weight) USER_WEIGHT = parseFloat(data.weight) || USER_WEIGHT;
         const name = data?.display_name || data?.username || U.email?.split("@")[0] || "Champion";
         greetEl.textContent = name;
         if (sidebarName) sidebarName.textContent = name;
@@ -761,12 +762,172 @@ async function loadDashboard() {
     loadScanMiniTile();
     restoreMoodSelection();
     renderWeekActivity();
+    refreshDashboardSummaryPills();
+    refreshDashboardProgrammeCard();
+    refreshDashboardWeeklyOverview();
     _renderOnboarding();
   } catch (e) {
     console.error("[Dashboard] Error:", e);
   }
   showGlobalLoader(false);
 }
+
+
+function refreshDashboardSummaryPills() {
+  const focusEl = document.getElementById("db-goal-focus");
+  const cycleEl = document.getElementById("db-goal-cycle");
+  const waterEl = document.getElementById("db-goal-water");
+  if (focusEl) {
+    const goalTxt = document.getElementById("goal-hero-title")?.textContent?.trim()
+      || document.getElementById("db-goal-text")?.textContent?.trim()
+      || "Objectif à définir";
+    focusEl.innerHTML = `🎯 <strong>${escapeHtml(goalTxt)}</strong>`;
+  }
+  if (cycleEl) {
+    const weeks = _sanitizeProgDuration(_loadProgDuration());
+    cycleEl.innerHTML = `🗓️ <strong>${weeks} ${weeks > 1 ? 'semaines' : 'semaine'}</strong>`;
+  }
+  if (waterEl) {
+    const w = getWaterData();
+    const target = getWaterTarget();
+    waterEl.innerHTML = `💧 <strong>${w.count}/${target} verres</strong>`;
+  }
+}
+
+
+function refreshDashboardWeeklyOverview() {
+  const badgeEl = document.getElementById('db-program-badge');
+  const titleEl = document.getElementById('db-program-title');
+  const subEl = document.getElementById('db-program-sub');
+  const stripEl = document.getElementById('db-program-strip');
+  const phaseEl = document.getElementById('db-program-phase');
+  const phaseSubEl = document.getElementById('db-program-phase-sub');
+  const priorityEl = document.getElementById('db-program-priority');
+  const progressionEl = document.getElementById('db-program-progression');
+  const recoveryEl = document.getElementById('db-program-recovery');
+  const cyclePillEl = document.getElementById('db-program-cycle-pill');
+  const volumePillEl = document.getElementById('db-program-volume-pill');
+  const hydrationPillEl = document.getElementById('db-program-hydration-pill');
+  if (!stripEl) return;
+
+  const prog = _normalizeProgData(_loadStoredProg()) || buildOfflineProgram();
+  const duration = _sanitizeProgDuration(_loadProgDuration());
+  const weekNum = Math.min(duration, Math.max(1, _loadStoredProgWeek()));
+  prog.weeks = duration;
+  _progDuration = duration;
+  _progWeek = weekNum;
+  _prog = prog;
+
+  const weekly = _progGetWeekly(prog.goal);
+  const phase = _getProgPhaseBundle(weekNum);
+  const meta = _loadLatestPlanMeta() || {};
+  const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
+  const todayItem = weekly.find(item => item.d === todayDow) || weekly[0] || { label:'Séance guidée', icon:'⚡', type:'fullbody' };
+  const sessionsCount = weekly.filter(item => String(item.type || '').toLowerCase() !== 'rest').length;
+  const water = getWaterData();
+  const waterTarget = getWaterTarget();
+  const liters = ((water.count * WATER_GLASS_LITERS) || 0).toFixed(1);
+
+  if (badgeEl) badgeEl.textContent = `Semaine ${weekNum}/${duration}`;
+  if (titleEl) titleEl.textContent = duration > 1
+    ? `${_progGoalLabel(prog.goal)} · cap semaine ${weekNum}`
+    : `${_progGoalLabel(prog.goal)} · ton plan de la semaine`;
+  if (subEl) subEl.textContent = todayItem.type === 'rest'
+    ? `Aujourd'hui, récupération intelligente : mobilité, sommeil, pas trop de charge. ${phase.desc || ''}`
+    : `Aujourd'hui : ${todayItem.label || 'séance guidée'}. ${_progDailyObjective(todayItem.type, weekNum, prog.goal)}`;
+
+  if (cyclePillEl) cyclePillEl.innerHTML = `🗓️ <strong>${duration} ${duration > 1 ? 'semaines' : 'semaine'}</strong>`;
+  if (volumePillEl) volumePillEl.innerHTML = `📈 <strong>${sessionsCount} séances utiles</strong>`;
+  if (hydrationPillEl) hydrationPillEl.innerHTML = `💧 <strong>${water.count}/${waterTarget} verres · ${liters} L</strong>`;
+
+  if (phaseEl) phaseEl.textContent = `${phase.short || `S${weekNum}`} · ${phase.name || 'Phase active'}`;
+  if (phaseSubEl) phaseSubEl.textContent = phase.desc || 'Charge, intensité et récupération adaptées à ton cycle.';
+  if (priorityEl) priorityEl.textContent = meta.coach_priority || phase.note?.focus || _progDailyObjective(todayItem.type, weekNum, prog.goal);
+  if (progressionEl) progressionEl.textContent = meta.progression_rule || `Repère simple : RPE ${phase.rpe || '6-7'} • ${phase.params?.sets || 3} séries • ${phase.params?.reps || '8-12 reps'}`;
+  if (recoveryEl) recoveryEl.textContent = `${meta.recovery_target || phase.note?.cue || 'Hydrate-toi, dors correctement et garde une journée plus légère si besoin.'} · Eau du jour ${water.count}/${waterTarget}.`;
+
+  const dow = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  stripEl.innerHTML = weekly.map((item, idx) => {
+    const d = Number(item.d || idx + 1);
+    const isToday = d === todayDow;
+    const isRest = String(item.type || '').toLowerCase() === 'rest';
+    const statusClass = `${isToday ? ' today' : ''}${isRest ? ' rest' : ''}`;
+    const objective = _progDailyObjective(item.type, weekNum, prog.goal);
+    const metaLine = isRest
+      ? 'repos · mobilité · eau'
+      : `${phase.params?.sets || 3}×${phase.params?.reps || '8-12'} · ${String(item.type || '').replace(/_/g, ' ')}`;
+    return `
+      <div class="db-program-day${statusClass}" title="${escapeAttr(objective)}">
+        <div class="db-program-day-head">
+          <div class="db-program-day-name">${dow[Math.max(0, Math.min(6, d - 1))]}</div>
+          <div class="db-program-day-icon">${escapeHtml(item.icon || (isRest ? '😴' : '🏋️'))}</div>
+        </div>
+        <div>
+          <div class="db-program-day-label">${escapeHtml(item.label || 'Séance')}</div>
+          <div class="db-program-day-meta">${escapeHtml(metaLine)}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function refreshDashboardProgrammeCard() {
+  const kickerEl = document.getElementById('db-session-kicker');
+  const titleEl = document.getElementById('db-session-title');
+  const metaEl = document.getElementById('db-session-meta');
+  const focusEl = document.getElementById('db-session-focus');
+  const labelEl = document.getElementById('db-session-progress-label');
+  const valueEl = document.getElementById('db-session-progress-value');
+  const fillEl = document.getElementById('db-session-progress-fill');
+  const btnEl = document.getElementById('db-session-btn');
+  if (!titleEl) return;
+
+  const prog = _normalizeProgData(_loadStoredProg()) || buildOfflineProgram();
+  const duration = _sanitizeProgDuration(_loadProgDuration());
+  const weekNum = Math.min(duration, Math.max(1, _loadStoredProgWeek()));
+  prog.weeks = duration;
+  _progDuration = duration;
+  _progWeek = weekNum;
+  _prog = prog;
+  const weekly = _progGetWeekly(prog.goal);
+  const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
+  const dayIdx = Math.max(0, weekly.findIndex(item => item.d === todayDow));
+  const item = weekly[dayIdx] || weekly[0] || { label: 'Séance guidée', icon: '⚡', type: 'fullbody' };
+  const phase = _getProgPhaseBundle(weekNum);
+  const params = phase.params || { sets: 3, reps: '10-12', rest: 60 };
+  const exType = _progExType(item.type, prog.equipment || '');
+  const pool = weekly.slice(0, dayIdx).filter(d => _progExType(d.type, prog.equipment || '') === exType).length % 2 === 0 ? 'A' : 'B';
+  const poolList = (PROG_EXERCISES[exType] || []).filter(e => !e.pool || e.pool === pool);
+  const exList = (poolList.length ? poolList : (PROG_EXERCISES[exType] || [])).slice(0, Math.max(3, _progDisplayExerciseCount(item.type, weekNum)));
+  const mainEx = exList[0]?.n || 'Séance personnalisée';
+
+  const doneKey = `fitai_prog_done_${new Date().toISOString().slice(0, 10)}`;
+  let doneSets = {};
+  try { doneSets = JSON.parse(localStorage.getItem(doneKey) || '{}'); } catch {}
+  const doneCount = item.type === 'rest' ? 0 : exList.filter((_, ei) => doneSets[`${dayIdx}_${ei}`]).length;
+  const pct = item.type === 'rest' ? 100 : (exList.length ? Math.round((doneCount / exList.length) * 100) : 0);
+
+  if (kickerEl) kickerEl.textContent = item.type === 'rest' ? '😴 Récupération du jour' : `⚡ Séance du jour · S${weekNum}`;
+  if (titleEl) titleEl.textContent = item.type === 'rest' ? 'Jour de repos intelligent' : `${item.icon || '🏋️'} ${item.label || 'Séance guidée'}`;
+  if (metaEl) metaEl.textContent = item.type === 'rest'
+    ? `Cycle ${duration} ${duration > 1 ? 'semaines' : 'semaine'} · ${phase.name} · sommeil + mobilité + hydratation`
+    : `${exList.length} exercices · ${params.sets}×${params.reps} · ${phase.name} · RPE ${phase.rpe}`;
+  if (focusEl) focusEl.innerHTML = item.type === 'rest'
+    ? `<strong>Focus :</strong> ${escapeHtml(_progDailyObjective('rest', weekNum, prog.goal))}`
+    : `<strong>Focus :</strong> ${escapeHtml(mainEx)} · ${escapeHtml(_progDailyObjective(item.type, weekNum, prog.goal))}`;
+  if (labelEl) labelEl.textContent = item.type === 'rest' ? 'Récupération du jour' : 'Progression du jour';
+  if (valueEl) valueEl.textContent = item.type === 'rest' ? 'Recovery' : `${pct}%`;
+  if (fillEl) fillEl.style.width = (item.type === 'rest' ? 100 : pct) + '%';
+  if (btnEl) {
+    if (item.type === 'rest') {
+      btnEl.textContent = '🧘 Voir le programme';
+      btnEl.setAttribute('onclick', "gotoTab('programme')");
+    } else {
+      btnEl.textContent = doneCount >= exList.length && exList.length ? '✓ Revoir la séance' : '▶ Commencer la séance';
+      btnEl.setAttribute('onclick', `progStartWorkout(${dayIdx})`);
+    }
+  }
+}
+
 
 // ── Onboarding card ───────────────────────────────────────────────────────────
 const ONBOARD_KEY = "fitai_onboarded";
@@ -1121,6 +1282,7 @@ async function loadGoal() {
     const storedSess = localStorage.getItem("fitai_goal_sessions") || "";
     setEl("gs-sessions", storedSess ? `${storedSess}×/sem` : "—");
     setEl("gs-equip", EQUIP_LABELS[data.equipment || ""] || "Poids du corps");
+    refreshDashboardSummaryPills();
   } catch (e) {
     console.error("[Goal] Load error:", e);
   }
@@ -6805,6 +6967,7 @@ function renderWater(newlyFilledIdx = -1) {
   if (litersEl)    litersEl.textContent    = `${glassesToL(count)} L / ${glassesToL(target)} L`;
   if (summEl)      summEl.textContent      = `${count} / ${target} verres`;
   if (pctEl)       pctEl.textContent       = `${pct}%`;
+  refreshDashboardSummaryPills();
 }
 
 window.adjustWater  = adjustWater;
@@ -7624,24 +7787,34 @@ window.selectMealType = selectMealType;
 
 // ── Sync water counter in programme tab ──────────────────────────────────────
 function syncProgWater() {
-  const today = new Date().toDateString();
-  const dateKey = localStorage.getItem("fitai_water_date");
-  const count = dateKey === today ? parseInt(localStorage.getItem("fitai_water_count") || "0", 10) : 0;
-  const target = parseInt(localStorage.getItem("fitai_water_target") || "8", 10);
+  const data = getWaterData();
+  const count = Number(data.count || 0);
+  const target = getWaterTarget();
+  const pct = target > 0 ? Math.min(100, Math.round((count / target) * 100)) : 0;
 
   const countEl = document.getElementById("prog-water-count");
   const targetEl = document.getElementById("prog-water-target");
+  const litersEl = document.getElementById("prog-water-liters");
+  const tipEl = document.getElementById("prog-water-tip");
   const barEl = document.getElementById("prog-water-bar");
   const glassesEl = document.getElementById("prog-water-glasses");
 
-  if (countEl) countEl.textContent = count;
+  if (countEl) countEl.textContent = String(count);
   if (targetEl) targetEl.textContent = `/ ${target} verres`;
-  if (barEl) barEl.style.width = Math.min(100, Math.round((count / target) * 100)) + "%";
+  if (litersEl) litersEl.textContent = `${glassesToL(count)} L / ${glassesToL(target)} L · récup, focus, performance`;
+  if (barEl) barEl.style.width = pct + "%";
+  if (tipEl) {
+    tipEl.textContent = pct >= 100
+      ? "Objectif hydratation validé aujourd'hui. Garde ce rythme pour mieux récupérer."
+      : pct >= 60
+        ? "Bien joué. Encore quelques verres pour verrouiller ta récup du jour."
+        : "Clique sur un verre pour ajuster directement ton total du jour.";
+  }
   if (glassesEl) {
     glassesEl.innerHTML = Array.from({ length: target }, (_, i) => {
       const filled = i < count;
       return `<div class="water-glass${filled ? " filled" : ""}"
-        onclick="adjustWater(${filled ? i : i + 1});syncProgWater()" title="${filled ? "Retirer" : "Marquer bu"}">
+        onclick="setWaterCount(${i + 1});syncProgWater()" title="${filled ? "Retirer" : "Marquer bu"}">
         <div class="wg-water"></div><div class="wg-shine"></div>
       </div>`;
     }).join("");
