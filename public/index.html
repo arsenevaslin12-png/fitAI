@@ -295,6 +295,16 @@ body.light .community-recipe-card{background:rgba(15,23,42,.02);border-color:rgb
 .friend-search-bar svg{flex-shrink:0;color:var(--muted)}
 .friend-search-bar input{flex:1;background:none;border:none;outline:none;font-size:.84rem;color:var(--text);font-family:inherit}
 .friend-search-bar input::placeholder{color:var(--muted)}
+
+.community-overview-grid,.friends-overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.community-overview-card,.friends-overview-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:14px}
+.community-overview-top,.friends-overview-top{display:flex;align-items:center;gap:8px;font-size:.74rem;color:var(--muted);font-weight:700}
+.community-overview-value,.friends-overview-value{font-size:1.28rem;font-weight:900;color:var(--text);margin-top:8px}
+.community-overview-sub,.friends-overview-sub,.community-overview-meta{font-size:.72rem;color:var(--muted);margin-top:4px}
+.feed-post-pills{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.feed-post-pill{padding:5px 10px;border-radius:999px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.2);font-size:.68rem;font-weight:800;color:#c7d2fe}
+.friend-card-suggestion{background:linear-gradient(160deg,rgba(99,102,241,.07),rgba(14,165,233,.04));border-color:rgba(99,102,241,.16)}
+@media (max-width:760px){.community-overview-grid,.friends-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .friend-card{display:flex;align-items:center;gap:12px;padding:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:16px;margin-bottom:8px;transition:border-color .2s}
 .friend-card:hover{border-color:rgba(255,255,255,.13)}
 .friend-card-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:900;color:#fff;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.3)}
@@ -545,6 +555,28 @@ body.light .friend-search-bar input{color:#0f172a}
 .ex-figure-tag,.ex-figure-tag-muscle{backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(2,6,23,.22)}
 .wt-visual-main{min-height:290px;padding:16px;border-radius:22px}
 .wt-demo-gif{max-height:260px;min-height:200px}
+.wt-motion-shell{position:relative;width:100%;height:100%;min-height:inherit;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:20px;background:radial-gradient(circle at 22% 18%,rgba(99,102,241,.14),transparent 32%),linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015));border:1px solid rgba(255,255,255,.06)}
+.wt-demo-shell{min-height:280px}
+.wt-next-shell{min-height:94px}
+.wt-motion-shell::after{content:"";position:absolute;inset:auto 12% 8% 12%;height:22px;border-radius:999px;background:radial-gradient(circle,rgba(34,211,238,.16),transparent 70%);filter:blur(8px);opacity:.9;pointer-events:none;animation:wtGlowPulse 1.8s ease-in-out infinite}
+.wt-demo-state-badge{position:absolute;top:10px;right:10px;z-index:2;padding:6px 10px;border-radius:999px;background:rgba(15,23,42,.62);border:1px solid rgba(255,255,255,.1);font-size:.58rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#cbd5e1;backdrop-filter:blur(8px)}
+.wt-motion-shell .wt-demo-gif{position:relative;z-index:1;width:100%;height:100%;display:flex;align-items:center;justify-content:center;transform-origin:50% 72%}
+.wt-motion-shell[data-motion-state="paused"] .wt-demo-gif,.wt-motion-shell[data-motion-state="rest"] .wt-demo-gif{animation-play-state:paused!important;opacity:.9}
+.wt-motion-shell.motion-cardio .wt-demo-gif{animation:wtCardioBoost .82s ease-in-out infinite}
+.wt-motion-shell.motion-lower .wt-demo-gif{animation:wtLowerDrive 1.4s ease-in-out infinite}
+.wt-motion-shell.motion-upper .wt-demo-gif{animation:wtUpperDrive 1.18s ease-in-out infinite}
+.wt-motion-shell.motion-hinge .wt-demo-gif{animation:wtHingeDrive 1.35s ease-in-out infinite}
+.wt-motion-shell.motion-core .wt-demo-gif{animation:wtCoreDrive 1.14s ease-in-out infinite}
+.wt-motion-shell.motion-mobility .wt-demo-gif{animation:wtMobilityFlow 2.25s ease-in-out infinite}
+.wt-motion-shell.motion-flow .wt-demo-gif{animation:wtFlowDrive 1.55s ease-in-out infinite}
+@keyframes wtGlowPulse{0%,100%{transform:scaleX(.92);opacity:.42}50%{transform:scaleX(1.08);opacity:.84}}
+@keyframes wtCardioBoost{0%,100%{transform:translateY(0) scale(1)}35%{transform:translateY(-8px) scale(1.04)}65%{transform:translateY(2px) scale(.99)}}
+@keyframes wtLowerDrive{0%,100%{transform:translateY(0) scaleY(1)}40%{transform:translateY(7px) scaleY(.96)}72%{transform:translateY(-1px) scale(1.02)}}
+@keyframes wtUpperDrive{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-3px) rotate(-2deg)}68%{transform:translateY(0) rotate(2deg)}}
+@keyframes wtHingeDrive{0%,100%{transform:translateY(0) rotate(0deg)}40%{transform:translateY(2px) rotate(5deg)}72%{transform:translateY(-2px) rotate(-2deg)}}
+@keyframes wtCoreDrive{0%,100%{transform:rotate(0deg) translateY(0)}25%{transform:rotate(-3deg) translateY(-1px)}75%{transform:rotate(3deg) translateY(1px)}}
+@keyframes wtMobilityFlow{0%,100%{transform:translateY(0) rotate(0deg) scale(1)}30%{transform:translateY(-3px) rotate(-3deg) scale(1.02)}68%{transform:translateY(1px) rotate(3deg) scale(.99)}}
+@keyframes wtFlowDrive{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-3px) scale(1.01)}}
 .ex-figure{min-height:220px;padding:14px;border-radius:20px}
 .ex-demo-gif{max-height:200px;min-height:160px}
 
@@ -561,7 +593,7 @@ body.light .friend-search-bar input{color:#0f172a}
 .wt-tip-grid div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06)}
 .wt-tip-grid span{display:block;font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;font-weight:800;color:var(--muted);margin-bottom:4px}
 .wt-tip-grid p{margin:0;font-size:.78rem;line-height:1.5;color:var(--text2)}
-@media (max-width: 980px){.coach-state-panel{grid-template-columns:1fr}.coach-priority-card{min-width:0}.coach-action-grid{grid-template-columns:1fr}.ex-card-premium{grid-template-columns:34px 1fr}.ex-visual-col{grid-column:2}.ex-howto{grid-template-columns:1fr}.wt-ex-img-wrap{grid-template-columns:1fr}.wt-tip-grid{grid-template-columns:1fr}}
+@media (max-width: 980px){.coach-state-panel{grid-template-columns:1fr}.coach-priority-card{min-width:0}.coach-action-grid{grid-template-columns:1fr}.ex-card-premium{grid-template-columns:34px 1fr}.ex-visual-col{grid-column:2}.ex-howto{grid-template-columns:1fr}.wt-ex-img-wrap{grid-template-columns:1fr}.wt-tip-grid{grid-template-columns:1fr}.wt-modal{max-height:100dvh;height:min(100dvh,920px)}}
 body.light .coach-action-tile,body.light .coach-priority-card,body.light .coach-mood-btn,body.light .coach-more-actions,body.light .ex-figure,body.light .ex-muscle-map,body.light .ex-howto-item,body.light .wt-visual-main,body.light .wt-visual-muscle,body.light .wt-tip-grid div{background:#fff;border-color:rgba(15,23,42,.1)}
 body.light .coach-mini-pill{background:rgba(15,23,42,.05);color:#334155}
 body.light .coach-inline-note{background:rgba(15,23,42,.05)}
@@ -789,7 +821,8 @@ body.light .wt-next-empty{background:#fff;border-color:rgba(15,23,42,.12)}
 .b-water{grid-column:1/3;grid-row:4;background:linear-gradient(145deg,rgba(56,189,248,.07),rgba(14,165,233,.03));border-color:rgba(56,189,248,.2)}
 .b-coach{grid-column:3/5;grid-row:4}
 .b-activite{grid-column:1/5;grid-row:5}
-.b-actions{grid-column:1/5;grid-row:6}
+.b-week-program{grid-column:1/5;grid-row:6;background:linear-gradient(145deg,rgba(99,102,241,.11),rgba(16,185,129,.04));border-color:rgba(129,140,248,.2)}
+.b-actions{grid-column:1/5;grid-row:7}
 /* Stat card helpers */
 .db-stat-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:.9rem;margin-bottom:12px}
 .db-stat-icon.ic-orange{background:rgba(249,115,22,.15);color:var(--orange)}
@@ -809,6 +842,69 @@ body.light .wt-next-empty{background:#fff;border-color:rgba(15,23,42,.12)}
 /* Button icon */
 .btn-icon{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.85rem;transition:all .15s}
 .btn-icon:hover{background:rgba(255,255,255,.12)}
+
+
+.db-goal{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(37,99,235,.11),rgba(14,165,233,.06));box-shadow:0 18px 44px rgba(2,6,23,.24)}
+.db-goal::after{content:"";position:absolute;right:-42px;top:-42px;width:150px;height:150px;border-radius:50%;background:radial-gradient(circle,rgba(96,165,250,.18),transparent 68%);pointer-events:none}
+.db-goal-copy{display:flex;flex-direction:column;gap:4px;min-width:0}
+.db-goal-summary{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.db-goal-pill{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);font-size:.69rem;font-weight:800;color:var(--text2);white-space:nowrap}
+.db-goal-pill strong{color:var(--text);font-weight:900}
+.db-seance-kicker{display:inline-flex;align-items:center;gap:6px;font-size:.64rem;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:#93c5fd;padding:6px 10px;border-radius:999px;background:rgba(59,130,246,.14);border:1px solid rgba(96,165,250,.18);margin-bottom:10px}
+.db-seance-title{font-size:1.22rem;font-weight:900;color:#fff;line-height:1.1;letter-spacing:-.03em;margin-bottom:8px;max-width:12ch}
+.db-seance-meta{font-size:.78rem;color:rgba(255,255,255,.64);line-height:1.5;margin-bottom:12px}
+.db-seance-focus{padding:12px 13px;border-radius:16px;background:rgba(15,23,42,.54);border:1px solid rgba(255,255,255,.08);font-size:.75rem;color:#dbeafe;line-height:1.5;margin-bottom:14px}
+.db-seance-focus strong{color:#93c5fd}
+.db-seance-progress{margin-top:auto;margin-bottom:12px}
+.db-seance-progress-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;font-size:.68rem;color:rgba(255,255,255,.62);font-weight:700}
+.db-seance-progress .progress-track{height:7px;background:rgba(255,255,255,.08)}
+.db-seance-progress .progress-fill{background:linear-gradient(90deg,#60a5fa,#22d3ee);transition:width .35s ease}
+.db-coach-body{padding:12px 13px;border-radius:16px;background:rgba(15,23,42,.45);border:1px solid rgba(255,255,255,.07);margin-bottom:12px}
+.db-coach-meta{margin-top:8px;font-size:.7rem;color:rgba(255,255,255,.62);line-height:1.45}
+.db-program-card{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.95fr);gap:16px;align-items:stretch}
+.db-program-left,.db-program-right{min-width:0}
+.db-program-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.db-program-kicker{display:inline-flex;align-items:center;gap:6px;font-size:.64rem;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:#c4b5fd;padding:6px 10px;border-radius:999px;background:rgba(139,92,246,.14);border:1px solid rgba(196,181,253,.18);margin-bottom:10px}
+.db-program-title{font-size:1.15rem;font-weight:900;color:#fff;line-height:1.1;letter-spacing:-.03em;margin-bottom:7px}
+.db-program-sub{font-size:.78rem;color:rgba(255,255,255,.7);line-height:1.55;max-width:64ch}
+.db-program-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.db-program-pill{display:inline-flex;align-items:center;gap:7px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);font-size:.7rem;font-weight:800;color:var(--text2)}
+.db-program-pill strong{color:#fff;font-weight:900}
+.db-program-strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-top:14px}
+.db-program-day{padding:10px 8px;border-radius:16px;background:rgba(15,23,42,.48);border:1px solid rgba(255,255,255,.06);min-height:88px;display:flex;flex-direction:column;justify-content:space-between;gap:8px;transition:transform .18s ease,border-color .18s ease,background .18s ease}
+.db-program-day.today{border-color:rgba(129,140,248,.45);background:rgba(99,102,241,.14);box-shadow:0 0 0 1px rgba(129,140,248,.16) inset}
+.db-program-day.rest{background:rgba(16,185,129,.08);border-color:rgba(52,211,153,.16)}
+.db-program-day-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.db-program-day-name{font-size:.65rem;font-weight:900;color:rgba(255,255,255,.58);text-transform:uppercase;letter-spacing:.08em}
+.db-program-day-icon{font-size:1rem;line-height:1}
+.db-program-day-label{font-size:.8rem;font-weight:850;color:#fff;line-height:1.25}
+.db-program-day-meta{font-size:.64rem;color:rgba(255,255,255,.56);line-height:1.35}
+.db-program-sidecard{height:100%;display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:24px;background:rgba(8,12,28,.42);border:1px solid rgba(255,255,255,.07)}
+.db-program-sidehead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.db-program-phase{font-size:.86rem;font-weight:900;color:#fff}
+.db-program-phase-sub{font-size:.68rem;color:rgba(255,255,255,.55);line-height:1.45;margin-top:3px}
+.db-program-insight{padding:11px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)}
+.db-program-insight-label{font-size:.61rem;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.42);margin-bottom:5px}
+.db-program-insight-val{font-size:.77rem;color:#e2e8f0;line-height:1.5}
+.db-program-actions{display:flex;gap:10px;margin-top:auto;flex-wrap:wrap}
+.db-program-actions .btn{flex:1 1 180px}
+body.light .db-program-day{background:rgba(15,23,42,.03);border-color:rgba(15,23,42,.08)}
+body.light .db-program-sidecard{background:rgba(15,23,42,.03);border-color:rgba(15,23,42,.08)}
+body.light .db-program-insight{background:rgba(15,23,42,.03);border-color:rgba(15,23,42,.08)}
+@media(max-width:860px){.db-program-card{grid-template-columns:1fr}.db-program-sidecard{padding:14px}.db-program-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.db-program-strip{grid-template-columns:1fr}.db-program-day{min-height:74px}}
+#water-card .water-glasses-grid{grid-template-columns:repeat(8,minmax(0,1fr))!important}
+.program-water-card{background:linear-gradient(145deg,rgba(56,189,248,.08),rgba(14,165,233,.04));border-color:rgba(56,189,248,.18)}
+.prog-water-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:12px}
+.prog-water-copy{display:flex;flex-direction:column;gap:4px}
+.prog-water-title{font-weight:900;font-size:.92rem;color:#38bdf8}
+.prog-water-sub{font-size:.73rem;color:var(--text2)}
+.prog-water-pill{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
+.prog-water-tip{margin-top:8px;font-size:.72rem;color:var(--text2);line-height:1.45}
+body.light .db-goal-pill{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.08)}
+body.light .db-seance-focus,body.light .db-coach-body{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.08)}
+body.light .program-water-card{background:linear-gradient(145deg,rgba(56,189,248,.08),rgba(14,165,233,.04));border-color:rgba(56,189,248,.14)}
+@media(max-width:640px){.db-goal{padding:14px 15px}.db-goal-main{align-items:flex-start}.db-goal-summary{gap:6px}.db-goal-pill{font-size:.64rem;padding:6px 9px}.db-seance-title{font-size:1.05rem;max-width:none}}
 
 /* ── Premium Dashboard upgrades ── */
 .bento-card{box-shadow:0 1px 0 rgba(255,255,255,.055) inset,0 4px 24px rgba(0,0,0,.32)}
@@ -950,9 +1046,10 @@ body.light .db-day-bar{background:rgba(15,23,42,.1)}
 .nutr-legend-dot{width:8px;height:8px;border-radius:50%}
 
 /* ── WORKOUT TIMER MODAL ── */
-.wt-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);z-index:9990;display:none;align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom)}
+.wt-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);z-index:9990;display:none;align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom);overflow:hidden;overscroll-behavior:none}
 .wt-overlay.open{display:flex;animation:fadeIn .18s ease}
-.wt-modal{background:var(--surf);border:1px solid rgba(255,255,255,.1);border-radius:28px 28px 0 0;padding:24px 20px 28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;-webkit-overflow-scrolling:touch;animation:slideUp .22s ease}
+.wt-modal{background:var(--surf);border:1px solid rgba(255,255,255,.1);border-radius:28px 28px 0 0;padding:24px 20px 28px;width:100%;max-width:520px;max-height:min(92vh,920px);overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y pinch-zoom;scrollbar-gutter:stable;animation:slideUp .22s ease}
+html.workout-open,body.workout-open{overflow:hidden;height:100%}
 .wt-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .wt-title{font-weight:900;font-size:.95rem;color:var(--text)}
 .wt-close{width:32px;height:32px;border-radius:50%;border:none;background:rgba(255,255,255,.08);color:var(--text2);font-size:.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -1700,6 +1797,9 @@ body.light .auth-card{background:rgba(13,20,38,.95)}
 body.light .defi-card{background:#fff;border-color:rgba(15,23,42,.1)}
 body.light .daily-defi-banner{background:linear-gradient(135deg,rgba(37,99,235,.08) 0%,rgba(124,58,237,.06) 100%);border-color:rgba(99,102,241,.18)}
 body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23,42,.08)}
+
+#prog-cycle-duration .btn.active{background:linear-gradient(135deg,#6366f1,#8b5cf6);border-color:rgba(129,140,248,.9);color:#fff;box-shadow:0 10px 24px rgba(99,102,241,.28)}
+
 </style>
 </head>
 <body>
@@ -1819,11 +1919,18 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
 
         <!-- Goal banner -->
         <div class="db-goal">
-          <div class="db-goal-main">
-            <div class="db-goal-ic" style="background:var(--grad);color:#fff;box-shadow:var(--shadow-blue)">🎯</div>
-            <div>
-              <div style="font-weight:800;font-size:.93rem" id="db-goal-text">Définir mon objectif physique</div>
-              <div class="page-sub" style="margin:0;font-size:.76rem">Pour des entraînements ultra-personnalisés</div>
+          <div style="flex:1;min-width:0">
+            <div class="db-goal-main">
+              <div class="db-goal-ic" style="background:var(--grad);color:#fff;box-shadow:var(--shadow-blue)">🎯</div>
+              <div class="db-goal-copy">
+                <div style="font-weight:900;font-size:1rem" id="db-goal-text">Définir mon objectif physique</div>
+                <div class="page-sub" style="margin:0;font-size:.76rem">Ton cap du moment, ton cycle actif et ta routine de récupération.</div>
+              </div>
+            </div>
+            <div class="db-goal-summary">
+              <div class="db-goal-pill" id="db-goal-focus">🎯 <strong>Objectif</strong></div>
+              <div class="db-goal-pill" id="db-goal-cycle">🗓️ <strong>Cycle</strong></div>
+              <div class="db-goal-pill" id="db-goal-water">💧 <strong>Hydratation</strong></div>
             </div>
           </div>
           <button class="btn btn-p btn-sm" onclick="gotoTab('goal')" style="flex-shrink:0">Configurer →</button>
@@ -1908,13 +2015,18 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
 
           <!-- [1] Séance du jour — hero 2×2 -->
           <div class="bento-card b-seance">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-              <div style="font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.4)">⚡ Recommandé</div>
-              <button class="btn-icon" onclick="gotoTab('coach')" title="Nouvelle séance">🔄</button>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <div class="db-seance-kicker" id="db-session-kicker">⚡ Aujourd'hui</div>
+              <button class="btn-icon" onclick="gotoTab('programme')" title="Voir le programme">🗓️</button>
             </div>
-            <div style="font-size:1.1rem;font-weight:900;color:#fff;margin-bottom:8px;line-height:1.2">Entraînement<br>du jour</div>
-            <div style="font-size:.78rem;color:rgba(255,255,255,.55);line-height:1.55;margin-bottom:20px">🏋️ 0 exercices · ⏱️ 30 min<br>🔥 ~350 kcal estimées</div>
-            <button class="btn btn-p" style="width:100%;margin-top:auto" onclick="gotoTab('coach')">▶ Commencer</button>
+            <div class="db-seance-title" id="db-session-title">Entraînement du jour</div>
+            <div class="db-seance-meta" id="db-session-meta">Programme personnalisé · durée et intensité adaptées à ton cycle.</div>
+            <div class="db-seance-focus" id="db-session-focus"><strong>Focus :</strong> ouvre l'onglet Programme pour voir ta séance du jour.</div>
+            <div class="db-seance-progress">
+              <div class="db-seance-progress-top"><span id="db-session-progress-label">Progression du jour</span><span id="db-session-progress-value">0%</span></div>
+              <div class="progress-track"><div class="progress-fill" id="db-session-progress-fill" style="width:0%"></div></div>
+            </div>
+            <button class="btn btn-p" id="db-session-btn" style="width:100%" onclick="gotoTab('programme')">▶ Voir la séance</button>
             <div style="position:absolute;bottom:-18px;right:-18px;width:90px;height:90px;border-radius:50%;background:rgba(37,99,235,.12);pointer-events:none"></div>
           </div>
 
@@ -1989,8 +2101,11 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               </div>
               <div style="font-size:.64rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Coach IA · Suggestion du jour</div>
             </div>
-            <div id="db-coach-title" style="font-weight:800;color:var(--text);font-size:.9rem;margin-bottom:5px">Reprenez l'entraînement</div>
-            <div id="db-coach-sub" style="font-size:.78rem;color:var(--text2);line-height:1.5;margin-bottom:12px">Aucune séance cette semaine — commencez par 15 min.</div>
+            <div class="db-coach-body">
+              <div id="db-coach-title" style="font-weight:900;color:var(--text);font-size:.95rem;margin-bottom:5px">Reprenez l'entraînement</div>
+              <div id="db-coach-sub" style="font-size:.78rem;color:var(--text2);line-height:1.55">Aucune séance cette semaine — commencez par 15 min.</div>
+              <div class="db-coach-meta" id="db-coach-meta">Le coach regarde ton rythme, ta récup et ton objectif avant de proposer la bonne action.</div>
+            </div>
             <button id="db-coach-btn" class="btn btn-p btn-sm" onclick="gotoTab('coach')">▶ Démarrer maintenant</button>
           </div>
 
@@ -2020,7 +2135,56 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
             </div>
           </div>
 
-          <!-- [8] Actions rapides — full width 4×1 -->
+          <!-- [8] Programme de la semaine — full width -->
+          <div class="bento-card b-week-program">
+            <div class="db-program-card">
+              <div class="db-program-left">
+                <div class="db-program-top">
+                  <div>
+                    <div class="db-program-kicker" id="db-program-kicker">📅 Programme de la semaine</div>
+                    <div class="db-program-title" id="db-program-title">Ta semaine d'entraînement</div>
+                    <div class="db-program-sub" id="db-program-sub">Lis la charge de la semaine, repère le focus du jour et vois ce qui arrive ensuite.</div>
+                  </div>
+                  <span class="weekly-plan-badge" id="db-program-badge">Sem. —</span>
+                </div>
+                <div class="db-program-pills">
+                  <div class="db-program-pill" id="db-program-cycle-pill">🗓️ <strong>Cycle</strong></div>
+                  <div class="db-program-pill" id="db-program-volume-pill">📈 <strong>Volume</strong></div>
+                  <div class="db-program-pill" id="db-program-hydration-pill">💧 <strong>Hydratation</strong></div>
+                </div>
+                <div class="db-program-strip" id="db-program-strip"></div>
+              </div>
+              <div class="db-program-right">
+                <div class="db-program-sidecard">
+                  <div class="db-program-sidehead">
+                    <div>
+                      <div class="db-program-phase" id="db-program-phase">Phase de la semaine</div>
+                      <div class="db-program-phase-sub" id="db-program-phase-sub">Priorité, progression et récupération.</div>
+                    </div>
+                    <button class="btn-icon" onclick="gotoTab('programme')" title="Ouvrir le programme">→</button>
+                  </div>
+                  <div class="db-program-insight">
+                    <div class="db-program-insight-label">Priorité coach</div>
+                    <div class="db-program-insight-val" id="db-program-priority">—</div>
+                  </div>
+                  <div class="db-program-insight">
+                    <div class="db-program-insight-label">Progression</div>
+                    <div class="db-program-insight-val" id="db-program-progression">—</div>
+                  </div>
+                  <div class="db-program-insight">
+                    <div class="db-program-insight-label">Récupération / eau</div>
+                    <div class="db-program-insight-val" id="db-program-recovery">—</div>
+                  </div>
+                  <div class="db-program-actions">
+                    <button class="btn btn-p" onclick="gotoTab('programme')">▶ Voir toute la semaine</button>
+                    <button class="btn btn-s" onclick="gotoTab('goal')">⚙️ Ajuster le cycle</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- [9] Actions rapides — full width 4×1 -->
           <div class="bento-card b-actions">
             <div style="font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:12px">Actions rapides</div>
             <div class="db-actions-bento">
@@ -2097,10 +2261,10 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
         <span id="db-total-sessions" style="display:none">0</span>
       </div>
 
-      <!-- PROGRAMME 8 SEMAINES -->
+      <!-- PROGRAMME FLEXIBLE -->
       <div class="tab" id="t-programme">
         <div class="page-header">
-          <div class="page-title">Programme 8 Semaines</div>
+          <div class="page-title" id="prog-title-main">Programme 8 semaines</div>
           <div class="page-sub" id="prog-subtitle">Chargement du programme…</div>
         </div>
 
@@ -2110,8 +2274,17 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
         <!-- Phase timeline -->
         <div class="card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <div style="font-weight:800;font-size:.9rem">🗓️ Cycle de 8 semaines</div>
+            <div style="font-weight:800;font-size:.9rem" id="prog-title-card">🗓️ Programme 8 semaines</div>
             <button class="btn btn-g btn-sm" onclick="progRegenerate()" style="font-size:.7rem;padding:4px 10px">↺ Recalculer</button>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <div style="font-size:.72rem;color:var(--muted)">Durée du cycle</div>
+            <div id="prog-cycle-duration" style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn btn-g btn-sm" data-prog-duration="1" onclick="progSetDuration(1)" style="font-size:.72rem;padding:6px 12px">1 sem.</button>
+              <button type="button" class="btn btn-g btn-sm" data-prog-duration="4" onclick="progSetDuration(4)" style="font-size:.72rem;padding:6px 12px">4 sem.</button>
+              <button type="button" class="btn btn-g btn-sm" data-prog-duration="8" onclick="progSetDuration(8)" style="font-size:.72rem;padding:6px 12px">8 sem.</button>
+              <button type="button" class="btn btn-g btn-sm" data-prog-duration="12" onclick="progSetDuration(12)" style="font-size:.72rem;padding:6px 12px">12 sem.</button>
+            </div>
           </div>
           <div class="prog-phases-strip" id="prog-phases-strip"></div>
           <div style="margin-top:14px">
@@ -2134,9 +2307,10 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
 
         <!-- Week detail -->
         <div class="card">
+          <div style="font-size:.72rem;color:var(--muted);margin-bottom:8px">Cycle sélectionné : <span id="prog-cycle-range-label">8 semaines</span></div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
             <div>
-              <div style="font-weight:800;font-size:.9rem">Semaine <span id="prog-sel-week">1</span> / 8 · <span id="prog-sel-phase" style="color:#6366f1">Adaptation</span></div>
+              <div style="font-weight:800;font-size:.9rem">Semaine <span id="prog-sel-week">1</span> / <span id="prog-week-total">8</span> · <span id="prog-sel-phase" style="color:#6366f1">Adaptation</span></div>
               <div id="prog-week-desc" style="font-size:.75rem;color:var(--muted);margin-top:3px;line-height:1.5;max-width:380px"></div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
@@ -2150,11 +2324,14 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
         </div>
 
         <!-- Water in programme -->
-        <div class="card">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <div style="font-weight:800;font-size:.88rem">💧 Hydratation du jour</div>
-            <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:.85rem;font-weight:900;color:#38bdf8" id="prog-water-count">0</span>
+        <div class="card program-water-card">
+          <div class="prog-water-top">
+            <div class="prog-water-copy">
+              <div class="prog-water-title">💧 Hydratation du jour</div>
+              <div class="prog-water-sub" id="prog-water-liters">0 L / 2 L · récup, focus, performance</div>
+            </div>
+            <div class="prog-water-pill">
+              <span style="font-size:.9rem;font-weight:900;color:#38bdf8" id="prog-water-count">0</span>
               <span style="font-size:.72rem;color:var(--muted)" id="prog-water-target">/ 8 verres</span>
             </div>
           </div>
@@ -2168,6 +2345,7 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               <div class="progress-fill" id="prog-water-bar" style="width:0%;background:linear-gradient(90deg,#38bdf8,#0ea5e9);transition:width .35s ease"></div>
             </div>
           </div>
+          <div class="prog-water-tip" id="prog-water-tip">Clique sur un verre pour ajuster directement ton total du jour.</div>
         </div>
 
         <!-- Offline badge -->
@@ -2882,6 +3060,8 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           </div>
         </div>
 
+        <div id="community-overview" style="margin:10px 0 14px"></div>
+
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
           <div style="font-size:1rem;font-weight:800;color:var(--text)">Fil d'actualité</div>
           <div class="feed-filter-bar">
@@ -3048,6 +3228,8 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           <div class="page-sub">Connectez-vous et comparez vos performances</div>
         </div>
 
+        <div id="friends-overview" style="margin-bottom:14px"></div>
+
         <!-- XP Leaderboard -->
         <div class="card" style="border-color:rgba(99,102,241,.18);background:linear-gradient(160deg,rgba(10,16,32,.98),rgba(8,12,28,.98))">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -3077,6 +3259,11 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
         <div class="card" id="friend-requests-card" style="display:none">
           <div class="card-title">Demandes reçues <span class="badge bg-orange" id="friend-pending-badge">0</span></div>
           <div id="friend-requests"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Suggestions pour toi</div>
+          <div id="friend-suggestions"><div class="friends-empty-state"><div style="font-size:2rem">✨</div><div style="font-weight:700">Chargement des suggestions…</div></div></div>
         </div>
 
         <!-- Friends list -->

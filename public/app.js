@@ -694,7 +694,7 @@ function gotoTab(name) {
   if (name === "coach") { loadCoachHistory(); loadHistory(); }
   if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); loadCommunityRecipes(); loadNutritionPlanFromStorage(); }
   if (name === "community") { loadFeed(); _startFeedRefresh(); }
-  if (name === "friends") { loadFriends(); loadFriendRequests(); loadLeaderboard(); }
+  if (name === "friends") { loadFriends(); loadFriendRequests(); loadLeaderboard(); loadFriendSuggestions(); renderFriendsOverview(); }
   if (name === "bodyscan") loadScans();
   if (name === "progress") loadProgress();
   if (name === "defis") loadDefis();
@@ -742,6 +742,7 @@ async function loadDashboard() {
     if (greetEl && U) {
       try {
         const { data } = await SB.from("profiles").select("display_name,username,age,weight,height").eq("id", U.id).maybeSingle();
+        if (data?.weight) USER_WEIGHT = parseFloat(data.weight) || USER_WEIGHT;
         const name = data?.display_name || data?.username || U.email?.split("@")[0] || "Champion";
         greetEl.textContent = name;
         if (sidebarName) sidebarName.textContent = name;
@@ -761,12 +762,172 @@ async function loadDashboard() {
     loadScanMiniTile();
     restoreMoodSelection();
     renderWeekActivity();
+    refreshDashboardSummaryPills();
+    refreshDashboardProgrammeCard();
+    refreshDashboardWeeklyOverview();
     _renderOnboarding();
   } catch (e) {
     console.error("[Dashboard] Error:", e);
   }
   showGlobalLoader(false);
 }
+
+
+function refreshDashboardSummaryPills() {
+  const focusEl = document.getElementById("db-goal-focus");
+  const cycleEl = document.getElementById("db-goal-cycle");
+  const waterEl = document.getElementById("db-goal-water");
+  if (focusEl) {
+    const goalTxt = document.getElementById("goal-hero-title")?.textContent?.trim()
+      || document.getElementById("db-goal-text")?.textContent?.trim()
+      || "Objectif à définir";
+    focusEl.innerHTML = `🎯 <strong>${escapeHtml(goalTxt)}</strong>`;
+  }
+  if (cycleEl) {
+    const weeks = _sanitizeProgDuration(_loadProgDuration());
+    cycleEl.innerHTML = `🗓️ <strong>${weeks} ${weeks > 1 ? 'semaines' : 'semaine'}</strong>`;
+  }
+  if (waterEl) {
+    const w = getWaterData();
+    const target = getWaterTarget();
+    waterEl.innerHTML = `💧 <strong>${w.count}/${target} verres</strong>`;
+  }
+}
+
+
+function refreshDashboardWeeklyOverview() {
+  const badgeEl = document.getElementById('db-program-badge');
+  const titleEl = document.getElementById('db-program-title');
+  const subEl = document.getElementById('db-program-sub');
+  const stripEl = document.getElementById('db-program-strip');
+  const phaseEl = document.getElementById('db-program-phase');
+  const phaseSubEl = document.getElementById('db-program-phase-sub');
+  const priorityEl = document.getElementById('db-program-priority');
+  const progressionEl = document.getElementById('db-program-progression');
+  const recoveryEl = document.getElementById('db-program-recovery');
+  const cyclePillEl = document.getElementById('db-program-cycle-pill');
+  const volumePillEl = document.getElementById('db-program-volume-pill');
+  const hydrationPillEl = document.getElementById('db-program-hydration-pill');
+  if (!stripEl) return;
+
+  const prog = _normalizeProgData(_loadStoredProg()) || buildOfflineProgram();
+  const duration = _sanitizeProgDuration(_loadProgDuration());
+  const weekNum = Math.min(duration, Math.max(1, _loadStoredProgWeek()));
+  prog.weeks = duration;
+  _progDuration = duration;
+  _progWeek = weekNum;
+  _prog = prog;
+
+  const weekly = _progGetWeekly(prog.goal);
+  const phase = _getProgPhaseBundle(weekNum);
+  const meta = _loadLatestPlanMeta() || {};
+  const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
+  const todayItem = weekly.find(item => item.d === todayDow) || weekly[0] || { label:'Séance guidée', icon:'⚡', type:'fullbody' };
+  const sessionsCount = weekly.filter(item => String(item.type || '').toLowerCase() !== 'rest').length;
+  const water = getWaterData();
+  const waterTarget = getWaterTarget();
+  const liters = ((water.count * WATER_GLASS_LITERS) || 0).toFixed(1);
+
+  if (badgeEl) badgeEl.textContent = `Semaine ${weekNum}/${duration}`;
+  if (titleEl) titleEl.textContent = duration > 1
+    ? `${_progGoalLabel(prog.goal)} · cap semaine ${weekNum}`
+    : `${_progGoalLabel(prog.goal)} · ton plan de la semaine`;
+  if (subEl) subEl.textContent = todayItem.type === 'rest'
+    ? `Aujourd'hui, récupération intelligente : mobilité, sommeil, pas trop de charge. ${phase.desc || ''}`
+    : `Aujourd'hui : ${todayItem.label || 'séance guidée'}. ${_progDailyObjective(todayItem.type, weekNum, prog.goal)}`;
+
+  if (cyclePillEl) cyclePillEl.innerHTML = `🗓️ <strong>${duration} ${duration > 1 ? 'semaines' : 'semaine'}</strong>`;
+  if (volumePillEl) volumePillEl.innerHTML = `📈 <strong>${sessionsCount} séances utiles</strong>`;
+  if (hydrationPillEl) hydrationPillEl.innerHTML = `💧 <strong>${water.count}/${waterTarget} verres · ${liters} L</strong>`;
+
+  if (phaseEl) phaseEl.textContent = `${phase.short || `S${weekNum}`} · ${phase.name || 'Phase active'}`;
+  if (phaseSubEl) phaseSubEl.textContent = phase.desc || 'Charge, intensité et récupération adaptées à ton cycle.';
+  if (priorityEl) priorityEl.textContent = meta.coach_priority || phase.note?.focus || _progDailyObjective(todayItem.type, weekNum, prog.goal);
+  if (progressionEl) progressionEl.textContent = meta.progression_rule || `Repère simple : RPE ${phase.rpe || '6-7'} • ${phase.params?.sets || 3} séries • ${phase.params?.reps || '8-12 reps'}`;
+  if (recoveryEl) recoveryEl.textContent = `${meta.recovery_target || phase.note?.cue || 'Hydrate-toi, dors correctement et garde une journée plus légère si besoin.'} · Eau du jour ${water.count}/${waterTarget}.`;
+
+  const dow = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  stripEl.innerHTML = weekly.map((item, idx) => {
+    const d = Number(item.d || idx + 1);
+    const isToday = d === todayDow;
+    const isRest = String(item.type || '').toLowerCase() === 'rest';
+    const statusClass = `${isToday ? ' today' : ''}${isRest ? ' rest' : ''}`;
+    const objective = _progDailyObjective(item.type, weekNum, prog.goal);
+    const metaLine = isRest
+      ? 'repos · mobilité · eau'
+      : `${phase.params?.sets || 3}×${phase.params?.reps || '8-12'} · ${String(item.type || '').replace(/_/g, ' ')}`;
+    return `
+      <div class="db-program-day${statusClass}" title="${escapeAttr(objective)}">
+        <div class="db-program-day-head">
+          <div class="db-program-day-name">${dow[Math.max(0, Math.min(6, d - 1))]}</div>
+          <div class="db-program-day-icon">${escapeHtml(item.icon || (isRest ? '😴' : '🏋️'))}</div>
+        </div>
+        <div>
+          <div class="db-program-day-label">${escapeHtml(item.label || 'Séance')}</div>
+          <div class="db-program-day-meta">${escapeHtml(metaLine)}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function refreshDashboardProgrammeCard() {
+  const kickerEl = document.getElementById('db-session-kicker');
+  const titleEl = document.getElementById('db-session-title');
+  const metaEl = document.getElementById('db-session-meta');
+  const focusEl = document.getElementById('db-session-focus');
+  const labelEl = document.getElementById('db-session-progress-label');
+  const valueEl = document.getElementById('db-session-progress-value');
+  const fillEl = document.getElementById('db-session-progress-fill');
+  const btnEl = document.getElementById('db-session-btn');
+  if (!titleEl) return;
+
+  const prog = _normalizeProgData(_loadStoredProg()) || buildOfflineProgram();
+  const duration = _sanitizeProgDuration(_loadProgDuration());
+  const weekNum = Math.min(duration, Math.max(1, _loadStoredProgWeek()));
+  prog.weeks = duration;
+  _progDuration = duration;
+  _progWeek = weekNum;
+  _prog = prog;
+  const weekly = _progGetWeekly(prog.goal);
+  const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
+  const dayIdx = Math.max(0, weekly.findIndex(item => item.d === todayDow));
+  const item = weekly[dayIdx] || weekly[0] || { label: 'Séance guidée', icon: '⚡', type: 'fullbody' };
+  const phase = _getProgPhaseBundle(weekNum);
+  const params = phase.params || { sets: 3, reps: '10-12', rest: 60 };
+  const exType = _progExType(item.type, prog.equipment || '');
+  const pool = weekly.slice(0, dayIdx).filter(d => _progExType(d.type, prog.equipment || '') === exType).length % 2 === 0 ? 'A' : 'B';
+  const poolList = (PROG_EXERCISES[exType] || []).filter(e => !e.pool || e.pool === pool);
+  const exList = (poolList.length ? poolList : (PROG_EXERCISES[exType] || [])).slice(0, Math.max(3, _progDisplayExerciseCount(item.type, weekNum)));
+  const mainEx = exList[0]?.n || 'Séance personnalisée';
+
+  const doneKey = `fitai_prog_done_${new Date().toISOString().slice(0, 10)}`;
+  let doneSets = {};
+  try { doneSets = JSON.parse(localStorage.getItem(doneKey) || '{}'); } catch {}
+  const doneCount = item.type === 'rest' ? 0 : exList.filter((_, ei) => doneSets[`${dayIdx}_${ei}`]).length;
+  const pct = item.type === 'rest' ? 100 : (exList.length ? Math.round((doneCount / exList.length) * 100) : 0);
+
+  if (kickerEl) kickerEl.textContent = item.type === 'rest' ? '😴 Récupération du jour' : `⚡ Séance du jour · S${weekNum}`;
+  if (titleEl) titleEl.textContent = item.type === 'rest' ? 'Jour de repos intelligent' : `${item.icon || '🏋️'} ${item.label || 'Séance guidée'}`;
+  if (metaEl) metaEl.textContent = item.type === 'rest'
+    ? `Cycle ${duration} ${duration > 1 ? 'semaines' : 'semaine'} · ${phase.name} · sommeil + mobilité + hydratation`
+    : `${exList.length} exercices · ${params.sets}×${params.reps} · ${phase.name} · RPE ${phase.rpe}`;
+  if (focusEl) focusEl.innerHTML = item.type === 'rest'
+    ? `<strong>Focus :</strong> ${escapeHtml(_progDailyObjective('rest', weekNum, prog.goal))}`
+    : `<strong>Focus :</strong> ${escapeHtml(mainEx)} · ${escapeHtml(_progDailyObjective(item.type, weekNum, prog.goal))}`;
+  if (labelEl) labelEl.textContent = item.type === 'rest' ? 'Récupération du jour' : 'Progression du jour';
+  if (valueEl) valueEl.textContent = item.type === 'rest' ? 'Recovery' : `${pct}%`;
+  if (fillEl) fillEl.style.width = (item.type === 'rest' ? 100 : pct) + '%';
+  if (btnEl) {
+    if (item.type === 'rest') {
+      btnEl.textContent = '🧘 Voir le programme';
+      btnEl.setAttribute('onclick', "gotoTab('programme')");
+    } else {
+      btnEl.textContent = doneCount >= exList.length && exList.length ? '✓ Revoir la séance' : '▶ Commencer la séance';
+      btnEl.setAttribute('onclick', `progStartWorkout(${dayIdx})`);
+    }
+  }
+}
+
 
 // ── Onboarding card ───────────────────────────────────────────────────────────
 const ONBOARD_KEY = "fitai_onboarded";
@@ -809,7 +970,7 @@ function _renderOnboarding() {
           <span class="onboard-num">3</span>
           <div class="onboard-step-body">
             <div class="onboard-step-title">Lancer ta première séance</div>
-            <div class="onboard-step-sub">Programme 8 semaines guidé · séance libre</div>
+            <div class="onboard-step-sub">Programme flexible 1, 4, 8 ou 12 semaines · séance libre</div>
           </div>
           <span class="onboard-arrow">→</span>
         </div>
@@ -1121,6 +1282,7 @@ async function loadGoal() {
     const storedSess = localStorage.getItem("fitai_goal_sessions") || "";
     setEl("gs-sessions", storedSess ? `${storedSess}×/sem` : "—");
     setEl("gs-equip", EQUIP_LABELS[data.equipment || ""] || "Poids du corps");
+    refreshDashboardSummaryPills();
   } catch (e) {
     console.error("[Goal] Load error:", e);
   }
@@ -1460,7 +1622,8 @@ async function sendCoachMsg(quickMsg) {
       html += fallbackBadge;
       COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
     } else {
-      const textHtml = formatCoachText(j.message || "Je n'ai pas pu formuler une réponse.") + fallbackBadge;
+      const safeCoachMessage = finalizeCoachMessageForDisplay(j.message || "Je n'ai pas pu formuler une réponse.");
+      const textHtml = formatCoachText(safeCoachMessage) + fallbackBadge;
       COACH_HISTORY.push({ role: "ai", content: textHtml, time: aiTime });
     }
 
@@ -1513,110 +1676,151 @@ function exerciseCuePack(ex = {}) {
 // Complete exercise figure frames — each exercise defines two full body positions (A=neutral, B=effort peak)
 // h=[cx,cy] head center, t=torso path (M L L L Z), l=8 limb paths:
 //   [0]L-upper-arm [1]L-lower-arm [2]R-upper-arm [3]R-lower-arm [4]L-thigh [5]L-shin [6]R-thigh [7]R-shin
-// SMIL path morphing requires identical command counts and types in both frames.
+// EVERY limb uses exactly "M x y Q cx cy ex ey" — same 7 numbers, same commands A↔B — required for SMIL morphing.
 const _EX_FRAMES = {
+  // ── SQUAT (front view): upright → deep squat, knees out, arms forward ──
   squat: {
     dur: "1.35s",
-    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
-      l:["M164 92 Q148 108 138 124","M138 124 Q132 134 130 148","M196 92 Q212 108 222 124","M222 124 Q228 134 230 148",
-         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
-    b: { h:[180,86], t:"M156 106 L204 106 L206 154 L154 154 Z",
-      l:["M156 112 Q138 116 122 122","M122 122 Q110 126 106 132","M204 112 Q222 116 238 122","M238 122 Q250 126 254 132",
-         "M158 154 Q128 170 104 182","M104 182 Q96 206 112 230","M202 154 Q232 170 256 182","M256 182 Q264 206 248 230"] }
+    a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
+      l:["M163 90 Q150 108 145 126","M145 126 Q141 143 140 160",
+         "M197 90 Q210 108 215 126","M215 126 Q219 143 220 160",
+         "M165 154 Q164 177 163 200","M163 200 Q162 222 162 244",
+         "M195 154 Q196 177 197 200","M197 200 Q198 222 198 244"] },
+    b: { h:[180,112], t:"M152 130 L208 130 L209 174 L151 174 Z",
+      l:["M152 132 Q133 132 122 140","M122 140 Q113 146 106 152",
+         "M208 132 Q227 132 238 140","M238 140 Q247 146 254 152",
+         "M152 176 Q134 190 120 204","M120 204 Q123 224 128 244",
+         "M208 176 Q226 190 240 204","M240 204 Q237 224 232 244"] }
   },
+  // ── PUSH-UP (front view): plank → chest near floor, elbows out ──
   push: {
     dur: "1.4s",
-    // Side view: head on right, body horizontal. Arms go down (frame A) → extended (frame B)
-    a: { h:[288,132], t:"M266 136 L168 154 L168 160 L266 142 Z",
-      l:["M234 137 Q232 154 232 168","M232 168 Q232 180 234 188","M200 143 Q198 160 198 174","M198 174 Q198 186 200 194",
-         "M168 157 Q144 157 120 157","M120 157 Q98 157 80 157","M168 157 Q144 159 120 161","M120 161 Q98 163 80 165"] },
-    b: { h:[288,110], t:"M266 114 L168 132 L168 138 L266 120 Z",
-      l:["M234 115 Q234 140 234 162","M234 162 Q234 178 234 190","M200 121 Q200 146 200 168","M200 168 Q200 184 200 196",
-         "M168 135 Q144 137 120 139","M120 139 Q98 141 80 143","M168 135 Q144 139 120 143","M120 143 Q98 147 80 151"] }
+    a: { h:[180,78], t:"M163 98 L197 98 L197 152 L163 152 Z",
+      l:["M163 100 Q146 112 130 124","M130 124 Q124 136 118 148",
+         "M197 100 Q214 112 230 124","M230 124 Q236 136 242 148",
+         "M165 154 Q164 177 163 200","M163 200 Q162 222 162 244",
+         "M195 154 Q196 177 197 200","M197 200 Q198 222 198 244"] },
+    b: { h:[180,98], t:"M163 118 L197 118 L197 170 L163 170 Z",
+      l:["M163 120 Q144 128 126 136","M126 136 Q121 147 118 158",
+         "M197 120 Q216 128 234 136","M234 136 Q239 147 242 158",
+         "M165 172 Q164 195 163 216","M163 216 Q162 230 162 244",
+         "M195 172 Q196 195 197 216","M197 216 Q198 230 198 244"] }
   },
+  // ── PULL-UP (front view): dead hang arms up → chin pulled up, elbows wide ──
   pull: {
     dur: "1.3s",
-    // Chin-up: arms stretch up to bar (A), then pull — body rises, elbows wide (B)
-    a: { h:[180,80], t:"M164 102 L196 102 L194 162 L166 162 Z",
-      l:["M164 104 Q148 88 138 74","M138 74 Q132 60 134 48","M196 104 Q212 88 222 74","M222 74 Q228 60 226 48",
-         "M170 162 Q168 184 166 206","M166 206 Q164 226 168 244","M190 162 Q192 184 194 206","M194 206 Q196 226 192 244"] },
-    b: { h:[180,58], t:"M164 80 L196 80 L194 140 L166 140 Z",
-      l:["M164 82 Q140 70 128 64","M128 64 Q130 50 134 48","M196 82 Q220 70 232 64","M232 64 Q230 50 226 48",
-         "M170 140 Q168 162 166 184","M166 184 Q164 204 168 222","M190 140 Q192 162 194 184","M194 184 Q196 204 192 222"] }
+    a: { h:[180,84], t:"M163 104 L197 104 L197 158 L163 158 Z",
+      l:["M163 106 Q154 88 148 70","M148 70 Q146 58 144 46",
+         "M197 106 Q206 88 212 70","M212 70 Q214 58 216 46",
+         "M165 160 Q164 182 163 204","M163 204 Q161 224 160 244",
+         "M195 160 Q196 182 197 204","M197 204 Q199 224 200 244"] },
+    b: { h:[180,58], t:"M163 76 L197 76 L197 130 L163 130 Z",
+      l:["M163 78 Q143 70 128 70","M128 70 Q136 59 144 48",
+         "M197 78 Q217 70 232 70","M232 70 Q224 59 216 48",
+         "M165 132 Q164 153 163 174","M163 174 Q162 196 162 218",
+         "M195 132 Q196 153 197 174","M197 174 Q198 196 198 218"] }
   },
+  // ── HIP HINGE / RDL (front view): upright → torso tilted 45°, arms hang ──
   hinge: {
     dur: "1.5s",
-    // Hip hinge: standing (A) → torso tilts forward, arms reach toward floor (B)
-    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
-      l:["M164 92 Q154 114 150 136","M150 136 Q148 156 150 176","M196 92 Q206 114 210 136","M210 136 Q212 156 210 176",
-         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
-    b: { h:[214,96], t:"M192 84 L226 98 L220 158 L186 144 Z",
-      l:["M192 90 Q186 112 182 134","M182 134 Q178 154 178 176","M226 100 Q220 122 216 144","M216 144 Q212 164 212 186",
-         "M186 146 Q178 170 172 196","M172 196 Q168 218 174 236","M218 156 Q210 178 204 204","M204 204 Q200 222 206 240"] }
+    a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
+      l:["M163 90 Q155 112 150 132","M150 132 Q146 150 144 166",
+         "M197 90 Q205 112 210 132","M210 132 Q214 150 216 166",
+         "M165 154 Q164 177 163 200","M163 200 Q162 222 162 244",
+         "M195 154 Q196 177 197 200","M197 200 Q198 222 198 244"] },
+    b: { h:[192,94], t:"M174 108 L210 108 L206 158 L170 158 Z",
+      l:["M174 110 Q166 132 160 152","M160 152 Q156 170 154 186",
+         "M210 110 Q218 132 224 152","M224 152 Q228 170 230 186",
+         "M170 160 Q166 180 164 202","M164 202 Q163 222 163 244",
+         "M200 160 Q200 180 198 202","M198 202 Q197 222 197 244"] }
   },
+  // ── CRUNCH / CORE (front view): neutral → torso curls forward, arms reach knees ──
   core: {
-    dur: "2s",
-    // Crunch: body reclined (A) → crunches up with knees pulling in (B)
-    a: { h:[220,160], t:"M196 148 L244 160 L240 170 L192 158 Z",
-      l:["M196 150 Q180 158 168 162","M168 162 Q158 164 150 162","M244 162 Q252 164 258 160","M258 160 Q264 156 268 150",
-         "M192 160 Q172 170 156 188","M156 188 Q146 202 144 222","M192 160 Q176 172 160 192","M160 192 Q150 208 148 228"] },
-    b: { h:[208,140], t:"M184 128 L232 148 L226 158 L178 138 Z",
-      l:["M184 130 Q170 140 160 152","M160 152 Q152 162 148 172","M232 150 Q240 152 246 150","M246 150 Q252 148 256 144",
-         "M178 140 Q162 148 150 160","M150 160 Q144 170 146 182","M178 140 Q164 150 152 164","M152 164 Q146 176 148 188"] }
+    dur: "1.8s",
+    a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
+      l:["M163 90 Q155 108 150 126","M150 126 Q146 144 144 160",
+         "M197 90 Q205 108 210 126","M210 126 Q214 144 216 160",
+         "M165 154 Q164 177 163 200","M163 200 Q162 222 162 244",
+         "M195 154 Q196 177 197 200","M197 200 Q198 222 198 244"] },
+    b: { h:[180,88], t:"M161 106 L199 106 L198 154 L162 154 Z",
+      l:["M161 108 Q162 128 162 148","M162 148 Q162 158 162 168",
+         "M199 108 Q198 128 198 148","M198 148 Q198 158 198 168",
+         "M163 156 Q158 172 152 188","M152 188 Q148 204 152 220",
+         "M197 156 Q202 172 208 188","M208 188 Q212 204 208 220"] }
   },
+  // ── RUNNING (front view): stride A → stride B (arm/leg swap) ──
   cardio: {
-    dur: "0.7s",
-    // Running: alternating arm-leg stride (A) swaps to opposite stride (B)
-    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
-      l:["M164 92 Q150 76 144 62","M144 62 Q140 50 140 40","M196 92 Q210 110 216 126","M216 126 Q220 140 218 152",
-         "M168 148 Q172 170 180 192","M180 192 Q188 208 192 228","M192 148 Q194 164 182 180","M182 180 Q176 192 174 208"] },
-    b: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
-      l:["M164 92 Q178 110 184 126","M184 126 Q188 140 186 152","M196 92 Q182 76 176 62","M176 62 Q172 50 172 40",
-         "M168 148 Q164 164 152 180","M152 180 Q146 192 144 208","M192 148 Q196 170 204 192","M204 192 Q212 208 216 228"] }
+    dur: "0.65s",
+    a: { h:[180,66], t:"M163 86 L197 86 L196 148 L164 148 Z",
+      l:["M163 88 Q152 72 148 58","M148 58 Q145 46 144 36",
+         "M197 88 Q208 104 212 120","M212 120 Q214 134 214 148",
+         "M165 150 Q172 170 182 192","M182 192 Q188 208 190 228",
+         "M195 150 Q188 168 178 182","M178 182 Q170 196 166 214"] },
+    b: { h:[180,66], t:"M163 86 L197 86 L196 148 L164 148 Z",
+      l:["M163 88 Q174 104 178 120","M178 120 Q180 134 180 148",
+         "M197 88 Q186 72 182 58","M182 58 Q179 46 178 36",
+         "M165 150 Q158 168 148 182","M148 182 Q140 196 136 214",
+         "M195 150 Q202 170 212 192","M212 192 Q218 208 220 228"] }
   },
+  // ── SHOULDER PRESS (front view): bar at shoulders → fully overhead ──
   press: {
     dur: "1.4s",
-    // Shoulder press: bar at shoulder level (A) → arms fully overhead (B)
-    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
-      l:["M164 92 Q140 86 120 82","M120 82 Q116 68 120 56","M196 92 Q220 86 240 82","M240 82 Q244 68 240 56",
-         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
-    b: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
-      l:["M164 92 Q148 72 140 54","M140 54 Q136 36 136 22","M196 92 Q212 72 220 54","M220 54 Q224 36 224 22",
-         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] }
+    a: { h:[180,66], t:"M163 86 L197 86 L196 148 L164 148 Z",
+      l:["M163 88 Q142 88 122 88","M122 88 Q118 72 120 58",
+         "M197 88 Q218 88 238 88","M238 88 Q242 72 240 58",
+         "M165 150 Q164 174 163 198","M163 198 Q162 220 162 244",
+         "M195 150 Q196 174 197 198","M197 198 Q198 220 198 244"] },
+    b: { h:[180,66], t:"M163 86 L197 86 L196 148 L164 148 Z",
+      l:["M163 88 Q152 72 148 58","M148 58 Q145 40 144 24",
+         "M197 88 Q208 72 212 58","M212 58 Q215 40 216 24",
+         "M165 150 Q164 174 163 198","M163 198 Q162 220 162 244",
+         "M195 150 Q196 174 197 198","M197 198 Q198 220 198 244"] }
   },
+  // ── CALF RAISE (front view): flat feet → full tiptoe, body slightly higher ──
   calf: {
-    dur: "1.1s",
-    // Calf raise: flat foot (A) → tiptoe, whole body slightly rises (B)
-    a: { h:[180,66], t:"M164 88 L196 88 L198 148 L162 148 Z",
-      l:["M164 94 Q148 110 138 126","M138 126 Q132 136 130 150","M196 94 Q212 110 222 126","M222 126 Q228 136 230 150",
-         "M168 150 Q164 172 162 198","M162 198 Q162 218 168 238","M192 150 Q196 172 198 198","M198 198 Q198 218 192 238"] },
-    b: { h:[180,58], t:"M164 80 L196 80 L198 140 L162 140 Z",
-      l:["M164 86 Q148 102 138 118","M138 118 Q132 128 130 142","M196 86 Q212 102 222 118","M222 118 Q228 128 230 142",
-         "M168 142 Q164 164 162 190","M162 190 Q168 208 178 224","M192 142 Q196 164 198 190","M198 190 Q192 208 182 224"] }
+    dur: "1.0s",
+    a: { h:[180,68], t:"M163 88 L197 88 L196 150 L164 150 Z",
+      l:["M163 90 Q152 110 146 130","M146 130 Q142 148 140 166",
+         "M197 90 Q208 110 214 130","M214 130 Q218 148 220 166",
+         "M165 152 Q164 176 163 200","M163 200 Q162 222 162 244",
+         "M195 152 Q196 176 197 200","M197 200 Q198 222 198 244"] },
+    b: { h:[180,60], t:"M163 80 L197 80 L196 142 L164 142 Z",
+      l:["M163 82 Q152 102 146 122","M146 122 Q142 140 140 158",
+         "M197 82 Q208 102 214 122","M214 122 Q218 140 220 158",
+         "M165 144 Q164 167 163 190","M163 190 Q164 214 170 234",
+         "M195 144 Q196 167 197 190","M197 190 Q196 214 190 234"] }
   },
+  // ── LUNGE (front view): standing → deep forward lunge, R leg extended back ──
   lunge: {
     dur: "1.2s",
-    // Lunge: standing (A) → front knee deep, back leg extended (B)
-    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
-      l:["M164 92 Q148 108 138 124","M138 124 Q132 134 130 148","M196 92 Q212 108 222 124","M222 124 Q228 134 230 148",
-         "M168 148 Q164 168 162 194","M162 194 Q160 216 166 234","M192 148 Q196 168 198 194","M198 194 Q200 216 194 234"] },
-    b: { h:[174,82], t:"M158 102 L192 98 L194 158 L156 162 Z",
-      l:["M158 106 Q144 106 134 110","M134 110 Q124 114 120 122","M192 100 Q206 106 216 114","M216 114 Q226 122 228 134",
-         "M158 160 Q140 176 124 196","M124 196 Q116 212 118 236","M194 158 Q218 164 248 172","M248 172 Q270 178 294 202"] }
+    a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
+      l:["M163 90 Q150 108 144 126","M144 126 Q140 142 138 158",
+         "M197 90 Q210 108 216 126","M216 126 Q220 142 222 158",
+         "M165 154 Q164 177 163 200","M163 200 Q162 222 162 244",
+         "M195 154 Q196 177 197 200","M197 200 Q198 222 198 244"] },
+    b: { h:[174,84], t:"M158 102 L192 102 L193 162 L157 162 Z",
+      l:["M158 104 Q144 108 134 114","M134 114 Q126 120 122 130",
+         "M192 104 Q206 110 218 118","M218 118 Q228 126 234 138",
+         "M158 164 Q140 178 126 196","M126 196 Q118 214 120 236",
+         "M192 164 Q214 172 244 180","M244 180 Q268 186 292 204"] }
   },
+  // ── MOBILITY / STRETCH (front view): neutral → arms sweep wide, legs wider ──
   mobility: {
-    dur: "2s",
-    // Mobility: arms sweep wide open (B), gentle leg sway
-    a: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
-      l:["M164 92 Q152 106 146 122","M146 122 Q140 134 138 150","M196 92 Q208 106 214 122","M214 122 Q220 134 222 150",
-         "M168 148 Q164 170 160 196","M160 196 Q158 216 162 236","M192 148 Q196 170 200 196","M200 196 Q202 216 198 236"] },
-    b: { h:[180,64], t:"M164 86 L196 86 L198 146 L162 146 Z",
-      l:["M164 92 Q136 84 110 78","M110 78 Q90 74 76 76","M196 92 Q224 84 250 78","M250 78 Q270 74 284 76",
-         "M168 148 Q162 172 156 200","M156 200 Q152 220 156 240","M192 148 Q198 172 204 200","M204 200 Q208 220 204 240"] }
+    dur: "2.2s",
+    a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
+      l:["M163 90 Q152 108 146 126","M146 126 Q142 142 140 158",
+         "M197 90 Q208 108 214 126","M214 126 Q218 142 220 158",
+         "M165 154 Q162 178 158 204","M158 204 Q156 224 156 244",
+         "M195 154 Q198 178 202 204","M202 204 Q204 224 204 244"] },
+    b: { h:[180,66], t:"M163 86 L197 86 L196 150 L164 150 Z",
+      l:["M163 88 Q134 82 108 78","M108 78 Q90 76 76 78",
+         "M197 88 Q226 82 252 78","M252 78 Q270 76 284 78",
+         "M165 152 Q160 176 154 202","M154 202 Q151 222 150 244",
+         "M195 152 Q200 176 206 202","M206 202 Q209 222 210 244"] }
   }
 };
 
-function _buildAnimFigure(key, accent2) {
+function _buildAnimFigure(key, accent2, skinId = "skin") {
   const fr = _EX_FRAMES[key] || _EX_FRAMES.squat;
   const dur = fr.dur;
   const ks = "0.45 0 0.55 1;0.45 0 0.55 1";
@@ -1657,7 +1861,7 @@ function _buildAnimFigure(key, accent2) {
   }).join('');
 
   // Torso
-  const torso = `<path d="${fr.a.t}" fill="url(#skin)" opacity=".98">${mk('d',fr.a.t,fr.b.t)}</path>`;
+  const torso = `<path d="${fr.a.t}" fill="url(#${skinId})" opacity=".98">${mk('d',fr.a.t,fr.b.t)}</path>`;
 
   // Collar accent
   let collar = '';
@@ -1668,7 +1872,7 @@ function _buildAnimFigure(key, accent2) {
   }
 
   // Head (on top of torso)
-  const head = `<circle cx="${hAx}" cy="${hAy}" r="22" fill="url(#skin)" stroke="rgba(255,255,255,.75)" stroke-width="1.5">${mk('cx',hAx,hBx)}${mk('cy',hAy,hBy)}</circle>`;
+  const head = `<circle cx="${hAx}" cy="${hAy}" r="22" fill="url(#${skinId})" stroke="rgba(255,255,255,.75)" stroke-width="1.5">${mk('cx',hAx,hBx)}${mk('cy',hAy,hBy)}</circle>`;
   // Face dot — gives a human feel
   const faceAx = hAx + 6, faceAy = hAy + 4, faceBx = hBx + 6, faceBy = hBy + 4;
   const face = `<circle cx="${faceAx}" cy="${faceAy}" r="3.5" fill="rgba(30,41,59,.5)">${mk('cx',faceAx,faceBx)}${mk('cy',faceAy,faceBy)}</circle>`;
@@ -1827,6 +2031,12 @@ function _exerciseDemoSvg(label = '') {
     { rx: /stretch|mobilite|mobilite|rotation|respiration|yoga|pigeon|cat.cow|foam|hip flex|thread|squat.*profond/, key: 'mobility', accent: '#4ade80', accent2: '#2dd4bf', label: 'mobilité / récupération' }
   ];
   const picked = variants.find((v) => v.rx.test(t)) || variants[0];
+  const uid = 'ex' + Math.random().toString(36).slice(2, 8);
+  const bgId = `bg1-${uid}`;
+  const glowId = `glow1-${uid}`;
+  const blurId = `blurBig-${uid}`;
+  const dropId = `drop-${uid}`;
+  const skinId = `skin-${uid}`;
 
   const motionByKey = {
     squat:   { path: 'M274 74 C300 112 300 154 272 188',  head: 'M270 186 l16 -6 l-8 18' },
@@ -1863,22 +2073,22 @@ function _exerciseDemoSvg(label = '') {
   return `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 280" width="100%" height="100%">
       <defs>
-        <linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#081122"/><stop offset="100%" stop-color="#13213b"/></linearGradient>
-        <linearGradient id="glow1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${picked.accent}" stop-opacity=".28"/><stop offset="100%" stop-color="${picked.accent2}" stop-opacity=".12"/></linearGradient>
-        <filter id="blurBig"><feGaussianBlur stdDeviation="18"/></filter>
-        <filter id="drop"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#020617" flood-opacity=".45"/></filter>
-        <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#dbeafe"/></linearGradient>
+        <linearGradient id="${bgId}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#081122"/><stop offset="100%" stop-color="#13213b"/></linearGradient>
+        <linearGradient id="${glowId}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${picked.accent}" stop-opacity=".28"/><stop offset="100%" stop-color="${picked.accent2}" stop-opacity=".12"/></linearGradient>
+        <filter id="${blurId}"><feGaussianBlur stdDeviation="18"/></filter>
+        <filter id="${dropId}"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#020617" flood-opacity=".45"/></filter>
+        <linearGradient id="${skinId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#dbeafe"/></linearGradient>
       </defs>
-      <rect x="14" y="14" width="332" height="252" rx="30" fill="url(#bg1)" stroke="rgba(255,255,255,.08)"/>
-      <circle cx="70" cy="60" r="72" fill="${picked.accent}" opacity=".14" filter="url(#blurBig)"/>
-      <circle cx="280" cy="220" r="84" fill="${picked.accent2}" opacity=".12" filter="url(#blurBig)"/>
-      <rect x="28" y="28" width="304" height="224" rx="24" fill="url(#glow1)" opacity=".96"/>
-      <ellipse cx="${shadowCx}" cy="${shadowCy}" rx="72" ry="16" fill="rgba(0,0,0,.26)" filter="url(#blurBig)"/>
+      <rect x="14" y="14" width="332" height="252" rx="30" fill="url(#${bgId})" stroke="rgba(255,255,255,.08)"/>
+      <circle cx="70" cy="60" r="72" fill="${picked.accent}" opacity=".14" filter="url(#${blurId})"/>
+      <circle cx="280" cy="220" r="84" fill="${picked.accent2}" opacity=".12" filter="url(#${blurId})"/>
+      <rect x="28" y="28" width="304" height="224" rx="24" fill="url(#${glowId})" opacity=".96"/>
+      <ellipse cx="${shadowCx}" cy="${shadowCy}" rx="72" ry="16" fill="rgba(0,0,0,.26)" filter="url(#${blurId})"/>
       <path d="${motion.path}" fill="none" stroke="${picked.accent2}" stroke-width="5" stroke-linecap="round" stroke-dasharray="12 9" opacity=".95"><animate attributeName="stroke-dashoffset" from="0" to="-42" dur="1.35s" repeatCount="indefinite"/></path>
       <path d="${motion.head}" fill="none" stroke="${picked.accent2}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>
       ${(highlightByKey[picked.key] || '')}
-      <g filter="url(#drop)">
-        ${_buildAnimFigure(picked.key, picked.accent2)}
+      <g filter="url(#${dropId})">
+        ${_buildAnimFigure(picked.key, picked.accent2, skinId)}
       </g>
       <text x="34" y="46" fill="rgba(255,255,255,.52)" font-size="12" font-weight="800" letter-spacing="2.1">EXO GUIDÉ</text>
       <text x="34" y="62" fill="rgba(255,255,255,.34)" font-size="10" font-weight="700" letter-spacing="1.4">${picked.label.toUpperCase()}</text>
@@ -2003,7 +2213,7 @@ function renderPlan(plan) {
             }
           </div>
         `;
-      }).join("");
+      }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
     }
     // Priority 2: exercises[] flat list — split into phases by position
     else if (Array.isArray(plan.exercises) && plan.exercises.length > 0) {
@@ -2032,7 +2242,7 @@ function renderPlan(plan) {
             ${ph.exs.map((ex, i) => renderExerciseCard(ex, idxOffset + i)).join("")}
           </div>
         `;
-      }).join("");
+      }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
     } else {
       blocks.innerHTML = '<div class="empty"><span style="font-size:1.5rem;margin-bottom:6px;display:block">—</span>Aucun exercice disponible</div>';
     }
@@ -2103,6 +2313,8 @@ async function loadHistory() {
     el.innerHTML = `<div class="sessions-list" id="sessions-list-inner">${data.map((s, si) => _sessRowHtml(s, si)).join("")}</div>
       ${hasMore ? `<button class="btn btn-g btn-full" id="hist-more-btn" onclick="loadMoreHistory()" style="margin-top:10px;font-size:.8rem">Voir plus</button>` : ""}`;
   } catch (e) {
+    FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+    renderCommunityOverview(FEED_SOCIAL_STATE.stats);
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
 }
@@ -2253,6 +2465,8 @@ async function loadMeals() {
       </div>`;
     }).join("");
   } catch (e) {
+    FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+    renderCommunityOverview(FEED_SOCIAL_STATE.stats);
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
 }
@@ -2539,9 +2753,116 @@ function setFeedFilter(filter) {
   FEED_FILTER = filter;
   document.querySelectorAll(".feed-filter-btn").forEach(b => b.classList.toggle("on", b.dataset.filter === filter));
   loadFeed();
+  renderCommunityOverview(FEED_SOCIAL_STATE.stats);
 }
 
 const FEED_IMAGE_CACHE = new Map();
+
+const FEED_SOCIAL_STATE = { posts: [], stats: null, refreshedAt: 0 };
+
+function _communityPostType(post = {}) {
+  const raw = String(post.content || "");
+  if (raw.startsWith("__r__")) return { key: "recipe", label: "Recette", emoji: "🍳" };
+  const kind = detectCoachModeClient(raw);
+  if (kind === 'workout_json') return { key: 'workout', label: 'Workout', emoji: '🏋️' };
+  if (/pr|record|charge|rep max|max/.test(raw.toLowerCase())) return { key: 'pr', label: 'PR', emoji: '🏆' };
+  if (/motivation|discipline|objectif|go/.test(raw.toLowerCase())) return { key: 'mindset', label: 'Motivation', emoji: '⚡' };
+  if (/meal|repas|kcal|prot|nutrition/.test(raw.toLowerCase())) return { key: 'nutrition', label: 'Nutrition', emoji: '🥗' };
+  return { key: 'update', label: 'Update', emoji: '✨' };
+}
+
+function _communityOverviewHtml(stats = {}) {
+  const cards = [
+    { icon: '📰', label: 'Posts visibles', value: stats.totalPosts || 0, sub: FEED_FILTER === 'friends' ? 'de tes amis' : 'dans ce fil' },
+    { icon: '🍳', label: 'Recettes', value: stats.recipePosts || 0, sub: 'partagées' },
+    { icon: '💬', label: 'Commentaires', value: stats.totalComments || 0, sub: 'sur ces posts' },
+    { icon: '❤️', label: 'Kudos', value: stats.totalKudos || 0, sub: 'engagement' },
+  ];
+  const refreshed = stats.refreshedAt ? new Date(stats.refreshedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
+  return `<div class="community-overview-grid">${cards.map(card => `<div class="community-overview-card"><div class="community-overview-top"><span>${card.icon}</span><span>${card.label}</span></div><div class="community-overview-value">${card.value}</div><div class="community-overview-sub">${card.sub}</div></div>`).join('')}</div><div class="community-overview-meta">Dernière mise à jour : ${refreshed}</div>`;
+}
+
+async function renderCommunityOverview(stats) {
+  const el = document.getElementById('community-overview');
+  if (!el) return;
+  el.innerHTML = _communityOverviewHtml(stats || FEED_SOCIAL_STATE.stats || {});
+}
+
+async function _loadFriendshipSnapshot() {
+  if (!U) return { acceptedIds: [], pendingSentIds: [], pendingReceivedIds: [], acceptedCount: 0, pendingCount: 0 };
+  try {
+    const { data, error } = await SB.from('friendships')
+      .select('id,requester_id,addressee_id,status')
+      .or(`requester_id.eq.${U.id},addressee_id.eq.${U.id}`);
+    if (error) throw error;
+    const acceptedIds = [];
+    const pendingSentIds = [];
+    const pendingReceivedIds = [];
+    for (const row of data || []) {
+      const otherId = row.requester_id === U.id ? row.addressee_id : row.requester_id;
+      if (row.status === 'accepted') acceptedIds.push(otherId);
+      else if (row.status === 'pending' && row.requester_id === U.id) pendingSentIds.push(otherId);
+      else if (row.status === 'pending' && row.addressee_id === U.id) pendingReceivedIds.push(otherId);
+    }
+    return {
+      acceptedIds,
+      pendingSentIds,
+      pendingReceivedIds,
+      acceptedCount: acceptedIds.length,
+      pendingCount: pendingReceivedIds.length,
+    };
+  } catch {
+    return { acceptedIds: [], pendingSentIds: [], pendingReceivedIds: [], acceptedCount: 0, pendingCount: 0 };
+  }
+}
+
+async function loadFriendSuggestions() {
+  const el = document.getElementById('friend-suggestions');
+  if (!el || !U) return;
+  try {
+    const snapshot = await _loadFriendshipSnapshot();
+    const excluded = new Set([U.id, ...snapshot.acceptedIds, ...snapshot.pendingSentIds, ...snapshot.pendingReceivedIds]);
+    const { data, error } = await SB.from('profiles').select('id,username,display_name').limit(18);
+    if (error) throw error;
+    const candidates = (data || []).filter(p => !excluded.has(p.id)).slice(0, 4);
+    if (!candidates.length) {
+      el.innerHTML = '<div class="friends-empty-state"><div style="font-size:.9rem">✨</div><div style="font-weight:700">Aucune suggestion pour le moment</div><div style="font-size:.78rem;color:var(--muted)">Continue à publier et à ajouter des amis pour enrichir ton réseau.</div></div>';
+      return;
+    }
+    el.innerHTML = candidates.map(p => {
+      const name = p.display_name || p.username || 'Membre';
+      const avatarColor = AVATAR_COLORS[(p.id || '').charCodeAt(0) % AVATAR_COLORS.length];
+      return `<div class="friend-card friend-card-suggestion"><div class="friend-card-avatar" style="background:${avatarColor}">${escapeHtml(name.charAt(0).toUpperCase())}</div><div class="friend-card-info"><div class="friend-card-name">${escapeHtml(name)}</div><div class="friend-card-meta">${p.username ? `@${escapeHtml(p.username)}` : 'Membre FitAI Pro'} · suggéré pour toi</div></div><button class="btn btn-p btn-sm" onclick="sendFriendRequest('${p.id}')">+ Ajouter</button></div>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur suggestions: ${escapeHtml(e.message || 'chargement')}</div>`;
+  }
+}
+
+async function renderFriendsOverview(opts = {}) {
+  const el = document.getElementById('friends-overview');
+  if (!el || !U) return;
+  try {
+    const snapshot = opts.snapshot || await _loadFriendshipSnapshot();
+    let bestStreak = 0;
+    let workouts = 0;
+    if (snapshot.acceptedIds.length) {
+      const { data } = await SB.from('user_streaks').select('user_id,current_streak,total_workouts').in('user_id', snapshot.acceptedIds);
+      for (const row of data || []) {
+        bestStreak = Math.max(bestStreak, Number(row.current_streak) || 0);
+        workouts += Number(row.total_workouts) || 0;
+      }
+    }
+    const cards = [
+      { icon: '👥', label: 'Amis actifs', value: snapshot.acceptedCount || 0, sub: 'connectés' },
+      { icon: '📩', label: 'Demandes', value: snapshot.pendingCount || 0, sub: 'à traiter' },
+      { icon: '🔥', label: 'Meilleure streak', value: bestStreak || 0, sub: 'chez tes amis' },
+      { icon: '🏋️', label: 'Séances cumulées', value: workouts || 0, sub: 'réseau' },
+    ];
+    el.innerHTML = `<div class="friends-overview-grid">${cards.map(card => `<div class="friends-overview-card"><div class="friends-overview-top"><span>${card.icon}</span><span>${card.label}</span></div><div class="friends-overview-value">${card.value}</div><div class="friends-overview-sub">${card.sub}</div></div>`).join('')}</div>`;
+  } catch {}
+}
+
 
 async function resolveFeedImageUrls(posts) {
   const out = {};
@@ -2610,6 +2931,8 @@ async function loadFeed(silent = false) {
         .or(`requester_id.eq.${U.id},addressee_id.eq.${U.id}`);
       const friendIds = (fships || []).map(f => f.requester_id === U.id ? f.addressee_id : f.requester_id);
       if (!friendIds.length) {
+        FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+        renderCommunityOverview(FEED_SOCIAL_STATE.stats);
         el.innerHTML = '<div class="empty"><span class="empty-ic">👥</span>Ajoutez des amis pour voir leur fil.</div>';
         return;
       }
@@ -2624,6 +2947,8 @@ async function loadFeed(silent = false) {
       ? (allData || []).filter(p => String(p.content || "").startsWith("__r__"))
       : (allData || []);
     if (!data.length) {
+      FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+      renderCommunityOverview(FEED_SOCIAL_STATE.stats);
       el.innerHTML = '<div class="empty"><span class="empty-ic">👥</span>Aucun post dans ce fil.</div>';
       return;
     }
@@ -2642,6 +2967,16 @@ async function loadFeed(silent = false) {
     }
 
     const imageUrls = await resolveFeedImageUrls(data);
+
+    FEED_SOCIAL_STATE.posts = data;
+    FEED_SOCIAL_STATE.stats = {
+      totalPosts: data.length,
+      recipePosts: data.filter(p => String(p.content || '').startsWith('__r__')).length,
+      totalComments: Object.values(commentCounts).reduce((sum, n) => sum + (Number(n) || 0), 0),
+      totalKudos: data.reduce((sum, p) => sum + (Number(p.kudos) || 0), 0),
+      refreshedAt: Date.now(),
+    };
+    renderCommunityOverview(FEED_SOCIAL_STATE.stats);
 
     // Batch-fetch author display names
     const authorIds = [...new Set(data.map(p => p.user_id))];
@@ -2670,6 +3005,8 @@ async function loadFeed(silent = false) {
         ? `<div class="post-card-avatar" style="background:${avatarColor};background-image:url(${JSON.stringify(authorAvatar)});background-size:cover;background-position:center"></div>`
         : `<div class="post-card-avatar" style="background:${avatarColor}">${initial}</div>`;
       const rawContent = String(post.content || "");
+      const postType = _communityPostType(post);
+      const visibilityPill = post.visibility === 'friends' ? 'Amis seulement' : 'Public';
 
       // Recipe post rendering
       if (rawContent.startsWith("__r__")) {
@@ -2701,6 +3038,7 @@ async function loadFeed(silent = false) {
                 ${me ? `<button class="post-card-del" onclick="deletePost('${post.id}')" title="Supprimer">✕</button>` : ""}
               </div>
               <div class="recipe-post-body">
+                <div class="feed-post-pills"><span class="feed-post-pill">${postType.emoji} ${postType.label}</span><span class="feed-post-pill">${visIcon} ${visibilityPill}</span><span class="feed-post-pill">❤️ ${post.kudos || 0}</span></div>
                 ${macrosHtml}
                 ${ingredientsHtml}
                 ${descHtml}
@@ -2726,6 +3064,7 @@ async function loadFeed(silent = false) {
             </div>
             ${me ? `<button class="post-card-del" onclick="deletePost('${post.id}')" title="Supprimer">✕</button>` : ""}
           </div>
+          <div class="feed-post-pills"><span class="feed-post-pill">${postType.emoji} ${postType.label}</span><span class="feed-post-pill">${visIcon} ${visibilityPill}</span>${imageSrc ? `<span class="feed-post-pill">📷 Photo</span>` : ""}</div>
           <div class="post-card-body">${escapeHtml(post.content)}</div>
           ${imageSrc ? `<img class="feed-img" src="${escapeHtml(imageSrc)}" alt="Photo" loading="lazy"/>` : ""}
           <div class="post-card-actions">
@@ -2736,6 +3075,8 @@ async function loadFeed(silent = false) {
         </div>`;
     }).join("");
   } catch (e) {
+    FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+    renderCommunityOverview(FEED_SOCIAL_STATE.stats);
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
 }
@@ -2851,17 +3192,33 @@ async function searchUsers() {
     if (error) throw error;
     if (!data?.length) { resultEl.innerHTML = '<div class="meal-info">Aucun résultat</div>'; return; }
 
+    const snapshot = await _loadFriendshipSnapshot();
+    const accepted = new Set(snapshot.acceptedIds || []);
+    const pendingSent = new Set(snapshot.pendingSentIds || []);
+    const pendingReceived = new Set(snapshot.pendingReceivedIds || []);
+
     resultEl.innerHTML = data.map(p => {
       const name = p.display_name || p.username || "Membre";
       const avatarColor = AVATAR_COLORS[(p.id || "").charCodeAt(0) % AVATAR_COLORS.length];
+      const isAccepted = accepted.has(p.id);
+      const isPendingSent = pendingSent.has(p.id);
+      const isPendingReceived = pendingReceived.has(p.id);
+      const stateText = isAccepted ? 'Déjà ami' : isPendingSent ? 'Demande envoyée' : isPendingReceived ? 'Vous a demandé en ami' : (p.username ? `@${escapeHtml(p.username)}` : 'Profil public');
+      const actionHtml = isAccepted
+        ? '<button class="btn btn-g btn-sm" disabled>Déjà ami</button>'
+        : isPendingSent
+          ? '<button class="btn btn-g btn-sm" disabled>Envoyée</button>'
+          : isPendingReceived
+            ? '<button class="btn btn-p btn-sm" disabled>Regarde les demandes</button>'
+            : `<button class="btn btn-p btn-sm" onclick="sendFriendRequest('${p.id}')">+ Ajouter</button>`;
       return `
         <div class="friend-card">
           <div class="friend-card-avatar" style="background:${avatarColor}">${name.charAt(0).toUpperCase()}</div>
           <div class="friend-card-info">
             <div class="friend-card-name">${escapeHtml(name)}</div>
-            <div class="friend-card-meta">${p.username ? `@${escapeHtml(p.username)}` : ""}</div>
+            <div class="friend-card-meta">${stateText}</div>
           </div>
-          <button class="btn btn-p btn-sm" onclick="sendFriendRequest('${p.id}')">+ Ajouter</button>
+          ${actionHtml}
         </div>`;
     }).join("");
   } catch (e) {
@@ -2984,6 +3341,8 @@ async function loadFriends() {
     if (error) throw error;
     if (!data?.length) {
       el.innerHTML = `<div class="friends-empty-state"><div style="font-size:2.4rem;margin-bottom:8px">👥</div><div style="font-weight:700;margin-bottom:4px">Aucun ami pour le moment</div><div style="font-size:.8rem;color:var(--muted)">Recherchez des profils ci-dessus pour commencer</div></div>`;
+      renderFriendsOverview({ snapshot: { acceptedCount: 0, pendingCount: 0, acceptedIds: [], pendingReceivedIds: [] } });
+      loadFriendSuggestions();
       return;
     }
 
@@ -3021,6 +3380,8 @@ async function loadFriends() {
 
     const countEl = document.getElementById("friend-count");
     if (countEl) countEl.textContent = data.length;
+    renderFriendsOverview({ snapshot: { acceptedCount: data.length, pendingCount: Number(document.getElementById('friend-pending-badge')?.textContent || 0), acceptedIds: friendIds, pendingReceivedIds: [] } });
+    loadFriendSuggestions();
   } catch (e) {
     const isTableMissing = e.message?.includes("relation") || e.message?.includes("does not exist") || e.code === "42P01";
     el.innerHTML = isTableMissing
@@ -3069,6 +3430,7 @@ async function loadFriendRequests() {
 
     const badge = document.getElementById("friend-pending-badge");
     if (badge) { badge.textContent = data.length; badge.style.display = data.length > 0 ? "inline-flex" : "none"; }
+    renderFriendsOverview({ snapshot: { acceptedCount: Number(document.getElementById('friend-count')?.textContent || 0), pendingCount: data.length, acceptedIds: [], pendingReceivedIds: [] } });
   } catch (e) {
     const isTableMissing = e.message?.includes("relation") || e.message?.includes("does not exist") || e.code === "42P01";
     if (!isTableMissing) {
@@ -3463,6 +3825,8 @@ async function loadScans() {
     }).join('<div style="height:16px"></div>');
     observeLazyImgs(el);
   } catch (e) {
+    FEED_SOCIAL_STATE.stats = { totalPosts: 0, recipePosts: 0, totalComments: 0, totalKudos: 0, refreshedAt: Date.now() };
+    renderCommunityOverview(FEED_SOCIAL_STATE.stats);
     el.innerHTML = `<div class="empty" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
 }
@@ -4578,6 +4942,19 @@ function stripHtml(html) {
   return String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function finalizeCoachMessageForDisplay(raw) {
+  let text = String(raw || "").replace(/^```[\w-]*\s*/g, "").replace(/```$/g, "").trim();
+  if (!text) return "";
+  if (/[.!?…]["')\]]*\s*$/.test(text)) return text;
+  text = text.replace(/[,:;\-–—\s]+$/, "").trim();
+  if (!text) return "";
+  const lastLine = text.split(/\n+/).pop().trim();
+  if (lastLine.split(/\s+/).length <= 4 || /\b(et|ou|mais|car|donc|pour|avec|sans|sur|dans|vers|de|du|des|en|au|aux|a|se|te|me|je|tu|il|elle|nous|vous|ils|elles|on)\s*$/i.test(lastLine)) {
+    return `${text}. L'idée clé : reste simple et régulier aujourd'hui.`;
+  }
+  return text + '.';
+}
+
 function formatCoachText(raw) {
   if (!raw) return "";
 
@@ -5534,7 +5911,7 @@ async function generateRecipe() {
             <span class="recipe-tab-art">${food}</span>
             <span class="recipe-tab-num">${i + 1}</span>
           </button>`;
-        }).join("");
+        }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
         const panelsHtml = recipes.map((r, i) =>
           `<div class="recipe-tab-panel${i === 0 ? " active" : ""}" id="recipe-panel-${i}">${renderRecipeCard(r, i)}</div>`
         ).join("");
@@ -5829,15 +6206,24 @@ async function generateWeeklyPlan() {
   if (btn) { btn.disabled = true; btn.textContent = "Génération…"; }
   try {
     const token = await getToken();
+    const storedSessions = parseInt(localStorage.getItem("fitai_goal_sessions") || "", 10);
+    const payload = {
+      user_id: U.id,
+      sessions_per_week: Number.isFinite(storedSessions) ? storedSessions : undefined,
+      cycle_length_weeks: _sanitizeProgDuration(_progDuration || _loadProgDuration()),
+      preferred_week_number: Math.max(1, parseInt(_progWeek || 1, 10) || 1)
+    };
     const r = await fetch("/api/generate-plan", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ user_id: U.id })
+      body: JSON.stringify(payload)
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.error || `Erreur (HTTP ${r.status})`);
+    _saveLatestPlanMeta(j);
     const phaseLabel = j.phase ? ` — Phase ${j.phase}` : "";
-    toast(`Semaine ${j.week_number || "?"}/8 générée${phaseLabel} ✓`, "ok");
+    const sourceLabel = j.source === "evidence_engine+ai_polish" ? " · plan personnalisé premium" : (j.source === "evidence_engine" ? " · plan personnalisé" : "");
+    toast(`Programme semaine ${j.week_number || "1"}/${j.cycle_length_weeks || _progDuration || 8} généré${phaseLabel}${sourceLabel} ✓`, "ok");
     incrementWeeklyQuestMetric("plan_week", 1);
     renderWeeklyPlan(j.plan || [], j.week_number, j.phase);
   } catch (e) {
@@ -5870,8 +6256,7 @@ async function loadWeeklyPlan() {
 
 function _showOfflineWeeklyPlan() {
   // Build synthetic weekly plan from the 8-week offline programme
-  let prog = null;
-  try { prog = JSON.parse(localStorage.getItem("fitai_prog_v2") || "null"); } catch {}
+  const prog = _loadStoredProg();
   const goal = prog?.goal || "remise_en_forme";
   const weekly = PROG_WEEKLY[goal] || PROG_WEEKLY.remise_en_forme;
   const typeToIntensity = {
@@ -5915,7 +6300,7 @@ function renderWeeklyPlan(plan, weekNum, phase) {
     labelEl.textContent = label;
   }
   const badgeEl = document.getElementById("plan-week-badge");
-  if (badgeEl) badgeEl.textContent = weekNum ? `Sem. ${weekNum}/8` : "Cette semaine";
+  if (badgeEl) badgeEl.textContent = `Semaine ${weekNum || 1}/${(weekNum && _loadLatestPlanMeta()?.cycle_length_weeks) || _progDuration || 8}`;
 
   const today = getTodayDayOfWeek();
   const byDay = Object.fromEntries(plan.map(p => [p.day_of_week, p]));
@@ -5997,6 +6382,29 @@ window.generateWorkout = generateWorkout;
 window.saveSession = saveSession;
 window.clearCoachChat = clearCoachChat;
 window.toggleCoachSuggestions = toggleCoachSuggestions;
+
+
+function _saveLatestPlanMeta(payload) {
+  try {
+    const slim = {
+      week_number: payload?.week_number || null,
+      phase: payload?.phase || "",
+      source: payload?.source || "",
+      week_summary: payload?.week_summary || null,
+      coach_priority: payload?.coach_priority || "",
+      progression_rule: payload?.progression_rule || "",
+      recovery_target: payload?.recovery_target || "",
+      pain_rule: payload?.pain_rule || "",
+      cycle_length_weeks: payload?.cycle_length_weeks || _progDuration || 8,
+      saved_at: new Date().toISOString()
+    };
+    localStorage.setItem('fitai_latest_plan_meta_v1', JSON.stringify(slim));
+  } catch {}
+}
+
+function _loadLatestPlanMeta() {
+  try { return JSON.parse(localStorage.getItem('fitai_latest_plan_meta_v1') || 'null'); } catch { return null; }
+}
 window.replaySession = replaySession;
 window.reloadHistoryRecipe = reloadHistoryRecipe;
 window.addHistoryRecipeToShopping = addHistoryRecipeToShopping;
@@ -6170,7 +6578,8 @@ function _wtRenderNextPreview() {
     return;
   }
   const ex = next.ex;
-  wrap.innerHTML = `<div class="wt-next-card"><div><div class="wt-next-kicker">Ensuite</div><div class="wt-next-name">${escapeHtml(ex.n || ex.name || 'Exercice')}</div><div class="wt-next-meta">${Math.max(20, Number(ex.guideSeconds || 0))}s effort · ${Math.max(0, Number(ex.restSeconds || 0))}s pause${next.round ? ` · Tour ${next.round}` : ''}</div></div><div class="wt-next-mini"><div class="wt-next-img">${_exerciseDemoSvg(ex.n || ex.name || '')}</div></div></div>`;
+  wrap.innerHTML = `<div class="wt-next-card"><div><div class="wt-next-kicker">Ensuite</div><div class="wt-next-name">${escapeHtml(ex.n || ex.name || 'Exercice')}</div><div class="wt-next-meta">${Math.max(20, Number(ex.guideSeconds || 0))}s effort · ${Math.max(0, Number(ex.restSeconds || 0))}s pause${next.round ? ` · Tour ${next.round}` : ''}</div></div><div class="wt-next-mini">${_animatedExerciseDemoHtml(ex.n || ex.name || '', 'wt-next-shell', 'preview', 'Ensuite')}</div></div>`;
+  _wtApplyDemoState(_wtPhase || 'ready');
 }
 
 function _wtSetSessionMeta(block, phaseSeconds) {
@@ -6599,6 +7008,7 @@ function renderWater(newlyFilledIdx = -1) {
   if (litersEl)    litersEl.textContent    = `${glassesToL(count)} L / ${glassesToL(target)} L`;
   if (summEl)      summEl.textContent      = `${count} / ${target} verres`;
   if (pctEl)       pctEl.textContent       = `${pct}%`;
+  refreshDashboardSummaryPills();
 }
 
 window.adjustWater  = adjustWater;
@@ -7418,24 +7828,34 @@ window.selectMealType = selectMealType;
 
 // ── Sync water counter in programme tab ──────────────────────────────────────
 function syncProgWater() {
-  const today = new Date().toDateString();
-  const dateKey = localStorage.getItem("fitai_water_date");
-  const count = dateKey === today ? parseInt(localStorage.getItem("fitai_water_count") || "0", 10) : 0;
-  const target = parseInt(localStorage.getItem("fitai_water_target") || "8", 10);
+  const data = getWaterData();
+  const count = Number(data.count || 0);
+  const target = getWaterTarget();
+  const pct = target > 0 ? Math.min(100, Math.round((count / target) * 100)) : 0;
 
   const countEl = document.getElementById("prog-water-count");
   const targetEl = document.getElementById("prog-water-target");
+  const litersEl = document.getElementById("prog-water-liters");
+  const tipEl = document.getElementById("prog-water-tip");
   const barEl = document.getElementById("prog-water-bar");
   const glassesEl = document.getElementById("prog-water-glasses");
 
-  if (countEl) countEl.textContent = count;
+  if (countEl) countEl.textContent = String(count);
   if (targetEl) targetEl.textContent = `/ ${target} verres`;
-  if (barEl) barEl.style.width = Math.min(100, Math.round((count / target) * 100)) + "%";
+  if (litersEl) litersEl.textContent = `${glassesToL(count)} L / ${glassesToL(target)} L · récup, focus, performance`;
+  if (barEl) barEl.style.width = pct + "%";
+  if (tipEl) {
+    tipEl.textContent = pct >= 100
+      ? "Objectif hydratation validé aujourd'hui. Garde ce rythme pour mieux récupérer."
+      : pct >= 60
+        ? "Bien joué. Encore quelques verres pour verrouiller ta récup du jour."
+        : "Clique sur un verre pour ajuster directement ton total du jour.";
+  }
   if (glassesEl) {
     glassesEl.innerHTML = Array.from({ length: target }, (_, i) => {
       const filled = i < count;
       return `<div class="water-glass${filled ? " filled" : ""}"
-        onclick="adjustWater(${filled ? i : i + 1});syncProgWater()" title="${filled ? "Retirer" : "Marquer bu"}">
+        onclick="setWaterCount(${i + 1});syncProgWater()" title="${filled ? "Retirer" : "Marquer bu"}">
         <div class="wg-water"></div><div class="wg-shine"></div>
       </div>`;
     }).join("");
@@ -7492,7 +7912,9 @@ function startWorkout(dayLabel, exercises, params) {
   const phaseEl = document.getElementById("wt-phase-label");
   if (titleEl) titleEl.textContent = dayLabel || 'Séance guidée';
   if (phaseEl) phaseEl.textContent = `${Math.max(1, Math.round(_wtWorkoutTargetSeconds / 60))} min guidées • auto-run • effort/pause/hydratation${params.sessionStyle ? ` • ${params.sessionStyle}` : ''}`;
+  _wtLockPageScroll();
   if (overlay) overlay.classList.add("open");
+  _wtEnsureWorkoutVisible();
   _wtRenderExercise();
   _wtStartReadyCountdown(3);
 }
@@ -8274,6 +8696,55 @@ function _wtSetPrimaryLabel(label) {
   if (btn) btn.textContent = label;
 }
 
+
+function _wtLockPageScroll() {
+  document.documentElement.classList.add('workout-open');
+  document.body.classList.add('workout-open');
+}
+
+function _wtUnlockPageScroll() {
+  document.documentElement.classList.remove('workout-open');
+  document.body.classList.remove('workout-open');
+}
+
+function _wtResetScrollHost() {
+  const overlay = document.getElementById('wt-overlay');
+  const modal = document.getElementById('wt-modal');
+  if (overlay) overlay.scrollTop = 0;
+  if (modal) modal.scrollTop = 0;
+}
+
+function _wtEnsureWorkoutVisible() {
+  _wtResetScrollHost();
+  try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+}
+
+function _exerciseMotionType(label = '') {
+  const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/jump|burpee|high knees|run|cardio|jack|sprint|montee.*genou|corde.*sauter|tabata|hiit|box jump/.test(t)) return 'cardio';
+  if (/squat|lunge|fente|split squat|step-up|bulgare|calf|mollet|leg press/.test(t)) return 'lower';
+  if (/pompe|push|bench|developpe.*couch|developpe.*inclin|developpe.*militaire|dips|pike push|press|shoulder|eleva/.test(t)) return 'upper';
+  if (/deadlift|souleve|hinge|hip thrust|bridge|pont|romanian|sumo|good morning|nordic|row|tirage|traction|pull|rowing/.test(t)) return 'hinge';
+  if (/plank|planche|gainage|abdo|hollow|mountain|russian twist|twist|crunch|bicycle|bird|dog|superman|deadbug|ab wheel|rollout/.test(t)) return 'core';
+  if (/stretch|mobilite|rotation|respiration|yoga|pigeon|cat.cow|foam|hip flex|thread/.test(t)) return 'mobility';
+  return 'flow';
+}
+
+function _animatedExerciseDemoHtml(label = '', cls = 'wt-demo-shell', state = 'ready', tag = 'Démo mouvement') {
+  const motion = _exerciseMotionType(label);
+  return `<div class="${cls} wt-motion-shell motion-${motion}" data-motion="${motion}" data-motion-state="${state}"><div class="wt-demo-state-badge">${escapeHtml(tag)}</div><div class="wt-demo-gif">${_exerciseDemoSvg(label)}</div></div>`;
+}
+
+function _wtApplyDemoState(state) {
+  document.querySelectorAll('.wt-motion-shell').forEach((el) => {
+    const isNext = el.classList.contains('wt-next-shell');
+    const nextState = isNext ? 'preview' : state;
+    el.setAttribute('data-motion-state', nextState);
+    const badge = el.querySelector('.wt-demo-state-badge');
+    if (badge) badge.textContent = isNext ? 'Ensuite' : (nextState === 'work' ? 'En mouvement' : nextState === 'paused' ? 'Pause' : nextState === 'rest' ? 'Respire / eau' : 'Prépare-toi');
+  });
+}
+
 function _wtUpdateStage(opts) {
   const card = document.getElementById('wt-stage-card');
   const kicker = document.getElementById('wt-stage-kicker');
@@ -8306,7 +8777,8 @@ function _wtRenderExercise() {
 
   const imgWrap = document.getElementById('wt-ex-img-wrap');
   if (imgWrap) {
-    imgWrap.innerHTML = `<div class="wt-visual-main"><div class="ex-figure-tag">Démo mouvement</div><div class="wt-demo-gif">${_exerciseDemoSvg(ex.n || '')}</div></div><div class="wt-visual-muscle"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(ex.m || ex.n || '')}</div>`;
+    imgWrap.innerHTML = `<div class="wt-visual-main">${_animatedExerciseDemoHtml(ex.n || '', 'wt-demo-shell', 'ready', 'Démo mouvement')}</div><div class="wt-visual-muscle"><div class="ex-figure-tag ex-figure-tag-muscle">Zone ciblée</div>${_muscleSVG(ex.m || ex.n || '')}</div>`;
+    _wtApplyDemoState(_wtPhase || 'ready');
   }
 
   const cue = exerciseCuePack({ name: ex.n || '', muscle: ex.m || '' });
@@ -8321,6 +8793,7 @@ function _wtRenderExercise() {
   const setsRow = document.getElementById('wt-sets-row');
   if (setsRow) setsRow.style.display = 'none';
   _wtPhase = 'ready';
+  _wtApplyDemoState('ready');
   _wtSecondsLeft = ex.guideSeconds;
   _wtCurrentDone = false;
   if (_wtPhaseTimer) { clearInterval(_wtPhaseTimer); _wtPhaseTimer = null; }
@@ -8384,6 +8857,7 @@ function wtDoneSet() {
   if (_wtPhase === 'work') {
     if (_wtPhaseTimer) {
       clearInterval(_wtPhaseTimer); _wtPhaseTimer = null;
+      _wtApplyDemoState('paused');
       _wtUpdateStage({ phase: 'work', paused: true, kicker: 'Pause exercice', title: ex.n, sub: 'Respire, replace-toi puis reprends quand tu veux.', timer: _wtFormatClock(_wtSecondsLeft) });
       return _wtSetPrimaryLabel('▶ Reprendre');
     }
@@ -8405,6 +8879,7 @@ function _startRestTimer(seconds, onDone) {
   const restMsg = document.getElementById('wt-rest-msg');
   const imgWrap = document.getElementById('wt-ex-img-wrap');
   if (restArea) restArea.style.display = 'block';
+  _wtApplyDemoState('rest');
   if (imgWrap) imgWrap.innerHTML = _stickFigureDrinking();
   if (restMsg) restMsg.textContent = ex?.hydrationCue || '💧 Bois quelques gorgées et respire.';
   _wtSetPrimaryLabel('⏭ Passer la pause');
@@ -8481,6 +8956,8 @@ function closeWorkoutTimer() {
   _wtPhase = 'ready';
   const overlay = document.getElementById("wt-overlay");
   if (overlay) overlay.classList.remove("open");
+  _wtUnlockPageScroll();
+  _wtApplyDemoState('ready');
 }
 
 function wtOverlayClick(e) {
@@ -8498,80 +8975,77 @@ window.wtOverlayClick = wtOverlayClick;
 
 // ══════════════════════════════════════════════════════════════════════════════
 
-const PROG_WEEK_NOTES = [
-  { theme:"Apprentissage technique", focus:"Amplitude complète, charges légères (~60% max). 12-15 reps lentes et contrôlées. Priorité à la maîtrise des mouvements.", cue:"La technique aujourd'hui = les kilos de demain." },
-  { theme:"Progression initiale",   focus:"+2.5 kg ou +1-2 reps vs S1 sur chaque exercice. Volume modéré, surcharge progressive. La charge monte, la technique reste irréprochable.", cue:"Surcharge progressive et patiente." },
-  { theme:"Volume maximum du cycle", focus:"5 séries, volume record du cycle. Fatigue musculaire élevée en fin de séance — c'est voulu. Alimentation et sommeil critiques cette semaine.", cue:"C'est ici que tu t'adaptes le plus." },
-  { theme:"Décharge obligatoire",    focus:"−40% volume vs S3. Mêmes exercices, charges réduites de 30%. Ne saute PAS cette semaine — c'est là que les gains de S3 se consolident.", cue:"La récupération EST de l'entraînement." },
-  { theme:"Travail de force",        focus:"5-7 reps lourdes, repos 3min complets obligatoires. Composés seulement. Charges +15% vs pic de S3. Abandon des accessoires non-essentiels.", cue:"Moins de reps, plus lourd, plus fort." },
-  { theme:"Force maximale",          focus:"+3 à 5% charge vs S5 sur chaque composé. 4-6 reps, technique absolue. Mets-toi en condition de performance avant chaque set.", cue:"Chaque kilo supplémentaire est un gain concret." },
-  { theme:"Puissance explosive",     focus:"3-5 reps, concentrique explosif, excentrique contrôlé 2s. Charges ~85-90% max. Qualité totale — arrête si la technique se dégrade.", cue:"Vite et fort — chaque rep est une intention totale." },
-  { theme:"Test de force final",     focus:"Teste tes maxima sur les 2-3 composés principaux. Compare avec ta semaine 1. Fais le bilan complet du cycle.", cue:"Montre tout ce que 8 semaines t'ont construit." }
-];
+const PROG_DURATION_OPTIONS = [1, 4, 8, 12];
+const PROG_DURATION_KEY = "fitai_prog_duration_weeks_v1";
 
-const PROG_PHASE_EX_COUNT = [6, 7, 8, 4, 6, 6, 5, 4];
-// S1:6 (apprentissage) S2:7 S3:8 (volume max) S4:4 (deload) S5:6 S6:6 S7:5 (puissance) S8:4 (test force)
-
-const PROG_PHASE_TEMPO = [
-  "3-1-2 (lent)", "3-0-1", "2-0-1", "3-1-2 (récup)", "2-1-1", "2-0-1", "1-0-X (explosif)", "max"
+const PROG_PHASE_LIBRARY = {
+  1: [
+    { name:"Semaine cible", short:"S1", color:"#6366f1", volume:58, intensity:64, rpe:"6-7", desc:"Une semaine structurée, personnalisée et durable. Volume utile, récupération prévue et priorité à l'adhérence.",
+      note:{ theme:"Semaine personnalisée", focus:"Microcycle utile, équilibré et réaliste. Progression douce, exécution propre et récupération suivie.", cue:"Une bonne semaine bien tenue vaut mieux qu’un gros plan impossible à suivre." },
+      params:{ sets:4, reps:"8-12", rest:90 }, exCount:6, tempo:"3-1-2 (contrôlé)" }
+  ],
+  4: [
+    { name:"Adaptation", short:"S1", color:"#6366f1", volume:52, intensity:58, rpe:"6-7", desc:"On installe la routine, la technique et la tolérance à l’effort sans te cramer.", note:{ theme:"Entrer dans le rythme", focus:"Priorité à la technique, au rythme hebdo et à des charges faciles à tenir.", cue:"Sors de chaque séance avec la sensation d’en garder encore un peu." }, params:{ sets:3, reps:"8-12", rest:75 }, exCount:5, tempo:"3-1-2" },
+    { name:"Montée en charge", short:"S2", color:"#3b82f6", volume:62, intensity:67, rpe:"7", desc:"On augmente légèrement le volume ou l’intensité selon tes sensations.", note:{ theme:"Progression simple", focus:"Ajoute 1 rep ou un peu de charge sur les mouvements principaux si la technique reste propre.", cue:"Mieux vaut une petite progression répétable qu’un gros saut instable." }, params:{ sets:4, reps:"8-12", rest:90 }, exCount:6, tempo:"2-1-1" },
+    { name:"Consolidation", short:"S3", color:"#8b5cf6", volume:64, intensity:72, rpe:"7-8", desc:"Semaine la plus productive du mini-cycle, sans aller à l’échec.", note:{ theme:"Travail utile", focus:"Garde de la qualité sur les composés et termine frais mentalement.", cue:"La constance propre construit plus que la fatigue pour la fatigue." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-0-1" },
+    { name:"Deload", short:"S4", color:"#22c55e", volume:42, intensity:56, rpe:"6", desc:"On réduit la fatigue pour repartir fort sur le bloc suivant.", note:{ theme:"Récupérer pour progresser", focus:"Réduis volontairement le volume et conserve de la marge sur chaque série.", cue:"Une bonne semaine légère est un accélérateur pour la suite." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" }
+  ],
+  8: [
+    { name:"Adaptation", short:"S1", color:"#6366f1", volume:50, intensity:56, rpe:"6-7", desc:"Apprentissage des repères, installation du rythme et montée douce de la charge.", note:{ theme:"Base solide", focus:"Priorité à la technique et à la constance. Cherche des reps propres et répétables.", cue:"Tu dois finir les séances avec l’impression d’avoir travaillé, pas de t’être détruit." }, params:{ sets:3, reps:"8-12", rest:75 }, exCount:5, tempo:"3-1-2" },
+    { name:"Hypertrophie I", short:"S2", color:"#3b82f6", volume:62, intensity:66, rpe:"7", desc:"Plus de volume utile pour construire masse maigre, coordination et capacité de travail.", note:{ theme:"Accumuler du bon travail", focus:"Ajoute un peu de volume et garde 1 à 3 reps en réserve.", cue:"Travail propre, amplitude complète et repos sérieux entre les séries." }, params:{ sets:4, reps:"8-12", rest:90 }, exCount:6, tempo:"2-1-1" },
+    { name:"Hypertrophie II", short:"S3", color:"#2563eb", volume:68, intensity:72, rpe:"7-8", desc:"Bloc plus dense : intensité modérée-haute avec contrôle et bonne récupération.", note:{ theme:"Densifier sans casser", focus:"Monte légèrement la charge ou baisse le nombre de reps, mais reste propre.", cue:"Si la technique se dégrade, ce n’est pas une vraie progression." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-0-1" },
+    { name:"Deload", short:"S4", color:"#22c55e", volume:42, intensity:55, rpe:"6", desc:"Baisse du volume pour absorber la fatigue et améliorer la fraîcheur.", note:{ theme:"Assimilation", focus:"Réduis volontairement la charge de travail et récupère mieux.", cue:"Le deload fait partie du progrès, ce n’est pas une régression." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" },
+    { name:"Force I", short:"S5", color:"#f59e0b", volume:58, intensity:80, rpe:"8", desc:"Retour plus lourd : moins de reps, plus de qualité de tension et de repos.", note:{ theme:"Tension de qualité", focus:"Concentre-toi sur le mouvement principal et des reps nettes.", cue:"Repose-toi vraiment avant les séries importantes." }, params:{ sets:5, reps:"4-6", rest:165 }, exCount:5, tempo:"2-0-1" },
+    { name:"Force II", short:"S6", color:"#f97316", volume:54, intensity:84, rpe:"8-9", desc:"Semaine lourde contrôlée, basée sur une exécution stable et reproductible.", note:{ theme:"Lourd mais propre", focus:"Seulement de petites hausses de charge si la technique reste excellente.", cue:"La meilleure série est celle qui reste rapide et maîtrisée." }, params:{ sets:5, reps:"3-5", rest:180 }, exCount:5, tempo:"2-0-1" },
+    { name:"Puissance", short:"S7", color:"#ef4444", volume:46, intensity:78, rpe:"7-8", desc:"On garde de la vitesse et de l’explosivité sans accumuler trop de fatigue.", note:{ theme:"Vitesse et fraîcheur", focus:"Recherche de l’intention maximale sur chaque rep, pas de la brûlure musculaire.", cue:"Arrête la série dès que le mouvement ralentit franchement." }, params:{ sets:4, reps:"3-5", rest:180 }, exCount:4, tempo:"Explosif" },
+    { name:"Consolidation & test", short:"S8", color:"#ec4899", volume:48, intensity:74, rpe:"7", desc:"On consolide les acquis, on note les repères et on prépare le prochain cycle.", note:{ theme:"Capitaliser", focus:"Observe tes progrès, note tes charges et ta récupération.", cue:"Un bon plan laisse des traces mesurables : reps, charges, sensations, constance." }, params:{ sets:3, reps:"3-5", rest:150 }, exCount:4, tempo:"2-0-1" }
+  ],
+  12: []
+};
+PROG_PHASE_LIBRARY[12] = [...PROG_PHASE_LIBRARY[8],
+  { name:"Accumulation II", short:"S9", color:"#14b8a6", volume:64, intensity:72, rpe:"7-8", desc:"Nouveau bloc de volume utile avec davantage de maîtrise technique.", note:{ theme:"Deuxième souffle", focus:"Reviens sur du volume de qualité, sans négliger la récupération.", cue:"Mets l’accent sur l’amplitude et la stabilité." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-1-1" },
+  { name:"Intensification", short:"S10", color:"#06b6d4", volume:56, intensity:82, rpe:"8", desc:"On reconstruit un peu plus lourd après le travail de volume.", note:{ theme:"Intensifier sans forcer", focus:"Augmente un peu les charges sur les mouvements qui restent stables.", cue:"Laisse toujours 1 à 2 reps en réserve sur les premières séries." }, params:{ sets:5, reps:"4-6", rest:165 }, exCount:5, tempo:"2-0-1" },
+  { name:"Deload II", short:"S11", color:"#84cc16", volume:40, intensity:54, rpe:"6", desc:"Deuxième semaine de récupération active pour dissiper la fatigue accumulée.", note:{ theme:"Respirer", focus:"Dors, mange bien et réduis franchement le volume.", cue:"L’objectif est d’arriver frais, pas d’ajouter du stress." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" },
+  { name:"Peak & bilan", short:"S12", color:"#a855f7", volume:46, intensity:76, rpe:"7-8", desc:"Dernière semaine pour consolider, tester légèrement et préparer le prochain bloc.", note:{ theme:"Bilan utile", focus:"Valide quelques repères sans t’épuiser : technique, charges, ressenti.", cue:"Finis le cycle avec des données claires et l’envie d’enchaîner." }, params:{ sets:3, reps:"3-6", rest:150 }, exCount:4, tempo:"2-0-1" }
 ];
+function _sanitizeProgDuration(v){ const n=parseInt(v,10); return PROG_DURATION_OPTIONS.includes(n)?n:8; }
+function _loadProgDuration(){ try{return _sanitizeProgDuration(localStorage.getItem(PROG_DURATION_KEY));}catch{} return 8; }
+function _getProgPhases(){ return PROG_PHASE_LIBRARY[_sanitizeProgDuration(_progDuration)] || PROG_PHASE_LIBRARY[8]; }
+function _getProgPhaseBundle(weekNum){ const phases=_getProgPhases(); return phases[Math.max(0, Math.min(phases.length-1, (weekNum||1)-1))] || phases[0]; }
+
 // Descente - Pause - Montée
 
 function _progProgressionHint(weekNum) {
-  return [
-    "~60% charge max — technique et amplitude",
-    "+2.5 kg ou +1-2 reps vs S1",
-    "Charge maximale du cycle — pousse fort",
-    "−30 à 40% charge vs S3 — récupération",
-    "+15% charge vs S3 — force brute",
-    "+3-5% vs S5 — progression stricte",
-    "85-90% max — concentrique explosif",
-    "Test de force — tentez le maximum"
-  ][weekNum - 1] || "";
+  const phase = _getProgPhaseBundle(weekNum);
+  if (!phase) return "Cherche une progression sobre : +1 rep, meilleure amplitude ou charge légèrement plus haute si tout reste propre.";
+  if (/Deload/i.test(phase.name)) return "Semaine légère : réduis le volume et garde de la marge sur chaque série.";
+  if (/Force|Intensification/i.test(phase.name)) return "Ajoute un peu de charge seulement si toutes les reps restent nettes et stables.";
+  if (/Puissance/i.test(phase.name)) return "Cherche surtout la vitesse d’exécution et arrête avant que le mouvement ralentisse.";
+  return "Cherche une progression sobre : +1 rep, meilleure amplitude ou charge légèrement plus haute si tout reste propre.";
 }
-
-const PROG_PHASES = [
-  { w:1, name:"Adaptation",    short:"S1", color:"#6366f1", volume:35, intensity:40, rpe:"5-6",  desc:"Volume léger, 12-15 reps. Apprentissage des mouvements, focus technique. RPE 5-6." },
-  { w:2, name:"Hypertrophie",  short:"S2", color:"#2563eb", volume:55, intensity:62, rpe:"6-7",  desc:"Volume modéré, 10-12 reps. Surcharge progressive légère, +1 rep ou +2% vs S1. RPE 6-7." },
-  { w:3, name:"Hypertrophie+", short:"S3", color:"#1d4ed8", volume:78, intensity:72, rpe:"7-8",  desc:"Volume élevé, pic du cycle. +1 set ou +5% poids vs S2. Fatigue musculaire élevée. RPE 7-8." },
-  { w:4, name:"Deload",        short:"S4", color:"#10b981", volume:28, intensity:38, rpe:"5",    desc:"Décharge obligatoire: volume -40%, maintien de la technique, récupération active. RPE 5." },
-  { w:5, name:"Force",         short:"S5", color:"#f97316", volume:62, intensity:78, rpe:"7-8",  desc:"Force: charges lourdes, 5-7 reps, repos 2-3 min. Composés prioritaires. RPE 7-8." },
-  { w:6, name:"Force+",        short:"S6", color:"#ea580c", volume:65, intensity:88, rpe:"8-9",  desc:"Force max: +3-5% charge vs S5, 4-6 reps. Même structure, progression stricte. RPE 8-9." },
-  { w:7, name:"Puissance",     short:"S7", color:"#ef4444", volume:48, intensity:92, rpe:"9",    desc:"Intensité max, 3-5 reps sur composés. Travail explosif. Peu d'accessoires. RPE 9." },
-  { w:8, name:"Test Final",    short:"S8", color:"#8b5cf6", volume:32, intensity:96, rpe:"10",   desc:"Test de force: tente ton max sur les composés principaux. Bilan et récupération du cycle." }
-];
-
-const PROG_PHASE_PARAMS = [
-  { sets:3, reps:"12-15", rest:60  },
-  { sets:4, reps:"10-12", rest:90  },
-  { sets:5, reps:"8-10",  rest:90  },
-  { sets:2, reps:"12-15", rest:60  },
-  { sets:4, reps:"5-7",   rest:180 },
-  { sets:4, reps:"4-6",   rest:180 },
-  { sets:4, reps:"3-5",   rest:240 },
-  { sets:3, reps:"1-3",   rest:300 }
-];
 
 // Each type has TWO pools (A/B) of exercises — A for first occurrence in week, B for second.
 // _renderProgDays picks A or B based on how many times the type has appeared in the week so far.
 const PROG_EXERCISES = {
   push: [
-    // Pool A (pecs focus)
-    { n:"Développé couché barre",      m:"Pecs",       pool:"A" },
-    { n:"Développé incliné haltères",  m:"Pecs haut",  pool:"A" },
-    { n:"Écarté haltères couché",      m:"Pecs",       pool:"A" },
-    { n:"Développé militaire barre",   m:"Épaules",    pool:"A" },
-    { n:"Élévations latérales",        m:"Deltoïdes",  pool:"A" },
-    { n:"Extension triceps poulie",    m:"Triceps",    pool:"A" },
-    { n:"Dips lestés",                 m:"Triceps",    pool:"A" },
-    // Pool B (épaules / triceps focus)
-    { n:"Développé militaire haltères",m:"Épaules",    pool:"B" },
-    { n:"Développé incliné barre",     m:"Pecs haut",  pool:"B" },
-    { n:"Oiseau inversé haltères",     m:"Épaules arrière", pool:"B" },
-    { n:"Élévations frontales",        m:"Deltoïdes",  pool:"B" },
-    { n:"Extension triceps 1 bras",    m:"Triceps",    pool:"B" },
-    { n:"Pompes lestées",              m:"Pecs/Triceps",pool:"B" },
-    { n:"Cable crossover pec deck",    m:"Pecs",       pool:"B" },
+    // Pool A — pecs / deltoïdes focus
+    { n:"Développé couché barre",       m:"Pecs",          pool:"A" },
+    { n:"Développé incliné haltères",   m:"Pecs haut",     pool:"A" },
+    { n:"Écarté haltères couché",       m:"Pecs médial",   pool:"A" },
+    { n:"Développé militaire barre",    m:"Épaules",       pool:"A" },
+    { n:"Élévations latérales",         m:"Deltoïdes lat", pool:"A" },
+    { n:"Extension triceps poulie",     m:"Triceps",       pool:"A" },
+    { n:"Dips lestés",                  m:"Triceps/Pecs",  pool:"A" },
+    { n:"Cable fly bas vers haut",      m:"Pecs haut",     pool:"A" },
+    // Pool B — épaules / triceps / pecs haut
+    { n:"Développé militaire haltères", m:"Épaules",       pool:"B" },
+    { n:"Développé décliné haltères",   m:"Pecs bas",      pool:"B" },
+    { n:"Oiseau inversé haltères",      m:"Deltoïdes arr.",pool:"B" },
+    { n:"Élévations frontales câble",   m:"Deltoïdes ant.",pool:"B" },
+    { n:"Skull crusher EZ barre",       m:"Triceps",       pool:"B" },
+    { n:"Pompes lestées",               m:"Pecs/Triceps",  pool:"B" },
+    { n:"Cable crossover pec deck",     m:"Pecs",          pool:"B" },
+    { n:"Face pull câble épaules",      m:"Deltoïdes arr.",pool:"B" },
   ],
   push_home: [
     { n:"Pompes mains larges",         m:"Pecs",       pool:"A" },
@@ -8589,20 +9063,24 @@ const PROG_EXERCISES = {
     { n:"Pompes lentes (4-0-4)",       m:"Pecs",       pool:"B" },
   ],
   pull: [
-    { n:"Tractions prise large",       m:"Grand dorsal",pool:"A" },
-    { n:"Rowing barre penché",         m:"Dos",        pool:"A" },
-    { n:"Tirage poulie haute",         m:"Grand dorsal",pool:"A" },
-    { n:"Curl barre EZ",               m:"Biceps",     pool:"A" },
-    { n:"Face pull câble",             m:"Épaules arrière",pool:"A" },
-    { n:"Rowing machine assise",       m:"Dos moyen",  pool:"A" },
-    { n:"Shrugs barre",                m:"Trapèzes",   pool:"A" },
-    { n:"Tractions prise serrée",      m:"Dos/Biceps", pool:"B" },
-    { n:"Rowing haltère 1 bras",       m:"Grand dorsal",pool:"B" },
-    { n:"Tirage poitrine câble",       m:"Dos",        pool:"B" },
-    { n:"Curl haltères alterné",       m:"Biceps",     pool:"B" },
-    { n:"Oiseau haltères penché",      m:"Épaules arrière",pool:"B" },
-    { n:"Pull-over haltère",           m:"Grand dorsal",pool:"B" },
-    { n:"Curl marteau",                m:"Biceps brachial",pool:"B" },
+    // Pool A — grand dorsal + trapèzes
+    { n:"Tractions prise large",        m:"Grand dorsal",  pool:"A" },
+    { n:"Rowing barre penché",          m:"Dos moyen",     pool:"A" },
+    { n:"Tirage poulie haute",          m:"Grand dorsal",  pool:"A" },
+    { n:"Curl barre EZ",                m:"Biceps",        pool:"A" },
+    { n:"Face pull câble",              m:"Épaules arr.",  pool:"A" },
+    { n:"Rowing machine assise",        m:"Dos moyen",     pool:"A" },
+    { n:"Shrugs barre",                 m:"Trapèzes",      pool:"A" },
+    { n:"Tirage nuque câble",           m:"Grand dorsal",  pool:"A" },
+    // Pool B — dos isolatéral + biceps
+    { n:"Tractions prise serrée",       m:"Dos/Biceps",    pool:"B" },
+    { n:"Rowing haltère 1 bras",        m:"Grand dorsal",  pool:"B" },
+    { n:"Tirage poitrine câble",        m:"Dos",           pool:"B" },
+    { n:"Curl haltères alterné",        m:"Biceps",        pool:"B" },
+    { n:"Oiseau haltères penché",       m:"Rhomboïdes",    pool:"B" },
+    { n:"Pull-over haltère",            m:"Grand dorsal",  pool:"B" },
+    { n:"Curl marteau câble",           m:"Biceps brachial",pool:"B" },
+    { n:"Tirage à 1 bras câble",        m:"Grand dorsal",  pool:"B" },
   ],
   pull_home: [
     { n:"Tractions (barre de porte)",  m:"Grand dorsal",pool:"A" },
@@ -8619,20 +9097,24 @@ const PROG_EXERCISES = {
     { n:"Hollow body hold",            m:"Core/Dos",   r:"20-30s", pool:"B" },
   ],
   legs: [
-    { n:"Squat barre",                 m:"Quadriceps", pool:"A" },
-    { n:"Soulevé de terre roumain",    m:"Ischios/Fessiers",pool:"A" },
-    { n:"Presse à cuisses",            m:"Quadriceps", pool:"A" },
-    { n:"Fentes marchées haltères",    m:"Fessiers",   pool:"A" },
-    { n:"Leg curl couché",             m:"Ischios",    pool:"A" },
-    { n:"Extensions mollets presse",   m:"Mollets",    pool:"A" },
-    { n:"Hip thrust barre",            m:"Fessiers",   pool:"A" },
-    { n:"Front squat barre",           m:"Quadriceps", pool:"B" },
-    { n:"Soulevé de terre sumo",       m:"Fessiers/Dos",pool:"B" },
-    { n:"Hack squat machine",          m:"Quadriceps", pool:"B" },
-    { n:"Fentes bulgares haltères",    m:"Quadriceps/Fessiers",pool:"B" },
-    { n:"Leg extension machine",       m:"Quadriceps", pool:"B" },
-    { n:"Relevés de mollets debout",   m:"Mollets",    pool:"B" },
-    { n:"Abducteur machine",           m:"Fessiers/Abducteurs",pool:"B" },
+    // Pool A — quad + ischios + fessiers composés
+    { n:"Squat barre",                  m:"Quadriceps",          pool:"A" },
+    { n:"Soulevé de terre roumain",     m:"Ischios/Fessiers",    pool:"A" },
+    { n:"Presse à cuisses",             m:"Quadriceps",          pool:"A" },
+    { n:"Fentes marchées haltères",     m:"Fessiers/Quad",       pool:"A" },
+    { n:"Leg curl couché",              m:"Ischios",             pool:"A" },
+    { n:"Extensions mollets presse",    m:"Mollets",             pool:"A" },
+    { n:"Hip thrust barre",             m:"Fessiers",            pool:"A" },
+    { n:"Good morning barre",           m:"Ischios/Lombaires",   pool:"A" },
+    // Pool B — isolation + unilatéral
+    { n:"Front squat barre",            m:"Quadriceps/Core",     pool:"B" },
+    { n:"Soulevé de terre sumo",        m:"Fessiers/Dos",        pool:"B" },
+    { n:"Hack squat machine",           m:"Quadriceps",          pool:"B" },
+    { n:"Fentes bulgares haltères",     m:"Quadriceps/Fessiers", pool:"B" },
+    { n:"Leg extension machine",        m:"Quadriceps",          pool:"B" },
+    { n:"Relevés de mollets debout",    m:"Mollets",             pool:"B" },
+    { n:"Abducteur machine",            m:"Fessiers/Abduct.",    pool:"B" },
+    { n:"Single leg press",             m:"Quadriceps/Fessiers", pool:"B" },
   ],
   legs_home: [
     { n:"Squat poids de corps",        m:"Quadriceps", pool:"A" },
@@ -8690,92 +9172,116 @@ const PROG_EXERCISES = {
     { n:"Hollow rock",                 m:"Core",         r:"20 reps",   pool:"B" },
   ],
   cardio: [
-    { n:"Course / marche rapide",      m:"Cardio",      r:"35 min zone 2" },
-    { n:"Vélo / elliptique",           m:"Cardio",      r:"30 min cadence stable" },
-    { n:"Natation",                    m:"Cardio",      r:"20-30 min" },
-    { n:"Rameur",                      m:"Cardio/Dos",  r:"20 min intervalles" },
-    { n:"Marche nordique",             m:"Cardio",      r:"45 min" },
-    { n:"Corde à sauter",              m:"Cardio",      r:"15-20 min" },
-    { n:"Vélo HIIT",                   m:"Cardio",      r:"8× (30s sprint / 30s récup)" },
+    { n:"Course / marche rapide",       m:"Cardio",        r:"35 min zone 2" },
+    { n:"Vélo / elliptique",            m:"Cardio",        r:"30 min cadence stable" },
+    { n:"Natation",                     m:"Cardio/Corps",  r:"25-35 min" },
+    { n:"Rameur",                       m:"Cardio/Dos",    r:"20 min intervalles" },
+    { n:"Marche nordique",              m:"Cardio",        r:"45-60 min" },
+    { n:"Corde à sauter",               m:"Cardio/Mollets",r:"15-20 min" },
+    { n:"Vélo HIIT",                    m:"Cardio",        r:"8× (30s sprint / 30s récup)" },
+    { n:"Tapis roulant incliné",        m:"Cardio/Fessiers",r:"20 min 10-12% pente" },
+    { n:"Cardio doux post-séance",      m:"Récupération",  r:"15 min zone 1-2" },
   ],
   core: [
-    // Pool A — planches + gainage
-    { n:"Planche avant",               m:"Core",        r:"30-60s",  pool:"A" },
-    { n:"Crunchs bicycle",             m:"Obliques",                 pool:"A" },
-    { n:"Hollow body hold",            m:"Core",        r:"20-30s",  pool:"A" },
-    { n:"Bird dog",                    m:"Core/Stabilisateurs",      pool:"A" },
-    { n:"Gainage latéral",             m:"Obliques",    r:"30s/côté",pool:"A" },
-    { n:"Ab wheel rollout",            m:"Core",                     pool:"A" },
-    // Pool B — crunchs + rotation
-    { n:"Russian twist",               m:"Obliques",                 pool:"B" },
-    { n:"Dead bug",                    m:"Core",                     pool:"B" },
-    { n:"Crunch inversé",              m:"Abdos bas",                pool:"B" },
-    { n:"Planche avec toucher épaule", m:"Core/Épaules",             pool:"B" },
-    { n:"Mountain climbers lents",     m:"Core/Cardio", r:"30s",     pool:"B" },
-    { n:"Scissors (ciseaux couchés)",  m:"Abdos bas",                pool:"B" },
+    // Pool A — gainage profond + stabilité
+    { n:"Planche avant",                m:"Core",          r:"30-60s",   pool:"A" },
+    { n:"Crunchs bicycle",              m:"Obliques",                     pool:"A" },
+    { n:"Hollow body hold",             m:"Core",          r:"20-30s",   pool:"A" },
+    { n:"Bird dog",                     m:"Core/Stabilité",               pool:"A" },
+    { n:"Gainage latéral",              m:"Obliques",      r:"30s/côté", pool:"A" },
+    { n:"Ab wheel rollout",             m:"Core",                         pool:"A" },
+    { n:"Hanging knee raise",           m:"Abdos/Hip",                    pool:"A" },
+    // Pool B — rotation + abdos dynamiques
+    { n:"Russian twist lesté",          m:"Obliques",                     pool:"B" },
+    { n:"Dead bug",                     m:"Core",                         pool:"B" },
+    { n:"Crunch inversé",               m:"Abdos bas",                    pool:"B" },
+    { n:"Planche avec toucher épaule",  m:"Core/Épaules",                 pool:"B" },
+    { n:"Mountain climbers lents",      m:"Core/Cardio",   r:"30s",       pool:"B" },
+    { n:"Scissors (ciseaux couchés)",   m:"Abdos bas",                    pool:"B" },
+    { n:"Cable woodchop",               m:"Obliques",                     pool:"B" },
   ],
   mobilite: [
     // Pool A — hanches et bas du dos
-    { n:"Pigeon yoga (hanche)",        m:"Hanches",     r:"90s/côté", pool:"A" },
-    { n:"Cat-cow rachis",              m:"Dos",         r:"10 cycles",pool:"A" },
-    { n:"Hip flexors — fente basse",   m:"Hanches/Psoas",r:"90s/côté",pool:"A" },
-    { n:"Thread the needle rotation",  m:"Dos/Épaules", r:"8/côté",  pool:"A" },
-    { n:"Squat profond 90-90",         m:"Hanches/Mollets",r:"2 min",  pool:"A" },
-    // Pool B — haut du corps et mollets
-    { n:"Étirement quadriceps debout", m:"Quadriceps",  r:"60s/côté", pool:"B" },
-    { n:"Foam roller thoracique",      m:"Haut du dos", r:"2 min",    pool:"B" },
-    { n:"Étirement pectoraux porte",   m:"Pecs/Épaules",r:"60s",      pool:"B" },
-    { n:"World's greatest stretch",    m:"Corps entier",r:"6/côté",   pool:"B" },
-    { n:"Relâchement ischio debout",   m:"Ischios",     r:"60s/côté", pool:"B" },
+    { n:"Pigeon yoga (hanche)",         m:"Hanches",       r:"90s/côté", pool:"A" },
+    { n:"Cat-cow rachis",               m:"Colonne",       r:"12 cycles",pool:"A" },
+    { n:"Hip flexors — fente basse",    m:"Hanches/Psoas", r:"90s/côté", pool:"A" },
+    { n:"Thread the needle rotation",   m:"Dos/Épaules",   r:"8/côté",   pool:"A" },
+    { n:"Squat profond 90-90",          m:"Hanches/Mollets",r:"2 min",   pool:"A" },
+    { n:"Hip circle dynamique",         m:"Hanches",       r:"10/côté",  pool:"A" },
+    // Pool B — haut du corps + mollets
+    { n:"Étirement quadriceps debout",  m:"Quadriceps",    r:"60s/côté", pool:"B" },
+    { n:"Foam roller thoracique",       m:"Haut du dos",   r:"2 min",    pool:"B" },
+    { n:"Étirement pectoraux porte",    m:"Pecs/Épaules",  r:"60s",      pool:"B" },
+    { n:"World's greatest stretch",     m:"Corps entier",  r:"6/côté",   pool:"B" },
+    { n:"Relâchement ischio debout",    m:"Ischios",       r:"60s/côté", pool:"B" },
+    { n:"Rotation thoracique assise",   m:"Dos/Épaules",   r:"10/côté",  pool:"B" },
   ],
   rest: []
 };
 
 const PROG_WEEKLY = {
   prise_de_masse: [
-    { d:1, label:"Push — Pecs / Épaules / Triceps", type:"push",     icon:"🏋️" },
-    { d:2, label:"Pull — Dos / Biceps",              type:"pull",     icon:"💪" },
-    { d:3, label:"Jambes + Fessiers",                type:"legs",     icon:"🦵" },
-    { d:4, label:"Repos actif / Mobilité",           type:"mobilite", icon:"🧘" },
-    { d:5, label:"Push — Épaules / Triceps focus",  type:"push",     icon:"🏋️" },
-    { d:6, label:"Pull — Dos accessoires",           type:"pull",     icon:"💪" },
-    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+    { d:1, label:"Push — Pecs / Épaules / Triceps",  type:"push",     icon:"🏋️" },
+    { d:2, label:"Pull — Dos / Biceps",               type:"pull",     icon:"💪" },
+    { d:3, label:"Jambes + Fessiers",                 type:"legs",     icon:"🦵" },
+    { d:4, label:"Repos actif / Mobilité",            type:"mobilite", icon:"🧘" },
+    { d:5, label:"Push — Épaules / Triceps focus",   type:"push",     icon:"🏋️" },
+    { d:6, label:"Pull — Dos / Biceps variante",      type:"pull",     icon:"💪" },
+    { d:7, label:"Repos complet",                     type:"rest",     icon:"😴" }
+  ],
+  hypertrophie: [
+    { d:1, label:"Pecs + Triceps — volume haut",      type:"push",     icon:"🏋️" },
+    { d:2, label:"Dos + Biceps — volume haut",        type:"pull",     icon:"💪" },
+    { d:3, label:"Jambes — quad / ischios",           type:"legs",     icon:"🦵" },
+    { d:4, label:"Épaules + Core",                    type:"push",     icon:"🔥" },
+    { d:5, label:"Dos + Bras — isolation",            type:"pull",     icon:"💪" },
+    { d:6, label:"Jambes — fessiers / mollets",       type:"legs",     icon:"🦵" },
+    { d:7, label:"Repos complet",                     type:"rest",     icon:"😴" }
   ],
   perte_de_poids: [
-    { d:1, label:"HIIT Full Body",                   type:"hiit",     icon:"⚡" },
-    { d:2, label:"Cardio LISS",                      type:"cardio",   icon:"🏃" },
-    { d:3, label:"Full Body Circuit",                type:"fullbody", icon:"🔥" },
-    { d:4, label:"Repos actif / Marche",             type:"mobilite", icon:"🧘" },
-    { d:5, label:"HIIT Tabata",                      type:"hiit",     icon:"⚡" },
-    { d:6, label:"Cardio + Core",                    type:"core",     icon:"🏊" },
-    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+    { d:1, label:"HIIT Full Body",                    type:"hiit",     icon:"⚡" },
+    { d:2, label:"Cardio zone 2 (LISS)",              type:"cardio",   icon:"🏃" },
+    { d:3, label:"Circuit Full Body",                 type:"fullbody", icon:"🔥" },
+    { d:4, label:"Repos actif / Marche",              type:"mobilite", icon:"🧘" },
+    { d:5, label:"HIIT Tabata",                       type:"hiit",     icon:"⚡" },
+    { d:6, label:"Cardio + Core",                     type:"core",     icon:"🏊" },
+    { d:7, label:"Repos complet",                     type:"rest",     icon:"😴" }
+  ],
+  seche: [
+    { d:1, label:"Push musculation — charges maintenues",type:"push",   icon:"🏋️" },
+    { d:2, label:"Cardio modéré",                     type:"cardio",   icon:"🏃" },
+    { d:3, label:"Pull + Dos — qualité",              type:"pull",     icon:"💪" },
+    { d:4, label:"Cardio HIIT court",                 type:"hiit",     icon:"⚡" },
+    { d:5, label:"Jambes — stimulation neuromusculaire",type:"legs",   icon:"🦵" },
+    { d:6, label:"Core + Cardio léger",               type:"core",     icon:"🔥" },
+    { d:7, label:"Repos complet",                     type:"rest",     icon:"😴" }
   ],
   remise_en_forme: [
-    { d:1, label:"Full Body A",                      type:"fullbody", icon:"🏋️" },
-    { d:2, label:"Cardio modéré",                    type:"cardio",   icon:"🏃" },
-    { d:3, label:"Full Body B",                      type:"fullbody", icon:"🏋️" },
-    { d:4, label:"Repos",                            type:"rest",     icon:"😴" },
-    { d:5, label:"Full Body A (variante)",           type:"fullbody", icon:"🏋️" },
-    { d:6, label:"Mobilité + Étirements",            type:"mobilite", icon:"🧘" },
-    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+    { d:1, label:"Full Body A",                       type:"fullbody", icon:"🏋️" },
+    { d:2, label:"Cardio modéré",                     type:"cardio",   icon:"🏃" },
+    { d:3, label:"Full Body B",                       type:"fullbody", icon:"🏋️" },
+    { d:4, label:"Repos",                             type:"rest",     icon:"😴" },
+    { d:5, label:"Full Body A (variante)",            type:"fullbody", icon:"🏋️" },
+    { d:6, label:"Mobilité + Étirements",             type:"mobilite", icon:"🧘" },
+    { d:7, label:"Repos complet",                     type:"rest",     icon:"😴" }
   ],
   force: [
-    { d:1, label:"Squat + Accessoires jambes",       type:"legs",     icon:"🏋️" },
-    { d:2, label:"Repos",                            type:"rest",     icon:"😴" },
-    { d:3, label:"Développé couché + Push",         type:"push",     icon:"💪" },
-    { d:4, label:"Repos",                            type:"rest",     icon:"😴" },
-    { d:5, label:"Soulevé de terre + Pull",          type:"pull",     icon:"🏋️" },
-    { d:6, label:"Accessoires + Core",               type:"core",     icon:"🔥" },
-    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+    { d:1, label:"Squat + Accessoires jambes",        type:"legs",     icon:"🏋️" },
+    { d:2, label:"Repos",                             type:"rest",     icon:"😴" },
+    { d:3, label:"Développé couché + Push",          type:"push",     icon:"💪" },
+    { d:4, label:"Repos",                             type:"rest",     icon:"😴" },
+    { d:5, label:"Soulevé de terre + Pull",           type:"pull",     icon:"🏋️" },
+    { d:6, label:"Accessoires + Core",                type:"core",     icon:"🔥" },
+    { d:7, label:"Repos complet",                     type:"rest",     icon:"😴" }
   ],
   endurance: [
-    { d:1, label:"Course — endurance",               type:"cardio",   icon:"🏃" },
-    { d:2, label:"Full Body léger",                  type:"fullbody", icon:"💪" },
-    { d:3, label:"Intervalles HIIT",                 type:"hiit",     icon:"⚡" },
-    { d:4, label:"Repos actif",                      type:"mobilite", icon:"🧘" },
-    { d:5, label:"Course longue",                    type:"cardio",   icon:"🏃" },
-    { d:6, label:"Force fonctionnelle",              type:"fullbody", icon:"🏋️" },
-    { d:7, label:"Repos complet",                    type:"rest",     icon:"😴" }
+    { d:1, label:"Course — endurance de base",        type:"cardio",   icon:"🏃" },
+    { d:2, label:"Full Body fonctionnel",             type:"fullbody", icon:"💪" },
+    { d:3, label:"Intervalles HIIT",                  type:"hiit",     icon:"⚡" },
+    { d:4, label:"Repos actif / Mobilité",            type:"mobilite", icon:"🧘" },
+    { d:5, label:"Course longue zone 2",              type:"cardio",   icon:"🏃" },
+    { d:6, label:"Force fonctionnelle + Core",        type:"fullbody", icon:"🏋️" },
+    { d:7, label:"Repos complet",                     type:"rest",     icon:"😴" }
   ]
 };
 
@@ -8794,6 +9300,63 @@ function _progGetWeekly(goal) {
   return PROG_WEEKLY[String(goal || "").toLowerCase()] || PROG_WEEKLY.remise_en_forme;
 }
 
+const PROG_STORAGE_KEY = "fitai_prog_v5_flexible";
+const PROG_WEEK_KEY = "fitai_prog_week_v5";
+const PROG_LEGACY_STORAGE_KEYS = ["fitai_prog_v4_1w", "fitai_prog_v3_8w", "fitai_prog_v2", "fitai_prog_v1"];
+const PROG_LEGACY_WEEK_KEYS = ["fitai_prog_week_1w", "fitai_prog_week_8w", "fitai_prog_week"];
+
+function _normalizeProgData(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    goal: raw.goal || raw.type || "remise_en_forme",
+    level: raw.level || "beginner",
+    equipment: raw.equipment || raw.text || "",
+    name: raw.name || raw.display_name || "",
+    generatedAt: Number(raw.generatedAt) || Date.now(),
+    weeks: _sanitizeProgDuration(raw.weeks || raw.durationWeeks || raw.cycle_length_weeks || _progDuration || 8),
+    version: raw.version || "flex-v1"
+  };
+}
+
+function _loadStoredProg() {
+  try {
+    const current = localStorage.getItem(PROG_STORAGE_KEY);
+    if (current) {
+      const parsed = _normalizeProgData(JSON.parse(current));
+      if (parsed) return parsed;
+    }
+  } catch {}
+  for (const key of PROG_LEGACY_STORAGE_KEYS) {
+    try {
+      const legacy = localStorage.getItem(key);
+      if (!legacy) continue;
+      const parsed = _normalizeProgData(JSON.parse(legacy));
+      if (!parsed) continue;
+      localStorage.setItem(PROG_STORAGE_KEY, JSON.stringify(parsed));
+      return parsed;
+    } catch {}
+  }
+  return null;
+}
+
+function _loadStoredProgWeek() {
+  try {
+    const raw = parseInt(localStorage.getItem(PROG_WEEK_KEY), 10);
+    if (Number.isFinite(raw)) return Math.min(_getProgTotalWeeks(), Math.max(1, raw));
+  } catch {}
+  for (const key of PROG_LEGACY_WEEK_KEYS) {
+    try {
+      const raw = parseInt(localStorage.getItem(key), 10);
+      if (Number.isFinite(raw)) {
+        const clamped = Math.min(_getProgTotalWeeks(), Math.max(1, raw));
+        localStorage.setItem(PROG_WEEK_KEY, String(clamped));
+        return clamped;
+      }
+    } catch {}
+  }
+  return 1;
+}
+
 // Build / reload program from profile (offline)
 function buildOfflineProgram() {
   let goal = "remise_en_forme", level = "beginner", equipment = "", name = "";
@@ -8803,46 +9366,160 @@ function buildOfflineProgram() {
     const pp = localStorage.getItem("fitai_profile");
     if (pp) { const o = JSON.parse(pp); name = o.display_name || ""; }
   } catch {}
-  return { goal, level, equipment, name, generatedAt: Date.now() };
+  return { goal, level, equipment, name, generatedAt: Date.now(), weeks: _sanitizeProgDuration(_progDuration), version: "flex-v1" };
 }
 
+let _progDuration = 8;
 let _progWeek = 1;
 let _prog = null;
 
+function _getProgTotalWeeks() { return _getProgPhases().length; }
+function _syncProgDurationUI() {
+  const title=document.getElementById("prog-title-main");
+  const titleCard=document.getElementById("prog-title-card");
+  const cycleLabel=document.getElementById("prog-cycle-range-label");
+  const weekTotal=document.getElementById("prog-week-total");
+  if (title) title.textContent = `Programme ${_progDuration} ${_progDuration > 1 ? 'semaines' : 'semaine'}`;
+  if (titleCard) titleCard.textContent = `🗓️ Programme ${_progDuration} ${_progDuration > 1 ? 'semaines' : 'semaine'}`;
+  if (cycleLabel) cycleLabel.textContent = `${_progDuration} ${_progDuration > 1 ? 'semaines' : 'semaine'}`;
+  if (weekTotal) weekTotal.textContent = _progDuration;
+  document.querySelectorAll('[data-prog-duration]').forEach((btn) => {
+    const val = parseInt(btn.getAttribute('data-prog-duration') || '', 10);
+    btn.classList.toggle('active', val === _progDuration);
+  });
+}
 function loadProgramme() {
-  try { const c = localStorage.getItem("fitai_prog_v2"); if (c) _prog = JSON.parse(c); } catch {}
+  _progDuration = _loadProgDuration();
+  _prog = _loadStoredProg();
   if (!_prog) { _prog = buildOfflineProgram(); _saveProg(); }
-  try { _progWeek = Math.min(8, Math.max(1, parseInt(localStorage.getItem("fitai_prog_week")) || 1)); } catch {}
+  _prog.weeks = _progDuration;
+  _progWeek = Math.min(_getProgTotalWeeks(), _loadStoredProgWeek());
+  _syncProgDurationUI();
   renderProgramme(_progWeek);
   syncProgWater();
 }
-
 function _saveProg() {
-  try { localStorage.setItem("fitai_prog_v2", JSON.stringify(_prog)); localStorage.setItem("fitai_prog_week", String(_progWeek)); } catch {}
+  try {
+    _prog = _normalizeProgData({ ...(_prog || {}), weeks: _sanitizeProgDuration(_progDuration) }) || buildOfflineProgram();
+    _prog.weeks = _progDuration;
+    localStorage.setItem(PROG_STORAGE_KEY, JSON.stringify(_prog));
+    localStorage.setItem(PROG_WEEK_KEY, String(Math.min(_getProgTotalWeeks(), Math.max(1, _progWeek))));
+    localStorage.setItem(PROG_DURATION_KEY, String(_progDuration));
+  } catch {}
+}
+function progPrevWeek() { if (_progWeek > 1) { _progWeek--; _saveProg(); renderProgramme(_progWeek); } }
+function progNextWeek() { if (_progWeek < _getProgTotalWeeks()) { _progWeek++; _saveProg(); renderProgramme(_progWeek); } }
+function progSetWeek(w)  { _progWeek = Math.min(_getProgTotalWeeks(), Math.max(1, parseInt(w, 10) || 1)); _saveProg(); renderProgramme(_progWeek); }
+function progSetDuration(weeks) {
+  const next = _sanitizeProgDuration(weeks);
+  if (next === _progDuration) return;
+  _progDuration = next;
+  _progWeek = 1;
+  _prog = { ...(_prog || buildOfflineProgram()), weeks: next, generatedAt: Date.now(), version: `flex-${next}w-v1` };
+  _saveProg();
+  _syncProgDurationUI();
+  renderProgramme(1);
+  toast(`Programme ${next} ${next > 1 ? 'semaines' : 'semaine'} sélectionné ✓`, 'ok');
+}
+function progRegenerate() { _prog = buildOfflineProgram(); _prog.weeks = _progDuration; _progWeek = 1; _saveProg(); renderProgramme(1); toast("Programme régénéré ✓", "ok"); }
+
+function _progGoalLabel(goal) {
+  return ({ prise_de_masse:"Prise de masse", hypertrophie:"Hypertrophie", perte_de_poids:"Perte de poids", seche:"Sèche", remise_en_forme:"Remise en forme", force:"Force", endurance:"Endurance", maintien:"Maintien" })[String(goal || "").toLowerCase()] || "Remise en forme";
 }
 
-function progPrevWeek() { if (_progWeek > 1) { _progWeek--; _saveProg(); renderProgramme(_progWeek); } }
-function progNextWeek() { if (_progWeek < 8) { _progWeek++; _saveProg(); renderProgramme(_progWeek); } }
-function progSetWeek(w)  { _progWeek = w; _saveProg(); renderProgramme(w); }
-function progRegenerate() { _prog = buildOfflineProgram(); _progWeek = 1; _saveProg(); renderProgramme(1); toast("Programme régénéré ✓", "ok"); }
+function _progEquipmentLabel(equipment) {
+  const eq = String(equipment || "").trim();
+  return eq ? eq : "Poids du corps";
+}
+
+function _progDailyObjective(type, weekNum, goal) {
+  const phase = _getProgPhaseBundle(weekNum);
+  const phaseName = phase?.name || ‘’;
+  const t = String(type || "").toLowerCase();
+  const g = String(goal || "").toLowerCase();
+  if (t === ‘rest’) return ‘Ralentis volontairement pour absorber la charge de travail et arriver frais sur la prochaine séance.’;
+  if (t === ‘mobilite’) return ‘Déverrouille les hanches, le haut du dos et la respiration. Recherche de la fluidité, pas de fatigue.’;
+  if (t === ‘cardio’) {
+    if (g === ‘perte_de_poids’ || g === ‘seche’) return ‘Monte la dépense énergétique en zone 2. Effort régulier, respiration nasale, pas d’épuisement.’;
+    return ‘Travaille l\’endurance de base et la récupération cardio-vasculaire active.’;
+  }
+  if (t === ‘hiit’) {
+    if (g === ‘seche’) return ‘Effort court et intense pour stimuler le métabolisme sans perdre de muscle. Qualité d\’exécution avant tout.’;
+    return ‘Qualité d\’effort maximale sur peu de temps. Reste explosif et propre sur chaque répétition.’;
+  }
+  if (t === ‘core’) return ‘Verrouille le tronc et la respiration pour transférer plus de force sur tous les autres mouvements.’;
+  if (t === ‘push’) {
+    if (g === ‘hypertrophie’) return ‘Volume élevé avec contrôle de l\’excentrique (3s descente). Fatigue musculaire profonde, pas de cheating.’;
+    if (phaseName.includes(‘Force’) || phaseName.includes(‘Intensif’)) return ‘Priorité au mouvement principal lourd, puis accessoires propres et stables.’;
+    return ‘Accumule du volume sur les poussées avec amplitude complète et contrôle.’;
+  }
+  if (t === ‘pull’) {
+    if (g === ‘hypertrophie’) return ‘Tire avec les coudes, marque 1s en position contractée. Cherche la brûlure musculaire, pas la vitesse.’;
+    if (phaseName.includes(‘Force’) || phaseName.includes(‘Intensif’)) return ‘Tire lourd sans perdre le gainage. Chaque rep doit finir proprement.’;
+    return ‘Travaille le dos avec une excentrique lente et des omoplates actives.’;
+  }
+  if (t === ‘legs’) {
+    if (g === ‘seche’) return ‘Charge maintenue pour préserver la masse musculaire. Volume légèrement réduit, technique irréprochable.’;
+    if (phaseName.includes(‘Puissance’)) return ‘Pousse vite, garde la posture et un appui solide sur chaque rep.’;
+    return ‘Construis des jambes fortes avec amplitude complète, stabilité et contrôle.’;
+  }
+  return ‘Séance structurée, propre et progressive. Garde 1 à 2 reps en réserve sur les premières séries.’;
+}
+
+function _progExerciseCoachHint(ex, weekNum, itemType, isPrimary) {
+  if (!ex) return '';
+  const t = String(itemType || '').toLowerCase();
+  const m = String(ex.m || '').toLowerCase();
+  if (isPrimary) {
+    if (t === 'legs') return 'Cherche une amplitude complète et un tronc verrouillé.';
+    if (t === 'push') return 'Scapulas stables, contrôle la descente puis pousse franchement.';
+    if (t === 'pull') return 'Poitrine sortie, tire avec les coudes et garde le cou relâché.';
+    if (t === 'core') return 'Respiration basse et bassin neutre sur toute la série.';
+  }
+  if (/fess|ischio|quad|mollet/.test(m)) return 'Contrôle la descente et évite de rebondir.';
+  if (/pec|epaul|delto/.test(m)) return 'Amplitude propre, pas d’élan inutile.';
+  if (/dos|biceps/.test(m)) return 'Marque une demi-seconde en fin de tirage.';
+  if (/abdo|core|gainage/.test(m)) return 'Expire sur l’effort et garde les côtes abaissées.';
+  return weekNum >= 5 ? 'Repose-toi vraiment entre les séries lourdes.' : 'Cherche surtout la qualité de mouvement.';
+}
+
+function _progSessionFinisher(type, weekNum) {
+  const t = String(type || '').toLowerCase();
+  if (t === 'rest') return '';
+  if (t === 'mobilite') return 'Fin de séance : 3 minutes de respiration lente pour redescendre.';
+  if (t === 'cardio') return 'Fin de séance : 5 minutes retour au calme + hydratation.';
+  if (t === 'hiit') return 'Fin de séance : 4 minutes de marche et respiration profonde avant de repartir.';
+  if (t === 'core') return 'Fin de séance : 1 série bonus de gainage léger si la technique reste propre.';
+  return weekNum >= 5 ? 'Fin de séance : note ta charge du mouvement principal pour battre ta référence la semaine prochaine.' : 'Fin de séance : 5 minutes de mobilité ciblée sur la zone travaillée.';
+}
+
+function _progDisplayExerciseCount(type, weekNum) {
+  const base = (_getProgPhaseBundle(weekNum).exCount) || 5;
+  const t = String(type || '').toLowerCase();
+  if (t === 'mobilite') return Math.min(5, base);
+  if (t === 'cardio' || t === 'hiit') return Math.min(6, base);
+  if (t === 'core') return Math.min(5, base);
+  return base;
+}
 
 function renderProgramme(weekNum) {
   if (!_prog) { _prog = buildOfflineProgram(); _saveProg(); }
-  const phase = PROG_PHASES[weekNum - 1];
-  const params = PROG_PHASE_PARAMS[weekNum - 1];
+  const phaseBundle = _getProgPhaseBundle(weekNum);
+  const phase = { ...phaseBundle, w: weekNum };
+  const params = phaseBundle.params || { sets:4, reps:"8-12", rest:90 };
 
   // Subtitle
   const sub = document.getElementById("prog-subtitle");
-  if (sub) sub.textContent = (_prog.name ? _prog.name + " · " : "") + phase.name + " · RPE " + phase.rpe;
+  if (sub) sub.textContent = (_prog.name ? _prog.name + " · " : "") + _progGoalLabel(_prog.goal) + ` · cycle ${_progDuration} ${_progDuration > 1 ? "semaines" : "semaine"} · ${phase.name} · RPE ` + phase.rpe;
 
   // Phase timeline
   const strip = document.getElementById("prog-phases-strip");
   if (strip) {
-    strip.innerHTML = PROG_PHASES.map(p => {
-      const active = p.w === weekNum;
-      const past = p.w < weekNum;
+    strip.innerHTML = _getProgPhases().map((p, idx) => { const pWeek = idx + 1;
+      const active = pWeek === weekNum;
+      const past = pWeek < weekNum;
       return `<div class="prog-tl-seg${active ? " active" : ""}${past ? " past" : ""}"
-        style="--pc:${p.color}" onclick="progSetWeek(${p.w})" title="${p.name} — Semaine ${p.w}">
+        style="--pc:${p.color}" onclick="progSetWeek(${pWeek})" title="${p.name} — Semaine ${pWeek}">
         <div class="prog-tl-bar"></div>
         <span class="prog-tl-lbl">${p.short}</span>
       </div>`;
@@ -8852,8 +9529,8 @@ function renderProgramme(weekNum) {
   // Cycle progress bar
   const bar = document.getElementById("prog-cycle-bar");
   const lbl = document.getElementById("prog-cycle-label");
-  if (bar) bar.style.width = ((weekNum / 8) * 100) + "%";
-  if (lbl) lbl.textContent = "Semaine " + weekNum + " / 8 — " + phase.name;
+  if (bar) bar.style.width = ((weekNum / _getProgTotalWeeks()) * 100) + "%";
+  if (lbl) lbl.textContent = `Semaine ${weekNum} / ${_getProgTotalWeeks()} — ${phase.name}`;
 
   // Today hero card
   const heroEl = document.getElementById("prog-today-hero");
@@ -8883,7 +9560,7 @@ function renderProgramme(weekNum) {
             <div style="flex:1">
               <div class="prog-today-hero-kicker">Séance du jour · ${phase.name}</div>
               <div class="prog-today-hero-title">${todayItem.label}</div>
-              <div class="prog-today-hero-meta">${exList.length} exercices · RPE ${phase.rpe} · ${params.sets}×${params.reps}</div>
+              <div class="prog-today-hero-meta">${exList.length} exercices · RPE ${phase.rpe} · ${params.sets}×${params.reps} · ${_progGoalLabel(_prog.goal)}</div><div style="margin-top:6px;font-size:.72rem;color:rgba(255,255,255,.78)">${_progDailyObjective(todayItem.type, weekNum, _prog.goal)}</div>
             </div>
             ${allDone ? '<span class="prog-today-done-badge">✓ Terminée</span>' : ''}
           </div>
@@ -8904,7 +9581,7 @@ function renderProgramme(weekNum) {
             <div>
               <div class="prog-today-hero-kicker">Aujourd'hui</div>
               <div class="prog-today-hero-title">Repos complet</div>
-              <div class="prog-today-hero-meta">Récupération musculaire · Hydratation · Étirements légers</div>
+              <div class="prog-today-hero-meta">Récupération musculaire · Hydratation · Étirements légers</div><div style="margin-top:6px;font-size:.72rem;color:rgba(255,255,255,.78)">${_progDailyObjective("rest", weekNum, _prog.goal)}</div>
             </div>
           </div>
         </div>`;
@@ -8927,11 +9604,18 @@ function renderProgramme(weekNum) {
   // Coach note for the week
   const noteEl = document.getElementById("prog-coach-note");
   if (noteEl) {
-    const note = PROG_WEEK_NOTES[weekNum - 1];
+    const note = phaseBundle.note || { theme: phase.name, focus: phase.desc, cue: _progProgressionHint(weekNum) };
+    const latestMeta = _loadLatestPlanMeta();
+    const summary = latestMeta && latestMeta.week_number === weekNum ? latestMeta.week_summary : null;
+    const extra = summary ? `
+      <div class="prog-cn-focus"><strong>Priorité de la semaine :</strong> ${escapeHtml(summary.objective || latestMeta.coach_priority || '')}</div>
+      <div class="prog-cn-focus"><strong>Progression :</strong> ${escapeHtml(latestMeta.progression_rule || summary.progression || '')}</div>
+      <div class="prog-cn-focus"><strong>Récupération :</strong> ${escapeHtml(latestMeta.recovery_target || summary.recovery || '')}</div>
+      <div class="prog-cn-cue">${escapeHtml(latestMeta.pain_rule || summary.pain_rule || note.cue)}</div>` : `
+      <div class="prog-cn-focus">${escapeHtml(note.focus)}</div>
+      <div class="prog-cn-cue">"${escapeHtml(note.cue)}"</div>`;
     noteEl.innerHTML = `
-      <div class="prog-cn-theme">🎯 ${note.theme}</div>
-      <div class="prog-cn-focus">${note.focus}</div>
-      <div class="prog-cn-cue">"${note.cue}"</div>`;
+      <div class="prog-cn-theme">🎯 ${escapeHtml(note.theme)}</div>${extra}`;
   }
 
   // Phase stats strip
@@ -8943,8 +9627,9 @@ function renderProgramme(weekNum) {
       <div class="prog-stat-pill" style="border-color:${phase.color}22;color:${phase.color}"><span>RPE</span><strong>${phase.rpe}</strong></div>
       <div class="prog-stat-pill"><span>Sets × Reps</span><strong>${params.sets}×${params.reps}</strong></div>
       <div class="prog-stat-pill"><span>Repos</span><strong>${restStr}</strong></div>
-      <div class="prog-stat-pill"><span>Tempo</span><strong>${PROG_PHASE_TEMPO[weekNum - 1]}</strong></div>
+      <div class="prog-stat-pill"><span>Tempo</span><strong>${phaseBundle.tempo || "2-1-1"}</strong></div>
       <div class="prog-stat-pill"><span>Progression</span><strong>${_progProgressionHint(weekNum)}</strong></div>
+      <div class="prog-stat-pill"><span>Matériel</span><strong>${_progEquipmentLabel(_prog.equipment)}</strong></div>
     `;
   }
 
@@ -8960,8 +9645,9 @@ function _renderProgChart(currentWeek) {
   const toX = i => pL + (i / 7) * cW;
   const toY = v => pT + cH - (v / 100) * cH;
 
-  const vols = PROG_PHASES.map(p => p.volume);
-  const ints = PROG_PHASES.map(p => p.intensity);
+  const progPhases = _getProgPhases();
+  const vols = progPhases.map(p => p.volume);
+  const ints = progPhases.map(p => p.intensity);
 
   function line(vals, color, id) {
     const pts = vals.map((v, i) => toX(i).toFixed(1) + "," + toY(v).toFixed(1)).join(" ");
@@ -8984,10 +9670,11 @@ function _renderProgChart(currentWeek) {
 
   // Current week marker
   const cx = toX(currentWeek - 1).toFixed(1);
-  const marker = `<line x1="${cx}" y1="${pT}" x2="${cx}" y2="${pT + cH}" stroke="${PROG_PHASES[currentWeek - 1].color}" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.6"/>`;
+  const markerColor = (progPhases[currentWeek - 1] || progPhases[0] || { color: "#6366f1" }).color;
+  const marker = `<line x1="${cx}" y1="${pT}" x2="${cx}" y2="${pT + cH}" stroke="${markerColor}" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.6"/>`;
 
   // X labels
-  const xlabels = PROG_PHASES.map((p, i) =>
+  const xlabels = progPhases.map((p, i) =>
     `<text x="${toX(i).toFixed(1)}" y="${H - 3}" text-anchor="middle" fill="rgba(255,255,255,.35)" font-size="7">${p.short}</text>`
   ).join("");
 
@@ -9018,8 +9705,10 @@ function _renderProgDays(weekNum, params) {
     const allEx = PROG_EXERCISES[exType] || [];
     // Prefer pool-matched exercises, fall back to non-pool items (fullbody, hiit, etc.)
     const pooled = allEx.filter(e => !e.pool || e.pool === pool);
-    const exCount = isRest ? 0 : (PROG_PHASE_EX_COUNT[weekNum - 1] || 5);
-    const exList  = (pooled.length >= 4 ? pooled : allEx).slice(0, exCount);
+    const exCount = isRest ? 0 : _progDisplayExerciseCount(item.type, weekNum);
+    const displayPool = (pooled.length >= 4 ? pooled : allEx);
+    const displaySeed = ((weekNum || 1) * 1000) + (dayIdx + 1) * 37;
+    const exList  = _seededShuffle(displayPool, displaySeed).slice(0, exCount);
 
     let exHtml = "";
     const muscleColors = {
@@ -9030,17 +9719,19 @@ function _renderProgDays(weekNum, params) {
       Gainage: "#4ade80", Lombaires: "#a78bfa", Fullbody: "#e879f9", HIIT: "#f472b6",
     };
     const doneCount = isRest ? 0 : exList.filter((_, ei) => doneSets[`${dayIdx}_${ei}`]).length;
-    const tempo = PROG_PHASE_TEMPO[weekNum - 1] || "";
+    const tempo = _getProgPhaseBundle(weekNum).tempo || "";
     const progHint = _progProgressionHint(weekNum);
     if (isRest) {
-      exHtml = `<div class="prog-rest-msg">😴 Repos complet — récupération musculaire et mentale. Hydratation, sommeil, étirements légers.</div>`;
+      exHtml = `<div class="prog-rest-msg">😴 Repos complet — récupération musculaire et mentale. Hydratation, sommeil, étirements légers.</div>
+        <div style="margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(15,23,42,.42);font-size:.78rem;color:var(--text-muted)">${_progDailyObjective('rest', weekNum, _prog.goal)}</div>`;
     } else {
       const needSets = !["hiit","cardio","mobilite","core"].includes(item.type);
+      const objectiveHtml = `<div style="margin-bottom:10px;padding:10px 12px;border-radius:14px;background:rgba(37,99,235,.12);border:1px solid rgba(96,165,250,.18);font-size:.78rem;line-height:1.45;color:#dbeafe"><strong style="color:#93c5fd">Objectif du jour</strong><br>${_progDailyObjective(item.type, weekNum, _prog.goal)}</div>`;
       // Warm-up reminder for force/power phases
       const warmupHtml = weekNum >= 5 && needSets
         ? `<div class="prog-warmup-note">🔥 Échauffement obligatoire : 2 séries légères avant le composé principal (50% puis 75% charge)</div>`
         : '';
-      exHtml = warmupHtml + exList.map((ex, exIdx) => {
+      exHtml = objectiveHtml + warmupHtml + exList.map((ex, exIdx) => {
         const detail = ex.r ? ex.r : (needSets ? params.sets + "×" + params.reps + " · " + (params.rest >= 60 ? Math.floor(params.rest/60) + "min" : params.rest + "s") + " repos" : params.reps);
         const isDone = doneSets[`${dayIdx}_${exIdx}`];
         const mColor = muscleColors[ex.m] || "var(--muted)";
@@ -9058,9 +9749,10 @@ function _renderProgDays(weekNum, params) {
               <span class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33">${ex.m}</span>
             </div>
             ${isPrimary ? `<div class="prog-ex-hint">${progHint}</div>` : ''}
+            <div style="margin-top:6px;font-size:.72rem;color:var(--text-muted);line-height:1.35">${_progExerciseCoachHint(ex, weekNum, item.type, isPrimary)}</div>
           </div>
         </div>`;
-      }).join("");
+      }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
     }
 
     // Build JS array for timer
@@ -9108,7 +9800,7 @@ function progToggleExDone(event, dayIdx, exIdx) {
   doneSets[k] = !doneSets[k];
   localStorage.setItem(doneKey, JSON.stringify(doneSets));
   // Re-render just the days
-  const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1];
+  const params = (_getProgPhaseBundle(_progWeek || 1).params) || { sets:4, reps:"8-12", rest:90 };
   _renderProgDays(_progWeek || 1, params);
 }
 
@@ -9140,7 +9832,7 @@ function progStartWorkout(dayIdx) {
   const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const seed = parseInt(todayStr, 10) + dayIdx * 31 + (_progWeek || 1) * 97;
   const shuffled = _seededShuffle(base, seed);
-  const exCount = PROG_PHASE_EX_COUNT[(_progWeek || 1) - 1] || 5;
+  const exCount = _progDisplayExerciseCount(item.type, _progWeek || 1);
   const exList = shuffled.slice(0, exCount);
   if (!exList || exList.length === 0) {
     return toast("Aucun exercice disponible pour cette séance.", "err");
@@ -9160,6 +9852,7 @@ window.loadProgramme    = loadProgramme;
 window.progPrevWeek     = progPrevWeek;
 window.progNextWeek     = progNextWeek;
 window.progSetWeek      = progSetWeek;
+window.progSetDuration  = progSetDuration;
 window.progRegenerate   = progRegenerate;
 window.progToggleDay    = progToggleDay;
 window.progToggleExDone = progToggleExDone;
