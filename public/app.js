@@ -693,8 +693,8 @@ function gotoTab(name) {
   if (name === "goal") loadGoal();
   if (name === "coach") { loadCoachHistory(); loadHistory(); }
   if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); loadCommunityRecipes(); loadNutritionPlanFromStorage(); }
-  if (name === "community") { loadFeed(); _startFeedRefresh(); }
-  if (name === "friends") { loadFriends(); loadFriendRequests(); loadLeaderboard(); loadFriendSuggestions(); renderFriendsOverview(); }
+  if (name === "community") { loadFeed(); _startFeedRefresh(); loadFriends(); loadFriendRequests(); loadLeaderboard(); loadFriendSuggestions(); renderFriendsOverview(); }
+  if (name === "sommeil") { loadSommeil(); }
   if (name === "bodyscan") loadScans();
   if (name === "progress") loadProgress();
   if (name === "defis") loadDefis();
@@ -713,7 +713,7 @@ function gotoTab(name) {
 
 
 function ensureCriticalUI() {
-  ["community", "friends", "profile"].forEach((tab) => {
+  ["community", "sommeil", "profile"].forEach((tab) => {
     const nav = document.getElementById(`n-${tab}`);
     const pane = document.getElementById(`t-${tab}`);
     if (nav) nav.style.display = "";
@@ -2899,6 +2899,182 @@ async function resolveFeedImageUrls(posts) {
 
   return out;
 }
+
+// ── Friends section toggle (inside community tab) ──
+function toggleFriendsSection() {
+  const body = document.getElementById("friends-section-body");
+  const icon = document.getElementById("friends-toggle-icon");
+  if (!body) return;
+  const open = body.style.display === "none" || body.style.display === "";
+  body.style.display = open ? "block" : "none";
+  if (icon) icon.style.transform = open ? "rotate(180deg)" : "";
+  if (open) { loadFriends(); loadFriendRequests(); loadLeaderboard(); loadFriendSuggestions(); renderFriendsOverview(); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SOMMEIL — Sleep tracking
+// ══════════════════════════════════════════════════════════════════════════════
+const SLEEP_STORAGE_KEY = "fitai_sleep_log_v1";
+const _SLEEP_QUALITY_LABELS = ["", "😖 Très mauvais", "😤 Mauvais", "😐 Moyen", "🙂 Bon", "😊 Excellent"];
+const _SLEEP_QUALITY_COLORS = ["", "#ef4444", "#f59e0b", "#6366f1", "#22d3ee", "#22c55e"];
+
+function _getSleepLog() {
+  try { return JSON.parse(localStorage.getItem(SLEEP_STORAGE_KEY) || "[]"); } catch { return []; }
+}
+function _saveSleepLog(log) {
+  try { localStorage.setItem(SLEEP_STORAGE_KEY, JSON.stringify((log || []).slice(-60))); } catch {}
+}
+
+function setSleepQuality(val) {
+  const el = document.getElementById("sleep-quality-val");
+  if (!el) return;
+  el.dataset.val = String(val);
+  el.textContent = _SLEEP_QUALITY_LABELS[val] || "";
+  el.style.color = _SLEEP_QUALITY_COLORS[val] || "#6366f1";
+  document.querySelectorAll(".sleep-q-btn").forEach((b, i) => b.classList.toggle("active", i + 1 === val));
+}
+
+function logSleep() {
+  const raw = document.getElementById("sleep-hours-input")?.value;
+  const hours = parseFloat(raw);
+  if (!raw || isNaN(hours) || hours < 1 || hours > 16) { toast("Entre une durée entre 1 et 16h", "err"); return; }
+  const quality = parseInt(document.getElementById("sleep-quality-val")?.dataset.val || "3", 10);
+  const note = (document.getElementById("sleep-note-input")?.value || "").trim().slice(0, 120);
+  const today = new Date().toISOString().slice(0, 10);
+  const log = _getSleepLog().filter(e => e.date !== today);
+  log.push({ date: today, hours, quality, note });
+  _saveSleepLog(log);
+  if (document.getElementById("sleep-note-input")) document.getElementById("sleep-note-input").value = "";
+  toast("Nuit enregistrée ✓", "ok");
+  renderSleepChart();
+  _renderSleepScore();
+  _renderSleepHistory();
+}
+
+function deleteSleepEntry(date) {
+  _saveSleepLog(_getSleepLog().filter(e => e.date !== date));
+  renderSleepChart();
+  _renderSleepScore();
+  _renderSleepHistory();
+  toast("Entrée supprimée", "ok");
+}
+
+function renderSleepChart() {
+  const el = document.getElementById("sleep-chart-wrap");
+  if (!el) return;
+  const log = _getSleepLog();
+  const days = [];
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const entry = log.find(e => e.date === dateStr);
+    days.push({ date: dateStr, label: ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"][d.getDay()], hours: entry?.hours || 0, quality: entry?.quality || 0 });
+  }
+  if (!days.some(d => d.hours > 0)) {
+    el.innerHTML = '<div class="empty">Aucune donnée — commence à enregistrer ton sommeil</div>';
+    return;
+  }
+  const maxH = 10, svgH = 100, svgW = 300;
+  const barW = 28, gap = 14;
+  const totalW = days.length * (barW + gap) - gap;
+  const startX = (svgW - totalW) / 2;
+  const todayStr = today.toISOString().slice(0, 10);
+  const refY = svgH - (8 / maxH) * svgH * 0.88;
+  const bars = days.map((d, i) => {
+    const x = startX + i * (barW + gap);
+    const h = d.hours ? Math.max(4, (d.hours / maxH) * svgH * 0.88) : 0;
+    const y = svgH - h;
+    const col = d.quality >= 4 ? "#22d3ee" : d.quality >= 3 ? "#6366f1" : d.quality >= 2 ? "#f59e0b" : d.hours ? "#ef4444" : "rgba(255,255,255,.1)";
+    const empty = d.hours === 0;
+    return `
+      <rect x="${x}" y="${empty ? svgH - 3 : y}" width="${barW}" height="${empty ? 3 : h}" rx="6" fill="${col}" opacity="${empty ? .3 : .84}"/>
+      ${d.date === todayStr && d.hours ? `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>` : ""}
+      <text x="${x + barW / 2}" y="${svgH + 15}" text-anchor="middle" font-size="9" fill="rgba(255,255,255,.5)" font-family="system-ui,sans-serif">${d.label}</text>
+      ${d.hours ? `<text x="${x + barW / 2}" y="${y - 4}" text-anchor="middle" font-size="8" fill="rgba(255,255,255,.7)" font-family="system-ui,sans-serif">${d.hours}h</text>` : ""}
+    `;
+  }).join("");
+  el.innerHTML = `<svg viewBox="0 0 ${svgW} ${svgH + 22}" width="100%" style="overflow:visible;display:block">
+    <line x1="${startX - 4}" y1="${refY}" x2="${startX + totalW + 4}" y2="${refY}" stroke="rgba(34,211,238,.35)" stroke-width="1" stroke-dasharray="4 3"/>
+    <text x="${startX - 6}" y="${refY - 4}" text-anchor="end" font-size="7.5" fill="rgba(34,211,238,.6)" font-family="system-ui,sans-serif">8h</text>
+    ${bars}
+  </svg>`;
+}
+
+function _renderSleepScore() {
+  const scoreEl = document.getElementById("sleep-score-val");
+  const debtEl  = document.getElementById("sleep-debt-val");
+  const conEl   = document.getElementById("sleep-consistency-val");
+  const tipEl   = document.getElementById("sleep-tip-text");
+  if (!scoreEl) return;
+  const log = _getSleepLog().slice(-7).filter(e => e.hours > 0);
+  if (!log.length) {
+    [scoreEl, debtEl, conEl].forEach(el => { if (el) el.textContent = "—"; });
+    return;
+  }
+  const avgH = log.reduce((s, e) => s + e.hours, 0) / log.length;
+  const avgQ = log.reduce((s, e) => s + (e.quality || 3), 0) / log.length;
+  const score = Math.min(100, Math.max(0, Math.round((avgH / 8) * 60 + (avgQ / 5) * 40)));
+  const debt  = Math.max(0, 8 - avgH);
+  const std   = Math.sqrt(log.reduce((s, e) => s + Math.pow(e.hours - avgH, 2), 0) / log.length);
+  const conLabel = std < 0.5 ? "Excellent" : std < 1 ? "Bon" : std < 1.5 ? "Moyen" : "Irrégulier";
+  if (scoreEl) { scoreEl.textContent = score; scoreEl.style.color = score >= 75 ? "#22d3ee" : score >= 50 ? "#a78bfa" : "#ef4444"; }
+  if (debtEl)  debtEl.textContent  = debt > 0.1 ? `-${debt.toFixed(1)}h` : "Aucune";
+  if (conEl)   conEl.textContent   = conLabel;
+  if (tipEl) {
+    let tip = "";
+    if (avgH < 6)       tip = "Moins de 6h en moyenne — récupération musculaire et hormonale insuffisantes. Couche-toi 30min plus tôt ce soir.";
+    else if (avgH < 7)  tip = "7h minimum pour optimiser testostérone, GH et récupération. Cherche à gagner 30-60min de sommeil.";
+    else if (std > 1.5) tip = "Ton rythme est très irrégulier. Couche-toi et lève-toi à heure fixe même le week-end pour ancrer ton rythme circadien.";
+    else if (avgQ < 3)  tip = "Qualité faible malgré la durée. Chambre à 17-19°C, zéro écran 1h avant et pas de caféine après 14h.";
+    else if (score >= 75) tip = "Excellent sommeil ! Maintiens ce rythme — c'est le carburant n°1 de tes progrès en salle.";
+    else                tip = "Progresse encore. Essaie de viser 7h30-8h chaque nuit avec une heure de coucher constante.";
+    tipEl.textContent = tip;
+  }
+}
+
+function _renderSleepHistory() {
+  const el = document.getElementById("sleep-history-list");
+  if (!el) return;
+  const log = _getSleepLog().slice(-14).reverse();
+  if (!log.length) { el.innerHTML = '<div class="empty">Aucune entrée</div>'; return; }
+  const DAYS = ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"];
+  el.innerHTML = log.map(e => {
+    const d = new Date(e.date + "T12:00:00");
+    const label = DAYS[d.getDay()] + " " + d.getDate();
+    const qColor = _SLEEP_QUALITY_COLORS[e.quality] || "#6366f1";
+    const qLabel = _SLEEP_QUALITY_LABELS[e.quality] || "—";
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <div style="font-size:.73rem;color:var(--muted);min-width:46px;font-weight:700">${label}</div>
+      <div style="font-weight:900;font-size:1.08rem;color:#f0f9ff;min-width:38px">${e.hours}h</div>
+      <div style="font-size:.7rem;font-weight:700;color:${qColor};flex:1">${qLabel}</div>
+      ${e.note ? `<div style="font-size:.68rem;color:var(--muted);max-width:110px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${escapeHtml(e.note)}</div>` : ""}
+      <button onclick="deleteSleepEntry('${e.date}')" style="background:none;border:none;color:rgba(255,255,255,.25);cursor:pointer;font-size:.78rem;padding:2px 6px;min-width:24px" title="Supprimer">✕</button>
+    </div>`;
+  }).join("");
+}
+
+function loadSommeil() {
+  const today = new Date().toISOString().slice(0, 10);
+  const todayEntry = _getSleepLog().find(e => e.date === today);
+  const hoursInput = document.getElementById("sleep-hours-input");
+  if (todayEntry) {
+    if (hoursInput) hoursInput.value = todayEntry.hours;
+    setSleepQuality(todayEntry.quality || 3);
+  } else {
+    if (hoursInput) hoursInput.value = "";
+    setSleepQuality(3);
+  }
+  renderSleepChart();
+  _renderSleepScore();
+  _renderSleepHistory();
+}
+window.logSleep = logSleep;
+window.deleteSleepEntry = deleteSleepEntry;
+window.setSleepQuality = setSleepQuality;
+window.toggleFriendsSection = toggleFriendsSection;
+window.loadSommeil = loadSommeil;
 
 async function loadFeed(silent = false) {
   const el = document.getElementById("feed");
