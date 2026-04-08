@@ -2019,16 +2019,16 @@ function _buildAnimLimbs(key, dur) {
 function _exerciseDemoSvg(label = '') {
   const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const variants = [
-    { rx: /squat|chair|leg press|wall sit|presse.*cuiss|hack squat|leg ext/, key: 'squat', accent: '#f59e0b', accent2: '#fb7185', label: 'jambes / fessiers' },
-    { rx: /lunge|fente|split squat|step-up|bulgare/, key: 'lunge', accent: '#8b5cf6', accent2: '#22d3ee', label: 'jambes / stabilité' },
-    { rx: /pompe|push|bench|developpe.*couch|developpe.*inclin|developpe.*militaire|dips|pike push|eleva.*front|ecarte/, key: 'push', accent: '#22c55e', accent2: '#06b6d4', label: 'poussée haut du corps' },
-    { rx: /row|tirage|traction|pull|curl|rowing|tractions|oiseau|pullover|shrug|trapeze/, key: 'pull', accent: '#38bdf8', accent2: '#818cf8', label: 'tirage / dos' },
-    { rx: /deadlift|souleve|hinge|hip thrust|bridge|pont|romanian|sumo|good morning|nordic/, key: 'hinge', accent: '#ef4444', accent2: '#f59e0b', label: 'chaîne postérieure' },
-    { rx: /plank|planche|gainage|abdo|hollow|mountain|russian twist|twist|crunch|bicycle|bird|dog|superman|deadbug|ab wheel|rollout|\bab\b/, key: 'core', accent: '#22d3ee', accent2: '#a78bfa', label: 'core / stabilité' },
-    { rx: /jump|burpee|high knees|run|cardio|jack|sprint|montee.*genou|corde.*sauter|tabata|hiit|box jump/, key: 'cardio', accent: '#f472b6', accent2: '#fb7185', label: 'cardio / densité' },
-    { rx: /press|military|shoulder|eleva.*lat|deltoid|militaire/, key: 'press', accent: '#14b8a6', accent2: '#60a5fa', label: 'épaules / poussée' },
-    { rx: /calf|mollet|releve.*pied|releve.*mollet|pointe/, key: 'calf', accent: '#fb923c', accent2: '#facc15', label: 'mollets / explosivité' },
-    { rx: /stretch|mobilite|mobilite|rotation|respiration|yoga|pigeon|cat.cow|foam|hip flex|thread|squat.*profond/, key: 'mobility', accent: '#4ade80', accent2: '#2dd4bf', label: 'mobilité / récupération' }
+    { rx: /squat|chair|leg press|wall sit|presse.*cuiss|hack squat|leg ext|abducteur|adducteur|single leg press/, key: 'squat', accent: '#f59e0b', accent2: '#fb7185', label: 'jambes / fessiers' },
+    { rx: /lunge|fente|split squat|step-up|bulgare|step.up/, key: 'lunge', accent: '#8b5cf6', accent2: '#22d3ee', label: 'jambes / stabilité' },
+    { rx: /pompe|push|bench|developpe.*couch|developpe.*inclin|developpe.*militaire|dips|pike push|eleva.*front|ecarte|skull|crush|tricep|extension.*tricep|extension.*poulie|kick.?back|overhead.*tricep|dip.*banc/, key: 'push', accent: '#22c55e', accent2: '#06b6d4', label: 'poussée haut du corps' },
+    { rx: /row|tirage|traction|pull|curl|rowing|tractions|oiseau|pullover|shrug|trapeze|inverted.*row|superman|bird.*dog|deadbug|hyperextension/, key: 'pull', accent: '#38bdf8', accent2: '#818cf8', label: 'tirage / dos' },
+    { rx: /deadlift|souleve|hinge|hip thrust|bridge|pont|romanian|sumo|good morning|nordic|soulevé/, key: 'hinge', accent: '#ef4444', accent2: '#f59e0b', label: 'chaîne postérieure' },
+    { rx: /plank|planche|gainage|abdo|hollow|mountain|russian twist|twist|crunch|bicycle|bird.*dog|superman|deadbug|ab wheel|rollout|\bab\b|core|nordic.*curl/, key: 'core', accent: '#22d3ee', accent2: '#a78bfa', label: 'core / stabilité' },
+    { rx: /jump|burpee|high knees|run|cardio|jack|sprint|montee.*genou|corde.*sauter|tabata|hiit|box jump|saut|squat.*saute|squat saut/, key: 'cardio', accent: '#f472b6', accent2: '#fb7185', label: 'cardio / densité' },
+    { rx: /press|military|shoulder|eleva.*lat|eleva.*later|lateral.*rais|deltoid|militaire|oiseau.*inverse|rear.*delt|face.*pull/, key: 'press', accent: '#14b8a6', accent2: '#60a5fa', label: 'épaules / poussée' },
+    { rx: /calf|mollet|releve.*pied|releve.*mollet|pointe|relevé/, key: 'calf', accent: '#fb923c', accent2: '#facc15', label: 'mollets / explosivité' },
+    { rx: /stretch|mobilite|rotation|respiration|yoga|pigeon|cat.cow|foam|hip flex|thread|squat.*profond|mobilité/, key: 'mobility', accent: '#4ade80', accent2: '#2dd4bf', label: 'mobilité / récupération' }
   ];
   const picked = variants.find((v) => v.rx.test(t)) || variants[0];
   const uid = 'ex' + Math.random().toString(36).slice(2, 8);
@@ -2213,7 +2213,7 @@ function renderPlan(plan) {
             }
           </div>
         `;
-      }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
+      }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 Fin de séance : 5 min de mobilité ciblée sur la zone travaillée.</div>`;
     }
     // Priority 2: exercises[] flat list — split into phases by position
     else if (Array.isArray(plan.exercises) && plan.exercises.length > 0) {
@@ -2242,7 +2242,7 @@ function renderPlan(plan) {
             ${ph.exs.map((ex, i) => renderExerciseCard(ex, idxOffset + i)).join("")}
           </div>
         `;
-      }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
+      }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 Fin de séance : 5 min de mobilité ciblée sur la zone travaillée.</div>`;
     } else {
       blocks.innerHTML = '<div class="empty"><span style="font-size:1.5rem;margin-bottom:6px;display:block">—</span>Aucun exercice disponible</div>';
     }
@@ -3057,136 +3057,145 @@ function _refreshSleepUI() {
   _renderSleepCalendar();
 }
 
-// ── Smart Coach AI Comment ──
+// ── Smart Coach Sleep Comment — returns { headline, focus[], tonight } ──
 function _generateCoachComment(log) {
   if (!log || log.length < 2) {
-    return "Enregistre au moins 2 nuits pour recevoir une analyse personnalisée. Le sommeil est le levier n°1 de progression — il surpasse n'importe quel programme ou supplément.";
+    return {
+      headline: "Commence a enregistrer tes nuits",
+      focus: [
+        "Le sommeil est ton levier n°1 — plus impactant que n'importe quel programme ou supplement.",
+        "2 nuits suffisent pour recevoir ta premiere analyse personnalisee."
+      ],
+      tonight: "Ce soir : couche-toi a heure fixe, chambre 17-19°C, zero ecran 1h avant."
+    };
   }
   const recent = log.slice(-7).filter(e => e.hours > 0);
-  if (!recent.length) return "Aucune donnée récente. Commence a enregistrer tes nuits.";
+  if (!recent.length) return { headline: "Aucune donnee recente", focus: ["Commence a enregistrer tes nuits."], tonight: "" };
 
   const avgH   = recent.reduce((s,e) => s + e.hours, 0) / recent.length;
   const avgQ   = recent.reduce((s,e) => s + (e.quality || 3), 0) / recent.length;
-  const avgE   = recent.filter(e => e.energy).reduce((s,e,_,a) => s + e.energy / a.length, 0);
+  const avgE   = recent.filter(e => e.energy).length
+    ? recent.filter(e => e.energy).reduce((s,e) => s + e.energy, 0) / recent.filter(e => e.energy).length
+    : 0;
   const goal   = getSleepGoal();
   const debt   = Math.max(0, (goal - avgH) * recent.length);
   const streak = _calcSleepStreak();
 
-  // Trend (last 3 vs prev days)
   const last3 = log.slice(-3).filter(e => e.hours > 0);
   const prev4  = log.slice(-7, -3).filter(e => e.hours > 0);
   const trendH = (last3.length && prev4.length)
     ? (last3.reduce((s,e)=>s+e.hours,0)/last3.length) - (prev4.reduce((s,e)=>s+e.hours,0)/prev4.length)
     : 0;
 
-  // Bedtime regularity (std dev in minutes)
   const withBedtime = recent.filter(e => e.bedtime);
   let bedtimeStd = -1;
   if (withBedtime.length > 2) {
     const bedMins = withBedtime.map(e => {
       const [h, m] = e.bedtime.split(":").map(Number);
       let mins = h * 60 + m;
-      if (mins < 10 * 60) mins += 24 * 60; // after midnight
+      if (mins < 10 * 60) mins += 24 * 60;
       return mins;
     });
     const avgBed = bedMins.reduce((s,v)=>s+v,0) / bedMins.length;
     bedtimeStd = Math.sqrt(bedMins.reduce((s,v)=>s+Math.pow(v-avgBed,2),0) / bedMins.length);
   }
 
-  // Disruptors from notes
-  const allNotes = recent.map(e => (e.note || "").toLowerCase()).join(" ");
-  const hasAlcool = /alcool|bi.re|vin\b|verre/.test(allNotes);
-  const hasStress = /stress|anxi/.test(allNotes);
-  const hasEcran  = /[eé]cran|t[eé]l[eé]|netflix|phone/.test(allNotes);
-  const hasSport  = /sport|s[eé]ance|muscu|entra[iî]n/.test(allNotes);
-  const hasCafe   = /caf[eé]|caf[eé]_tard/.test(allNotes);
-  const hasChaleur= /chaleur/.test(allNotes);
+  const allNotes   = recent.map(e => (e.note || "").toLowerCase()).join(" ");
+  const hasAlcool  = /alcool|bi.re|vin\b|verre/.test(allNotes);
+  const hasStress  = /stress|anxi/.test(allNotes);
+  const hasEcran   = /[eé]cran|t[eé]l[eé]|netflix|phone/.test(allNotes);
+  const hasSport   = /sport|s[eé]ance|muscu|entra[iî]n/.test(allNotes);
+  const hasCafe    = /caf[eé]|caf[eé]_tard/.test(allNotes);
+  const hasChaleur = /chaleur/.test(allNotes);
 
-  const parts = [];
+  // ── Headline ─────────────────────────────────────────────────────────────
+  let headline;
+  if (avgH >= 8.5 && avgQ >= 4.5) headline = "Niveau athlète professionnel";
+  else if (avgH >= 7.5 && avgQ >= 4) headline = "Excellente recuperation cette semaine";
+  else if (avgH >= 7 && avgQ >= 3.5) headline = "Bon rythme — on peut encore progresser";
+  else if (avgH >= 7 && avgQ < 3)    headline = "Duree correcte, qualite a ameliorer";
+  else if (avgH < 6)                  headline = "Alerte recuperation — deficit critique";
+  else if (avgH < goal)               headline = `${avgH.toFixed(1)}h/nuit — sous ton objectif de ${goal}h`;
+  else                                headline = "Sommeil adequat";
 
-  // 1. Opening hook (overall assessment)
-  if (avgH >= 8.5 && avgQ >= 4.5) {
-    parts.push("Exceptionnel. Tu dors comme un athlète professionnel — top 5%.");
-  } else if (avgH >= 7.5 && avgQ >= 4) {
-    parts.push("Tres bon travail sur la recuperation cette semaine.");
-  } else if (avgH >= 7 && avgQ >= 3.5) {
-    parts.push("Ton sommeil est sur la bonne voie. Quelques ajustements et tu montes d'un cran.");
-  } else if (avgH >= 7 && avgQ < 3) {
-    parts.push("Tu dors assez longtemps mais la qualite laisse a desirer — c'est souvent un probleme d'environnement.");
-  } else if (avgH < 6) {
-    parts.push("Alerte recuperation. Moins de 6h en moyenne — testostérone, GH et synthese proteique sont directement amputees.");
-  } else {
-    parts.push(`${avgH.toFixed(1)}h de moyenne — juste sous le seuil optimal de ${goal}h. Un effort ciblé suffit.`);
+  // ── Focus points ─────────────────────────────────────────────────────────
+  const focus = [];
+
+  // Overall + hours assessment
+  if (avgH < 6) {
+    focus.push(`Moins de 6h en moyenne : testostérone -10-15%, GH divisée par 2, synthese proteique nocturne quasi nulle. Le muscle se construit la nuit, pas en salle.`);
+  } else if (avgH < goal) {
+    focus.push(`${avgH.toFixed(1)}h en moyenne vs ${goal}h d'objectif. Chaque heure recuperee = +10-15% de synthese proteique nocturne et de recup nerveuse.`);
+  } else if (avgH >= 8 && avgQ >= 4) {
+    focus.push(`${avgH.toFixed(1)}h de sommeil de qualite — ton systeme nerveux, tes fibres rapides et ta recup hormonale fonctionnent a plein regime.`);
   }
 
-  // 2. Trend
+  // Trend
   if (trendH > 0.4) {
-    parts.push(`Bonne dynamique : +${trendH.toFixed(1)}h sur les 3 dernieres nuits.`);
+    focus.push(`Tendance positive : +${trendH.toFixed(1)}h sur les 3 dernieres nuits comparé a debut de semaine.`);
   } else if (trendH < -0.5) {
-    parts.push(`Attention : -${Math.abs(trendH).toFixed(1)}h sur les 3 dernières nuits — surveille ça avant que ça devienne une habitude.`);
+    focus.push(`Tendance a surveiller : -${Math.abs(trendH).toFixed(1)}h sur les 3 dernieres nuits — interviens avant que ca devienne une habitude.`);
   }
 
-  // 3. Debt
+  // Debt
   if (debt > 7) {
-    parts.push(`Tu portes environ ${debt.toFixed(0)}h de dette cette semaine. Le rattrapage du week-end en 1-2 nuits ne suffit pas — le cortisol reste elevé plusieurs jours.`);
+    focus.push(`~${debt.toFixed(0)}h de dette accumulee cette semaine. Un seul week-end ne suffit pas a recuperer — le cortisol reste eleve plusieurs jours apres un deficit.`);
   } else if (debt > 3) {
-    parts.push(`~${debt.toFixed(0)}h de dette accumulee — 30 min de coucher plus tot sur 3-4 soirs suffit a effacer ca.`);
+    focus.push(`~${debt.toFixed(0)}h de dette sur la semaine. 20-30 min de coucher anticipe pendant 4-5 soirs efface ca progressivement.`);
   }
 
-  // 4. Bedtime regularity
+  // Bedtime regularity
   if (bedtimeStd > 60) {
-    parts.push("Heure de coucher tres variable (> 1h d'écart). L'irrégularité perturbe ton cortisol matinal et ton adenosine — vise ±15-20 min max, même le week-end.");
+    focus.push(`Irrégularite des horaires (ecart >1h). L'adenosine et le cortisol circadien sont perturbes — tes heures d'eveil et d'endormissement naturels derivent. Vise ±20 min, week-end inclus.`);
   } else if (bedtimeStd >= 0 && bedtimeStd < 20) {
-    parts.push("Excellente regularite des horaires — ton horloge circadienne est bien ancree, ca se voit dans la qualite.");
+    focus.push(`Regularite exemplaire des horaires (ecart <20 min). Ton horloge circadienne est stable — avantage direct sur la qualite du sommeil profond.`);
   }
 
-  // 5. Energy vs quality mismatch (if both logged)
+  // Energy/quality mismatch
   if (avgE > 0) {
     const mismatch = avgQ - avgE;
-    if (mismatch > 1.5) {
-      parts.push("Interessant : tu perçois bien dormir mais tu te reveilles fatigue. Pense a verifier apnée du sommeil si c'est récurrent.");
-    } else if (mismatch < -1.5) {
-      parts.push("Bonne energie au reveil malgre une qualite perçue moyenne — ton corps recupere probablement mieux que tu ne le crois.");
-    }
+    if (mismatch > 1.5) focus.push(`Tu perçois bien dormir mais tu te reveilles fatigue — pattern evocateur d'un sommeil fragmente ou d'apnees. A surveiller sur plusieurs semaines.`);
+    else if (mismatch < -1.5) focus.push(`Energie au reveil meilleure que ta qualite perçue — ton corps recupere mieux que tu ne le ressens. Bonne nouvelle.`);
   }
 
-  // 6. Disruptors
-  if (hasAlcool) {
-    parts.push("Alcool mentionne : il fragmente le sommeil paradoxal (REM) même a faible dose — +1-2 micro-réveils en moyenne et moins de recup musculaire.");
-  }
-  if (hasStress) {
-    parts.push("Stress note : 10 min de respiration 4-7-8 ou cohérence cardiaque avant de dormir peut faire une vraie difference.");
-  }
-  if (hasEcran) {
-    parts.push("Ecrans le soir : la lumière bleue decale l'endormissement de 20-40 min. Lunettes filtrantes ou mode nuit strict 1h avant.");
-  }
-  if (hasCafe) {
-    parts.push("Café tard : demi-vie de la caféine ~6h. Un café a 15h = 50 mg encore actifs a minuit. Coupe avant 14h.");
-  }
-  if (hasChaleur) {
-    parts.push("Chaleur mentionnee : l'endormissement nécessite une baisse de 0.5°C de la temperature corporelle. 17-19°C dans la chambre est le sweet spot.");
-  }
-  if (hasSport && avgH < 7.5) {
-    parts.push("Tu t'entraînes ET tu manques de sommeil — la synthèse proteique nocturne et la production de GH sont directement impactees. Le muscle se construit la nuit.");
+  // Disruptors (cap at 2 to avoid wall of text)
+  let disruptorCount = 0;
+  if (hasAlcool && disruptorCount < 2) { focus.push(`Alcool detecte dans tes notes : fragmente le REM meme a faible dose (+1-2 micro-réveils, -15% de recup musculaire nocturne).`); disruptorCount++; }
+  if (hasStress && disruptorCount < 2) { focus.push(`Stress note : 10 min de coherence cardiaque (5s inspiré / 5s expiré) avant de dormir reduit le cortisol de 30% en moyenne.`); disruptorCount++; }
+  if (hasEcran && disruptorCount < 2)  { focus.push(`Ecrans le soir : la lumiere bleue decale la production de melatonine de 20-40 min. Mode nuit ou lunettes filtrantes 1h avant.`); disruptorCount++; }
+  if (hasCafe && disruptorCount < 2)   { focus.push(`Cafeine detectee tard : demi-vie de 6h, soit 50 mg encore actifs 6h apres ingestion. Stop avant 14h.`); disruptorCount++; }
+  if (hasChaleur && disruptorCount < 2){ focus.push(`Chaleur mentionnee : l'endormissement necessite une baisse de 0.5°C de ta temperature centrale. Chambre a 17-19°C = sweet spot.`); disruptorCount++; }
+  if (hasSport && avgH < 7.5 && disruptorCount < 2) { focus.push(`Sport + manque de sommeil = double peine : la GH et la testostérone sont secretees principalement durant le sommeil profond des 3-4 premieres heures.`); disruptorCount++; }
+
+  // Quality
+  if (avgQ <= 2.5 && !focus.some(f => f.includes("qualite"))) {
+    focus.push(`Qualite perçue tres basse. Priorites : obscurite totale (masque si besoin), stop cafeine avant 14h, magnésium bisglycinate 300mg le soir.`);
   }
 
-  // 7. Quality improvement
-  if (avgQ <= 2.5) {
-    parts.push("Pour ameliorer la qualite : chambre a 17-19°C, obscurite totale, stop cafeine avant 14h et essaie le magnésium bisglycinate 300mg le soir.");
-  }
+  // Streak
+  if (streak >= 7) focus.push(`${streak} bonnes nuits consecutives — tes performances neuromusculaires et ta composition corporelle en beneficient directement.`);
+  else if (streak >= 3) focus.push(`${streak} bonnes nuits d'affilée — encore 4-5 nuits comme ca et tu vas sentir la difference a l'entrainement.`);
 
-  // 8. Streak / closing motivation
-  if (streak >= 7) {
-    parts.push(`${streak} bonnes nuits d'affilée — tes fibres rapides, ton systeme nerveux et ton metabolisme en profitent pleinement. C'est du travail de fond.`);
+  // ── Ce soir recommendation ────────────────────────────────────────────────
+  let tonight = "";
+  if (avgH < 6.5 || debt > 5) {
+    const targetBed = avgH < 6 ? "30-45 min" : "20-30 min";
+    tonight = `Couche-toi ${targetBed} plus tot que d'habitude. Coupe les ecrans des maintenant. Si possible : chambre a 18°C, obscurite totale.`;
+  } else if (avgQ <= 2.5) {
+    tonight = `Soiree de decompression : pas d'ecrans apres 21h, lecture ou podcast calme, temperature chambre abaissee a 17-18°C.`;
+  } else if (bedtimeStd > 60) {
+    tonight = `Ce soir : couche-toi a la meme heure qu'hier ±15 min. La regularite est plus importante que la duree brute.`;
+  } else if (hasAlcool) {
+    tonight = `Pas d'alcool ce soir si possible — meme 1 verre reduit le REM de ~20%. Ton corps te le rendra en qualite de recup.`;
   } else if (streak >= 3) {
-    parts.push(`${streak} bonnes nuits consecutives — maintiens ce rythme encore 4-5 jours et tu vas sentir la difference a l'entraînement.`);
-  } else if (avgH >= 7.5) {
-    parts.push("Continue sur cette lancee — 3-4 semaines de bon sommeil régulier = impact mesurable sur ta force, ta composition et ta recuperation.");
+    tonight = `Maintiens ton rythme actuel — tu es sur une bonne lancee. Couche-toi a la meme heure, meme ambiance que les nuits precedentes.`;
+  } else if (avgH >= 7.5 && avgQ >= 4) {
+    tonight = `Top. Maintiens ce rythme et profite de la recuperation — ta prochaine seance sera meilleure.`;
   } else {
-    parts.push("Chaque heure de sommeil recuperee = +10-15% de récupération musculaire. C'est gratuit et ca bat n'importe quel complément.");
+    tonight = `Objectif : eteindre les ecrans 1h avant, chambre a 17-19°C, endormissement a heure fixe ±20 min.`;
   }
 
-  return parts.join(" ");
+  return { headline, focus: focus.slice(0, 4), tonight };
 }
 
 // ── Chart ──
@@ -3340,7 +3349,14 @@ function _renderSleepHero() {
     const rl = readiness >= 80 ? "Optimal" : readiness >= 65 ? "Bon" : readiness >= 50 ? "Correct" : readiness >= 35 ? "Limite" : "Repos";
     readyEl.innerHTML = `<span style="color:${rc};font-weight:900">${readiness}</span><span style="font-size:.65rem;color:${rc};margin-left:3px">/100 · ${rl}</span>`;
   }
-  if (coachEl) coachEl.textContent = _generateCoachComment(allLog);
+  const coachData = _generateCoachComment(allLog);
+  if (coachEl) {
+    coachEl.innerHTML = `
+      <div class="coach-focus-headline">${escapeHtml(coachData.headline)}</div>
+      ${coachData.focus && coachData.focus.length ? `<div class="coach-focus-list">${coachData.focus.map(f => `<div class="coach-focus-item"><span class="coach-focus-dot"></span>${escapeHtml(f)}</div>`).join('')}</div>` : ''}
+      ${coachData.tonight ? `<div class="coach-action-box"><div class="coach-action-label">→ Ce soir</div><div class="coach-action-text">${escapeHtml(coachData.tonight)}</div></div>` : ''}
+    `;
+  }
   if (coachNameEl) {
     const grade = score >= 80 ? "Expert Sleep" : score >= 60 ? "On Track" : score >= 40 ? "A ameliorer" : "Deficitaire";
     coachNameEl.textContent = `Analyse coach · Score ${score}/100 · ${grade}`;
@@ -6561,7 +6577,7 @@ async function generateRecipe() {
             <span class="recipe-tab-art">${food}</span>
             <span class="recipe-tab-num">${i + 1}</span>
           </button>`;
-        }).join("") + `<div style="margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.42);border:1px solid rgba(255,255,255,.08);font-size:.76rem;color:var(--text-muted)">🏁 ${_progSessionFinisher(item.type, weekNum)}</div>`;
+        }).join("");
         const panelsHtml = recipes.map((r, i) =>
           `<div class="recipe-tab-panel${i === 0 ? " active" : ""}" id="recipe-panel-${i}">${renderRecipeCard(r, i)}</div>`
         ).join("");
@@ -8640,61 +8656,100 @@ function _getProductPoints(product) {
 
 function _generateBarcodeCoachComment(product, score) {
   const n = product.nutriments || {};
-  const p100 = {
-    prot: parseFloat((n.proteins_100g || 0).toFixed(0)),
-    sugar: parseFloat((n.sugars_100g || 0).toFixed(0)),
-    salt: parseFloat((n.salt_100g || 0).toFixed(1)),
-    fat: parseFloat((n.fat_100g || 0).toFixed(0)),
-    kcal: Math.round(n["energy-kcal_100g"] || (n["energy_100g"] || 0) / 4.184),
-    fiber: parseFloat((n.fiber_100g || 0).toFixed(1)),
+  const p = {
+    prot:   parseFloat((n.proteins_100g || 0).toFixed(1)),
+    sugar:  parseFloat((n.sugars_100g || 0).toFixed(1)),
+    salt:   parseFloat((n.salt_100g || 0).toFixed(2)),
+    fat:    parseFloat((n.fat_100g || 0).toFixed(1)),
+    satFat: parseFloat((n["saturated-fat_100g"] || 0).toFixed(1)),
+    fiber:  parseFloat((n.fiber_100g || 0).toFixed(1)),
+    kcal:   Math.round(n["energy-kcal_100g"] || (n["energy_100g"] || 0) / 4.184),
   };
   let goal = "";
   try { goal = localStorage.getItem("fitai_goal_type") || ""; } catch {}
-  const nova = parseInt(product.nova_group) || 1;
-  const grade = (product.nutriscore_grade || "").toUpperCase();
-  const name = product.product_name || "ce produit";
-  const parts = [];
+  const nova   = parseInt(product.nova_group) || 1;
+  const grade  = (product.nutriscore_grade || "").toUpperCase();
+  const name   = (product.product_name || "Ce produit").split(" ").slice(0, 4).join(" ");
+  const additivesCount = (product.additives_tags || []).length;
 
-  // Opening
-  if (score >= 75) parts.push(`${name} est un excellent choix (Nutri-Score ${grade}, NOVA ${nova}).`);
-  else if (score >= 55) parts.push(`${name} est correct mais pas parfait.`);
-  else if (score >= 35) parts.push(`${name} est à consommer avec modération — score ${score}/100.`);
-  else parts.push(`${name} est à éviter au quotidien — score ${score}/100.`);
-
-  // NOVA
-  if (nova === 4) parts.push("Produit ultra-transformé (NOVA 4) : matrice alimentaire détruite, satiété réduite, IG élevé.");
-  else if (nova === 3) parts.push("Produit transformé (NOVA 3) — préfère un équivalent moins industriel quand possible.");
-  else if (nova <= 2) parts.push("Peu ou pas transformé — bonne base.");
-
-  // Proteins
-  if (p100.prot >= 20) parts.push(`Excellente source de protéines (${p100.prot}g/100g) — idéal pour la récup musculaire.`);
-  else if (p100.prot < 5 && (goal === "prise_de_masse" || goal === "seche" || goal === "force")) {
-    parts.push(`Pauvre en protéines (${p100.prot}g/100g) — complète avec une source protéique pour ton objectif.`);
+  // ── Verdict line ─────────────────────────────────────────────────────────
+  let verdict, verdictType;
+  if (score >= 75) {
+    verdict = `✦ Excellent choix nutritionnel — Nutri-Score ${grade}, NOVA ${nova}`;
+    verdictType = "good";
+  } else if (score >= 55) {
+    verdict = `→ Produit acceptable — quelques points à surveiller (score ${score}/100)`;
+    verdictType = "neutral";
+  } else if (score >= 35) {
+    verdict = `⚠ À consommer avec modération — score ${score}/100`;
+    verdictType = "warn";
+  } else {
+    verdict = `✕ À éviter au quotidien — score ${score}/100`;
+    verdictType = "bad";
   }
 
-  // Sugar
-  if (p100.sugar > 20) parts.push(`${p100.sugar}g de sucres/100g : pics d'insuline fréquents = stockage graisseux accru.`);
+  // ── Analyse principale ────────────────────────────────────────────────────
+  const analysisParts = [];
 
-  // Salt
-  if (p100.salt > 1.5) parts.push(`Sel élevé (${p100.salt}g/100g) — rétention d'eau et pression artérielle à surveiller.`);
-
-  // Goal-specific
-  if (goal === "prise_de_masse" && p100.kcal >= 300 && p100.prot >= 12) {
-    parts.push("Pour ta prise de masse : bon compromis calories + protéines.");
-  } else if ((goal === "seche" || goal === "perte_de_poids") && p100.kcal > 400) {
-    parts.push("Pour ta sèche : ce produit est dense en calories — surveille les portions.");
-  } else if ((goal === "seche" || goal === "perte_de_poids") && p100.kcal < 200 && p100.prot > 10) {
-    parts.push("Bon choix pour ta sèche : peu calorique et protéiné.");
+  if (nova === 4) {
+    analysisParts.push(`Produit ultra-transformé (NOVA 4) : la structure alimentaire d'origine est détruite, l'index glycémique est élevé et la satiété diminuée par rapport à un équivalent non transformé. La recherche associe une consommation régulière de produits NOVA 4 à +32% de risque cardiovasculaire.`);
+  } else if (nova === 3) {
+    analysisParts.push(`Produit transformé (NOVA 3) — des ingrédients industriels ont été ajoutés. Préfère un équivalent NOVA 1-2 quand c'est possible.`);
+  } else if (p.prot >= 18) {
+    analysisParts.push(`Excellente densité protéique (${p.prot}g/100g). Les protéines alimentaires de qualité activent la synthèse protéique musculaire (MPS) même en dehors des fenêtres post-entraînement.`);
+  } else if (p.sugar > 15) {
+    analysisParts.push(`${p.sugar}g de sucres libres par 100g — soit un impact glycémique significatif. Les pics d'insuline répétés favorisent le stockage en graisse viscérale et freinent l'oxydation lipidique.`);
+  } else if (p.fiber >= 4) {
+    analysisParts.push(`Bonne source de fibres (${p.fiber}g/100g). Les fibres ralentissent l'absorption des glucides, améliorent la satiété et nourrissent le microbiote intestinal — directement lié à la récupération et à l'immunité.`);
+  } else if (p.satFat > 5) {
+    analysisParts.push(`Élevé en graisses saturées (${p.satFat}g/100g). Au-delà de 20g/jour, l'apport en graisses saturées est associé à une dégradation du profil lipidique et une inflammation systémique légère.`);
+  } else if (p.salt > 1.2) {
+    analysisParts.push(`Élevé en sel (${p.salt}g/100g). Un excès de sodium entraîne une rétention d'eau visible (±1-2 kg) et perturbe l'équilibre électrolytique — ce qui peut masquer tes progrès de composition corporelle.`);
+  } else if (additivesCount > 5) {
+    analysisParts.push(`${additivesCount} additifs détectés. Certains émulsifiants (E471, E472, polysorbates) perturbent le microbiote intestinal même à faibles doses selon des études récentes.`);
+  } else if (score >= 70) {
+    analysisParts.push(`Profil nutritionnel solide : peu transformé, bon équilibre macros, sans signal d'alarme majeur. Ce type de produit constitue une bonne base pour une alimentation performante.`);
+  } else {
+    analysisParts.push(`Profil standard — aucun signal critique majeur, mais pas de point fort particulier non plus.`);
   }
 
-  // Fiber
-  if (p100.fiber >= 5) parts.push(`Riche en fibres (${p100.fiber}g/100g) — excellente satiété et microbiote.`);
+  // ── Action personnalisée par objectif ─────────────────────────────────────
+  let action = "";
+  if (goal === "prise_de_masse") {
+    if (p.prot >= 15 && p.kcal >= 200) {
+      action = `Bon fit pour ta prise de masse. Intègre-le autour de tes séances pour maximiser la synthèse protéique.`;
+    } else if (p.prot < 8) {
+      action = `Objectif prise de masse : complète systématiquement avec une source à ≥20g de protéines pour atteindre tes besoins journaliers (${Math.round(1.8 * 75)}g+ recommandés).`;
+    } else {
+      action = `Correct pour la prise de masse. Surveille tes apports totaux en protéines sur la journée (cible : 1.8-2.2g/kg de poids de corps).`;
+    }
+  } else if (goal === "seche" || goal === "perte_de_poids") {
+    if (p.kcal < 200 && p.prot >= 10) {
+      action = `Idéal pour ta sèche : faible densité calorique + protéines pour préserver la masse musculaire. Ajoute des légumes pour le volume sans les calories.`;
+    } else if (p.sugar > 12 || nova === 4) {
+      action = `Pour ta sèche, évite ce produit au quotidien. Les sucres rapides + ultra-transformation bloquent la lipolyse pendant 2-4h post-ingestion.`;
+    } else if (p.kcal > 350) {
+      action = `Dense en calories pour une sèche — pas à bannir mais limite les portions. Pèse ta portion au lieu d'estimer.`;
+    } else {
+      action = `Acceptable en sèche. Reste vigilant sur les apports totaux — l'excédent calorique vient rarement d'un seul aliment mais de l'accumulation.`;
+    }
+  } else if (goal === "force" || goal === "endurance") {
+    if (p.prot >= 15) {
+      action = `Bonne source de protéines pour soutenir les adaptations neuromusculaires liées à l'entraînement en force.`;
+    } else if (p.kcal >= 300 && nova <= 2) {
+      action = `Bonne source d'énergie non transformée — utile pour maintenir les réserves glycogéniques en période de charge d'entraînement.`;
+    } else {
+      action = `Pour la force/endurance, priorise les aliments NOVA 1-2 à haute densité nutritionnelle pour alimenter les séances et la récupération.`;
+    }
+  } else if (score >= 70 && nova <= 2) {
+    action = `Continue à privilégier ce type de produit. La qualité alimentaire au quotidien est le multiplicateur n°1 de tes résultats sportifs.`;
+  } else if (score < 40) {
+    action = `Cherche un équivalent NOVA 1-2 avec un Nutri-Score A ou B — les alternatives existent souvent. Regarde les alternatives suggérées ci-dessous.`;
+  } else {
+    action = `Consomme avec conscience des portions. La fréquence et la quantité comptent plus que l'interdiction totale.`;
+  }
 
-  // Closing
-  if (score >= 70 && nova <= 2) parts.push("Continue sur cette lancée — la qualité des aliments est la base de tout résultat durable.");
-  else if (score < 35) parts.push("Rappel : 80% des résultats viennent de la qualité alimentaire au quotidien.");
-
-  return parts.join(" ");
+  return { verdict, verdictType, analysis: analysisParts.join(" "), action };
 }
 
 function _renderBarcodeNotFound(code) {
@@ -8789,14 +8844,21 @@ function _renderBarcodeResult(product, code) {
     <!-- Coach comment -->
     <div class="bc-coach">
       <div class="bc-coach-hdr">
-        <div class="bc-coach-ic">🧠</div>
-        <div>
-          <div class="bc-coach-title">Analyse Coach</div>
-          <div class="bc-coach-sub">Personnalisée selon ton profil &amp; objectif</div>
+        <div class="bc-coach-ic">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 3.1-2 5.8-5 6.7V18H10v-2.3C7 14.8 5 12.1 5 9a7 7 0 0 1 7-7z"/><path d="M10 22h4"/></svg>
         </div>
-        <button id="bc-fav-btn-${escapeAttr(code)}" onclick="toggleBcFavorite('${escapeAttr(code)}')" class="bc-fav-btn" title="Ajouter aux favoris">${isFav ? "★" : "☆"}</button>
+        <div>
+          <div class="bc-coach-title">Analyse Coach IA</div>
+          <div class="bc-coach-sub">Personnalisée selon ton objectif</div>
+        </div>
+        <button id="bc-fav-btn-${escapeAttr(code)}" onclick="toggleBcFavorite('${escapeAttr(code)}')" class="bc-fav-btn" title="Favoris">${isFav ? "★" : "☆"}</button>
       </div>
-      <div class="bc-coach-body">${escapeHtml(coach)}</div>
+      <div class="coach-verdict coach-verdict-${coach.verdictType}">${escapeHtml(coach.verdict)}</div>
+      <div class="bc-coach-body">${escapeHtml(coach.analysis)}</div>
+      <div class="coach-action-box">
+        <div class="coach-action-label">→ Action recommandée</div>
+        <div class="coach-action-text">${escapeHtml(coach.action)}</div>
+      </div>
     </div>
 
     <!-- Portion calculator -->
@@ -9993,11 +10055,11 @@ function _wtEnsureWorkoutVisible() {
 
 function _exerciseMotionType(label = '') {
   const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  if (/jump|burpee|high knees|run|cardio|jack|sprint|montee.*genou|corde.*sauter|tabata|hiit|box jump/.test(t)) return 'cardio';
-  if (/squat|lunge|fente|split squat|step-up|bulgare|calf|mollet|leg press/.test(t)) return 'lower';
-  if (/pompe|push|bench|developpe.*couch|developpe.*inclin|developpe.*militaire|dips|pike push|press|shoulder|eleva/.test(t)) return 'upper';
-  if (/deadlift|souleve|hinge|hip thrust|bridge|pont|romanian|sumo|good morning|nordic|row|tirage|traction|pull|rowing/.test(t)) return 'hinge';
-  if (/plank|planche|gainage|abdo|hollow|mountain|russian twist|twist|crunch|bicycle|bird|dog|superman|deadbug|ab wheel|rollout/.test(t)) return 'core';
+  if (/jump|burpee|high knees|run|cardio|jack|sprint|montee.*genou|corde.*sauter|tabata|hiit|box jump|saut|squat.*saut/.test(t)) return 'cardio';
+  if (/squat|lunge|fente|split squat|step.?up|bulgare|calf|mollet|leg press|abducteur|adducteur|single leg press|relevé|releve/.test(t)) return 'lower';
+  if (/pompe|push|bench|developpe.*couch|developpe.*inclin|developpe.*militaire|dips|pike push|press|shoulder|eleva|skull|crush|tricep|extension.*poulie|eleva.*lat|lateral.*rais/.test(t)) return 'upper';
+  if (/deadlift|souleve|hinge|hip thrust|bridge|pont|romanian|sumo|good morning|nordic|row|tirage|traction|pull|rowing|inverted.*row|hyperextension/.test(t)) return 'hinge';
+  if (/plank|planche|gainage|abdo|hollow|mountain|russian twist|twist|crunch|bicycle|bird.*dog|superman|deadbug|ab wheel|rollout|core/.test(t)) return 'core';
   if (/stretch|mobilite|rotation|respiration|yoga|pigeon|cat.cow|foam|hip flex|thread/.test(t)) return 'mobility';
   return 'flow';
 }
@@ -11088,11 +11150,41 @@ function _seededShuffle(arr, seed) {
   return a;
 }
 
+// Compound-first keywords — used to prioritize multi-joint exercises for mass goals
+const _COMPOUND_KEYWORDS = /squat|deadlift|souleve|developpe|bench|militaire|hip thrust|fentes|traction|rowing|press|pull.?up|dips|row/;
+
+function _isCompoundEx(ex) {
+  const t = String(ex.n || ex.name || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return _COMPOUND_KEYWORDS.test(t);
+}
+
+function _goalExerciseWhy(goal, exName, exMuscle) {
+  const n = String(exName || '').toLowerCase();
+  const m = String(exMuscle || '');
+  const compound = _COMPOUND_KEYWORDS.test(n);
+  if (goal === 'prise_de_masse') {
+    return compound
+      ? `Exercice polyarticulaire prioritaire pour la prise de masse — recrute le maximum de fibres musculaires et stimule la GH.`
+      : `Isolation de ${m || 'la zone cible'} pour maximiser le volume hebdomadaire et l'hypertrophie locale.`;
+  }
+  if (goal === 'seche') {
+    return `Maintient la masse musculaire pendant la sèche — exécute avec une cadence contrôlée pour augmenter la dépense énergétique.`;
+  }
+  if (goal === 'endurance') {
+    return `Renforce les muscles stabilisateurs et améliore l'endurance musculaire — tiens la technique jusqu'à la dernière rep.`;
+  }
+  if (goal === 'force') {
+    return compound ? `Exercice de force de base — concentre-toi sur la charge et la technique avant la fatigue.` : `Accessoire pour renforcer les faiblesses et prévenir les blessures.`;
+  }
+  return `Sélectionné pour ton objectif du moment et ta phase d'entraînement.`;
+}
+
 function progStartWorkout(dayIdx) {
   const weekly = _progGetWeekly(_prog?.goal || "");
   const item = weekly[dayIdx];
   if (!item || item.type === "rest") return;
   const eq = _prog?.equipment || "";
+  const goal = _prog?.goal || "";
   const exType = _progExType(item.type, eq);
   // Count occurrences of this type before dayIdx to determine pool
   const priorCount = weekly.slice(0, dayIdx).filter(d => _progExType(d.type, eq) === exType).length;
@@ -11103,21 +11195,44 @@ function progStartWorkout(dayIdx) {
   // Daily seed: changes each calendar day so exercises rotate automatically
   const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const seed = parseInt(todayStr, 10) + dayIdx * 31 + (_progWeek || 1) * 97;
-  const shuffled = _seededShuffle(base, seed);
+  let shuffled = _seededShuffle([...base], seed);
+
+  // Goal-based ordering: compounds first for mass/force, random for others
+  if (goal === 'prise_de_masse' || goal === 'force') {
+    const compounds = shuffled.filter(_isCompoundEx);
+    const isolations = shuffled.filter(e => !_isCompoundEx(e));
+    shuffled = [...compounds, ...isolations];
+  }
+
   const exCount = _progDisplayExerciseCount(item.type, _progWeek || 1);
-  const exList = shuffled.slice(0, exCount);
+  const exList = shuffled.slice(0, exCount).map(ex => ({
+    ...ex,
+    personalWhy: _goalExerciseWhy(goal, ex.n || ex.name, ex.m || ex.muscle),
+    targetGoal: goal || 'equilibre'
+  }));
   if (!exList || exList.length === 0) {
     return toast("Aucun exercice disponible pour cette séance.", "err");
   }
   const params = PROG_PHASE_PARAMS[(_progWeek || 1) - 1] || PROG_PHASE_PARAMS[0];
+  // Adapt reps/rest to goal
+  const goalParams = goal === 'prise_de_masse'
+    ? { reps: '6-10', rest: Math.min(120, (params.rest || 60) + 15) }
+    : goal === 'seche'
+      ? { reps: '12-15', rest: Math.max(30, (params.rest || 60) - 15) }
+      : goal === 'force'
+        ? { reps: '3-6', rest: Math.min(150, (params.rest || 60) + 30) }
+        : goal === 'endurance'
+          ? { reps: '15-20', rest: Math.max(20, (params.rest || 60) - 20) }
+          : {};
+  const mergedParams = { ...params, ...goalParams };
   // Calculate target duration so _buildGuidedTimeline fills enough rounds
   const avgWorkSec = 40;
-  const cappedRest = Math.min(90, params.rest || 30);
-  const sets = params.sets || 3;
+  const cappedRest = Math.min(90, mergedParams.rest || 30);
+  const sets = mergedParams.sets || 3;
   const durationMin = Math.max(20, Math.ceil(exList.length * sets * (avgWorkSec + cappedRest) / 60));
   const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   const label = `${item.icon} ${item.label} · ${dayNames[item.d - 1]}`;
-  startWorkout(label, exList, { ...params, durationMin });
+  startWorkout(label, exList, { ...mergedParams, durationMin });
 }
 
 window.loadProgramme    = loadProgramme;

@@ -364,6 +364,21 @@ body.light .community-recipe-card{background:rgba(15,23,42,.02);border-color:rgb
 .sleep-coach-title{font-weight:900;font-size:.9rem;color:#f0f9ff}
 .sleep-coach-sub{font-size:.65rem;color:var(--muted);margin-top:2px}
 .sleep-coach-body{font-size:.8rem;line-height:1.65;color:#c7d2fe;background:rgba(99,102,241,.06);border:1px solid rgba(99,102,241,.15);border-radius:14px;padding:12px 14px}
+/* Shared coach components (sleep + barcode) */
+.coach-focus-headline{font-size:.88rem;font-weight:900;color:#f0f9ff;margin-bottom:10px;line-height:1.3}
+.coach-focus-list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.coach-focus-item{display:flex;align-items:flex-start;gap:8px;font-size:.78rem;color:#c7d2fe;line-height:1.55}
+.coach-focus-dot{width:6px;height:6px;border-radius:50%;background:#a78bfa;margin-top:5px;flex-shrink:0}
+.coach-action-box{padding:10px 14px;border-radius:14px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.25)}
+.coach-action-label{font-size:.62rem;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:#818cf8;margin-bottom:4px}
+.coach-action-text{font-size:.78rem;color:#e0e7ff;line-height:1.5}
+/* Barcode coach verdict */
+.coach-verdict{font-size:.82rem;font-weight:800;padding:10px 14px;border-radius:14px;margin-bottom:12px;line-height:1.4}
+.coach-verdict-good{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.25);color:#a7f3d0}
+.coach-verdict-neutral{background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.22);color:#c7d2fe}
+.coach-verdict-warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);color:#fde68a}
+.coach-verdict-bad{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#fca5a5}
+.bc-coach-body{font-size:.78rem;color:var(--text2);line-height:1.6;margin-bottom:12px}
 /* Goal buttons */
 .sleep-goal-btn{padding:5px 12px;border-radius:20px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:var(--muted);font-size:.72rem;font-weight:700;cursor:pointer;transition:all .15s}
 .sleep-goal-btn.on{background:rgba(139,92,246,.25);border-color:#a78bfa;color:#f0f9ff}
@@ -1027,7 +1042,7 @@ body.light .wt-next-empty{background:#fff;border-color:rgba(15,23,42,.12)}
 .db-seance-progress .progress-fill{background:linear-gradient(90deg,#60a5fa,#22d3ee);transition:width .35s ease}
 .db-coach-body{padding:12px 13px;border-radius:16px;background:rgba(15,23,42,.45);border:1px solid rgba(255,255,255,.07);margin-bottom:12px}
 .db-coach-meta{margin-top:8px;font-size:.7rem;color:rgba(255,255,255,.62);line-height:1.45}
-.db-program-card{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.95fr);gap:16px;align-items:stretch}
+.db-program-card{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.95fr);gap:16px;align-items:stretch}
 .db-program-left,.db-program-right{min-width:0}
 .db-program-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
 .db-program-kicker{display:inline-flex;align-items:center;gap:6px;font-size:.64rem;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:#c4b5fd;padding:6px 10px;border-radius:999px;background:rgba(139,92,246,.14);border:1px solid rgba(196,181,253,.18);margin-bottom:10px}
