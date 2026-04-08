@@ -442,6 +442,35 @@ body.light .community-recipe-card{background:rgba(15,23,42,.02);border-color:rgb
 .bc-coach-sub{font-size:.62rem;color:var(--muted);margin-top:1px}
 .bc-coach-body{font-size:.78rem;line-height:1.6;color:#c7d2fe;background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.15);border-radius:12px;padding:10px 13px}
 .bc-not-found{text-align:center;padding:24px;background:rgba(255,255,255,.03);border-radius:14px;border:1px solid rgba(255,255,255,.07)}
+/* Tabs */
+.bc-tabs{display:flex;gap:0;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);margin-top:14px}
+.bc-tab{flex:1;padding:7px 4px;border:none;background:none;color:var(--muted);font-size:.72rem;font-weight:700;cursor:pointer;transition:all .15s;text-align:center}
+.bc-tab.on{background:rgba(99,102,241,.28);color:#f0f9ff}
+/* Library rows */
+.bc-lib-row,.bc-search-row,.bc-alt-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer;transition:background .15s;border-radius:0}
+.bc-lib-row:hover,.bc-search-row:hover,.bc-alt-row:hover{background:rgba(255,255,255,.03)}
+.bc-lib-row:last-child,.bc-search-row:last-child,.bc-alt-row:last-child{border-bottom:none}
+.bc-lib-img{width:44px;height:44px;object-fit:contain;border-radius:10px;background:rgba(255,255,255,.05);flex-shrink:0}
+.bc-lib-info{flex:1;min-width:0}
+.bc-lib-name{font-weight:800;font-size:.82rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bc-lib-brand{font-size:.65rem;color:var(--muted);margin-top:1px}
+.bc-lib-section-title{font-size:.6rem;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:4px 0 8px}
+.bc-search-loading{display:flex;align-items:center;gap:8px;padding:14px 0;font-size:.8rem;color:var(--muted)}
+.bc-search-empty{padding:14px 0;font-size:.8rem;color:var(--muted);text-align:center}
+/* Alternatives */
+.bc-alt-title{font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#22d3ee;margin-bottom:8px;padding-top:4px}
+/* Favorites button */
+.bc-fav-btn{background:none;border:none;font-size:1.3rem;cursor:pointer;color:rgba(255,255,255,.35);padding:4px 6px;margin-left:auto;transition:color .15s}
+.bc-fav-btn:hover{color:#f59e0b}
+/* Portion calculator */
+.bc-portion-section{padding:14px 16px;border-top:1px solid rgba(255,255,255,.06)}
+.bc-portion-title{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:10px}
+.bc-portion-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.bc-portion-input{width:72px;font-size:1.1rem;font-weight:900;text-align:center;padding:7px 6px;border-radius:12px}
+.bc-portion-unit{font-size:.9rem;font-weight:700;color:var(--muted)}
+.bc-portion-macros{display:flex;gap:10px;flex-wrap:wrap}
+.bc-portion-macros span{font-size:.75rem;font-weight:700;color:var(--text2)}
+.bc-add-meal-btn{margin-top:0;font-size:.8rem;padding:9px}
 .friend-card{display:flex;align-items:center;gap:12px;padding:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:16px;margin-bottom:8px;transition:border-color .2s}
 .friend-card:hover{border-color:rgba(255,255,255,.13)}
 .friend-card-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:900;color:#fff;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.3)}
@@ -3009,44 +3038,67 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
             </div>
             <div>
               <div class="bc-scanner-title">Scanner un produit</div>
-              <div class="bc-scanner-sub">Analyse type Yuka + commentaire coach</div>
+              <div class="bc-scanner-sub">Analyse Yuka · score · coach IA · historique</div>
             </div>
           </div>
 
-          <!-- Input row: camera + file + manual -->
-          <div class="bc-input-row">
-            <button class="btn bc-cam-btn" onclick="openBarcodeCamera()">
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-              Caméra
-            </button>
-            <label class="btn bc-file-btn">
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              Photo
-              <input type="file" accept="image/*" onchange="scanBarcodeFromFile(this)" style="display:none">
-            </label>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:10px">
-            <input type="number" id="bc-manual-input" placeholder="Saisir code EAN (ex: 3017620422003)" style="flex:1;font-size:.88rem"/>
-            <button class="btn btn-p" style="flex-shrink:0;padding:0 16px" onclick="lookupBarcode(document.getElementById('bc-manual-input').value)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            </button>
+          <!-- Tab bar: Scanner / Recherche / Ma base -->
+          <div class="bc-tabs">
+            <button class="bc-tab on" id="bc-tab-scan"    onclick="bcSwitchTab('scan')">📷 Scanner</button>
+            <button class="bc-tab"    id="bc-tab-search"  onclick="bcSwitchTab('search')">🔍 Rechercher</button>
+            <button class="bc-tab"    id="bc-tab-library" onclick="bcSwitchTab('library')">📚 Ma base</button>
           </div>
 
-          <!-- Camera live view -->
-          <div id="bc-camera-wrap" style="display:none;margin-top:14px">
-            <div id="bc-reader" style="width:100%;border-radius:16px;overflow:hidden"></div>
-            <button class="btn btn-g btn-full" onclick="closeBarcodeCamera()" style="margin-top:10px">✕ Fermer la caméra</button>
-            <div style="font-size:.68rem;color:var(--muted);text-align:center;margin-top:6px">Pointe la caméra vers le code-barres du produit</div>
+          <!-- ── SCAN panel ── -->
+          <div id="bc-panel-scan">
+            <div class="bc-input-row" style="margin-top:12px">
+              <button class="btn bc-cam-btn" onclick="openBarcodeCamera()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>Caméra
+              </button>
+              <label class="btn bc-file-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Photo
+                <input type="file" accept="image/*" onchange="scanBarcodeFromFile(this)" style="display:none">
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <input type="number" id="bc-manual-input" placeholder="Code EAN (ex: 3017620422003)" style="flex:1;font-size:.88rem"/>
+              <button class="btn btn-p" style="flex-shrink:0;padding:0 16px" onclick="lookupBarcode(document.getElementById('bc-manual-input').value)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </button>
+            </div>
+            <!-- Camera live view -->
+            <div id="bc-camera-wrap" style="display:none;margin-top:14px">
+              <div id="bc-reader" style="width:100%;border-radius:16px;overflow:hidden"></div>
+              <button class="btn btn-g btn-full" onclick="closeBarcodeCamera()" style="margin-top:10px">✕ Fermer la caméra</button>
+              <div style="font-size:.68rem;color:var(--muted);text-align:center;margin-top:6px">Pointe la caméra vers le code-barres</div>
+            </div>
+            <!-- Loading -->
+            <div id="bc-loading" style="display:none;align-items:center;justify-content:center;gap:12px;padding:24px;flex-direction:column">
+              <div class="spinner"></div>
+              <div style="font-size:.8rem;color:var(--muted)">Recherche du produit…</div>
+            </div>
+            <!-- Result -->
+            <div id="bc-result" style="display:none;margin-top:14px"></div>
           </div>
 
-          <!-- Loading -->
-          <div id="bc-loading" style="display:none;align-items:center;justify-content:center;gap:12px;padding:24px;flex-direction:column">
-            <div class="spinner"></div>
-            <div style="font-size:.8rem;color:var(--muted)">Recherche du produit…</div>
+          <!-- ── SEARCH panel ── -->
+          <div id="bc-panel-search" style="display:none">
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <input type="text" id="bc-search-input" placeholder="Nom du produit (ex: Nutella, yaourt nature…)" style="flex:1" oninput="bcSearchInput(this.value)" onkeydown="if(event.key==='Enter')bcSearchProducts(this.value)"/>
+              <button class="btn btn-p" style="flex-shrink:0;padding:0 14px" onclick="bcSearchProducts(document.getElementById('bc-search-input').value)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </button>
+            </div>
+            <div style="font-size:.65rem;color:var(--muted);margin-top:6px">Base de données : +3 millions de produits (Open Food Facts)</div>
+            <div id="bc-search-results" style="margin-top:10px"></div>
           </div>
 
-          <!-- Result -->
-          <div id="bc-result" style="display:none;margin-top:14px"></div>
+          <!-- ── LIBRARY panel ── -->
+          <div id="bc-panel-library" style="display:none;margin-top:12px">
+            <div id="bc-library-wrap">
+              <div class="empty" style="padding:16px 0">Aucun produit scanné pour l'instant.</div>
+            </div>
+          </div>
         </div>
 
         <!-- FOOD JOURNAL AI -->

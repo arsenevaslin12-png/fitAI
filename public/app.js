@@ -8714,9 +8714,15 @@ function _renderBarcodeResult(product, code) {
   const el = document.getElementById("bc-result");
   if (!el) return;
 
+  // Persist to history
+  _bcCurrentProduct = { ...product, code };
+  const entry = _saveBcEntry(product, code, _calcProductScore(product));
+  _renderBcLibrary();
+
   const score = _calcProductScore(product);
   const { good, bad, p100 } = _getProductPoints(product);
   const coach = _generateBarcodeCoachComment(product, score);
+  const isFav = _getBcFavorites().some(f => f.code === code);
 
   const scoreColor = score >= 70 ? "#22c55e" : score >= 45 ? "#f59e0b" : "#ef4444";
   const scoreLbl   = score >= 75 ? "Excellent" : score >= 60 ? "Bon" : score >= 45 ? "Moyen" : score >= 25 ? "Médiocre" : "Mauvais";
@@ -8786,22 +8792,313 @@ function _renderBarcodeResult(product, code) {
         <div class="bc-coach-ic">🧠</div>
         <div>
           <div class="bc-coach-title">Analyse Coach</div>
-          <div class="bc-coach-sub">Personnalisée selon ton profil</div>
+          <div class="bc-coach-sub">Personnalisée selon ton profil &amp; objectif</div>
         </div>
+        <button id="bc-fav-btn-${escapeAttr(code)}" onclick="toggleBcFavorite('${escapeAttr(code)}')" class="bc-fav-btn" title="Ajouter aux favoris">${isFav ? "★" : "☆"}</button>
       </div>
       <div class="bc-coach-body">${escapeHtml(coach)}</div>
     </div>
 
-    <div style="font-size:.58rem;color:var(--muted);text-align:center;margin-top:8px">Source : Open Food Facts — base de données collaborative</div>
-  </div>`;
+    <!-- Portion calculator -->
+    <div class="bc-portion-section">
+      <div class="bc-portion-title">⚖️ Calculateur de portion</div>
+      <div class="bc-portion-row">
+        <input type="number" id="bc-portion-input" class="bc-portion-input" value="100" min="1" max="2000" oninput="updateBcPortion(this.value)"/>
+        <span class="bc-portion-unit">g</span>
+        <div class="bc-portion-macros">
+          <span><span id="bc-portion-kcal">${p100.kcal}</span> kcal</span>
+          <span style="color:#4ade80"><span id="bc-portion-prot">${p100.prot}</span>g prot</span>
+          <span style="color:#fbbf24"><span id="bc-portion-carb">${p100.carb}</span>g glu</span>
+          <span style="color:#f87171"><span id="bc-portion-fat">${p100.fat}</span>g lip</span>
+        </div>
+      </div>
+      <button class="btn btn-p btn-full bc-add-meal-btn" onclick="addBcProductToMeal()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Ajouter à mon repas
+      </button>
+    </div>
+
+    <div style="font-size:.58rem;color:var(--muted);text-align:center;padding:10px 16px">Source : Open Food Facts — base de données collaborative</div>
+  </div>
+
+  <!-- Alternatives (filled async) -->
+  <div id="bc-alternatives" style="display:none;margin-top:10px"></div>`;
 
   el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  // Fetch better alternatives async (only if score < 60)
+  if (score < 60) fetchBcAlternatives(_bcCurrentProduct);
+  else { const a = document.getElementById("bc-alternatives"); if (a) a.style.display = "none"; }
 }
 
 window.openBarcodeCamera = openBarcodeCamera;
 window.closeBarcodeCamera = closeBarcodeCamera;
 window.scanBarcodeFromFile = scanBarcodeFromFile;
 window.lookupBarcode = lookupBarcode;
+
+// ── Barcode DB: history + favorites ──────────────────────────────────────────
+const BC_HISTORY_KEY   = "fitai_bc_history_v1";
+const BC_FAVORITES_KEY = "fitai_bc_favs_v1";
+
+function _getBcHistory()   { try { return JSON.parse(localStorage.getItem(BC_HISTORY_KEY) || "[]"); } catch { return []; } }
+function _getBcFavorites() { try { return JSON.parse(localStorage.getItem(BC_FAVORITES_KEY) || "[]"); } catch { return []; } }
+
+function _saveBcEntry(product, code, score) {
+  const entry = {
+    code,
+    name: product.product_name || "Produit inconnu",
+    brand: product.brands || "",
+    score,
+    grade: product.nutriscore_grade || "",
+    nova: product.nova_group || null,
+    img: product.image_front_url || "",
+    kcal: Math.round((product.nutriments?.["energy-kcal_100g"] || (product.nutriments?.["energy_100g"] || 0) / 4.184)),
+    prot: parseFloat((product.nutriments?.proteins_100g || 0).toFixed(1)),
+    ts: Date.now()
+  };
+  // History (max 30, deduplicated by code)
+  const hist = _getBcHistory().filter(e => e.code !== code);
+  hist.unshift(entry);
+  try { localStorage.setItem(BC_HISTORY_KEY, JSON.stringify(hist.slice(0, 30))); } catch {}
+  return entry;
+}
+
+function toggleBcFavorite(code) {
+  const favs = _getBcFavorites();
+  const idx = favs.findIndex(f => f.code === code);
+  let isFav;
+  if (idx >= 0) {
+    favs.splice(idx, 1);
+    isFav = false;
+  } else {
+    const hist = _getBcHistory().find(e => e.code === code);
+    if (hist) { favs.unshift(hist); isFav = true; }
+    else { isFav = false; }
+  }
+  try { localStorage.setItem(BC_FAVORITES_KEY, JSON.stringify(favs.slice(0, 50))); } catch {}
+  // Update star button
+  const starBtn = document.getElementById(`bc-fav-btn-${code}`);
+  if (starBtn) starBtn.textContent = isFav ? "★" : "☆";
+  toast(isFav ? "Ajouté aux favoris" : "Retiré des favoris", "ok");
+  _renderBcLibrary();
+}
+
+function removeBcHistory(code) {
+  const hist = _getBcHistory().filter(e => e.code !== code);
+  try { localStorage.setItem(BC_HISTORY_KEY, JSON.stringify(hist)); } catch {}
+  _renderBcLibrary();
+}
+
+function _renderBcLibrary() {
+  const el = document.getElementById("bc-library-wrap");
+  if (!el) return;
+  const hist  = _getBcHistory();
+  const favs  = _getBcFavorites();
+  const favCodes = new Set(favs.map(f => f.code));
+  if (!hist.length && !favs.length) {
+    el.innerHTML = "<div class='empty' style='padding:16px 0'>Aucun produit scanné pour l'instant.</div>";
+    return;
+  }
+  const renderEntry = (e, removable) => {
+    const scoreColor = e.score >= 70 ? "#22c55e" : e.score >= 45 ? "#f59e0b" : "#ef4444";
+    const gradeColor = { a:"#22c55e", b:"#84cc16", c:"#f59e0b", d:"#f97316", e:"#ef4444" }[(e.grade||"").toLowerCase()] || "#6b7280";
+    const isFav = favCodes.has(e.code);
+    return `<div class="bc-lib-row" onclick="lookupBarcode('${escapeAttr(e.code)}')">
+      ${e.img ? `<img src="${escapeAttr(e.img)}" class="bc-lib-img" alt="" onerror="this.style.display='none'">` : `<div class="bc-lib-img" style="background:rgba(255,255,255,.05)"></div>`}
+      <div class="bc-lib-info">
+        <div class="bc-lib-name">${escapeHtml(e.name)}</div>
+        ${e.brand ? `<div class="bc-lib-brand">${escapeHtml(e.brand)}</div>` : ""}
+        <div style="display:flex;gap:5px;margin-top:3px">
+          ${e.grade ? `<span style="font-size:.58rem;font-weight:800;color:${gradeColor}">NutriScore ${e.grade.toUpperCase()}</span>` : ""}
+          ${e.kcal ? `<span style="font-size:.58rem;color:var(--muted)">${e.kcal} kcal</span>` : ""}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div style="width:34px;height:34px;border-radius:50%;border:2px solid ${scoreColor};display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:900;color:${scoreColor}">${e.score}</div>
+        <button id="bc-fav-btn-${escapeAttr(e.code)}" onclick="event.stopPropagation();toggleBcFavorite('${escapeAttr(e.code)}')" style="background:none;border:none;color:${isFav?"#f59e0b":"rgba(255,255,255,.3)"};font-size:1.2rem;cursor:pointer;padding:4px">${isFav ? "★" : "☆"}</button>
+        ${removable ? `<button onclick="event.stopPropagation();removeBcHistory('${escapeAttr(e.code)}')" style="background:none;border:none;color:rgba(255,255,255,.18);font-size:.7rem;cursor:pointer;padding:4px">✕</button>` : ""}
+      </div>
+    </div>`;
+  };
+
+  let html = "";
+  if (favs.length) {
+    html += `<div class="bc-lib-section-title">⭐ Favoris (${favs.length})</div>`;
+    html += favs.map(e => renderEntry(e, false)).join("");
+  }
+  if (hist.length) {
+    html += `<div class="bc-lib-section-title" style="margin-top:${favs.length ? "16px" : "0"}">🕐 Historique (${hist.length})</div>`;
+    html += hist.map(e => renderEntry(e, true)).join("");
+  }
+  el.innerHTML = html;
+}
+
+// ── Product name search ───────────────────────────────────────────────────────
+let _bcSearchDebounce = null;
+function bcSearchInput(val) {
+  clearTimeout(_bcSearchDebounce);
+  const v = val.trim();
+  if (v.length < 2) {
+    const el = document.getElementById("bc-search-results");
+    if (el) el.innerHTML = "";
+    return;
+  }
+  _bcSearchDebounce = setTimeout(() => bcSearchProducts(v), 420);
+}
+
+async function bcSearchProducts(query) {
+  const el = document.getElementById("bc-search-results");
+  if (!el) return;
+  el.innerHTML = `<div class="bc-search-loading"><div class="spinner" style="width:18px;height:18px"></div><span>Recherche…</span></div>`;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page_size=8&fields=code,product_name,brands,nutriscore_grade,nova_group,nutriments,image_front_url&sort_by=unique_scans_n`;
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "FitAI-App/1.0" } });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error();
+    const data = await r.json();
+    const products = (data.products || []).filter(p => p.product_name);
+    if (!products.length) {
+      el.innerHTML = `<div class="bc-search-empty">Aucun résultat pour "<strong>${escapeHtml(query)}</strong>"</div>`;
+      return;
+    }
+    el.innerHTML = products.map(p => {
+      const score = _calcProductScore(p);
+      const scoreColor = score >= 70 ? "#22c55e" : score >= 45 ? "#f59e0b" : "#ef4444";
+      const grade = (p.nutriscore_grade || "").toUpperCase();
+      const gradeColor = { A:"#22c55e", B:"#84cc16", C:"#f59e0b", D:"#f97316", E:"#ef4444" }[grade] || "#6b7280";
+      const kcal = Math.round(p.nutriments?.["energy-kcal_100g"] || (p.nutriments?.["energy_100g"] || 0) / 4.184);
+      return `<div class="bc-search-row" onclick="lookupBarcode('${escapeAttr(p.code)}')">
+        ${p.image_front_url ? `<img src="${escapeAttr(p.image_front_url)}" class="bc-lib-img" alt="" onerror="this.style.display='none'">` : `<div class="bc-lib-img" style="background:rgba(255,255,255,.05)"></div>`}
+        <div class="bc-lib-info">
+          <div class="bc-lib-name">${escapeHtml(p.product_name)}</div>
+          ${p.brands ? `<div class="bc-lib-brand">${escapeHtml(p.brands)}</div>` : ""}
+          <div style="display:flex;gap:5px;margin-top:3px;flex-wrap:wrap">
+            ${grade ? `<span style="font-size:.58rem;font-weight:800;color:${gradeColor}">NS-${grade}</span>` : ""}
+            ${kcal ? `<span style="font-size:.58rem;color:var(--muted)">${kcal} kcal/100g</span>` : ""}
+          </div>
+        </div>
+        <div style="width:34px;height:34px;border-radius:50%;border:2px solid ${scoreColor};display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:900;color:${scoreColor};flex-shrink:0">${score}</div>
+      </div>`;
+    }).join("");
+  } catch {
+    el.innerHTML = `<div class="bc-search-empty">Erreur réseau — réessaie.</div>`;
+  }
+}
+
+// ── Better alternatives ───────────────────────────────────────────────────────
+async function fetchBcAlternatives(product) {
+  const el = document.getElementById("bc-alternatives");
+  if (!el) return;
+  if (!product || !product.categories_tags?.length) {
+    el.style.display = "none";
+    return;
+  }
+  const catTags = product.categories_tags.slice(0, 2).join(",");
+  try {
+    const r = await fetch(
+      `https://world.openfoodfacts.org/cgi/search.pl?tagtype_0=categories&tag_contains_0=contains&tag_0=${encodeURIComponent(catTags)}&sort_by=nutriscore_score&page_size=5&json=1&fields=code,product_name,brands,nutriscore_grade,nova_group,nutriments,image_front_url`,
+      { headers: { "User-Agent": "FitAI-App/1.0" } }
+    );
+    if (!r.ok) return;
+    const data = await r.json();
+    const currentCode = product.code || "";
+    const better = (data.products || [])
+      .filter(p => p.product_name && p.code !== currentCode && p.nutriscore_grade)
+      .slice(0, 3);
+    if (!better.length) { el.style.display = "none"; return; }
+    el.style.display = "block";
+    el.innerHTML = `<div class="bc-alt-title">💡 Meilleures alternatives similaires</div>` +
+      better.map(p => {
+        const s = _calcProductScore(p);
+        const sc = s >= 70 ? "#22c55e" : s >= 45 ? "#f59e0b" : "#ef4444";
+        const kcal = Math.round(p.nutriments?.["energy-kcal_100g"] || (p.nutriments?.["energy_100g"] || 0) / 4.184);
+        return `<div class="bc-alt-row" onclick="lookupBarcode('${escapeAttr(p.code)}')">
+          ${p.image_front_url ? `<img src="${escapeAttr(p.image_front_url)}" class="bc-lib-img" alt="" onerror="this.style.display='none'">` : `<div class="bc-lib-img" style="background:rgba(255,255,255,.05)"></div>`}
+          <div class="bc-lib-info">
+            <div class="bc-lib-name">${escapeHtml(p.product_name)}</div>
+            ${p.brands ? `<div class="bc-lib-brand">${escapeHtml(p.brands)}</div>` : ""}
+            ${kcal ? `<div style="font-size:.58rem;color:var(--muted);margin-top:2px">${kcal} kcal/100g</div>` : ""}
+          </div>
+          <div style="width:34px;height:34px;border-radius:50%;border:2px solid ${sc};display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:900;color:${sc};flex-shrink:0">${s}</div>
+        </div>`;
+      }).join("");
+  } catch { el.style.display = "none"; }
+}
+
+// ── Portion calculator + add to meal ─────────────────────────────────────────
+let _bcCurrentProduct = null;
+
+function updateBcPortion(grams) {
+  if (!_bcCurrentProduct) return;
+  const g = parseFloat(grams) || 100;
+  const n = _bcCurrentProduct.nutriments || {};
+  const ratio = g / 100;
+  const calc = (v) => Math.round((v || 0) * ratio * 10) / 10;
+
+  const fields = {
+    "bc-portion-kcal": Math.round((n["energy-kcal_100g"] || (n["energy_100g"] || 0) / 4.184) * ratio),
+    "bc-portion-prot": calc(n.proteins_100g),
+    "bc-portion-carb": calc(n.carbohydrates_100g),
+    "bc-portion-fat":  calc(n.fat_100g),
+  };
+  for (const [id, val] of Object.entries(fields)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+}
+
+function addBcProductToMeal() {
+  if (!_bcCurrentProduct) return;
+  const grams = parseFloat(document.getElementById("bc-portion-input")?.value) || 100;
+  const n = _bcCurrentProduct.nutriments || {};
+  const ratio = grams / 100;
+  const name = _bcCurrentProduct.product_name || "Produit scanné";
+  const brand = _bcCurrentProduct.brands ? ` (${_bcCurrentProduct.brands})` : "";
+  const kcal = Math.round((n["energy-kcal_100g"] || (n["energy_100g"] || 0) / 4.184) * ratio);
+  const prot = Math.round((n.proteins_100g || 0) * ratio * 10) / 10;
+  const carb = Math.round((n.carbohydrates_100g || 0) * ratio * 10) / 10;
+  const fat  = Math.round((n.fat_100g || 0) * ratio * 10) / 10;
+  const mealType = document.getElementById("meal-type-strip")?.querySelector(".active")?.dataset?.type || "midi";
+
+  // Reuse the existing addMeal infrastructure
+  const mealData = {
+    type: mealType,
+    foods: [`${name}${brand} (${grams}g)`],
+    kcal, prot, carb, fat,
+    note: `Code EAN: ${_bcCurrentProduct.code || "—"}`,
+    source: "barcode"
+  };
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const key = `fitai_meals_${today}`;
+    const meals = JSON.parse(localStorage.getItem(key) || "[]");
+    meals.push({ ...mealData, id: Date.now(), ts: new Date().toISOString() });
+    localStorage.setItem(key, JSON.stringify(meals));
+    updateNutritionDisplay();
+    toast(`${name} (${grams}g) ajouté au repas — ${kcal} kcal`, "ok");
+  } catch { toast("Erreur lors de l'ajout", "err"); }
+}
+
+function bcSwitchTab(tab) {
+  ["scan","search","library"].forEach(t => {
+    const panel = document.getElementById(`bc-panel-${t}`);
+    const btn   = document.getElementById(`bc-tab-${t}`);
+    const on = t === tab;
+    if (panel) panel.style.display = on ? "block" : "none";
+    if (btn)   btn.classList.toggle("on", on);
+  });
+  if (tab === "library") _renderBcLibrary();
+}
+
+window.bcSwitchTab        = bcSwitchTab;
+window.toggleBcFavorite   = toggleBcFavorite;
+window.removeBcHistory    = removeBcHistory;
+window.bcSearchInput      = bcSearchInput;
+window.bcSearchProducts   = bcSearchProducts;
+window.updateBcPortion    = updateBcPortion;
+window.addBcProductToMeal = addBcProductToMeal;
 function syncProgWater() {
   const data = getWaterData();
   const count = Number(data.count || 0);
