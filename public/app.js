@@ -8476,7 +8476,332 @@ window.saveFoodAnalysis = saveFoodAnalysis;
 window.loadNutritionWeekChart = loadNutritionWeekChart;
 window.selectMealType = selectMealType;
 
-// ── Sync water counter in programme tab ──────────────────────────────────────
+window.analyzeFood = analyzeFood;
+window.saveFoodAnalysis = saveFoodAnalysis;
+window.loadNutritionWeekChart = loadNutritionWeekChart;
+window.selectMealType = selectMealType;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SCANNER CODE-BARRES (Yuka-style) — Open Food Facts
+// ══════════════════════════════════════════════════════════════════════════════
+let _barcodeScanner = null;
+
+async function _loadBarcodeLib() {
+  if (window.Html5Qrcode) return true;
+  try {
+    await loadScript("https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js");
+    return true;
+  } catch {
+    toast("Scanner indisponible — saisis le code manuellement.", "err");
+    return false;
+  }
+}
+
+async function openBarcodeCamera() {
+  if (!await _loadBarcodeLib()) return;
+  const wrap = document.getElementById("bc-camera-wrap");
+  if (!wrap) return;
+  wrap.style.display = "block";
+  document.getElementById("bc-camera-hint")?.style && (document.getElementById("bc-camera-hint").style.display = "block");
+  try {
+    _barcodeScanner = new Html5Qrcode("bc-reader");
+    await _barcodeScanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 260, height: 120 }, aspectRatio: 1.8 },
+      (code) => { closeBarcodeCamera(); lookupBarcode(code); },
+      () => {}
+    );
+  } catch (e) {
+    wrap.style.display = "none";
+    const msg = e?.name === "NotAllowedError"
+      ? "Accès caméra refusé — autorise-le dans les réglages du navigateur."
+      : "Caméra indisponible — utilise l'upload ou saisis le code.";
+    toast(msg, "err");
+    _barcodeScanner = null;
+  }
+}
+
+function closeBarcodeCamera() {
+  const wrap = document.getElementById("bc-camera-wrap");
+  if (wrap) wrap.style.display = "none";
+  if (_barcodeScanner) {
+    _barcodeScanner.stop().catch(() => {});
+    _barcodeScanner = null;
+  }
+}
+
+async function scanBarcodeFromFile(inputEl) {
+  const file = inputEl?.files?.[0];
+  if (!file) return;
+  if (!await _loadBarcodeLib()) return;
+  setBarcodeLoading(true);
+  try {
+    // Need a hidden div for html5-qrcode file scanning
+    let hidden = document.getElementById("bc-reader-hidden");
+    if (!hidden) {
+      hidden = document.createElement("div");
+      hidden.id = "bc-reader-hidden";
+      hidden.style.display = "none";
+      document.body.appendChild(hidden);
+    }
+    const scanner = new Html5Qrcode("bc-reader-hidden");
+    const code = await scanner.scanFile(file, false);
+    lookupBarcode(code);
+  } catch {
+    setBarcodeLoading(false);
+    toast("Code-barres non détecté. Essaie une photo plus nette ou saisis le code manuellement.", "err");
+  }
+  // Reset file input
+  if (inputEl) inputEl.value = "";
+}
+
+function setBarcodeLoading(on) {
+  const loadEl = document.getElementById("bc-loading");
+  const resultEl = document.getElementById("bc-result");
+  if (loadEl) loadEl.style.display = on ? "flex" : "none";
+  if (resultEl && on) resultEl.style.display = "none";
+}
+
+async function lookupBarcode(code) {
+  if (!code) return;
+  const clean = String(code).replace(/\D/g, "");
+  if (clean.length < 8) { toast("Code-barres invalide (min. 8 chiffres)", "err"); return; }
+
+  // Update manual input field with found code
+  const manualEl = document.getElementById("bc-manual-input");
+  if (manualEl) manualEl.value = clean;
+
+  setBarcodeLoading(true);
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    const r = await fetch(
+      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(clean)}.json` +
+      `?fields=product_name,brands,image_front_url,nutriscore_grade,nova_group,nutriments,ingredients_text_fr,additives_tags`,
+      { signal: ctrl.signal, headers: { "User-Agent": "FitAI-App/1.0 (fitness app)" } }
+    );
+    clearTimeout(timer);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    setBarcodeLoading(false);
+    if (data.status !== 1 || !data.product) {
+      _renderBarcodeNotFound(clean);
+    } else {
+      _renderBarcodeResult(data.product, clean);
+    }
+  } catch (e) {
+    setBarcodeLoading(false);
+    if (e?.name === "AbortError") toast("Timeout — vérifier ta connexion", "err");
+    else toast("Erreur réseau. Réessaie.", "err");
+  }
+}
+
+function _calcProductScore(product) {
+  const grades = { a: 100, b: 78, c: 55, d: 30, e: 10 };
+  const grade = (product.nutriscore_grade || "").toLowerCase();
+  const nova = parseInt(product.nova_group) || 1;
+  const base = grade in grades ? grades[grade] : 50;
+  const novaDeduct = { 1: 0, 2: 0, 3: 10, 4: 22 }[nova] || 0;
+  return Math.max(0, Math.min(100, base - novaDeduct));
+}
+
+function _getProductPoints(product) {
+  const n = product.nutriments || {};
+  const p100 = {
+    kcal: Math.round(n["energy-kcal_100g"] || (n["energy_100g"] || 0) / 4.184),
+    prot: parseFloat((n.proteins_100g || 0).toFixed(1)),
+    carb: parseFloat((n.carbohydrates_100g || 0).toFixed(1)),
+    sugar: parseFloat((n.sugars_100g || 0).toFixed(1)),
+    fat: parseFloat((n.fat_100g || 0).toFixed(1)),
+    satFat: parseFloat((n["saturated-fat_100g"] || 0).toFixed(1)),
+    fiber: parseFloat((n.fiber_100g || 0).toFixed(1)),
+    salt: parseFloat((n.salt_100g || 0).toFixed(2)),
+  };
+  const good = [], bad = [];
+  if (p100.prot >= 15)  good.push(`Riche en protéines (${p100.prot}g/100g)`);
+  if (p100.fiber >= 3)  good.push(`Bonne source de fibres (${p100.fiber}g/100g)`);
+  if (p100.sugar < 5)   good.push(`Faible en sucres (${p100.sugar}g/100g)`);
+  if (p100.fat < 3)     good.push(`Très faible en graisses (${p100.fat}g/100g)`);
+  if (p100.salt < 0.3)  good.push(`Faible en sel (${p100.salt}g/100g)`);
+  if (p100.satFat < 1.5)good.push(`Peu de graisses saturées (${p100.satFat}g/100g)`);
+  if (p100.kcal < 100)  good.push(`Très peu calorique (${p100.kcal} kcal/100g)`);
+
+  if (p100.sugar > 15)  bad.push(`Élevé en sucres (${p100.sugar}g/100g) — pics glycémiques`);
+  if (p100.satFat > 5)  bad.push(`Élevé en graisses saturées (${p100.satFat}g/100g)`);
+  if (p100.salt > 1.2)  bad.push(`Élevé en sel (${p100.salt}g/100g)`);
+  if (p100.fat > 25)    bad.push(`Très gras (${p100.fat}g/100g)`);
+  if (p100.kcal > 450)  bad.push(`Très calorique (${p100.kcal} kcal/100g)`);
+  const additives = (product.additives_tags || []).length;
+  if (additives > 5)    bad.push(`${additives} additifs détectés`);
+  else if (additives > 2) bad.push(`${additives} additifs (dont potentiellement controversés)`);
+  return { good, bad, p100 };
+}
+
+function _generateBarcodeCoachComment(product, score) {
+  const n = product.nutriments || {};
+  const p100 = {
+    prot: parseFloat((n.proteins_100g || 0).toFixed(0)),
+    sugar: parseFloat((n.sugars_100g || 0).toFixed(0)),
+    salt: parseFloat((n.salt_100g || 0).toFixed(1)),
+    fat: parseFloat((n.fat_100g || 0).toFixed(0)),
+    kcal: Math.round(n["energy-kcal_100g"] || (n["energy_100g"] || 0) / 4.184),
+    fiber: parseFloat((n.fiber_100g || 0).toFixed(1)),
+  };
+  let goal = "";
+  try { goal = localStorage.getItem("fitai_goal_type") || ""; } catch {}
+  const nova = parseInt(product.nova_group) || 1;
+  const grade = (product.nutriscore_grade || "").toUpperCase();
+  const name = product.product_name || "ce produit";
+  const parts = [];
+
+  // Opening
+  if (score >= 75) parts.push(`${name} est un excellent choix (Nutri-Score ${grade}, NOVA ${nova}).`);
+  else if (score >= 55) parts.push(`${name} est correct mais pas parfait.`);
+  else if (score >= 35) parts.push(`${name} est à consommer avec modération — score ${score}/100.`);
+  else parts.push(`${name} est à éviter au quotidien — score ${score}/100.`);
+
+  // NOVA
+  if (nova === 4) parts.push("Produit ultra-transformé (NOVA 4) : matrice alimentaire détruite, satiété réduite, IG élevé.");
+  else if (nova === 3) parts.push("Produit transformé (NOVA 3) — préfère un équivalent moins industriel quand possible.");
+  else if (nova <= 2) parts.push("Peu ou pas transformé — bonne base.");
+
+  // Proteins
+  if (p100.prot >= 20) parts.push(`Excellente source de protéines (${p100.prot}g/100g) — idéal pour la récup musculaire.`);
+  else if (p100.prot < 5 && (goal === "prise_de_masse" || goal === "seche" || goal === "force")) {
+    parts.push(`Pauvre en protéines (${p100.prot}g/100g) — complète avec une source protéique pour ton objectif.`);
+  }
+
+  // Sugar
+  if (p100.sugar > 20) parts.push(`${p100.sugar}g de sucres/100g : pics d'insuline fréquents = stockage graisseux accru.`);
+
+  // Salt
+  if (p100.salt > 1.5) parts.push(`Sel élevé (${p100.salt}g/100g) — rétention d'eau et pression artérielle à surveiller.`);
+
+  // Goal-specific
+  if (goal === "prise_de_masse" && p100.kcal >= 300 && p100.prot >= 12) {
+    parts.push("Pour ta prise de masse : bon compromis calories + protéines.");
+  } else if ((goal === "seche" || goal === "perte_de_poids") && p100.kcal > 400) {
+    parts.push("Pour ta sèche : ce produit est dense en calories — surveille les portions.");
+  } else if ((goal === "seche" || goal === "perte_de_poids") && p100.kcal < 200 && p100.prot > 10) {
+    parts.push("Bon choix pour ta sèche : peu calorique et protéiné.");
+  }
+
+  // Fiber
+  if (p100.fiber >= 5) parts.push(`Riche en fibres (${p100.fiber}g/100g) — excellente satiété et microbiote.`);
+
+  // Closing
+  if (score >= 70 && nova <= 2) parts.push("Continue sur cette lancée — la qualité des aliments est la base de tout résultat durable.");
+  else if (score < 35) parts.push("Rappel : 80% des résultats viennent de la qualité alimentaire au quotidien.");
+
+  return parts.join(" ");
+}
+
+function _renderBarcodeNotFound(code) {
+  const el = document.getElementById("bc-result");
+  if (!el) return;
+  el.style.display = "block";
+  el.innerHTML = `<div class="bc-not-found">
+    <div style="font-size:2.5rem;margin-bottom:10px">🔎</div>
+    <div style="font-weight:900;font-size:.95rem;color:var(--text);margin-bottom:6px">Produit non trouvé</div>
+    <div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">Code EAN : ${escapeHtml(code)}</div>
+    <div style="font-size:.73rem;color:var(--muted);line-height:1.5">Ce produit n'est pas encore dans la base Open Food Facts.<br>Tu peux contribuer sur <span style="color:#6366f1">openfoodfacts.org</span></div>
+  </div>`;
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function _renderBarcodeResult(product, code) {
+  const el = document.getElementById("bc-result");
+  if (!el) return;
+
+  const score = _calcProductScore(product);
+  const { good, bad, p100 } = _getProductPoints(product);
+  const coach = _generateBarcodeCoachComment(product, score);
+
+  const scoreColor = score >= 70 ? "#22c55e" : score >= 45 ? "#f59e0b" : "#ef4444";
+  const scoreLbl   = score >= 75 ? "Excellent" : score >= 60 ? "Bon" : score >= 45 ? "Moyen" : score >= 25 ? "Médiocre" : "Mauvais";
+
+  const grade = (product.nutriscore_grade || "").toUpperCase();
+  const gradeColor = { A:"#22c55e", B:"#84cc16", C:"#f59e0b", D:"#f97316", E:"#ef4444" }[grade] || "#6b7280";
+  const nova = parseInt(product.nova_group) || null;
+  const novaColor = { 1:"#22c55e", 2:"#84cc16", 3:"#f59e0b", 4:"#ef4444" }[nova] || "#6b7280";
+  const novaLbl = { 1:"Non transformé", 2:"Peu transformé", 3:"Transformé", 4:"Ultra-transformé" }[nova] || "—";
+
+  const name  = escapeHtml(product.product_name || "Produit inconnu");
+  const brand = escapeHtml(product.brands || "");
+  const img   = product.image_front_url || "";
+
+  el.style.display = "block";
+  el.innerHTML = `
+  <div class="bc-card">
+    <!-- Score + identity -->
+    <div class="bc-header">
+      ${img ? `<img src="${escapeAttr(img)}" class="bc-img" alt="${name}" onerror="this.style.display='none'">` : ""}
+      <div class="bc-identity">
+        <div class="bc-name">${name}</div>
+        ${brand ? `<div class="bc-brand">${brand}</div>` : ""}
+        <div class="bc-badges">
+          ${grade ? `<span class="bc-badge" style="background:${gradeColor}22;color:${gradeColor};border-color:${gradeColor}44">Nutri-Score ${grade}</span>` : ""}
+          ${nova ? `<span class="bc-badge" style="background:${novaColor}22;color:${novaColor};border-color:${novaColor}44">NOVA ${nova}</span>` : ""}
+        </div>
+      </div>
+      <div class="bc-score-circle" style="border-color:${scoreColor}">
+        <div class="bc-score-num" style="color:${scoreColor}">${score}</div>
+        <div class="bc-score-lbl" style="color:${scoreColor}">${scoreLbl}</div>
+      </div>
+    </div>
+
+    <!-- Nutrients per 100g -->
+    <div class="bc-nutr-section">
+      <div class="bc-nutr-heading">Pour 100g</div>
+      <div class="bc-nutr-grid">
+        <div class="bc-nutr-cell"><div class="bc-nutr-val">${p100.kcal}</div><div class="bc-nutr-unit">kcal</div></div>
+        <div class="bc-nutr-cell"><div class="bc-nutr-val" style="color:#4ade80">${p100.prot}</div><div class="bc-nutr-unit">g prot.</div></div>
+        <div class="bc-nutr-cell"><div class="bc-nutr-val" style="color:#fbbf24">${p100.carb}</div><div class="bc-nutr-unit">g glucides</div></div>
+        <div class="bc-nutr-cell"><div class="bc-nutr-val" style="color:#fb923c">${p100.sugar}</div><div class="bc-nutr-unit">g sucres</div></div>
+        <div class="bc-nutr-cell"><div class="bc-nutr-val" style="color:#f87171">${p100.fat}</div><div class="bc-nutr-unit">g lipides</div></div>
+        <div class="bc-nutr-cell"><div class="bc-nutr-val">${p100.fiber}</div><div class="bc-nutr-unit">g fibres</div></div>
+        <div class="bc-nutr-cell"><div class="bc-nutr-val">${p100.salt}</div><div class="bc-nutr-unit">g sel</div></div>
+      </div>
+    </div>
+
+    <!-- Good/Bad points -->
+    ${(good.length || bad.length) ? `<div class="bc-points-wrap">
+      ${good.slice(0,4).map(t => `<div class="bc-point"><span class="bc-pt-dot" style="background:#22c55e"></span>${escapeHtml(t)}</div>`).join("")}
+      ${bad.slice(0,4).map(t => `<div class="bc-point bad"><span class="bc-pt-dot" style="background:#ef4444"></span>${escapeHtml(t)}</div>`).join("")}
+    </div>` : ""}
+
+    <!-- NOVA bar -->
+    ${nova ? `<div class="bc-nova-row">
+      <span class="bc-nova-lbl">Transformation</span>
+      <div class="bc-nova-track">
+        ${[1,2,3,4].map(i => `<div class="bc-nova-seg" style="background:${{1:"#22c55e",2:"#84cc16",3:"#f59e0b",4:"#ef4444"}[i]};opacity:${nova >= i ? 1 : 0.15}"></div>`).join("")}
+      </div>
+      <span class="bc-nova-label-val" style="color:${novaColor}">${novaLbl}</span>
+    </div>` : ""}
+
+    <!-- Coach comment -->
+    <div class="bc-coach">
+      <div class="bc-coach-hdr">
+        <div class="bc-coach-ic">🧠</div>
+        <div>
+          <div class="bc-coach-title">Analyse Coach</div>
+          <div class="bc-coach-sub">Personnalisée selon ton profil</div>
+        </div>
+      </div>
+      <div class="bc-coach-body">${escapeHtml(coach)}</div>
+    </div>
+
+    <div style="font-size:.58rem;color:var(--muted);text-align:center;margin-top:8px">Source : Open Food Facts — base de données collaborative</div>
+  </div>`;
+
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+window.openBarcodeCamera = openBarcodeCamera;
+window.closeBarcodeCamera = closeBarcodeCamera;
+window.scanBarcodeFromFile = scanBarcodeFromFile;
+window.lookupBarcode = lookupBarcode;
 function syncProgWater() {
   const data = getWaterData();
   const count = Number(data.count || 0);
