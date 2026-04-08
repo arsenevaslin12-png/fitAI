@@ -2912,19 +2912,73 @@ function toggleFriendsSection() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SOMMEIL — Sleep tracking
+// SOMMEIL — Sleep tracking (v2 — coach AI, energy, calendar, goals)
 // ══════════════════════════════════════════════════════════════════════════════
 const SLEEP_STORAGE_KEY = "fitai_sleep_log_v1";
 const _SLEEP_QUALITY_LABELS = ["", "😖 Très mauvais", "😤 Mauvais", "😐 Moyen", "🙂 Bon", "😊 Excellent"];
 const _SLEEP_QUALITY_COLORS = ["", "#ef4444", "#f59e0b", "#6366f1", "#22d3ee", "#22c55e"];
+const _SLEEP_ENERGY_LABELS  = ["", "💀 Épuisé", "😴 Fatigué", "😊 Correct", "💪 En forme", "🚀 Au top"];
+const _SLEEP_ENERGY_COLORS  = ["", "#ef4444", "#f59e0b", "#6366f1", "#22d3ee", "#22c55e"];
+const _SLEEP_TAGS = ["#stress","#alcool","#écrans","#sport_soir","#café_tard","#bruit","#chaleur","#réveil","#rêves"];
 
 function _getSleepLog() {
   try { return JSON.parse(localStorage.getItem(SLEEP_STORAGE_KEY) || "[]"); } catch { return []; }
 }
 function _saveSleepLog(log) {
-  try { localStorage.setItem(SLEEP_STORAGE_KEY, JSON.stringify((log || []).slice(-60))); } catch {}
+  try { localStorage.setItem(SLEEP_STORAGE_KEY, JSON.stringify((log || []).slice(-90))); } catch {}
+}
+function getSleepGoal() {
+  return parseFloat(localStorage.getItem("fitai_sleep_goal") || "8");
+}
+function setSleepGoal(h) {
+  localStorage.setItem("fitai_sleep_goal", String(h));
+  _refreshSleepUI();
+  document.querySelectorAll(".sleep-goal-btn").forEach(b => b.classList.toggle("on", parseFloat(b.dataset.h) === h));
+  syncSleepDuration();
 }
 
+// ── Mode switch (Horaires / Durée) ──
+let _sleepMode = "times";
+function setSleepMode(mode) {
+  _sleepMode = mode;
+  const timesEl = document.getElementById("sleep-mode-times");
+  const hoursEl = document.getElementById("sleep-mode-hours");
+  if (timesEl) timesEl.style.display = mode === "times" ? "flex" : "none";
+  if (hoursEl) hoursEl.style.display = mode === "hours" ? "block" : "none";
+  document.getElementById("sleep-tab-times")?.classList.toggle("on", mode === "times");
+  document.getElementById("sleep-tab-hours")?.classList.toggle("on", mode === "hours");
+}
+
+// ── Sync duration from bed/wake times ──
+function syncSleepDuration() {
+  const bed  = document.getElementById("sleep-bedtime-input")?.value;
+  const wake = document.getElementById("sleep-waketime-input")?.value;
+  const prevEl = document.getElementById("sleep-duration-preview");
+  const valEl  = document.getElementById("sleep-duration-val");
+  const cycleEl= document.getElementById("sleep-cycles-badge");
+  if (!bed || !wake || !prevEl) return;
+  const hours = _hoursFromTimes(bed, wake);
+  if (hours < 1 || hours > 16) { prevEl.style.display = "none"; return; }
+  prevEl.style.display = "flex";
+  if (valEl) valEl.textContent = hours.toFixed(1);
+  const cycles = Math.round(hours / 1.5);
+  const goal = getSleepGoal();
+  const diff = Math.round((hours - goal) * 10) / 10;
+  const diffStr = diff >= 0 ? `+${diff}h vs objectif` : `${diff}h vs objectif`;
+  const diffCol = diff >= 0 ? "#22c55e" : diff >= -1 ? "#f59e0b" : "#ef4444";
+  if (cycleEl) cycleEl.innerHTML = `${cycles} cycle${cycles > 1 ? "s" : ""} &nbsp;·&nbsp; <span style="color:${diffCol};font-weight:800">${diffStr}</span>`;
+}
+
+function _hoursFromTimes(bed, wake) {
+  const [bh, bm] = bed.split(":").map(Number);
+  const [wh, wm] = wake.split(":").map(Number);
+  let bedMin = bh * 60 + bm;
+  let wakeMin = wh * 60 + wm;
+  if (wakeMin <= bedMin) wakeMin += 24 * 60; // crossed midnight
+  return Math.round((wakeMin - bedMin) / 60 * 10) / 10;
+}
+
+// ── Quality selector ──
 function setSleepQuality(val) {
   const el = document.getElementById("sleep-quality-val");
   if (!el) return;
@@ -2934,145 +2988,565 @@ function setSleepQuality(val) {
   document.querySelectorAll(".sleep-q-btn").forEach((b, i) => b.classList.toggle("active", i + 1 === val));
 }
 
+// ── Energy at waking selector ──
+function setSleepEnergy(val) {
+  const el = document.getElementById("sleep-energy-val");
+  if (!el) return;
+  el.dataset.val = String(val);
+  el.textContent = val > 0 ? (_SLEEP_ENERGY_LABELS[val] || "") : "— Non renseigné";
+  el.style.color = val > 0 ? (_SLEEP_ENERGY_COLORS[val] || "#6366f1") : "var(--muted)";
+  document.querySelectorAll(".sleep-e-btn").forEach((b, i) => b.classList.toggle("active", i + 1 === val));
+}
+
+// ── Quick tags ──
+function toggleSleepTag(tag) {
+  const noteEl = document.getElementById("sleep-note-input");
+  if (!noteEl) return;
+  const current = noteEl.value;
+  if (current.includes(tag)) {
+    noteEl.value = current.replace(tag, "").replace(/\s{2,}/g, " ").trim();
+  } else {
+    noteEl.value = (current ? current.trimEnd() + " " : "") + tag;
+  }
+  // Update active state on tag buttons
+  document.querySelectorAll(".sleep-tag-chip").forEach(btn => {
+    btn.classList.toggle("on", noteEl.value.includes(btn.dataset.tag));
+  });
+}
+
+// ── Log sleep ──
 function logSleep() {
-  const raw = document.getElementById("sleep-hours-input")?.value;
-  const hours = parseFloat(raw);
-  if (!raw || isNaN(hours) || hours < 1 || hours > 16) { toast("Entre une durée entre 1 et 16h", "err"); return; }
-  const quality = parseInt(document.getElementById("sleep-quality-val")?.dataset.val || "3", 10);
-  const note = (document.getElementById("sleep-note-input")?.value || "").trim().slice(0, 120);
+  let hours;
+  if (_sleepMode === "times") {
+    const bed  = document.getElementById("sleep-bedtime-input")?.value;
+    const wake = document.getElementById("sleep-waketime-input")?.value;
+    if (!bed || !wake) { toast("Indique ton heure de coucher et de lever", "err"); return; }
+    hours = _hoursFromTimes(bed, wake);
+  } else {
+    const raw = document.getElementById("sleep-hours-input")?.value;
+    hours = parseFloat(raw);
+  }
+  if (!hours || isNaN(hours) || hours < 1 || hours > 16) { toast("Durée invalide (1-16h)", "err"); return; }
+  const quality  = parseInt(document.getElementById("sleep-quality-val")?.dataset.val || "3", 10);
+  const energy   = parseInt(document.getElementById("sleep-energy-val")?.dataset.val  || "0", 10) || null;
+  const note     = (document.getElementById("sleep-note-input")?.value || "").trim().slice(0, 200);
+  const bedtime  = document.getElementById("sleep-bedtime-input")?.value  || null;
+  const waketime = document.getElementById("sleep-waketime-input")?.value || null;
   const today = new Date().toISOString().slice(0, 10);
   const log = _getSleepLog().filter(e => e.date !== today);
-  log.push({ date: today, hours, quality, note });
+  log.push({ date: today, hours, quality, energy, note, bedtime, waketime });
   _saveSleepLog(log);
-  if (document.getElementById("sleep-note-input")) document.getElementById("sleep-note-input").value = "";
+  const noteEl = document.getElementById("sleep-note-input");
+  if (noteEl) noteEl.value = "";
+  setSleepEnergy(0);
+  document.querySelectorAll(".sleep-tag-chip").forEach(b => b.classList.remove("on"));
   toast("Nuit enregistrée ✓", "ok");
-  renderSleepChart();
-  _renderSleepScore();
-  _renderSleepHistory();
+  _refreshSleepUI();
 }
 
 function deleteSleepEntry(date) {
   _saveSleepLog(_getSleepLog().filter(e => e.date !== date));
-  renderSleepChart();
-  _renderSleepScore();
-  _renderSleepHistory();
-  toast("Entrée supprimée", "ok");
+  _refreshSleepUI();
+  toast("Supprimée", "ok");
 }
 
+function _refreshSleepUI() {
+  renderSleepChart();
+  _renderSleepHero();
+  _renderSleepHistory();
+  _renderSleepCalendar();
+}
+
+// ── Smart Coach AI Comment ──
+function _generateCoachComment(log) {
+  if (!log || log.length < 2) {
+    return "Enregistre au moins 2 nuits pour recevoir une analyse personnalisée. Le sommeil est le levier n°1 de progression — il surpasse n'importe quel programme ou supplément.";
+  }
+  const recent = log.slice(-7).filter(e => e.hours > 0);
+  if (!recent.length) return "Aucune donnée récente. Commence a enregistrer tes nuits.";
+
+  const avgH   = recent.reduce((s,e) => s + e.hours, 0) / recent.length;
+  const avgQ   = recent.reduce((s,e) => s + (e.quality || 3), 0) / recent.length;
+  const avgE   = recent.filter(e => e.energy).reduce((s,e,_,a) => s + e.energy / a.length, 0);
+  const goal   = getSleepGoal();
+  const debt   = Math.max(0, (goal - avgH) * recent.length);
+  const streak = _calcSleepStreak();
+
+  // Trend (last 3 vs prev days)
+  const last3 = log.slice(-3).filter(e => e.hours > 0);
+  const prev4  = log.slice(-7, -3).filter(e => e.hours > 0);
+  const trendH = (last3.length && prev4.length)
+    ? (last3.reduce((s,e)=>s+e.hours,0)/last3.length) - (prev4.reduce((s,e)=>s+e.hours,0)/prev4.length)
+    : 0;
+
+  // Bedtime regularity (std dev in minutes)
+  const withBedtime = recent.filter(e => e.bedtime);
+  let bedtimeStd = -1;
+  if (withBedtime.length > 2) {
+    const bedMins = withBedtime.map(e => {
+      const [h, m] = e.bedtime.split(":").map(Number);
+      let mins = h * 60 + m;
+      if (mins < 10 * 60) mins += 24 * 60; // after midnight
+      return mins;
+    });
+    const avgBed = bedMins.reduce((s,v)=>s+v,0) / bedMins.length;
+    bedtimeStd = Math.sqrt(bedMins.reduce((s,v)=>s+Math.pow(v-avgBed,2),0) / bedMins.length);
+  }
+
+  // Disruptors from notes
+  const allNotes = recent.map(e => (e.note || "").toLowerCase()).join(" ");
+  const hasAlcool = /alcool|bi.re|vin\b|verre/.test(allNotes);
+  const hasStress = /stress|anxi/.test(allNotes);
+  const hasEcran  = /[eé]cran|t[eé]l[eé]|netflix|phone/.test(allNotes);
+  const hasSport  = /sport|s[eé]ance|muscu|entra[iî]n/.test(allNotes);
+  const hasCafe   = /caf[eé]|caf[eé]_tard/.test(allNotes);
+  const hasChaleur= /chaleur/.test(allNotes);
+
+  const parts = [];
+
+  // 1. Opening hook (overall assessment)
+  if (avgH >= 8.5 && avgQ >= 4.5) {
+    parts.push("Exceptionnel. Tu dors comme un athlète professionnel — top 5%.");
+  } else if (avgH >= 7.5 && avgQ >= 4) {
+    parts.push("Tres bon travail sur la recuperation cette semaine.");
+  } else if (avgH >= 7 && avgQ >= 3.5) {
+    parts.push("Ton sommeil est sur la bonne voie. Quelques ajustements et tu montes d'un cran.");
+  } else if (avgH >= 7 && avgQ < 3) {
+    parts.push("Tu dors assez longtemps mais la qualite laisse a desirer — c'est souvent un probleme d'environnement.");
+  } else if (avgH < 6) {
+    parts.push("Alerte recuperation. Moins de 6h en moyenne — testostérone, GH et synthese proteique sont directement amputees.");
+  } else {
+    parts.push(`${avgH.toFixed(1)}h de moyenne — juste sous le seuil optimal de ${goal}h. Un effort ciblé suffit.`);
+  }
+
+  // 2. Trend
+  if (trendH > 0.4) {
+    parts.push(`Bonne dynamique : +${trendH.toFixed(1)}h sur les 3 dernieres nuits.`);
+  } else if (trendH < -0.5) {
+    parts.push(`Attention : -${Math.abs(trendH).toFixed(1)}h sur les 3 dernières nuits — surveille ça avant que ça devienne une habitude.`);
+  }
+
+  // 3. Debt
+  if (debt > 7) {
+    parts.push(`Tu portes environ ${debt.toFixed(0)}h de dette cette semaine. Le rattrapage du week-end en 1-2 nuits ne suffit pas — le cortisol reste elevé plusieurs jours.`);
+  } else if (debt > 3) {
+    parts.push(`~${debt.toFixed(0)}h de dette accumulee — 30 min de coucher plus tot sur 3-4 soirs suffit a effacer ca.`);
+  }
+
+  // 4. Bedtime regularity
+  if (bedtimeStd > 60) {
+    parts.push("Heure de coucher tres variable (> 1h d'écart). L'irrégularité perturbe ton cortisol matinal et ton adenosine — vise ±15-20 min max, même le week-end.");
+  } else if (bedtimeStd >= 0 && bedtimeStd < 20) {
+    parts.push("Excellente regularite des horaires — ton horloge circadienne est bien ancree, ca se voit dans la qualite.");
+  }
+
+  // 5. Energy vs quality mismatch (if both logged)
+  if (avgE > 0) {
+    const mismatch = avgQ - avgE;
+    if (mismatch > 1.5) {
+      parts.push("Interessant : tu perçois bien dormir mais tu te reveilles fatigue. Pense a verifier apnée du sommeil si c'est récurrent.");
+    } else if (mismatch < -1.5) {
+      parts.push("Bonne energie au reveil malgre une qualite perçue moyenne — ton corps recupere probablement mieux que tu ne le crois.");
+    }
+  }
+
+  // 6. Disruptors
+  if (hasAlcool) {
+    parts.push("Alcool mentionne : il fragmente le sommeil paradoxal (REM) même a faible dose — +1-2 micro-réveils en moyenne et moins de recup musculaire.");
+  }
+  if (hasStress) {
+    parts.push("Stress note : 10 min de respiration 4-7-8 ou cohérence cardiaque avant de dormir peut faire une vraie difference.");
+  }
+  if (hasEcran) {
+    parts.push("Ecrans le soir : la lumière bleue decale l'endormissement de 20-40 min. Lunettes filtrantes ou mode nuit strict 1h avant.");
+  }
+  if (hasCafe) {
+    parts.push("Café tard : demi-vie de la caféine ~6h. Un café a 15h = 50 mg encore actifs a minuit. Coupe avant 14h.");
+  }
+  if (hasChaleur) {
+    parts.push("Chaleur mentionnee : l'endormissement nécessite une baisse de 0.5°C de la temperature corporelle. 17-19°C dans la chambre est le sweet spot.");
+  }
+  if (hasSport && avgH < 7.5) {
+    parts.push("Tu t'entraînes ET tu manques de sommeil — la synthèse proteique nocturne et la production de GH sont directement impactees. Le muscle se construit la nuit.");
+  }
+
+  // 7. Quality improvement
+  if (avgQ <= 2.5) {
+    parts.push("Pour ameliorer la qualite : chambre a 17-19°C, obscurite totale, stop cafeine avant 14h et essaie le magnésium bisglycinate 300mg le soir.");
+  }
+
+  // 8. Streak / closing motivation
+  if (streak >= 7) {
+    parts.push(`${streak} bonnes nuits d'affilée — tes fibres rapides, ton systeme nerveux et ton metabolisme en profitent pleinement. C'est du travail de fond.`);
+  } else if (streak >= 3) {
+    parts.push(`${streak} bonnes nuits consecutives — maintiens ce rythme encore 4-5 jours et tu vas sentir la difference a l'entraînement.`);
+  } else if (avgH >= 7.5) {
+    parts.push("Continue sur cette lancee — 3-4 semaines de bon sommeil régulier = impact mesurable sur ta force, ta composition et ta recuperation.");
+  } else {
+    parts.push("Chaque heure de sommeil recuperee = +10-15% de récupération musculaire. C'est gratuit et ca bat n'importe quel complément.");
+  }
+
+  return parts.join(" ");
+}
+
+// ── Chart ──
 function renderSleepChart() {
   const el = document.getElementById("sleep-chart-wrap");
   if (!el) return;
   const log = _getSleepLog();
-  const days = [];
   const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const days = [];
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
+    const d = new Date(today); d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().slice(0, 10);
     const entry = log.find(e => e.date === dateStr);
     days.push({ date: dateStr, label: ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"][d.getDay()], hours: entry?.hours || 0, quality: entry?.quality || 0 });
   }
   if (!days.some(d => d.hours > 0)) {
     el.innerHTML = '<div class="empty">Aucune donnée — commence à enregistrer ton sommeil</div>';
+    _renderWeeklySummary(days);
     return;
   }
-  const maxH = 10, svgH = 100, svgW = 300;
-  const barW = 28, gap = 14;
+  const maxH = 11, svgH = 108, svgW = 310;
+  const barW = 30, gap = 14;
   const totalW = days.length * (barW + gap) - gap;
   const startX = (svgW - totalW) / 2;
-  const todayStr = today.toISOString().slice(0, 10);
-  const refY = svgH - (8 / maxH) * svgH * 0.88;
+  const toY = h => svgH - Math.max(0, (h / maxH) * svgH * 0.88);
+  const ref8Y  = toY(8);
+  const ref7Y  = toY(7);
+  const filledDays = days.filter(d => d.hours > 0);
+  const avgH = filledDays.length ? filledDays.reduce((s, d) => s + d.hours, 0) / filledDays.length : 0;
+  const avgY = avgH ? toY(avgH) : null;
+  // Build bars
   const bars = days.map((d, i) => {
-    const x = startX + i * (barW + gap);
-    const h = d.hours ? Math.max(4, (d.hours / maxH) * svgH * 0.88) : 0;
-    const y = svgH - h;
-    const col = d.quality >= 4 ? "#22d3ee" : d.quality >= 3 ? "#6366f1" : d.quality >= 2 ? "#f59e0b" : d.hours ? "#ef4444" : "rgba(255,255,255,.1)";
-    const empty = d.hours === 0;
+    const x  = startX + i * (barW + gap);
+    const h  = d.hours ? Math.max(5, toY(0) - toY(d.hours)) : 3;
+    const y  = d.hours ? svgH - h : svgH - 3;
+    const col= d.quality >= 4 ? "#22d3ee" : d.quality >= 3 ? "#6366f1" : d.quality >= 2 ? "#f59e0b" : d.hours ? "#ef4444" : "rgba(255,255,255,.1)";
+    const isToday = d.date === todayStr;
     return `
-      <rect x="${x}" y="${empty ? svgH - 3 : y}" width="${barW}" height="${empty ? 3 : h}" rx="6" fill="${col}" opacity="${empty ? .3 : .84}"/>
-      ${d.date === todayStr && d.hours ? `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>` : ""}
-      <text x="${x + barW / 2}" y="${svgH + 15}" text-anchor="middle" font-size="9" fill="rgba(255,255,255,.5)" font-family="system-ui,sans-serif">${d.label}</text>
-      ${d.hours ? `<text x="${x + barW / 2}" y="${y - 4}" text-anchor="middle" font-size="8" fill="rgba(255,255,255,.7)" font-family="system-ui,sans-serif">${d.hours}h</text>` : ""}
+      <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="7" fill="${col}" opacity="${d.hours ? .84 : .28}"/>
+      ${isToday && d.hours ? `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="7" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.5"/>` : ""}
+      <text x="${x + barW/2}" y="${svgH + 15}" text-anchor="middle" font-size="9" fill="${isToday ? "rgba(255,255,255,.8)" : "rgba(255,255,255,.45)"}" font-weight="${isToday ? "800" : "500"}" font-family="system-ui,sans-serif">${d.label}</text>
+      ${d.hours ? `<text x="${x + barW/2}" y="${y - 4}" text-anchor="middle" font-size="7.5" fill="rgba(255,255,255,.72)" font-family="system-ui,sans-serif">${d.hours}h</text>` : ""}
     `;
   }).join("");
+  // Average polyline
+  const avgLine = avgH && filledDays.length > 1 ? (() => {
+    const pts = days.map((d, i) => d.hours ? `${startX + i * (barW + gap) + barW/2},${toY(d.hours)}` : null).filter(Boolean);
+    return `<polyline points="${pts.join(" ")}" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="1.5" stroke-dasharray="5 3" stroke-linejoin="round"/>
+      <text x="${startX + totalW + 6}" y="${avgY + 4}" font-size="7.5" fill="rgba(255,255,255,.35)" font-family="system-ui,sans-serif">moy</text>`;
+  })() : "";
   el.innerHTML = `<svg viewBox="0 0 ${svgW} ${svgH + 22}" width="100%" style="overflow:visible;display:block">
-    <line x1="${startX - 4}" y1="${refY}" x2="${startX + totalW + 4}" y2="${refY}" stroke="rgba(34,211,238,.35)" stroke-width="1" stroke-dasharray="4 3"/>
-    <text x="${startX - 6}" y="${refY - 4}" text-anchor="end" font-size="7.5" fill="rgba(34,211,238,.6)" font-family="system-ui,sans-serif">8h</text>
+    <line x1="${startX-2}" y1="${ref8Y}" x2="${startX+totalW+2}" y2="${ref8Y}" stroke="rgba(34,211,238,.4)" stroke-width="1" stroke-dasharray="5 3"/>
+    <text x="${startX-4}" y="${ref8Y-3}" text-anchor="end" font-size="7.5" fill="rgba(34,211,238,.65)" font-family="system-ui,sans-serif">8h</text>
+    <line x1="${startX-2}" y1="${ref7Y}" x2="${startX+totalW+2}" y2="${ref7Y}" stroke="rgba(139,92,246,.3)" stroke-width="1" stroke-dasharray="3 4"/>
+    <text x="${startX-4}" y="${ref7Y-3}" text-anchor="end" font-size="7.5" fill="rgba(139,92,246,.55)" font-family="system-ui,sans-serif">7h</text>
     ${bars}
+    ${avgLine}
   </svg>`;
+  _renderWeeklySummary(days);
 }
 
-function _renderSleepScore() {
-  const scoreEl = document.getElementById("sleep-score-val");
-  const debtEl  = document.getElementById("sleep-debt-val");
-  const conEl   = document.getElementById("sleep-consistency-val");
-  const tipEl   = document.getElementById("sleep-tip-text");
+function _renderWeeklySummary(days) {
+  const el = document.getElementById("sleep-week-summary");
+  if (!el) return;
+  const filled = days.filter(d => d.hours > 0);
+  if (!filled.length) { el.innerHTML = ""; return; }
+  const avg = (filled.reduce((s, d) => s + d.hours, 0) / filled.length).toFixed(1);
+  const best = Math.max(...filled.map(d => d.hours));
+  const goalNights = filled.filter(d => d.hours >= 7).length;
+  el.innerHTML = `
+    <div class="sleep-week-pill"><div class="sleep-week-pill-label">Moy / nuit</div><div class="sleep-week-pill-val">${avg}h</div></div>
+    <div class="sleep-week-pill"><div class="sleep-week-pill-label">Meilleure nuit</div><div class="sleep-week-pill-val">${best}h</div></div>
+    <div class="sleep-week-pill"><div class="sleep-week-pill-label">Nuits ≥ 7h</div><div class="sleep-week-pill-val">${goalNights}/7</div></div>
+  `;
+}
+
+// ── Hero (gauge + stats) ──
+function _renderSleepHero() {
+  const gaugeRing  = document.getElementById("sleep-gauge-ring");
+  const scoreEl    = document.getElementById("sleep-score-val");
+  const avgEl      = document.getElementById("sleep-avg-val");
+  const debtEl     = document.getElementById("sleep-debt-val");
+  const conEl      = document.getElementById("sleep-consistency-val");
+  const streakEl   = document.getElementById("sleep-streak-val");
+  const readyEl    = document.getElementById("sleep-readiness-val");
+  const coachEl    = document.getElementById("sleep-coach-text");
+  const coachNameEl= document.getElementById("sleep-coach-name");
   if (!scoreEl) return;
-  const log = _getSleepLog().slice(-7).filter(e => e.hours > 0);
+
+  const allLog = _getSleepLog();
+  const log    = allLog.slice(-7).filter(e => e.hours > 0);
+  const goal   = getSleepGoal();
+  const CIRC   = 2 * Math.PI * 44;
+
   if (!log.length) {
-    [scoreEl, debtEl, conEl].forEach(el => { if (el) el.textContent = "—"; });
+    if (gaugeRing) { gaugeRing.style.strokeDashoffset = CIRC; gaugeRing.style.stroke = "#a78bfa"; }
+    [scoreEl, avgEl, debtEl, conEl, streakEl].forEach(el => { if (el) el.textContent = "—"; });
+    if (readyEl) readyEl.textContent = "—";
+    if (coachEl) coachEl.textContent = "Enregistre quelques nuits pour recevoir une analyse personnalisee de coach. Le sommeil est ton levier n°1 de progression.";
     return;
   }
-  const avgH = log.reduce((s, e) => s + e.hours, 0) / log.length;
-  const avgQ = log.reduce((s, e) => s + (e.quality || 3), 0) / log.length;
-  const score = Math.min(100, Math.max(0, Math.round((avgH / 8) * 60 + (avgQ / 5) * 40)));
-  const debt  = Math.max(0, 8 - avgH);
-  const std   = Math.sqrt(log.reduce((s, e) => s + Math.pow(e.hours - avgH, 2), 0) / log.length);
+
+  const avgH  = log.reduce((s,e) => s + e.hours, 0) / log.length;
+  const avgQ  = log.reduce((s,e) => s + (e.quality || 3), 0) / log.length;
+  const score = Math.min(100, Math.max(0, Math.round((Math.min(avgH, 9) / 8.5) * 60 + (avgQ / 5) * 40)));
+  const weekDebt = Math.max(0, (goal - avgH) * log.length);
+  const std   = Math.sqrt(log.reduce((s,e) => s + Math.pow(e.hours - avgH, 2), 0) / log.length);
   const conLabel = std < 0.5 ? "Excellent" : std < 1 ? "Bon" : std < 1.5 ? "Moyen" : "Irrégulier";
-  if (scoreEl) { scoreEl.textContent = score; scoreEl.style.color = score >= 75 ? "#22d3ee" : score >= 50 ? "#a78bfa" : "#ef4444"; }
-  if (debtEl)  debtEl.textContent  = debt > 0.1 ? `-${debt.toFixed(1)}h` : "Aucune";
-  if (conEl)   conEl.textContent   = conLabel;
-  if (tipEl) {
-    let tip = "";
-    if (avgH < 6)       tip = "Moins de 6h en moyenne — récupération musculaire et hormonale insuffisantes. Couche-toi 30min plus tôt ce soir.";
-    else if (avgH < 7)  tip = "7h minimum pour optimiser testostérone, GH et récupération. Cherche à gagner 30-60min de sommeil.";
-    else if (std > 1.5) tip = "Ton rythme est très irrégulier. Couche-toi et lève-toi à heure fixe même le week-end pour ancrer ton rythme circadien.";
-    else if (avgQ < 3)  tip = "Qualité faible malgré la durée. Chambre à 17-19°C, zéro écran 1h avant et pas de caféine après 14h.";
-    else if (score >= 75) tip = "Excellent sommeil ! Maintiens ce rythme — c'est le carburant n°1 de tes progrès en salle.";
-    else                tip = "Progresse encore. Essaie de viser 7h30-8h chaque nuit avec une heure de coucher constante.";
-    tipEl.textContent = tip;
+  const streak = _calcSleepStreak();
+
+  // Trend
+  const last3 = allLog.slice(-3).filter(e => e.hours > 0);
+  const prev4  = allLog.slice(-7, -3).filter(e => e.hours > 0);
+  const trendH = (last3.length && prev4.length)
+    ? (last3.reduce((s,e)=>s+e.hours,0)/last3.length) - (prev4.reduce((s,e)=>s+e.hours,0)/prev4.length)
+    : 0;
+
+  // Readiness (last logged night)
+  const last = log[log.length - 1];
+  const lastQ = last?.quality || 3;
+  const lastE = last?.energy || 0;
+  const readiness = Math.min(100, Math.max(0, Math.round(
+    (Math.min(last?.hours || 0, 9) / 8.5) * 50 + (lastQ / 5) * 30 + (lastE > 0 ? (lastE / 5) * 20 : (lastQ / 5) * 20)
+  )));
+
+  // Gauge
+  if (gaugeRing) {
+    gaugeRing.style.strokeDashoffset = CIRC * (1 - score / 100);
+    gaugeRing.style.stroke = score >= 75 ? "#22d3ee" : score >= 50 ? "#a78bfa" : "#f59e0b";
+  }
+  if (scoreEl) { scoreEl.textContent = score; scoreEl.style.color = score >= 75 ? "#22d3ee" : score >= 50 ? "#a78bfa" : "#f59e0b"; }
+
+  if (avgEl) {
+    const trendArrow = trendH > 0.2 ? " ↑" : trendH < -0.2 ? " ↓" : "";
+    const trendColor = trendH > 0.2 ? "#22c55e" : trendH < -0.2 ? "#ef4444" : "";
+    avgEl.innerHTML = avgH.toFixed(1) + "h" +
+      (trendArrow ? `<span style="font-size:.75rem;color:${trendColor}">${trendArrow}</span>` : "");
+  }
+  if (debtEl) {
+    if (weekDebt < 0.5) { debtEl.textContent = "Aucune dette"; debtEl.style.color = "#22c55e"; }
+    else { debtEl.textContent = `-${weekDebt.toFixed(1)}h semaine`; debtEl.style.color = weekDebt > 5 ? "#ef4444" : "#f59e0b"; }
+  }
+  if (conEl) conEl.textContent = conLabel;
+  if (streakEl) {
+    streakEl.textContent = streak > 0 ? `🔥 ${streak} nuit${streak > 1 ? "s" : ""}` : "0 nuit";
+    streakEl.style.color = streak >= 5 ? "#22c55e" : streak >= 3 ? "#22d3ee" : streak > 0 ? "#a78bfa" : "var(--muted)";
+  }
+  if (readyEl) {
+    const rc = readiness >= 75 ? "#22c55e" : readiness >= 50 ? "#22d3ee" : readiness >= 35 ? "#f59e0b" : "#ef4444";
+    const rl = readiness >= 80 ? "Optimal" : readiness >= 65 ? "Bon" : readiness >= 50 ? "Correct" : readiness >= 35 ? "Limite" : "Repos";
+    readyEl.innerHTML = `<span style="color:${rc};font-weight:900">${readiness}</span><span style="font-size:.65rem;color:${rc};margin-left:3px">/100 · ${rl}</span>`;
+  }
+  if (coachEl) coachEl.textContent = _generateCoachComment(allLog);
+  if (coachNameEl) {
+    const grade = score >= 80 ? "Expert Sleep" : score >= 60 ? "On Track" : score >= 40 ? "A ameliorer" : "Deficitaire";
+    coachNameEl.textContent = `Analyse coach · Score ${score}/100 · ${grade}`;
   }
 }
 
+// ── Sleep streak (consecutive nights ≥ 7h + quality ≥ 3) ──
+function _calcSleepStreak() {
+  const log = _getSleepLog().slice().reverse();
+  const today = new Date().toISOString().slice(0, 10);
+  let streak = 0;
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const entry = log.find(e => e.date === dateStr);
+    if (!entry || entry.hours < 7 || (entry.quality || 3) < 3) {
+      if (i === 0 && !entry) continue; // today not yet logged → keep going
+      break;
+    }
+    streak++;
+  }
+  return streak;
+}
+
+// ── Sleep phases estimator ──
+function _estimateSleepPhases(hours) {
+  // Research-based estimates
+  const h = Math.max(0, hours);
+  let light, deep, rem;
+  if (h >= 8) {
+    light = Math.round(h * 0.52 * 10) / 10;
+    deep  = Math.round(h * 0.18 * 10) / 10;
+    rem   = Math.round(h * 0.25 * 10) / 10;
+  } else if (h >= 6) {
+    light = Math.round(h * 0.56 * 10) / 10;
+    deep  = Math.round(h * 0.16 * 10) / 10;
+    rem   = Math.round(h * 0.20 * 10) / 10; // REM reduced below 8h
+  } else {
+    light = Math.round(h * 0.62 * 10) / 10;
+    deep  = Math.round(h * 0.14 * 10) / 10;
+    rem   = Math.round(h * 0.12 * 10) / 10; // REM severely cut below 6h
+  }
+  return { light, deep, rem };
+}
+
+// ── History list ──
 function _renderSleepHistory() {
   const el = document.getElementById("sleep-history-list");
   if (!el) return;
-  const log = _getSleepLog().slice(-14).reverse();
-  if (!log.length) { el.innerHTML = '<div class="empty">Aucune entrée</div>'; return; }
+  const log = _getSleepLog().slice(-21).reverse();
+  if (!log.length) { el.innerHTML = '<div class="empty">Aucune entree</div>'; return; }
   const DAYS = ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"];
   el.innerHTML = log.map(e => {
     const d = new Date(e.date + "T12:00:00");
-    const label = DAYS[d.getDay()] + " " + d.getDate();
+    const label = DAYS[d.getDay()] + " " + d.toLocaleDateString("fr-FR", { day:"numeric", month:"short" });
     const qColor = _SLEEP_QUALITY_COLORS[e.quality] || "#6366f1";
     const qLabel = _SLEEP_QUALITY_LABELS[e.quality] || "—";
-    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
-      <div style="font-size:.73rem;color:var(--muted);min-width:46px;font-weight:700">${label}</div>
-      <div style="font-weight:900;font-size:1.08rem;color:#f0f9ff;min-width:38px">${e.hours}h</div>
-      <div style="font-size:.7rem;font-weight:700;color:${qColor};flex:1">${qLabel}</div>
-      ${e.note ? `<div style="font-size:.68rem;color:var(--muted);max-width:110px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${escapeHtml(e.note)}</div>` : ""}
-      <button onclick="deleteSleepEntry('${e.date}')" style="background:none;border:none;color:rgba(255,255,255,.25);cursor:pointer;font-size:.78rem;padding:2px 6px;min-width:24px" title="Supprimer">✕</button>
+    const eColor = e.energy ? (_SLEEP_ENERGY_COLORS[e.energy] || "#6366f1") : "";
+    const eLabel = e.energy ? (_SLEEP_ENERGY_LABELS[e.energy] || "") : "";
+    const goal = getSleepGoal();
+    const hoursBarW = Math.min(100, Math.round((e.hours / (goal + 2)) * 100));
+    const barColor  = e.hours >= goal ? "#22d3ee" : e.hours >= goal * 0.875 ? "#6366f1" : e.hours >= goal * 0.75 ? "#f59e0b" : "#ef4444";
+    const timesStr  = (e.bedtime && e.waketime)
+      ? `<div style="font-size:.64rem;color:var(--muted);margin-top:3px">🌙 ${e.bedtime} → ☀️ ${e.waketime}</div>` : "";
+    const phases = _estimateSleepPhases(e.hours);
+    const phasesStr = e.hours >= 3 ? `<div style="display:flex;gap:6px;margin-top:6px;font-size:.6rem">
+      <span style="color:#6366f1">Léger ${phases.light}h</span>
+      <span style="color:rgba(255,255,255,.25)">·</span>
+      <span style="color:#8b5cf6">Prof. ${phases.deep}h</span>
+      <span style="color:rgba(255,255,255,.25)">·</span>
+      <span style="color:#22d3ee">REM ${phases.rem}h</span>
+      ${e.hours < 6 ? '<span style="color:#ef4444;margin-left:4px">⚠ REM tronqué</span>' : ""}
+    </div>` : "";
+    return `<div style="padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:5px">
+        <div style="font-size:.72rem;color:var(--muted);min-width:70px;font-weight:700;padding-top:2px">${label}</div>
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:900;font-size:1.1rem;color:#f0f9ff">${e.hours}h</span>
+            <span style="font-size:.7rem;font-weight:700;color:${qColor}">${qLabel}</span>
+            ${eLabel ? `<span style="font-size:.65rem;font-weight:700;color:${eColor}">${eLabel}</span>` : ""}
+          </div>
+          ${timesStr}
+        </div>
+        <button onclick="deleteSleepEntry('${e.date}')" style="background:none;border:none;color:rgba(255,255,255,.18);cursor:pointer;font-size:.75rem;padding:2px 6px;flex-shrink:0" title="Supprimer">✕</button>
+      </div>
+      <div style="height:4px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden;margin-bottom:3px">
+        <div style="height:100%;width:${hoursBarW}%;background:${barColor};border-radius:999px;opacity:.8;transition:width .4s"></div>
+      </div>
+      ${phasesStr}
+      ${e.note ? `<div style="font-size:.66rem;color:var(--muted);margin-top:5px;line-height:1.4">${escapeHtml(e.note)}</div>` : ""}
     </div>`;
   }).join("");
 }
 
+// ── Optimal bedtime calculator ──
+function calcOptimalBedtime() {
+  const wakeStr = document.getElementById("sleep-wake-calc-input")?.value;
+  const el = document.getElementById("sleep-bedtime-results");
+  if (!wakeStr || !el) return;
+  const [wh, wm] = wakeStr.split(":").map(Number);
+  const wakeMin = wh * 60 + wm;
+  // 90-min cycles + 15 min to fall asleep
+  const options = [6, 5, 4].map(cycles => {
+    const bedMin = ((wakeMin - cycles * 90 - 15) + 24 * 60) % (24 * 60);
+    const bh = Math.floor(bedMin / 60).toString().padStart(2, "0");
+    const bm = (bedMin % 60).toString().padStart(2, "0");
+    return { time: `${bh}:${bm}`, cycles, hours: cycles * 1.5, best: cycles === 5 };
+  });
+  el.innerHTML = options.map(o => `
+    <div class="sleep-bedtime-opt${o.best ? " best" : ""}" onclick="document.getElementById('sleep-bedtime-input').value='${o.time}';setSleepMode('times');syncSleepDuration()">
+      <div class="sleep-bedtime-opt-time">${o.time}</div>
+      <div class="sleep-bedtime-opt-meta">${o.cycles} cycles · ${o.hours}h de sommeil</div>
+      ${o.best ? '<div class="sleep-bedtime-opt-tag">⭐ Optimal</div>' : ""}
+    </div>
+  `).join("");
+}
+
+// ── Monthly calendar heatmap (35 days) ──
+function _renderSleepCalendar() {
+  const el = document.getElementById("sleep-calendar-wrap");
+  if (!el) return;
+  const log = _getSleepLog();
+  const goal = getSleepGoal();
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+
+  const cells = [];
+  for (let i = 34; i >= 0; i--) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const entry = log.find(e => e.date === dateStr);
+    cells.push({ dateStr, day: d.getDate(), weekday: d.getDay(), month: d.toLocaleDateString("fr-FR", { month:"short" }), hours: entry?.hours || 0, quality: entry?.quality || 0, isToday: dateStr === todayStr });
+  }
+
+  // Show month labels at transitions
+  const monthLabels = [];
+  cells.forEach((c, i) => {
+    if (i === 0 || cells[i-1].month !== c.month) monthLabels[i] = c.month;
+  });
+
+  el.innerHTML = `
+    <div class="sleep-cal-grid">
+      ${cells.map((c, i) => {
+        const pct = c.hours > 0 ? Math.min(1, c.hours / goal) : 0;
+        const bg = c.hours === 0 ? "rgba(255,255,255,.05)"
+          : c.hours >= goal      ? "#22c55e"
+          : c.hours >= goal*.875 ? "#22d3ee"
+          : c.hours >= goal*.75  ? "#6366f1"
+          : c.hours >= goal*.625 ? "#f59e0b"
+          : "#ef4444";
+        const opacity = c.hours === 0 ? 1 : (0.3 + pct * 0.7);
+        const monthLbl = monthLabels[i] ? `<div class="sleep-cal-month">${monthLabels[i]}</div>` : "";
+        return `${monthLbl}<div class="sleep-cal-cell${c.isToday ? " today" : ""}${c.hours === 0 ? " empty" : ""}"
+          style="background:${bg};opacity:${opacity}"
+          title="${c.dateStr}${c.hours ? " · " + c.hours + "h" : " · non enregistre"}">
+          <span class="sleep-cal-day">${c.day}</span>
+        </div>`;
+      }).join("")}
+    </div>
+    <div class="sleep-cal-legend">
+      <span class="sleep-cal-leg-item" style="background:#ef4444">< ${(goal*.625).toFixed(1)}h</span>
+      <span class="sleep-cal-leg-item" style="background:#f59e0b">< ${(goal*.875).toFixed(1)}h</span>
+      <span class="sleep-cal-leg-item" style="background:#6366f1">< ${goal}h</span>
+      <span class="sleep-cal-leg-item" style="background:#22c55e">≥ ${goal}h</span>
+    </div>
+  `;
+}
+
+// ── Main load ──
 function loadSommeil() {
   const today = new Date().toISOString().slice(0, 10);
   const todayEntry = _getSleepLog().find(e => e.date === today);
-  const hoursInput = document.getElementById("sleep-hours-input");
+  // Load goal buttons state
+  const goal = getSleepGoal();
+  document.querySelectorAll(".sleep-goal-btn").forEach(b => b.classList.toggle("on", parseFloat(b.dataset.h) === goal));
+  setSleepMode("times");
   if (todayEntry) {
-    if (hoursInput) hoursInput.value = todayEntry.hours;
+    if (todayEntry.bedtime)  { const el = document.getElementById("sleep-bedtime-input");  if (el) el.value = todayEntry.bedtime; }
+    if (todayEntry.waketime) { const el = document.getElementById("sleep-waketime-input"); if (el) el.value = todayEntry.waketime; }
+    if (todayEntry.hours && !todayEntry.bedtime) {
+      setSleepMode("hours");
+      const el = document.getElementById("sleep-hours-input"); if (el) el.value = todayEntry.hours;
+    }
+    syncSleepDuration();
     setSleepQuality(todayEntry.quality || 3);
+    if (todayEntry.energy) setSleepEnergy(todayEntry.energy);
+    else setSleepEnergy(0);
   } else {
-    if (hoursInput) hoursInput.value = "";
     setSleepQuality(3);
+    setSleepEnergy(0);
   }
   renderSleepChart();
-  _renderSleepScore();
+  _renderSleepHero();
   _renderSleepHistory();
+  _renderSleepCalendar();
 }
 window.logSleep = logSleep;
 window.deleteSleepEntry = deleteSleepEntry;
 window.setSleepQuality = setSleepQuality;
+window.setSleepEnergy = setSleepEnergy;
+window.toggleSleepTag = toggleSleepTag;
+window.setSleepMode = setSleepMode;
+window.syncSleepDuration = syncSleepDuration;
+window.calcOptimalBedtime = calcOptimalBedtime;
+window.setSleepGoal = setSleepGoal;
 window.toggleFriendsSection = toggleFriendsSection;
 window.loadSommeil = loadSommeil;
 
@@ -9157,32 +9631,32 @@ const PROG_DURATION_KEY = "fitai_prog_duration_weeks_v1";
 const PROG_PHASE_LIBRARY = {
   1: [
     { name:"Semaine cible", short:"S1", color:"#6366f1", volume:58, intensity:64, rpe:"6-7", desc:"Une semaine structurée, personnalisée et durable. Volume utile, récupération prévue et priorité à l'adhérence.",
-      note:{ theme:"Semaine personnalisée", focus:"Microcycle utile, équilibré et réaliste. Progression douce, exécution propre et récupération suivie.", cue:"Une bonne semaine bien tenue vaut mieux qu’un gros plan impossible à suivre." },
+      note:{ theme:"Semaine personnalisée", focus:"Microcycle utile, équilibré et réaliste. Progression douce, exécution propre et récupération suivie.", cue:"Une bonne semaine bien tenue vaut mieux qu'un gros plan impossible à suivre." },
       params:{ sets:4, reps:"8-12", rest:90 }, exCount:6, tempo:"3-1-2 (contrôlé)" }
   ],
   4: [
-    { name:"Adaptation", short:"S1", color:"#6366f1", volume:52, intensity:58, rpe:"6-7", desc:"On installe la routine, la technique et la tolérance à l’effort sans te cramer.", note:{ theme:"Entrer dans le rythme", focus:"Priorité à la technique, au rythme hebdo et à des charges faciles à tenir.", cue:"Sors de chaque séance avec la sensation d’en garder encore un peu." }, params:{ sets:3, reps:"8-12", rest:75 }, exCount:5, tempo:"3-1-2" },
-    { name:"Montée en charge", short:"S2", color:"#3b82f6", volume:62, intensity:67, rpe:"7", desc:"On augmente légèrement le volume ou l’intensité selon tes sensations.", note:{ theme:"Progression simple", focus:"Ajoute 1 rep ou un peu de charge sur les mouvements principaux si la technique reste propre.", cue:"Mieux vaut une petite progression répétable qu’un gros saut instable." }, params:{ sets:4, reps:"8-12", rest:90 }, exCount:6, tempo:"2-1-1" },
-    { name:"Consolidation", short:"S3", color:"#8b5cf6", volume:64, intensity:72, rpe:"7-8", desc:"Semaine la plus productive du mini-cycle, sans aller à l’échec.", note:{ theme:"Travail utile", focus:"Garde de la qualité sur les composés et termine frais mentalement.", cue:"La constance propre construit plus que la fatigue pour la fatigue." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-0-1" },
+    { name:"Adaptation", short:"S1", color:"#6366f1", volume:52, intensity:58, rpe:"6-7", desc:"On installe la routine, la technique et la tolérance à l'effort sans te cramer.", note:{ theme:"Entrer dans le rythme", focus:"Priorité à la technique, au rythme hebdo et à des charges faciles à tenir.", cue:"Sors de chaque séance avec la sensation d'en garder encore un peu." }, params:{ sets:3, reps:"8-12", rest:75 }, exCount:5, tempo:"3-1-2" },
+    { name:"Montée en charge", short:"S2", color:"#3b82f6", volume:62, intensity:67, rpe:"7", desc:"On augmente légèrement le volume ou l'intensité selon tes sensations.", note:{ theme:"Progression simple", focus:"Ajoute 1 rep ou un peu de charge sur les mouvements principaux si la technique reste propre.", cue:"Mieux vaut une petite progression répétable qu'un gros saut instable." }, params:{ sets:4, reps:"8-12", rest:90 }, exCount:6, tempo:"2-1-1" },
+    { name:"Consolidation", short:"S3", color:"#8b5cf6", volume:64, intensity:72, rpe:"7-8", desc:"Semaine la plus productive du mini-cycle, sans aller à l'échec.", note:{ theme:"Travail utile", focus:"Garde de la qualité sur les composés et termine frais mentalement.", cue:"La constance propre construit plus que la fatigue pour la fatigue." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-0-1" },
     { name:"Deload", short:"S4", color:"#22c55e", volume:42, intensity:56, rpe:"6", desc:"On réduit la fatigue pour repartir fort sur le bloc suivant.", note:{ theme:"Récupérer pour progresser", focus:"Réduis volontairement le volume et conserve de la marge sur chaque série.", cue:"Une bonne semaine légère est un accélérateur pour la suite." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" }
   ],
   8: [
-    { name:"Adaptation", short:"S1", color:"#6366f1", volume:50, intensity:56, rpe:"6-7", desc:"Apprentissage des repères, installation du rythme et montée douce de la charge.", note:{ theme:"Base solide", focus:"Priorité à la technique et à la constance. Cherche des reps propres et répétables.", cue:"Tu dois finir les séances avec l’impression d’avoir travaillé, pas de t’être détruit." }, params:{ sets:3, reps:"8-12", rest:75 }, exCount:5, tempo:"3-1-2" },
+    { name:"Adaptation", short:"S1", color:"#6366f1", volume:50, intensity:56, rpe:"6-7", desc:"Apprentissage des repères, installation du rythme et montée douce de la charge.", note:{ theme:"Base solide", focus:"Priorité à la technique et à la constance. Cherche des reps propres et répétables.", cue:"Tu dois finir les séances avec l'impression d'avoir travaillé, pas de t'être détruit." }, params:{ sets:3, reps:"8-12", rest:75 }, exCount:5, tempo:"3-1-2" },
     { name:"Hypertrophie I", short:"S2", color:"#3b82f6", volume:62, intensity:66, rpe:"7", desc:"Plus de volume utile pour construire masse maigre, coordination et capacité de travail.", note:{ theme:"Accumuler du bon travail", focus:"Ajoute un peu de volume et garde 1 à 3 reps en réserve.", cue:"Travail propre, amplitude complète et repos sérieux entre les séries." }, params:{ sets:4, reps:"8-12", rest:90 }, exCount:6, tempo:"2-1-1" },
-    { name:"Hypertrophie II", short:"S3", color:"#2563eb", volume:68, intensity:72, rpe:"7-8", desc:"Bloc plus dense : intensité modérée-haute avec contrôle et bonne récupération.", note:{ theme:"Densifier sans casser", focus:"Monte légèrement la charge ou baisse le nombre de reps, mais reste propre.", cue:"Si la technique se dégrade, ce n’est pas une vraie progression." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-0-1" },
-    { name:"Deload", short:"S4", color:"#22c55e", volume:42, intensity:55, rpe:"6", desc:"Baisse du volume pour absorber la fatigue et améliorer la fraîcheur.", note:{ theme:"Assimilation", focus:"Réduis volontairement la charge de travail et récupère mieux.", cue:"Le deload fait partie du progrès, ce n’est pas une régression." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" },
+    { name:"Hypertrophie II", short:"S3", color:"#2563eb", volume:68, intensity:72, rpe:"7-8", desc:"Bloc plus dense : intensité modérée-haute avec contrôle et bonne récupération.", note:{ theme:"Densifier sans casser", focus:"Monte légèrement la charge ou baisse le nombre de reps, mais reste propre.", cue:"Si la technique se dégrade, ce n'est pas une vraie progression." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-0-1" },
+    { name:"Deload", short:"S4", color:"#22c55e", volume:42, intensity:55, rpe:"6", desc:"Baisse du volume pour absorber la fatigue et améliorer la fraîcheur.", note:{ theme:"Assimilation", focus:"Réduis volontairement la charge de travail et récupère mieux.", cue:"Le deload fait partie du progrès, ce n'est pas une régression." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" },
     { name:"Force I", short:"S5", color:"#f59e0b", volume:58, intensity:80, rpe:"8", desc:"Retour plus lourd : moins de reps, plus de qualité de tension et de repos.", note:{ theme:"Tension de qualité", focus:"Concentre-toi sur le mouvement principal et des reps nettes.", cue:"Repose-toi vraiment avant les séries importantes." }, params:{ sets:5, reps:"4-6", rest:165 }, exCount:5, tempo:"2-0-1" },
     { name:"Force II", short:"S6", color:"#f97316", volume:54, intensity:84, rpe:"8-9", desc:"Semaine lourde contrôlée, basée sur une exécution stable et reproductible.", note:{ theme:"Lourd mais propre", focus:"Seulement de petites hausses de charge si la technique reste excellente.", cue:"La meilleure série est celle qui reste rapide et maîtrisée." }, params:{ sets:5, reps:"3-5", rest:180 }, exCount:5, tempo:"2-0-1" },
-    { name:"Puissance", short:"S7", color:"#ef4444", volume:46, intensity:78, rpe:"7-8", desc:"On garde de la vitesse et de l’explosivité sans accumuler trop de fatigue.", note:{ theme:"Vitesse et fraîcheur", focus:"Recherche de l’intention maximale sur chaque rep, pas de la brûlure musculaire.", cue:"Arrête la série dès que le mouvement ralentit franchement." }, params:{ sets:4, reps:"3-5", rest:180 }, exCount:4, tempo:"Explosif" },
+    { name:"Puissance", short:"S7", color:"#ef4444", volume:46, intensity:78, rpe:"7-8", desc:"On garde de la vitesse et de l'explosivité sans accumuler trop de fatigue.", note:{ theme:"Vitesse et fraîcheur", focus:"Recherche de l'intention maximale sur chaque rep, pas de la brûlure musculaire.", cue:"Arrête la série dès que le mouvement ralentit franchement." }, params:{ sets:4, reps:"3-5", rest:180 }, exCount:4, tempo:"Explosif" },
     { name:"Consolidation & test", short:"S8", color:"#ec4899", volume:48, intensity:74, rpe:"7", desc:"On consolide les acquis, on note les repères et on prépare le prochain cycle.", note:{ theme:"Capitaliser", focus:"Observe tes progrès, note tes charges et ta récupération.", cue:"Un bon plan laisse des traces mesurables : reps, charges, sensations, constance." }, params:{ sets:3, reps:"3-5", rest:150 }, exCount:4, tempo:"2-0-1" }
   ],
   12: []
 };
 PROG_PHASE_LIBRARY[12] = [...PROG_PHASE_LIBRARY[8],
-  { name:"Accumulation II", short:"S9", color:"#14b8a6", volume:64, intensity:72, rpe:"7-8", desc:"Nouveau bloc de volume utile avec davantage de maîtrise technique.", note:{ theme:"Deuxième souffle", focus:"Reviens sur du volume de qualité, sans négliger la récupération.", cue:"Mets l’accent sur l’amplitude et la stabilité." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-1-1" },
+  { name:"Accumulation II", short:"S9", color:"#14b8a6", volume:64, intensity:72, rpe:"7-8", desc:"Nouveau bloc de volume utile avec davantage de maîtrise technique.", note:{ theme:"Deuxième souffle", focus:"Reviens sur du volume de qualité, sans négliger la récupération.", cue:"Mets l'accent sur l'amplitude et la stabilité." }, params:{ sets:4, reps:"6-10", rest:105 }, exCount:6, tempo:"2-1-1" },
   { name:"Intensification", short:"S10", color:"#06b6d4", volume:56, intensity:82, rpe:"8", desc:"On reconstruit un peu plus lourd après le travail de volume.", note:{ theme:"Intensifier sans forcer", focus:"Augmente un peu les charges sur les mouvements qui restent stables.", cue:"Laisse toujours 1 à 2 reps en réserve sur les premières séries." }, params:{ sets:5, reps:"4-6", rest:165 }, exCount:5, tempo:"2-0-1" },
-  { name:"Deload II", short:"S11", color:"#84cc16", volume:40, intensity:54, rpe:"6", desc:"Deuxième semaine de récupération active pour dissiper la fatigue accumulée.", note:{ theme:"Respirer", focus:"Dors, mange bien et réduis franchement le volume.", cue:"L’objectif est d’arriver frais, pas d’ajouter du stress." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" },
-  { name:"Peak & bilan", short:"S12", color:"#a855f7", volume:46, intensity:76, rpe:"7-8", desc:"Dernière semaine pour consolider, tester légèrement et préparer le prochain bloc.", note:{ theme:"Bilan utile", focus:"Valide quelques repères sans t’épuiser : technique, charges, ressenti.", cue:"Finis le cycle avec des données claires et l’envie d’enchaîner." }, params:{ sets:3, reps:"3-6", rest:150 }, exCount:4, tempo:"2-0-1" }
+  { name:"Deload II", short:"S11", color:"#84cc16", volume:40, intensity:54, rpe:"6", desc:"Deuxième semaine de récupération active pour dissiper la fatigue accumulée.", note:{ theme:"Respirer", focus:"Dors, mange bien et réduis franchement le volume.", cue:"L'objectif est d'arriver frais, pas d'ajouter du stress." }, params:{ sets:2, reps:"6-10", rest:75 }, exCount:4, tempo:"3-1-2" },
+  { name:"Peak & bilan", short:"S12", color:"#a855f7", volume:46, intensity:76, rpe:"7-8", desc:"Dernière semaine pour consolider, tester légèrement et préparer le prochain bloc.", note:{ theme:"Bilan utile", focus:"Valide quelques repères sans t'épuiser : technique, charges, ressenti.", cue:"Finis le cycle avec des données claires et l'envie d'enchaîner." }, params:{ sets:3, reps:"3-6", rest:150 }, exCount:4, tempo:"2-0-1" }
 ];
 function _sanitizeProgDuration(v){ const n=parseInt(v,10); return PROG_DURATION_OPTIONS.includes(n)?n:8; }
 function _loadProgDuration(){ try{return _sanitizeProgDuration(localStorage.getItem(PROG_DURATION_KEY));}catch{} return 8; }
@@ -9196,7 +9670,7 @@ function _progProgressionHint(weekNum) {
   if (!phase) return "Cherche une progression sobre : +1 rep, meilleure amplitude ou charge légèrement plus haute si tout reste propre.";
   if (/Deload/i.test(phase.name)) return "Semaine légère : réduis le volume et garde de la marge sur chaque série.";
   if (/Force|Intensification/i.test(phase.name)) return "Ajoute un peu de charge seulement si toutes les reps restent nettes et stables.";
-  if (/Puissance/i.test(phase.name)) return "Cherche surtout la vitesse d’exécution et arrête avant que le mouvement ralentisse.";
+  if (/Puissance/i.test(phase.name)) return "Cherche surtout la vitesse d'exécution et arrête avant que le mouvement ralentisse.";
   return "Cherche une progression sobre : +1 rep, meilleure amplitude ou charge légèrement plus haute si tout reste propre.";
 }
 
@@ -9610,36 +10084,36 @@ function _progEquipmentLabel(equipment) {
 
 function _progDailyObjective(type, weekNum, goal) {
   const phase = _getProgPhaseBundle(weekNum);
-  const phaseName = phase?.name || ‘’;
+  const phaseName = phase?.name || '';
   const t = String(type || "").toLowerCase();
   const g = String(goal || "").toLowerCase();
-  if (t === ‘rest’) return ‘Ralentis volontairement pour absorber la charge de travail et arriver frais sur la prochaine séance.’;
-  if (t === ‘mobilite’) return ‘Déverrouille les hanches, le haut du dos et la respiration. Recherche de la fluidité, pas de fatigue.’;
-  if (t === ‘cardio’) {
-    if (g === ‘perte_de_poids’ || g === ‘seche’) return ‘Monte la dépense énergétique en zone 2. Effort régulier, respiration nasale, pas d’épuisement.’;
-    return ‘Travaille l\’endurance de base et la récupération cardio-vasculaire active.’;
+  if (t === 'rest') return 'Ralentis volontairement pour absorber la charge de travail et arriver frais sur la prochaine séance.';
+  if (t === 'mobilite') return 'Déverrouille les hanches, le haut du dos et la respiration. Recherche de la fluidité, pas de fatigue.';
+  if (t === 'cardio') {
+    if (g === 'perte_de_poids' || g === 'seche') return 'Monte la dépense énergétique en zone 2. Effort régulier, respiration nasale, sans épuisement.';
+    return 'Travaille l\'endurance de base et la récupération cardio-vasculaire active.';
   }
-  if (t === ‘hiit’) {
-    if (g === ‘seche’) return ‘Effort court et intense pour stimuler le métabolisme sans perdre de muscle. Qualité d\’exécution avant tout.’;
-    return ‘Qualité d\’effort maximale sur peu de temps. Reste explosif et propre sur chaque répétition.’;
+  if (t === 'hiit') {
+    if (g === 'seche') return 'Effort court et intense pour stimuler le métabolisme sans perdre de muscle. Qualité d\'exécution avant tout.';
+    return 'Qualité d\'effort maximale sur peu de temps. Reste explosif et propre sur chaque répétition.';
   }
-  if (t === ‘core’) return ‘Verrouille le tronc et la respiration pour transférer plus de force sur tous les autres mouvements.’;
-  if (t === ‘push’) {
-    if (g === ‘hypertrophie’) return ‘Volume élevé avec contrôle de l\’excentrique (3s descente). Fatigue musculaire profonde, pas de cheating.’;
-    if (phaseName.includes(‘Force’) || phaseName.includes(‘Intensif’)) return ‘Priorité au mouvement principal lourd, puis accessoires propres et stables.’;
-    return ‘Accumule du volume sur les poussées avec amplitude complète et contrôle.’;
+  if (t === 'core') return 'Verrouille le tronc et la respiration pour transférer plus de force sur tous les autres mouvements.';
+  if (t === 'push') {
+    if (g === 'hypertrophie') return 'Volume élevé avec contrôle de l\'excentrique (3s descente). Fatigue musculaire profonde, pas de cheating.';
+    if (phaseName.includes('Force') || phaseName.includes('Intensif')) return 'Priorité au mouvement principal lourd, puis accessoires propres et stables.';
+    return 'Accumule du volume sur les poussées avec amplitude complète et contrôle.';
   }
-  if (t === ‘pull’) {
-    if (g === ‘hypertrophie’) return ‘Tire avec les coudes, marque 1s en position contractée. Cherche la brûlure musculaire, pas la vitesse.’;
-    if (phaseName.includes(‘Force’) || phaseName.includes(‘Intensif’)) return ‘Tire lourd sans perdre le gainage. Chaque rep doit finir proprement.’;
-    return ‘Travaille le dos avec une excentrique lente et des omoplates actives.’;
+  if (t === 'pull') {
+    if (g === 'hypertrophie') return 'Tire avec les coudes, marque 1s en position contractée. Cherche la brûlure musculaire, pas la vitesse.';
+    if (phaseName.includes('Force') || phaseName.includes('Intensif')) return 'Tire lourd sans perdre le gainage. Chaque rep doit finir proprement.';
+    return 'Travaille le dos avec une excentrique lente et des omoplates actives.';
   }
-  if (t === ‘legs’) {
-    if (g === ‘seche’) return ‘Charge maintenue pour préserver la masse musculaire. Volume légèrement réduit, technique irréprochable.’;
-    if (phaseName.includes(‘Puissance’)) return ‘Pousse vite, garde la posture et un appui solide sur chaque rep.’;
-    return ‘Construis des jambes fortes avec amplitude complète, stabilité et contrôle.’;
+  if (t === 'legs') {
+    if (g === 'seche') return 'Charge maintenue pour préserver la masse musculaire. Volume légèrement réduit, technique irréprochable.';
+    if (phaseName.includes('Puissance')) return 'Pousse vite, garde la posture et un appui solide sur chaque rep.';
+    return 'Construis des jambes fortes avec amplitude complète, stabilité et contrôle.';
   }
-  return ‘Séance structurée, propre et progressive. Garde 1 à 2 reps en réserve sur les premières séries.’;
+  return 'Séance structurée, propre et progressive. Garde 1 à 2 reps en réserve sur les premières séries.';
 }
 
 function _progExerciseCoachHint(ex, weekNum, itemType, isPrimary) {
@@ -9653,9 +10127,9 @@ function _progExerciseCoachHint(ex, weekNum, itemType, isPrimary) {
     if (t === 'core') return 'Respiration basse et bassin neutre sur toute la série.';
   }
   if (/fess|ischio|quad|mollet/.test(m)) return 'Contrôle la descente et évite de rebondir.';
-  if (/pec|epaul|delto/.test(m)) return 'Amplitude propre, pas d’élan inutile.';
+  if (/pec|epaul|delto/.test(m)) return "Amplitude propre, pas d'élan inutile.";
   if (/dos|biceps/.test(m)) return 'Marque une demi-seconde en fin de tirage.';
-  if (/abdo|core|gainage/.test(m)) return 'Expire sur l’effort et garde les côtes abaissées.';
+  if (/abdo|core|gainage/.test(m)) return "Expire sur l'effort et garde les côtes abaissées.";
   return weekNum >= 5 ? 'Repose-toi vraiment entre les séries lourdes.' : 'Cherche surtout la qualité de mouvement.';
 }
 
