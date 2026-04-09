@@ -17,6 +17,7 @@ const ASYNC_LOCKS = new Set();
 let POST_PHOTO = null;
 let FEED_FILTER = "all";
 let FEED_OFFSET  = 0;
+let PROG_PERIOD  = 7; // days shown in progress tab (0 = all time)
 let LAST_COACH_PROMPT = "";
 let COACH_REQUEST_SEQ = 0;
 let USER_WEIGHT = null; // kg, loaded from profile — used to compute water target
@@ -3171,9 +3172,25 @@ function deleteSleepEntry(date) {
 
 function _refreshSleepUI() {
   renderSleepChart();
+  _renderSleepCurve();
   _renderSleepHero();
   _renderSleepHistory();
   _renderSleepCalendar();
+}
+
+function _renderSleepCurve() {
+  var el   = document.getElementById("sleep-curve-svg");
+  var head = document.getElementById("sleep-curve-headline");
+  if (!el) return;
+  var data = _buildSleepChartData(30);
+  if (data.length >= 2) {
+    var avg = data.reduce(function(s, d) { return s + d.value; }, 0) / data.length;
+    if (head) head.textContent = "Moy. " + avg.toFixed(1) + "h/nuit · " + data.length + " nuit(s) enregistrée(s)";
+    el.innerHTML = renderSvgChart(data, { color: "#818cf8", unit: "h", H: 120 });
+  } else {
+    if (head) head.textContent = "Pas encore assez de données";
+    el.innerHTML = "<div class=\"chart-empty\">Enregistre au moins 2 nuits pour voir ta courbe d'évolution.</div>";
+  }
 }
 
 // ── Smart Coach Sleep Comment — returns { headline, focus[], tonight } ──
@@ -3669,6 +3686,7 @@ function loadSommeil() {
     setSleepEnergy(0);
   }
   renderSleepChart();
+  _renderSleepCurve();
   _renderSleepHero();
   _renderSleepHistory();
   _renderSleepCalendar();
@@ -7488,17 +7506,17 @@ function renderSvgChart(data, opts) {
   opts = opts || {};
   var color    = opts.color    || "#2563eb";
   var unit     = opts.unit     || "";
-  var H        = opts.H        || 130;
-  var zeroBase = !!opts.zeroBase; // force baseline at 0
+  var H        = opts.H        || 140;
+  var zeroBase = !!opts.zeroBase;
   if (!data || data.length < 2) {
-    return "<div class=\"chart-empty\">Continuez a utiliser l'app pour voir votre evolution ici.</div>";
+    return "<div class=\"chart-empty\">Continuez à utiliser l'app pour voir votre évolution ici.</div>";
   }
   var vals  = data.map(function(d) { return d.value; });
   var minV  = zeroBase ? 0 : Math.max(0, Math.min.apply(null, vals) * 0.85);
   var maxV  = Math.max.apply(null, vals);
   if (maxV === minV) maxV = minV + 1;
   var range = maxV - minV;
-  var W = 340, padT = 22, padR = 16, padB = 30, padL = 40;
+  var W = 400, padT = 28, padR = 20, padB = 34, padL = 46;
   var cw = W - padL - padR, ch = H - padT - padB;
   var pts = data.map(function(d, i) {
     return {
@@ -7507,6 +7525,7 @@ function renderSvgChart(data, opts) {
       d: d
     };
   });
+  // Cubic bezier smooth line
   var linePath = pts.reduce(function(acc, p, i) {
     if (i === 0) return "M" + p.x.toFixed(1) + "," + p.y.toFixed(1);
     var prev = pts[i - 1];
@@ -7517,33 +7536,47 @@ function renderSvgChart(data, opts) {
   var firstSeg = linePath.indexOf(" ");
   var areaPath = "M" + padL + "," + baseline + " L" + pts[0].x.toFixed(1) + "," + pts[0].y.toFixed(1)
     + (firstSeg >= 0 ? linePath.slice(firstSeg) : "") + " L" + pts[pts.length - 1].x.toFixed(1) + "," + baseline + " Z";
-  // Y axis: 3 ticks
+  // Y axis: 3 reference lines + labels
   var yTickVals = [minV, (minV + maxV) / 2, maxV];
   var yTicks = yTickVals.map(function(v) {
     var y = padT + ch - ((v - minV) / range) * ch;
     var label = v >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v) + unit;
-    return "<text x=\"" + (padL - 7) + "\" y=\"" + y.toFixed(1) + "\" text-anchor=\"end\" dominant-baseline=\"middle\" fill=\"currentColor\" opacity=\".38\" font-size=\"8.5\">" + label + "</text>"
+    return "<text x=\"" + (padL - 8) + "\" y=\"" + y.toFixed(1) + "\" text-anchor=\"end\" dominant-baseline=\"middle\" fill=\"currentColor\" opacity=\".35\" font-size=\"9\">" + label + "</text>"
       + "<line x1=\"" + padL + "\" y1=\"" + y.toFixed(1) + "\" x2=\"" + (padL + cw).toFixed(1) + "\" y2=\"" + y.toFixed(1) + "\" stroke=\"currentColor\" opacity=\".07\" stroke-width=\"1\"/>";
   }).join("");
   // X axis: up to 5 evenly-spaced labels
-  var xCount  = Math.min(5, data.length);
-  var xIdxs   = Array.from({ length: xCount }, function(_, k) { return Math.round(k * (data.length - 1) / (xCount - 1 || 1)); });
+  var xCount = Math.min(5, data.length);
+  var xIdxs  = Array.from({ length: xCount }, function(_, k) { return Math.round(k * (data.length - 1) / (xCount - 1 || 1)); });
   xIdxs = xIdxs.filter(function(v, i, a) { return a.indexOf(v) === i; });
   var xTicks = xIdxs.map(function(i) {
     var p = pts[i];
-    return "<text x=\"" + p.x.toFixed(1) + "\" y=\"" + (baseline + 14).toFixed(1) + "\" text-anchor=\"middle\" fill=\"currentColor\" opacity=\".38\" font-size=\"8.5\">" + escapeHtml(String(data[i].label || "")) + "</text>";
+    return "<text x=\"" + p.x.toFixed(1) + "\" y=\"" + (baseline + 16).toFixed(1) + "\" text-anchor=\"middle\" fill=\"currentColor\" opacity=\".35\" font-size=\"9\">" + escapeHtml(String(data[i].label || "")) + "</text>";
   }).join("");
-  var last    = pts[pts.length - 1];
-  var lastVal = data[data.length - 1].value;
+  // Per-point dots (shown when data is sparse)
+  var dots = "";
+  if (data.length <= 25) {
+    dots = pts.map(function(p, i) {
+      var isLast = i === pts.length - 1;
+      return "<circle cx=\"" + p.x.toFixed(1) + "\" cy=\"" + p.y.toFixed(1) + "\""
+        + " r=\"" + (isLast ? "5.5" : "3") + "\""
+        + " fill=\"" + (isLast ? color : "var(--surf)") + "\""
+        + " stroke=\"" + color + "\" stroke-width=\"" + (isLast ? "2.5" : "1.8") + "\"/>";
+    }).join("");
+  }
+  var last      = pts[pts.length - 1];
+  var lastVal   = data[data.length - 1].value;
   var lastLabel = lastVal >= 1000 ? (lastVal / 1000).toFixed(1) + "k" + unit : lastVal + unit;
-  var gradId  = "cg" + Math.random().toString(36).slice(2, 8);
+  var gradId    = "cg" + Math.random().toString(36).slice(2, 8);
   return "<svg viewBox=\"0 0 " + W + " " + H + "\" xmlns=\"http://www.w3.org/2000/svg\" style=\"width:100%;display:block;color:var(--muted);overflow:visible\">"
-    + "<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0%\" stop-color=\"" + color + "\" stop-opacity=\"0.28\"/><stop offset=\"80%\" stop-color=\"" + color + "\" stop-opacity=\"0.04\"/><stop offset=\"100%\" stop-color=\"" + color + "\" stop-opacity=\"0\"/></linearGradient></defs>"
+    + "<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">"
+    + "<stop offset=\"0%\" stop-color=\"" + color + "\" stop-opacity=\"0.22\"/>"
+    + "<stop offset=\"75%\" stop-color=\"" + color + "\" stop-opacity=\"0.04\"/>"
+    + "<stop offset=\"100%\" stop-color=\"" + color + "\" stop-opacity=\"0\"/>"
+    + "</linearGradient></defs>"
     + "<path d=\"" + areaPath + "\" fill=\"url(#" + gradId + ")\"/>"
-    + "<path d=\"" + linePath + "\" fill=\"none\" stroke=\"" + color + "\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
-    + yTicks + xTicks
-    + "<circle cx=\"" + last.x.toFixed(1) + "\" cy=\"" + last.y.toFixed(1) + "\" r=\"5\" fill=\"" + color + "\" stroke=\"var(--surf)\" stroke-width=\"2.5\"/>"
-    + "<text x=\"" + last.x.toFixed(1) + "\" y=\"" + (last.y - 12).toFixed(1) + "\" text-anchor=\"middle\" fill=\"" + color + "\" font-size=\"11\" font-weight=\"800\">" + lastLabel + "</text>"
+    + "<path d=\"" + linePath + "\" fill=\"none\" stroke=\"" + color + "\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+    + yTicks + xTicks + dots
+    + "<text x=\"" + last.x.toFixed(1) + "\" y=\"" + (last.y - 13).toFixed(1) + "\" text-anchor=\"middle\" fill=\"" + color + "\" font-size=\"11\" font-weight=\"800\">" + lastLabel + "</text>"
     + "</svg>";
 }
 
@@ -7551,17 +7584,30 @@ function renderSvgChart(data, opts) {
 // PROGRESS TAB
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ── Period selector ──────────────────────────────────────────────────────────
+window.setProgPeriod = function(days) {
+  PROG_PERIOD = days;
+  document.querySelectorAll(".prog-period-btn").forEach(function(b) {
+    var btnDays = parseInt(b.id.replace("pp-", ""), 10);
+    b.classList.toggle("on", btnDays === days);
+  });
+  loadProgress();
+};
+
 async function loadProgress() {
   if (!U) return;
+  var days = PROG_PERIOD;
+  var now  = Date.now();
+  var since     = days ? new Date(now - days * 86400000) : new Date(0);
+  var priorSince = days ? new Date(now - 2 * days * 86400000) : null;
 
-  // Build 30-day date range for mood
   var moodSince = new Date();
   moodSince.setDate(moodSince.getDate() - 29);
 
   var results = await Promise.allSettled([
-    SB.from("workout_sessions").select("id,created_at,duration").eq("user_id", U.id).order("created_at", { ascending: true }).limit(80),
-    SB.from("body_scans").select("created_at,physical_score").eq("user_id", U.id).order("created_at", { ascending: true }).limit(20),
-    SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(100),
+    SB.from("workout_sessions").select("id,created_at,duration").eq("user_id", U.id).order("created_at", { ascending: true }).limit(300),
+    SB.from("body_scans").select("created_at,physical_score").eq("user_id", U.id).order("created_at", { ascending: true }).limit(30),
+    SB.from("meals").select("created_at,calories").eq("user_id", U.id).order("created_at", { ascending: true }).limit(300),
     SB.from("user_streaks").select("current_streak,longest_streak,total_workouts").eq("user_id", U.id).maybeSingle(),
     SB.from("daily_moods").select("mood_level,mood_label,date").eq("user_id", U.id)
       .gte("date", moodSince.toISOString().slice(0, 10)).order("date", { ascending: true }).limit(30)
@@ -7573,51 +7619,156 @@ async function loadProgress() {
   var streak   = results[3].status === "fulfilled" ? (results[3].value.data || {}) : {};
   var moods    = results[4].status === "fulfilled" ? (results[4].value.data || []) : [];
 
+  // Filter to current and prior periods
+  var periodSessions = days ? sessions.filter(function(s) { return new Date(s.created_at) >= since; }) : sessions;
+  var priorSessions  = priorSince ? sessions.filter(function(s) {
+    var d = new Date(s.created_at); return d >= priorSince && d < since;
+  }) : [];
+  var periodMeals = days ? meals.filter(function(m) { return new Date(m.created_at) >= since; }) : meals;
+  var priorMeals  = priorSince ? meals.filter(function(m) {
+    var d = new Date(m.created_at); return d >= priorSince && d < since;
+  }) : [];
+
+  // ── Stat cards ──────────────────────────────────────────────────────────────
   var elStreak = document.getElementById("prog-streak");
   var elSub    = document.getElementById("prog-streak-sub");
   var elTotal  = document.getElementById("prog-sessions-total");
   var elBest   = document.getElementById("prog-best-score");
-  if (elStreak) elStreak.textContent = streak.current_streak != null ? streak.current_streak : sessions.length;
-  if (elSub)    elSub.textContent    = streak.current_streak != null ? "jours consecutifs" : "seances total";
-  if (elTotal)  elTotal.textContent  = sessions.length;
+  if (elStreak) elStreak.textContent = streak.current_streak != null ? streak.current_streak : periodSessions.length;
+  if (elSub)    elSub.textContent    = streak.current_streak != null ? "jours consécutifs" : "séances période";
+  if (elTotal)  elTotal.textContent  = periodSessions.length;
   var bestScore = scans.reduce(function(m, s) { return s.physical_score > m ? s.physical_score : m; }, 0);
   if (elBest)   elBest.textContent   = bestScore > 0 ? bestScore : "—";
-
-  // Mood stat in progress header
   var elMoodStat = document.getElementById("prog-mood-stat");
   if (elMoodStat && moods.length) {
-    var last = moods[moods.length - 1];
-    elMoodStat.textContent = last.mood_label || "—";
+    var lastMood = moods[moods.length - 1];
+    elMoodStat.textContent = lastMood.mood_label || "—";
   }
 
-  var sessChart = buildWeeklySessionData(sessions, 8);
+  // ── Trend badge helper ────────────────────────────────────────────────────
+  function setTrendBadge(elId, current, prior, goodDir) {
+    var el = document.getElementById(elId);
+    if (!el) return;
+    if (!prior || prior === 0) { el.textContent = ""; el.className = "chart-trend"; return; }
+    var pct = Math.round((current - prior) / prior * 100);
+    var arrow = pct > 2 ? "↑" : pct < -2 ? "↓" : "→";
+    el.textContent = arrow + " " + Math.abs(pct) + "%";
+    var isGood = goodDir === "up" ? pct > 2 : pct < -2;
+    el.className = "chart-trend " + (Math.abs(pct) <= 2 ? "flat" : isGood ? "up" : "down");
+  }
+
+  // ── Sessions chart ─────────────────────────────────────────────────────────
+  var sessChart = days === 7 ? _buildDailySessionData(sessions, 7) : buildWeeklySessionData(sessions, days === 30 ? 8 : 12);
   var sessEl    = document.getElementById("chart-sessions-svg");
   var sessHead  = document.getElementById("chart-sessions-headline");
-  if (sessEl)   sessEl.innerHTML   = renderSvgChart(sessChart, { color: "#2563eb" });
-  if (sessHead) sessHead.textContent = sessions.length + " seances total";
+  if (sessEl)   sessEl.innerHTML = renderSvgChart(sessChart, { color: "#2563eb" });
+  if (sessHead) sessHead.textContent = periodSessions.length + " séance" + (periodSessions.length !== 1 ? "s" : "") + (days ? " · " + days + "j" : " · total");
+  setTrendBadge("chart-sessions-trend", periodSessions.length, priorSessions.length, "up");
 
+  // ── Calories chart ────────────────────────────────────────────────────────
+  var calDays = days || 60;
+  var calData = buildDailyCalData(periodMeals, calDays);
+  var calEl   = document.getElementById("chart-calories-svg");
+  var calHead = document.getElementById("chart-calories-headline");
+  if (calEl)   calEl.innerHTML = renderSvgChart(calData, { color: "#f97316", unit: " kcal", H: 120 });
+  if (calHead) {
+    var avg = calData.length ? Math.round(calData.reduce(function(s, d) { return s + d.value; }, 0) / calData.length) : 0;
+    calHead.textContent = avg > 0 ? "Moy. " + avg + " kcal/j" : "Enregistrez vos repas pour voir l'évolution";
+  }
+  var priorCalTotal = priorMeals.reduce(function(s, m) { return s + (Number(m.calories) || 0); }, 0);
+  var currCalTotal  = periodMeals.reduce(function(s, m) { return s + (Number(m.calories) || 0); }, 0);
+  setTrendBadge("chart-calories-trend", currCalTotal, priorCalTotal, "flat");
+
+  // ── Weight chart ──────────────────────────────────────────────────────────
+  var weightData = _buildWeightChartData(days);
+  var wEl   = document.getElementById("chart-weight-prog-svg");
+  var wHead = document.getElementById("chart-weight-headline");
+  if (wEl) {
+    if (weightData.length >= 2) {
+      var wTrend = weightData[weightData.length - 1].value - weightData[0].value;
+      var wStr   = Math.abs(wTrend) < 0.05 ? "stable" : (wTrend > 0 ? "+" + wTrend.toFixed(1) + " kg" : wTrend.toFixed(1) + " kg");
+      if (wHead) wHead.textContent = wStr + " sur la période";
+      var wBadge = document.getElementById("chart-weight-trend");
+      if (wBadge) {
+        wBadge.textContent = (wTrend > 0.05 ? "↑ " : wTrend < -0.05 ? "↓ " : "→ ") + Math.abs(wTrend).toFixed(1) + " kg";
+        wBadge.className   = "chart-trend " + (Math.abs(wTrend) < 0.3 ? "flat" : wTrend < 0 ? "up" : "down");
+      }
+      wEl.innerHTML = renderSvgChart(weightData, { color: "#a78bfa", unit: " kg", H: 120, zeroBase: false });
+    } else {
+      if (wHead) wHead.textContent = "Enregistrez votre poids dans Profil";
+      wEl.innerHTML = "<div class=\"chart-empty\">Ajoutez votre poids dans l'onglet Profil pour voir l'évolution ici.</div>";
+    }
+  }
+
+  // ── Sleep chart ──────────────────────────────────────────────────────────
+  var sleepData = _buildSleepChartData(days || 60);
+  var slEl   = document.getElementById("chart-sleep-prog-svg");
+  var slHead = document.getElementById("chart-sleep-headline");
+  if (slEl) {
+    if (sleepData.length >= 2) {
+      var avgSleep = sleepData.reduce(function(s, d) { return s + d.value; }, 0) / sleepData.length;
+      if (slHead) slHead.textContent = "Moy. " + avgSleep.toFixed(1) + "h/nuit · " + sleepData.length + " nuit(s)";
+      slEl.innerHTML = renderSvgChart(sleepData, { color: "#818cf8", unit: "h", H: 120 });
+    } else {
+      if (slHead) slHead.textContent = "Pas encore de données";
+      slEl.innerHTML = "<div class=\"chart-empty\">Utilisez l'onglet Sommeil pour commencer le suivi.</div>";
+    }
+  }
+
+  // ── AI scan score chart ───────────────────────────────────────────────────
   var scanData = scans.filter(function(s) { return s.physical_score > 0; }).map(function(s) {
     return { value: s.physical_score, label: safeDate(s.created_at, { day: "numeric", month: "short" }) };
   });
   var scanEl   = document.getElementById("chart-scan-svg");
   var scanHead = document.getElementById("chart-scan-headline");
-  if (scanEl)  scanEl.innerHTML  = renderSvgChart(scanData, { color: "#9333ea", unit: "/100" });
+  if (scanEl)   scanEl.innerHTML = renderSvgChart(scanData, { color: "#9333ea", unit: "/100" });
   if (scanHead) {
     var ls = scans[scans.length - 1];
-    scanHead.textContent = ls && ls.physical_score ? "Dernier score: " + ls.physical_score + "/100" : scans.length + " scan(s) effectue(s)";
+    scanHead.textContent = ls && ls.physical_score ? "Dernier : " + ls.physical_score + "/100" : scans.length + " scan(s) effectué(s)";
+  }
+  if (scanData.length >= 2) {
+    setTrendBadge("chart-scan-trend", scanData[scanData.length - 1].value, scanData[0].value, "up");
   }
 
-  var calData  = buildDailyCalData(meals, 14);
-  var calEl    = document.getElementById("chart-calories-svg");
-  var calHead  = document.getElementById("chart-calories-headline");
-  if (calEl)   calEl.innerHTML = renderSvgChart(calData, { color: "#f97316", unit: " kcal", H: 110 });
-  if (calHead) {
-    var avg = calData.length ? Math.round(calData.reduce(function(s, d) { return s + d.value; }, 0) / calData.length) : 0;
-    calHead.textContent = avg > 0 ? "Moyenne: " + avg + " kcal / jour" : "Enregistrez vos repas pour voir l'evolution";
-  }
-
-  // Mood history dots
+  // ── Mood history dots ────────────────────────────────────────────────────
   renderMoodDots(moods);
+}
+
+function _buildDailySessionData(sessions, days) {
+  var now = new Date(), result = [];
+  for (var d = days - 1; d >= 0; d--) {
+    var day = new Date(now);
+    day.setDate(now.getDate() - d);
+    day.setHours(0, 0, 0, 0);
+    var de = new Date(day);
+    de.setDate(day.getDate() + 1);
+    var count = sessions.filter(function(s) { var sd = new Date(s.created_at); return sd >= day && sd < de; }).length;
+    result.push({ value: count, label: day.toLocaleDateString("fr-FR", { weekday: "short" }) });
+  }
+  return result;
+}
+
+function _buildWeightChartData(days) {
+  var log = getWeightLog();
+  if (!log.length) return [];
+  var cutoff = days ? new Date(Date.now() - days * 86400000) : new Date(0);
+  return log
+    .filter(function(e) { return new Date(e.date + "T12:00:00") >= cutoff; })
+    .map(function(e) {
+      return { value: e.weight, label: new Date(e.date + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) };
+    });
+}
+
+function _buildSleepChartData(days) {
+  var log = [];
+  try { log = JSON.parse(localStorage.getItem(SLEEP_STORAGE_KEY) || "[]"); } catch(e) {}
+  if (!log.length) return [];
+  var cutoff = days ? new Date(Date.now() - days * 86400000) : new Date(0);
+  return log
+    .filter(function(e) { return e.hours > 0 && new Date(e.date + "T12:00:00") >= cutoff; })
+    .map(function(e) {
+      return { value: e.hours, label: new Date(e.date + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) };
+    });
 }
 
 // ── Mood colours matching SVG faces ──────────────────────────────────────────

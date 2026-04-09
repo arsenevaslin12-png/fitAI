@@ -1002,16 +1002,29 @@ body.light .wt-next-empty{background:#fff;border-color:rgba(15,23,42,.12)}
 .score-l{font-size:.65rem;color:var(--muted);margin-top:2px;font-weight:700;text-transform:uppercase}
 .scan-feedback{font-size:.82rem;line-height:1.6;color:rgba(238,238,245,.8)}
 /* ── PROGRESS CHARTS ── */
-.progress-stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:0}
-.progress-stat-card{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:4px}
-.progress-stat-val{font-size:1.8rem;font-weight:900;color:var(--text);line-height:1;letter-spacing:-.04em}
-.progress-stat-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
-.progress-stat-sub{font-size:.75rem;color:var(--text2);margin-top:2px}
-.chart-card{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:20px;overflow:hidden}
+.prog-period-row{display:flex;gap:8px;margin-bottom:16px}
+.prog-period-btn{flex:1;padding:10px 8px;border-radius:14px;background:var(--surf);border:1px solid var(--border);font-size:.82rem;font-weight:700;color:var(--muted);cursor:pointer;transition:all .18s}
+.prog-period-btn.on{background:#2563eb;border-color:#2563eb;color:#fff;box-shadow:0 4px 14px rgba(37,99,235,.32)}
+.prog-stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.prog-stat-card{background:var(--surf);border:1px solid var(--border);border-radius:20px;padding:18px 16px;display:flex;flex-direction:column;gap:2px;position:relative}
+.prog-stat-icon{font-size:1.3rem;margin-bottom:6px;line-height:1}
+.prog-stat-val{font-size:2.1rem;font-weight:900;line-height:1;letter-spacing:-.05em}
+.prog-stat-label{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-top:5px}
+.prog-stat-sub{font-size:.74rem;color:var(--text2);margin-top:1px}
+.prog-stat-streak{border-top:3px solid #f97316}.prog-stat-streak .prog-stat-val{color:#f97316}
+.prog-stat-sessions{border-top:3px solid #2563eb}.prog-stat-sessions .prog-stat-val{color:#2563eb}
+.prog-stat-scan{border-top:3px solid #06b6d4}.prog-stat-scan .prog-stat-val{color:#06b6d4}
+.prog-stat-mood{border-top:3px solid #22c55e}.prog-stat-mood .prog-stat-val{color:#22c55e;font-size:1.25rem;padding-top:4px}
+.chart-card{background:var(--surf);border:1px solid var(--border);border-radius:18px;padding:20px;overflow:hidden;margin-bottom:14px}
+.chart-card-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
 .chart-title{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:4px;display:flex;align-items:center;gap:6px}
-.chart-title-val{font-size:1.05rem;font-weight:900;color:var(--text);margin-bottom:14px;letter-spacing:-.02em}
+.chart-title-val{font-size:1.05rem;font-weight:900;color:var(--text);letter-spacing:-.02em}
+.chart-trend{font-size:.74rem;font-weight:800;padding:4px 10px;border-radius:10px;white-space:nowrap;flex-shrink:0;margin-top:2px;display:inline-block}
+.chart-trend.up{background:rgba(34,197,94,.15);color:#22c55e}
+.chart-trend.down{background:rgba(239,68,68,.15);color:#ef4444}
+.chart-trend.flat{background:rgba(148,163,184,.1);color:var(--muted)}
 .chart-empty{text-align:center;padding:32px 16px;color:var(--muted);font-size:.82rem}
-@media(max-width:640px){.progress-stat-row{grid-template-columns:repeat(3,1fr);gap:8px}.progress-stat-val{font-size:1.4rem}}
+@media(max-width:640px){.prog-stats-grid{gap:8px}.prog-stat-val{font-size:1.75rem}}
 
 /* ── DASHBOARD BENTO ── */
 .db-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:4px}
@@ -1966,7 +1979,7 @@ body.light .scan-score-sub{color:rgba(15,23,42,.4)}
 body.light .scan-mini-label{color:rgba(0,150,180,.7)}
 body.light .scan-avatar-svg{opacity:.4}
 body.light .chart-card{background:#fff;border-color:rgba(15,23,42,.1);box-shadow:0 2px 12px rgba(15,23,42,.07)}
-body.light .progress-stat-card{background:#fff;border-color:rgba(15,23,42,.1)}
+body.light .prog-stat-card{background:#fff;border-color:rgba(15,23,42,.1)}
 /* Forms */
 body.light input,body.light select,body.light textarea{background:#fff;border-color:rgba(15,23,42,.16);color:#0f172a}
 body.light input::placeholder{color:#94a3b8}
@@ -2009,8 +2022,9 @@ body.light .scan-tip-title{color:#0f172a}
 body.light .drop-zone{border-color:rgba(15,23,42,.15);background:rgba(15,23,42,.02)}
 body.light .drop-zone:hover,.body.light .drop-zone.over{border-color:var(--accent);background:#eff6ff}
 /* Progress */
-body.light .progress-stat-val{color:#0f172a}
-body.light .progress-stat-label{color:#64748b}
+body.light .prog-stat-val{color:inherit}
+body.light .prog-stat-label{color:#64748b}
+body.light .prog-period-btn{background:#f1f5f9;border-color:rgba(15,23,42,.12);color:#64748b}
 /* Profile */
 body.light .badge{background:rgba(15,23,42,.08);color:#334155}
 body.light .badge.bg-green{background:rgba(34,197,94,.12);color:#15803d}
@@ -3747,8 +3761,19 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           <button class="btn btn-p btn-full" onclick="logSleep()" style="margin-top:16px">🌙 Enregistrer cette nuit</button>
         </div>
 
+        <!-- ── Courbe 30 jours ── -->
+        <div class="chart-card" style="margin-bottom:0;border-radius:18px 18px 0 0;border-bottom:none">
+          <div class="chart-card-head">
+            <div>
+              <div class="chart-title">🌙 Évolution — 30 dernières nuits</div>
+              <div class="chart-title-val" id="sleep-curve-headline">Chargement…</div>
+            </div>
+          </div>
+          <div id="sleep-curve-svg"></div>
+        </div>
+
         <!-- ── Graphique 7 jours + résumé ── -->
-        <div class="card">
+        <div class="card" style="border-radius:0 0 18px 18px;border-top:1px solid var(--border)">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <div class="card-title" style="margin:0">7 derniers jours</div>
             <div style="display:flex;align-items:center;gap:8px;font-size:.67rem;color:var(--muted)">
@@ -4031,59 +4056,119 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
       <div class="tab" id="t-progress">
         <div class="page-header">
           <div class="page-title">Progrès</div>
-          <div class="page-sub">Votre évolution sur les dernières semaines</div>
+          <div class="page-sub">Analyses &amp; tendances · évolution long terme</div>
         </div>
-        <div class="progress-stat-row" id="prog-stat-row">
-          <div class="progress-stat-card">
-            <div class="progress-stat-label" style="color:var(--orange)">Streak</div>
-            <div class="progress-stat-val" id="prog-streak" style="color:var(--orange)">—</div>
-            <div class="progress-stat-sub" id="prog-streak-sub">jours consécutifs</div>
+
+        <!-- Period selector -->
+        <div class="prog-period-row">
+          <button class="prog-period-btn on" id="pp-7"  onclick="setProgPeriod(7)">7 jours</button>
+          <button class="prog-period-btn"    id="pp-30" onclick="setProgPeriod(30)">30 jours</button>
+          <button class="prog-period-btn"    id="pp-0"  onclick="setProgPeriod(0)">Tout</button>
+        </div>
+
+        <!-- 2×2 stat cards -->
+        <div class="prog-stats-grid">
+          <div class="prog-stat-card prog-stat-streak">
+            <div class="prog-stat-icon">🔥</div>
+            <div class="prog-stat-val" id="prog-streak">—</div>
+            <div class="prog-stat-label">Streak</div>
+            <div class="prog-stat-sub" id="prog-streak-sub">jours consécutifs</div>
           </div>
-          <div class="progress-stat-card">
-            <div class="progress-stat-label" style="color:var(--blue)">Séances</div>
-            <div class="progress-stat-val" id="prog-sessions-total" style="color:var(--blue)">—</div>
-            <div class="progress-stat-sub">total</div>
+          <div class="prog-stat-card prog-stat-sessions">
+            <div class="prog-stat-icon">🏋️</div>
+            <div class="prog-stat-val" id="prog-sessions-total">—</div>
+            <div class="prog-stat-label">Séances</div>
+            <div class="prog-stat-sub">sur la période</div>
           </div>
-          <div class="progress-stat-card">
-            <div class="progress-stat-label" style="color:var(--cyan)">Score IA</div>
-            <div class="progress-stat-val" id="prog-best-score" style="color:var(--cyan)">—</div>
-            <div class="progress-stat-sub">meilleur scan</div>
+          <div class="prog-stat-card prog-stat-scan">
+            <div class="prog-stat-icon">🧬</div>
+            <div class="prog-stat-val" id="prog-best-score">—</div>
+            <div class="prog-stat-label">Score IA</div>
+            <div class="prog-stat-sub">meilleur scan</div>
           </div>
-          <div class="progress-stat-card">
-            <div class="progress-stat-label" style="color:var(--green)">Humeur moy.</div>
-            <div class="progress-stat-val" id="prog-mood-stat" style="font-size:1.3rem;color:var(--green)">—</div>
-            <div class="progress-stat-sub">7 derniers jours</div>
+          <div class="prog-stat-card prog-stat-mood">
+            <div class="prog-stat-icon">😊</div>
+            <div class="prog-stat-val" id="prog-mood-stat">—</div>
+            <div class="prog-stat-label">Humeur moy.</div>
+            <div class="prog-stat-sub">7 derniers jours</div>
           </div>
+        </div>
+
+        <!-- Sessions chart -->
+        <div class="chart-card" id="chart-sessions-card">
+          <div class="chart-card-head">
+            <div>
+              <div class="chart-title">🏋️ Séances</div>
+              <div class="chart-title-val" id="chart-sessions-headline">Chargement…</div>
+            </div>
+            <span class="chart-trend" id="chart-sessions-trend"></span>
+          </div>
+          <div id="chart-sessions-svg"></div>
+        </div>
+
+        <!-- Calories chart -->
+        <div class="chart-card" id="chart-calories-card">
+          <div class="chart-card-head">
+            <div>
+              <div class="chart-title">🍽️ Calories</div>
+              <div class="chart-title-val" id="chart-calories-headline">Chargement…</div>
+            </div>
+            <span class="chart-trend" id="chart-calories-trend"></span>
+          </div>
+          <div id="chart-calories-svg"></div>
+        </div>
+
+        <!-- Weight chart -->
+        <div class="chart-card" id="chart-weight-card">
+          <div class="chart-card-head">
+            <div>
+              <div class="chart-title">⚖️ Poids</div>
+              <div class="chart-title-val" id="chart-weight-headline">Chargement…</div>
+            </div>
+            <span class="chart-trend" id="chart-weight-trend"></span>
+          </div>
+          <div id="chart-weight-prog-svg"></div>
+        </div>
+
+        <!-- Sleep chart -->
+        <div class="chart-card" id="chart-sleep-card">
+          <div class="chart-card-head">
+            <div>
+              <div class="chart-title">🌙 Sommeil</div>
+              <div class="chart-title-val" id="chart-sleep-headline">Chargement…</div>
+            </div>
+          </div>
+          <div id="chart-sleep-prog-svg"></div>
+        </div>
+
+        <!-- AI scan score chart -->
+        <div class="chart-card" id="chart-scan-card">
+          <div class="chart-card-head">
+            <div>
+              <div class="chart-title">🧬 Score physique IA</div>
+              <div class="chart-title-val" id="chart-scan-headline">Chargement…</div>
+            </div>
+            <span class="chart-trend" id="chart-scan-trend"></span>
+          </div>
+          <div id="chart-scan-svg"></div>
         </div>
 
         <!-- Mood history dot chart -->
         <div class="chart-card" id="chart-mood-card">
-          <div class="chart-title" style="display:flex;align-items:center;gap:8px">
-            <span style="display:flex;gap:4px;align-items:center">
-              <span style="width:10px;height:10px;border-radius:50%;background:#f87171;display:inline-block"></span>
-              <span style="width:10px;height:10px;border-radius:50%;background:#fbbf24;display:inline-block"></span>
-              <span style="width:10px;height:10px;border-radius:50%;background:#4ade80;display:inline-block"></span>
-            </span>
-            Humeur — 14 derniers jours
+          <div class="chart-card-head">
+            <div>
+              <div class="chart-title" style="display:flex;align-items:center;gap:6px">
+                <span style="display:flex;gap:3px;align-items:center">
+                  <span style="width:7px;height:7px;border-radius:50%;background:#f87171;display:inline-block"></span>
+                  <span style="width:7px;height:7px;border-radius:50%;background:#fbbf24;display:inline-block"></span>
+                  <span style="width:7px;height:7px;border-radius:50%;background:#4ade80;display:inline-block"></span>
+                </span>
+                Humeur — 14 derniers jours
+              </div>
+              <div class="chart-title-val" id="chart-mood-headline">Chargement…</div>
+            </div>
           </div>
-          <div class="chart-title-val" id="chart-mood-headline">Chargement…</div>
-          <div id="chart-mood-dots" style="margin-top:12px"></div>
-        </div>
-
-        <div class="chart-card" id="chart-sessions-card">
-          <div class="chart-title">Séances — 8 dernières semaines</div>
-          <div class="chart-title-val" id="chart-sessions-headline">Chargement…</div>
-          <div id="chart-sessions-svg"></div>
-        </div>
-        <div class="chart-card" id="chart-scan-card">
-          <div class="chart-title">Score physique IA — évolution</div>
-          <div class="chart-title-val" id="chart-scan-headline">Chargement…</div>
-          <div id="chart-scan-svg"></div>
-        </div>
-        <div class="chart-card" id="chart-calories-card">
-          <div class="chart-title">Calories — 14 derniers jours</div>
-          <div class="chart-title-val" id="chart-calories-headline">Chargement…</div>
-          <div id="chart-calories-svg"></div>
+          <div id="chart-mood-dots" style="margin-top:4px"></div>
         </div>
       </div>
 
