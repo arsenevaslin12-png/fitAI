@@ -5,8 +5,8 @@
 //   API calls (/api/*) → network-first, no cache
 //   Everything else → network-first with cache fallback
 
-const CACHE = "fitai-v1";
-const STATIC = ["/", "/manifest.json"];
+const CACHE = "fitai-v2";
+const STATIC = ["/", "/index.html", "/manifest.json"];
 
 // ── Install: pre-cache shell ──────────────────────────────────────────────────
 self.addEventListener("install", (e) => {

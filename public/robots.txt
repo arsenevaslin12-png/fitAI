@@ -1,0 +1,6 @@
+User-agent: *
+Disallow: /api/
+Disallow: /_next/
+Allow: /
+
+Sitemap: https://fitai.vercel.app/sitemap.xml

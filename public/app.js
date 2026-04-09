@@ -306,7 +306,22 @@ function buildCoachLocalFallback(prompt, ctx = {}) {
   if (/fatigu|mal dormi|courbature|épuis|epuis|recup|repos|claqué|claque/.test(t)) {
     return `<div class="coach-card-head"><span class="coach-card-kicker">Récupération</span><strong>Aujourd'hui on adapte, on ne force pas.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">Je te conseille une journée légère : mobilité, marche, technique propre, mais pas de séance dure.</p><div class="coach-h2">Pourquoi</div><p class="coach-p">Quand la récup est basse, pousser plus fort rapporte rarement plus. Tu veux garder le mouvement, pas t'écraser.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>8 à 12 min de marche</li><li>2 mouvements mobilité</li><li>un repas protéiné propre ce soir</li></ul>`;
   }
-  return `<div class="coach-card-head"><span class="coach-card-kicker">Coach express</span><strong>Je te donne l'action la plus utile maintenant.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">On va droit au but : adapte ta journée à ton énergie réelle et garde une action simple, propre et tenable.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>dis-moi ton temps dispo</li><li>ton matériel</li><li>ton niveau d'énergie sur 10</li></ul>`;
+  if (/séance|seance|workout|exercice|musculation|cardio|hiit|full.?body|jambe|dos|pec|abdos|bras|épaule/.test(t)) {
+    const eq = ctx.coachProfile?.equipment || 'poids du corps';
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Séance express</span><strong>Voici une séance adaptée à ton matériel.</strong></div><div class="coach-h2">Circuit 20 min — ${escapeHtml(eq)}</div><ul class="coach-list"><li>Échauffement : 3 min de marche rapide ou jumping jacks</li><li>Bloc 1 (3×12) : Squat + pompes + gainage 30s</li><li>Bloc 2 (3×12) : Fentes + rowing corps + mountain climbers</li><li>Retour au calme : 2 min étirements ciblés</li></ul><div class="coach-inline-tip">💡 Réessaie quand la connexion revient pour un plan personnalisé à ton objectif.</div>`;
+  }
+  if (/manger|repas|nutrition|calorie|prot|glucide|macro|régime|diet|alimentation|recette/.test(t)) {
+    const kcal = ctx.coachProfile?.today_kcal || 0;
+    const prot = ctx.coachProfile?.today_protein || 0;
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Nutrition</span><strong>Quelques règles simples pour aujourd'hui.</strong></div><div class="coach-h2">Principes clés</div><ul class="coach-list"><li>Priorité aux protéines : 1,6-2g par kg de poids corporel</li><li>Légumes à chaque repas pour la satiété et les micronutriments</li><li>Hydratation : 35ml par kg de poids par jour minimum</li>${kcal ? `<li>Tu as consommé ${kcal} kcal et ${prot}g de protéines aujourd'hui</li>` : ''}</ul><div class="coach-inline-tip">💡 Reconnecte-toi pour un plan nutritionnel personnalisé.</div>`;
+  }
+  if (/poids|maigrir|grossir|masse|sèche|seche|perte|objectif|goal/.test(t)) {
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Objectif</span><strong>La régularité bat l'intensité.</strong></div><div class="coach-h2">Stratégie</div><p class="coach-p">Quelle que soit ta cible — perte de poids, prise de masse ou sèche — la clé est la cohérence sur 8-12 semaines minimum.</p><div class="coach-h2">Les 3 leviers</div><ul class="coach-list"><li>Déficit ou surplus calorique maîtrisé (±300-500 kcal/j)</li><li>Protéines suffisantes pour préserver ou construire le muscle</li><li>Sommeil 7-9h : c'est là que le corps se transforme</li></ul>${streak > 0 ? `<p class="coach-p" style="margin-top:8px">Tu es sur une série de ${streak} jour(s) — c'est exactement le bon état d'esprit.</p>` : ''}`;
+  }
+  if (/sommeil|dormi|nuit|fatigue|énergie|energie|stress/.test(t)) {
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Récupération</span><strong>Le sommeil est ta meilleure séance.</strong></div><div class="coach-h2">Pourquoi c'est crucial</div><p class="coach-p">70% de la récupération musculaire se fait la nuit. Moins de 7h = moins de testostérone, plus de cortisol, plus de faim.</p><div class="coach-h2">Ce soir</div><ul class="coach-list"><li>Écrans off 45 min avant de dormir</li><li>Chambre à 18-19°C idéalement</li><li>Même heure de coucher et de lever, même le week-end</li></ul>`;
+  }
+  return `<div class="coach-card-head"><span class="coach-card-kicker">Coach express</span><strong>Je te donne l'action la plus utile maintenant.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">On va droit au but : adapte ta journée à ton énergie réelle et garde une action simple, propre et tenable.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>dis-moi ton temps dispo</li><li>ton matériel</li><li>ton niveau d'énergie sur 10</li></ul><div class="coach-inline-tip">💡 Le coach IA sera de retour dès que la connexion revient.</div>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -515,7 +530,7 @@ function bootError(message) {
   if (msg) msg.style.display = "none";
   if (err) {
     err.style.display = "block";
-    err.innerHTML = message.replace(/\n/g, "<br>");
+    err.innerHTML = message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
   }
 }
 
@@ -627,9 +642,28 @@ async function doAuth() {
         // Vérifier si l'email doit être confirmé
         if (result.data?.user && !result.data.session) {
           setAuthMessage("Compte créé ! Vérifiez vos emails pour confirmer.", "ok");
+          // Show resend button
+          const msgEl = document.getElementById("auth-msg");
+          if (msgEl) {
+            const resendBtn = document.createElement("button");
+            resendBtn.className = "btn btn-g btn-sm";
+            resendBtn.style.cssText = "margin-top:10px;width:100%";
+            resendBtn.textContent = "Renvoyer l'email de confirmation";
+            resendBtn.onclick = async () => {
+              resendBtn.disabled = true;
+              resendBtn.textContent = "Envoi…";
+              try {
+                const emailEl2 = document.getElementById("a-email");
+                await SB.auth.resend({ type: "signup", email: emailEl2?.value?.trim() || "" });
+                resendBtn.textContent = "Email renvoyé !";
+              } catch { resendBtn.textContent = "Erreur — réessayez"; resendBtn.disabled = false; }
+            };
+            msgEl.after(resendBtn);
+          }
         } else if (result.data?.session) {
-          // Auto-confirm activé, l'utilisateur est connecté
-          setAuthMessage("Compte créé et connecté !", "ok");
+          // Auto-confirm activé, l'utilisateur est connecté — aller au profil
+          setAuthMessage("Compte créé ! Complète ton profil pour commencer.", "ok");
+          setTimeout(() => gotoTab("goal"), 800);
         }
       }
 
@@ -703,7 +737,16 @@ function gotoTab(name) {
 
   if (name === "dashboard") loadDashboard();
   if (name === "goal") loadGoal();
-  if (name === "coach") { loadCoachHistory(); loadHistory(); }
+  if (name === "coach") {
+    loadCoachHistory(); loadHistory();
+    // Restore last generated plan if in-memory PLAN was lost after refresh
+    if (!PLAN) {
+      try {
+        const saved = localStorage.getItem("fitai_last_coach_plan");
+        if (saved) { PLAN = JSON.parse(saved); renderPlan(PLAN); }
+      } catch {}
+    }
+  }
   if (name === "nutrition") { loadMeals(); loadRecipeHistory(); loadNutritionWeekChart(); loadCommunityRecipes(); loadNutritionPlanFromStorage(); }
   if (name === "community") { loadFeed(); _startFeedRefresh(); loadFriends(); loadFriendRequests(); loadLeaderboard(); loadFriendSuggestions(); renderFriendsOverview(); }
   if (name === "sommeil") { loadSommeil(); }
@@ -1590,6 +1633,8 @@ async function sendCoachMsg(quickMsg) {
       COACH_HISTORY.push({ role: "ai", content: html, time: aiTime });
     } else if (j.type === "workout" && j.data) {
       PLAN = j.data;
+      // Persist plan so it survives page refresh
+      try { localStorage.setItem("fitai_last_coach_plan", JSON.stringify(j.data)); } catch {}
       const plan = j.data;
       let aiResponse = `<div class="coach-card-head"><span class="coach-card-kicker">Séance prête</span><strong>${escapeHtml(plan.title || "Séance générée")}</strong></div>`;
       const metaParts = [];
@@ -5550,11 +5595,17 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000, errorM
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    // Auto-retry once on 5xx
     let response = await fetch(url, { ...options, signal: controller.signal });
+    // Retry on 5xx with exponential backoff (separate AbortController to avoid expired signal)
     if (response.status >= 500) {
-      await new Promise(r => setTimeout(r, 1200));
-      response = await fetch(url, { ...options, signal: controller.signal });
+      await new Promise(r => setTimeout(r, 1500));
+      const retryCtrl = new AbortController();
+      const retryTimer = setTimeout(() => retryCtrl.abort(), Math.max(5000, timeoutMs - 2000));
+      try {
+        response = await fetch(url, { ...options, signal: retryCtrl.signal });
+      } finally {
+        clearTimeout(retryTimer);
+      }
     }
     const json = await safeResponseJson(response);
     if (!response.ok || !json.ok) {
