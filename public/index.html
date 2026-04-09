@@ -1391,9 +1391,12 @@ html.workout-open,body.workout-open{overflow:hidden;height:100%}
 
 /* ── Responsive ── */
 @media(max-width:640px){
-  .bento{grid-template-columns:repeat(2,1fr)}
-  .b-mood,.b-seance,.b-water,.b-coach,.b-activite,.b-actions{grid-column:span 2;grid-row:auto}
+  .bento{grid-template-columns:repeat(2,1fr);gap:10px}
+  .b-mood,.b-seance,.b-water,.b-coach,.b-activite,.b-actions,.b-week-program{grid-column:span 2;grid-row:auto}
   .b-streak,.b-calories,.b-sessions,.b-scan-mini{grid-column:auto;grid-row:auto}
+  /* Hide low-value cards on mobile to reduce clutter */
+  .b-scan-mini,.b-activite,.b-actions{display:none}
+  .bento-card{border-radius:1.5rem;padding:16px}
   .db-actions-bento{grid-template-columns:repeat(2,1fr)}
   .mood-inner{flex-direction:column;align-items:flex-start;gap:10px;min-height:auto}
   .mood-text-block{min-width:0}
@@ -1409,7 +1412,7 @@ html.workout-open,body.workout-open{overflow:hidden;height:100%}
   .b-mood{grid-column:span 2;grid-row:auto}
   .b-seance{grid-column:1/3;grid-row:auto}
   .b-streak,.b-calories,.b-sessions,.b-scan-mini{grid-column:auto;grid-row:auto}
-  .b-water,.b-coach,.b-activite{grid-column:span 2;grid-row:auto}
+  .b-water,.b-coach,.b-activite,.b-week-program{grid-column:span 2;grid-row:auto}
   .b-actions{grid-column:span 2;grid-row:auto}
   .db-actions-bento{grid-template-columns:repeat(4,1fr)}
 }
