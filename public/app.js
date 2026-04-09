@@ -1738,77 +1738,96 @@ function exerciseCuePack(ex = {}) {
 // Pivots: torso @ hip, thigh @ hip joint, shin @ knee, upperArm @ shoulder, forearm @ elbow
 // ─────────────────────────────────────────────────────────────────────────────
 const _EX_ANIM = {
+  // SQUAT (vue face): jambes s'écartent, genoux fléchissent.
+  // shinL ≈ +thighL_angle pour que la jambe inférieure reste verticale → pas de croisement
   squat: {
     dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;8;0', thighL:'0;-30;0', thighR:'0;30;0',
-    shinL:'0;68;0', shinR:'0;-68;0',
-    upperArmL:'-18;-50;-18', upperArmR:'18;50;18',
-    forearmL:'22;8;22', forearmR:'-22;-8;-22'
+    torso:'0;6;0',
+    thighL:'0;-24;0', thighR:'0;24;0',
+    shinL:'0;28;0',  shinR:'0;-28;0',
+    upperArmL:'-42;-42;-42', upperArmR:'42;42;42',
+    forearmL:'88;88;88', forearmR:'-88;-88;-88'
   },
+  // LUNGE: une jambe avant (thighL avance), une arrière (thighR recule)
   lunge: {
     dur:'1.2s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;6;0', thighL:'-5;-40;-5', thighR:'12;44;12',
-    shinL:'0;65;0', shinR:'-28;-8;-28',
+    torso:'0;4;0',
+    thighL:'-6;-38;-6', thighR:'10;36;10',
+    shinL:'0;52;0',    shinR:'-26;-6;-26',
+    upperArmL:'-14;-14;-14', upperArmR:'14;14;14',
+    forearmL:'20;20;20', forearmR:'-20;-20;-20'
+  },
+  // PUSH-UP: torse en planche (~60°), bras plient puis poussent
+  push: {
+    dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'60;56;60',
+    thighL:'22;22;22', thighR:'22;22;22',
+    shinL:'-8;-8;-8',  shinR:'-8;-8;-8',
+    upperArmL:'-58;-48;-58', upperArmR:'-58;-48;-58',
+    forearmL:'78;94;78', forearmR:'78;94;78'
+  },
+  // PULL / TIRAGE: bras partent haute puis tirent vers les épaules
+  pull: {
+    dur:'1.3s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;-3;0',
+    thighL:'-8;-8;-8', thighR:'8;8;8',
+    shinL:'16;20;16',  shinR:'-16;-20;-16',
+    upperArmL:'-146;-112;-146', upperArmR:'146;112;146',
+    forearmL:'10;50;10', forearmR:'-10;-50;-10'
+  },
+  // HINGE / DEADLIFT: torse s'incline en avant puis remonte
+  hinge: {
+    dur:'1.5s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;-40;0',
+    thighL:'-4;-16;-4', thighR:'4;16;4',
+    shinL:'0;12;0',     shinR:'0;-12;0',
+    upperArmL:'-6;-6;-6', upperArmR:'6;6;6',
+    forearmL:'16;16;16', forearmR:'-16;-16;-16'
+  },
+  // CORE / MOUNTAIN CLIMBER: un genou ramène vers la poitrine en alternance
+  core: {
+    dur:'1.35s', sp:'0.5 0 0.5 1;0.5 0 0.5 1',
+    torso:'-4;4;-4',
+    thighL:'-52;-4;-52', thighR:'4;52;4',
+    shinL:'48;4;48',     shinR:'4;-48;4',
+    upperArmL:'-20;10;-20', upperArmR:'10;-20;10',
+    forearmL:'0;0;0', forearmR:'0;0;0'
+  },
+  // CARDIO / COURSE: jambes alternent rapidement
+  cardio: {
+    dur:'0.62s', sp:'0.5 0 0.5 1;0.5 0 0.5 1',
+    torso:'-4;4;-4',
+    thighL:'-32;16;-32', thighR:'16;-32;16',
+    shinL:'50;6;50',     shinR:'6;50;6',
+    upperArmL:'26;-38;26', upperArmR:'-38;26;-38',
+    forearmL:'-26;18;-26', forearmR:'18;-26;18'
+  },
+  // PRESS / DÉVELOPPÉ: bras montent de l'épaule jusqu'au-dessus de la tête
+  press: {
+    dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;0;0',
+    thighL:'0;0;0', thighR:'0;0;0',
+    shinL:'0;0;0',  shinR:'0;0;0',
+    upperArmL:'-70;-148;-70', upperArmR:'70;148;70',
+    forearmL:'-84;-6;-84',    forearmR:'84;6;84'
+  },
+  // CALF RAISE: talons se lèvent légèrement
+  calf: {
+    dur:'1.0s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;0;0',
+    thighL:'0;0;0', thighR:'0;0;0',
+    shinL:'0;-10;0', shinR:'0;10;0',
     upperArmL:'-14;-14;-14', upperArmR:'14;14;14',
     forearmL:'22;22;22', forearmR:'-22;-22;-22'
   },
-  push: {
-    dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'72;67;72', thighL:'20;20;20', thighR:'20;20;20',
-    shinL:'-5;-5;-5', shinR:'-5;-5;-5',
-    upperArmL:'-72;-60;-72', upperArmR:'-72;-60;-72',
-    forearmL:'82;96;82', forearmR:'82;96;82'
-  },
-  pull: {
-    dur:'1.3s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;-4;0', thighL:'-8;-8;-8', thighR:'8;8;8',
-    shinL:'18;22;18', shinR:'-18;-22;-18',
-    upperArmL:'-152;-124;-152', upperArmR:'152;124;152',
-    forearmL:'12;52;12', forearmR:'-12;-52;-12'
-  },
-  hinge: {
-    dur:'1.5s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;-50;0', thighL:'-6;-20;-6', thighR:'6;20;6',
-    shinL:'0;16;0', shinR:'0;-16;0',
-    upperArmL:'-8;-8;-8', upperArmR:'8;8;8',
-    forearmL:'18;18;18', forearmR:'-18;-18;-18'
-  },
-  core: {
-    dur:'1.35s', sp:'0.5 0 0.5 1;0.5 0 0.5 1',
-    torso:'-10;10;-10', thighL:'-48;-5;-48', thighR:'5;48;5',
-    shinL:'52;2;52', shinR:'2;-52;2',
-    upperArmL:'-28;10;-28', upperArmR:'10;-28;10',
-    forearmL:'0;0;0', forearmR:'0;0;0'
-  },
-  cardio: {
-    dur:'0.65s', sp:'0.5 0 0.5 1;0.5 0 0.5 1',
-    torso:'-8;8;-8', thighL:'-34;18;-34', thighR:'18;-34;18',
-    shinL:'58;6;58', shinR:'6;58;6',
-    upperArmL:'30;-42;30', upperArmR:'-42;30;-42',
-    forearmL:'-32;22;-32', forearmR:'22;-32;22'
-  },
-  press: {
-    dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;0;0', thighL:'0;0;0', thighR:'0;0;0',
-    shinL:'0;0;0', shinR:'0;0;0',
-    // upperArm -72° = arms at shoulder height (≈ horizontal); -155° = arms extended overhead
-    // forearm -88° relative to upper arm = forearm pointing up (bar at shoulder) → -5° = fully extended
-    upperArmL:'-72;-155;-72', upperArmR:'72;155;72',
-    forearmL:'-88;-5;-88', forearmR:'88;5;88'
-  },
-  calf: {
-    dur:'1.0s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;0;0', thighL:'0;0;0', thighR:'0;0;0',
-    shinL:'0;-14;0', shinR:'0;14;0',
-    upperArmL:'-16;-16;-16', upperArmR:'16;16;16',
-    forearmL:'24;24;24', forearmR:'-24;-24;-24'
-  },
+  // MOBILITY / ÉTIREMENT: bras s'ouvrent en arc
   mobility: {
     dur:'2.2s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;-22;0', thighL:'0;-16;0', thighR:'0;16;0',
-    shinL:'0;10;0', shinR:'0;-10;0',
-    upperArmL:'-18;-90;-18', upperArmR:'18;90;18',
-    forearmL:'14;4;14', forearmR:'-14;-4;-14'
+    torso:'0;-14;0',
+    thighL:'0;-12;0', thighR:'0;12;0',
+    shinL:'0;8;0',   shinR:'0;-8;0',
+    upperArmL:'-18;-88;-18', upperArmR:'18;88;18',
+    forearmL:'12;2;12', forearmR:'-12;-2;-12'
   }
 };
 
@@ -1845,20 +1864,19 @@ function _buildAnimFigure(key, accent2, skinId) {
   // ── Primitives ──────────────────────────────────────────────────────────
   const pill  = (w,h,f,sc,sw) => `<rect x="${-w/2}" y="0" width="${w}" height="${h}" rx="${w/2}" fill="${f}" stroke="${sc}" stroke-width="${sw}"/>`;
   const pillU = (w,h,f,sc,sw) => `<rect x="${-w/2}" y="${-h}" width="${w}" height="${h}" rx="${w/2}" fill="${f}" stroke="${sc}" stroke-width="${sw}"/>`;
-  const jt = (r,y) => `<circle cx="0" cy="${y}" r="${r}" fill="#e2e8f0" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/>`;
-  const ac = (y,r) => `<circle cx="0" cy="${y}" r="${r}" fill="${accent2}44" stroke="${accent2}aa" stroke-width="1.8"/>`;
+  const jt = (r,y) => `<circle cx="0" cy="${y}" r="${r}" fill="rgba(255,255,255,.55)" stroke="rgba(255,255,255,.25)" stroke-width="1"/>`;
 
   const SF = `url(#${skinId})`;
-  const LC = 'rgba(255,255,255,.90)';
-  const LS = 'rgba(255,255,255,.22)';
+  const LC = 'rgba(255,255,255,.88)';
+  const LS = 'rgba(255,255,255,.18)';
 
   // ── Build segments ──────────────────────────────────────────────────────
 
   // Forearms → upper arms (inside torso group → follow torso tilt)
-  const frL = G(0, ARM_L, ad.forearmL, pill(FW,FORE_L,LC,LS,1) + ac(FORE_L,5.5));
-  const frR = G(0, ARM_L, ad.forearmR, pill(FW,FORE_L,LC,LS,1) + ac(FORE_L,5.5));
-  const uaL = G(-SHW,-TORSO_H, ad.upperArmL, pill(AW,ARM_L,LC,LS,1) + jt(5,ARM_L) + frL);
-  const uaR = G( SHW,-TORSO_H, ad.upperArmR, pill(AW,ARM_L,LC,LS,1) + jt(5,ARM_L) + frR);
+  const frL = G(0, ARM_L, ad.forearmL, pill(FW,FORE_L,LC,LS,1));
+  const frR = G(0, ARM_L, ad.forearmR, pill(FW,FORE_L,LC,LS,1));
+  const uaL = G(-SHW,-TORSO_H, ad.upperArmL, pill(AW,ARM_L,LC,LS,1) + jt(4,ARM_L) + frL);
+  const uaR = G( SHW,-TORSO_H, ad.upperArmR, pill(AW,ARM_L,LC,LS,1) + jt(4,ARM_L) + frR);
 
   // Torso body (upward), neck, head, eyes
   const body  = pillU(TW,TORSO_H,SF,'rgba(255,255,255,.18)',1);
@@ -1871,10 +1889,10 @@ function _buildAnimFigure(key, accent2, skinId) {
   const torso = G(CX, HIP_Y, ad.torso, uaL + uaR + body + neck + head + eyes);
 
   // Shins → thighs (world-space: legs don't follow torso)
-  const snL = G(0,THIGH_L, ad.shinL, pill(SW,SHIN_L,LC,LS,1) + ac(SHIN_L,7));
-  const snR = G(0,THIGH_L, ad.shinR, pill(SW,SHIN_L,LC,LS,1) + ac(SHIN_L,7));
-  const lgL = G(HIP_L,HIP_Y, ad.thighL, pill(TW,THIGH_L,LC,LS,1) + jt(6,THIGH_L) + snL);
-  const lgR = G(HIP_R,HIP_Y, ad.thighR, pill(TW,THIGH_L,LC,LS,1) + jt(6,THIGH_L) + snR);
+  const snL = G(0,THIGH_L, ad.shinL, pill(SW,SHIN_L,LC,LS,1));
+  const snR = G(0,THIGH_L, ad.shinR, pill(SW,SHIN_L,LC,LS,1));
+  const lgL = G(HIP_L,HIP_Y, ad.thighL, pill(TW,THIGH_L,LC,LS,1) + jt(5,THIGH_L) + snL);
+  const lgR = G(HIP_R,HIP_Y, ad.thighR, pill(TW,THIGH_L,LC,LS,1) + jt(5,THIGH_L) + snR);
 
   // Render: legs behind, torso+arms+head in front
   return lgL + lgR + torso;
@@ -2030,12 +2048,12 @@ function _exerciseDemoSvg(label = '') {
   const variants = [
     { rx: /squat|chair|leg press|wall sit|presse.*cuiss|hack squat|leg ext|abducteur|adducteur|single leg press/, key: 'squat', accent: '#f59e0b', accent2: '#fb7185', label: 'jambes / fessiers' },
     { rx: /lunge|fente|split squat|step-up|bulgare|step.up/, key: 'lunge', accent: '#8b5cf6', accent2: '#22d3ee', label: 'jambes / stabilité' },
-    { rx: /pompe|push|bench|developpe.*couch|developpe.*inclin|developpe.*militaire|dips|pike push|eleva.*front|ecarte|skull|crush|tricep|extension.*tricep|extension.*poulie|kick.?back|overhead.*tricep|dip.*banc/, key: 'push', accent: '#22c55e', accent2: '#06b6d4', label: 'poussée haut du corps' },
+    { rx: /pompe|push|bench|developpe.*couch|developpe.*inclin|dips|pike push|ecarte|skull|crush|tricep|extension.*tricep|extension.*poulie|kick.?back|overhead.*tricep|dip.*banc/, key: 'push', accent: '#22c55e', accent2: '#06b6d4', label: 'poussée haut du corps' },
     { rx: /row|tirage|traction|pull|curl|rowing|tractions|oiseau|pullover|shrug|trapeze|inverted.*row|superman|bird.*dog|deadbug|hyperextension/, key: 'pull', accent: '#38bdf8', accent2: '#818cf8', label: 'tirage / dos' },
     { rx: /deadlift|souleve|hinge|hip thrust|bridge|pont|romanian|sumo|good morning|nordic|soulevé/, key: 'hinge', accent: '#ef4444', accent2: '#f59e0b', label: 'chaîne postérieure' },
     { rx: /plank|planche|gainage|abdo|hollow|mountain|russian twist|twist|crunch|bicycle|bird.*dog|superman|deadbug|ab wheel|rollout|\bab\b|core|nordic.*curl/, key: 'core', accent: '#22d3ee', accent2: '#a78bfa', label: 'core / stabilité' },
     { rx: /jump|burpee|high knees|run|cardio|jack|sprint|montee.*genou|corde.*sauter|tabata|hiit|box jump|saut|squat.*saute|squat saut/, key: 'cardio', accent: '#f472b6', accent2: '#fb7185', label: 'cardio / densité' },
-    { rx: /press|military|shoulder|eleva.*lat|eleva.*later|lateral.*rais|deltoid|militaire|oiseau.*inverse|rear.*delt|face.*pull/, key: 'press', accent: '#14b8a6', accent2: '#60a5fa', label: 'épaules / poussée' },
+    { rx: /press|military|shoulder|eleva.*lat|eleva.*later|lateral.*rais|deltoid|militaire|developpe.*militaire|oiseau.*inverse|rear.*delt|face.*pull|eleva.*front/, key: 'press', accent: '#14b8a6', accent2: '#60a5fa', label: 'épaules / poussée' },
     { rx: /calf|mollet|releve.*pied|releve.*mollet|pointe|relevé/, key: 'calf', accent: '#fb923c', accent2: '#facc15', label: 'mollets / explosivité' },
     { rx: /stretch|mobilite|rotation|respiration|yoga|pigeon|cat.cow|foam|hip flex|thread|squat.*profond|mobilité/, key: 'mobility', accent: '#4ade80', accent2: '#2dd4bf', label: 'mobilité / récupération' }
   ];
