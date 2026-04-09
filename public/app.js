@@ -16,6 +16,7 @@ const LIKED = new Set((() => {
 const ASYNC_LOCKS = new Set();
 let POST_PHOTO = null;
 let FEED_FILTER = "all";
+let FEED_OFFSET  = 0;
 let LAST_COACH_PROMPT = "";
 let COACH_REQUEST_SEQ = 0;
 let USER_WEIGHT = null; // kg, loaded from profile — used to compute water target
@@ -1730,12 +1731,154 @@ function exerciseCuePack(ex = {}) {
   };
 }
 
-// Complete exercise figure frames — each exercise defines two full body positions (A=neutral, B=effort peak)
-// h=[cx,cy] head center, t=torso path (M L L L Z), l=8 limb paths:
-//   [0]L-upper-arm [1]L-lower-arm [2]R-upper-arm [3]R-lower-arm [4]L-thigh [5]L-shin [6]R-thigh [7]R-shin
-// EVERY limb uses exactly "M x y Q cx cy ex ey" — same 7 numbers, same commands A↔B — required for SMIL morphing.
+// ─────────────────────────────────────────────────────────────────────────────
+// Animated Exercise Figure v2 — segment-based, joint-rotation (SMIL additive)
+// Each key defines per-segment angle keyframes (degrees, SVG convention: + = CW)
+// Pivots: torso @ hip, thigh @ hip joint, shin @ knee, upperArm @ shoulder, forearm @ elbow
+// ─────────────────────────────────────────────────────────────────────────────
+const _EX_ANIM = {
+  squat: {
+    dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;8;0', thighL:'0;-30;0', thighR:'0;30;0',
+    shinL:'0;68;0', shinR:'0;-68;0',
+    upperArmL:'-18;-50;-18', upperArmR:'18;50;18',
+    forearmL:'22;8;22', forearmR:'-22;-8;-22'
+  },
+  lunge: {
+    dur:'1.2s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;6;0', thighL:'-5;-40;-5', thighR:'12;44;12',
+    shinL:'0;65;0', shinR:'-28;-8;-28',
+    upperArmL:'-14;-14;-14', upperArmR:'14;14;14',
+    forearmL:'22;22;22', forearmR:'-22;-22;-22'
+  },
+  push: {
+    dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'72;67;72', thighL:'20;20;20', thighR:'20;20;20',
+    shinL:'-5;-5;-5', shinR:'-5;-5;-5',
+    upperArmL:'-72;-60;-72', upperArmR:'-72;-60;-72',
+    forearmL:'82;96;82', forearmR:'82;96;82'
+  },
+  pull: {
+    dur:'1.3s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;-4;0', thighL:'-8;-8;-8', thighR:'8;8;8',
+    shinL:'18;22;18', shinR:'-18;-22;-18',
+    upperArmL:'-152;-124;-152', upperArmR:'152;124;152',
+    forearmL:'12;52;12', forearmR:'-12;-52;-12'
+  },
+  hinge: {
+    dur:'1.5s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;-50;0', thighL:'-6;-20;-6', thighR:'6;20;6',
+    shinL:'0;16;0', shinR:'0;-16;0',
+    upperArmL:'-8;-8;-8', upperArmR:'8;8;8',
+    forearmL:'18;18;18', forearmR:'-18;-18;-18'
+  },
+  core: {
+    dur:'1.35s', sp:'0.5 0 0.5 1;0.5 0 0.5 1',
+    torso:'-10;10;-10', thighL:'-48;-5;-48', thighR:'5;48;5',
+    shinL:'52;2;52', shinR:'2;-52;2',
+    upperArmL:'-28;10;-28', upperArmR:'10;-28;10',
+    forearmL:'0;0;0', forearmR:'0;0;0'
+  },
+  cardio: {
+    dur:'0.65s', sp:'0.5 0 0.5 1;0.5 0 0.5 1',
+    torso:'-8;8;-8', thighL:'-34;18;-34', thighR:'18;-34;18',
+    shinL:'58;6;58', shinR:'6;58;6',
+    upperArmL:'30;-42;30', upperArmR:'-42;30;-42',
+    forearmL:'-32;22;-32', forearmR:'22;-32;22'
+  },
+  press: {
+    dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;0;0', thighL:'0;0;0', thighR:'0;0;0',
+    shinL:'0;0;0', shinR:'0;0;0',
+    upperArmL:'-68;-152;-68', upperArmR:'68;152;68',
+    forearmL:'74;0;74', forearmR:'-74;0;-74'
+  },
+  calf: {
+    dur:'1.0s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;0;0', thighL:'0;0;0', thighR:'0;0;0',
+    shinL:'0;-14;0', shinR:'0;14;0',
+    upperArmL:'-16;-16;-16', upperArmR:'16;16;16',
+    forearmL:'24;24;24', forearmR:'-24;-24;-24'
+  },
+  mobility: {
+    dur:'2.2s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;-22;0', thighL:'0;-16;0', thighR:'0;16;0',
+    shinL:'0;10;0', shinR:'0;-10;0',
+    upperArmL:'-18;-90;-18', upperArmR:'18;90;18',
+    forearmL:'14;4;14', forearmR:'-14;-4;-14'
+  }
+};
+
+function _buildAnimFigure(key, accent2, skinId) {
+  const ad  = _EX_ANIM[key] || _EX_ANIM.squat;
+  const dur = ad.dur;
+  const sp  = ad.sp;
+  if (!skinId) skinId = 'skin';
+
+  // ── Anatomy (viewBox 360×280) ──────────────────────────────────────────
+  const CX=180, HIP_Y=162;
+  const TORSO_H=60, NECK_H=12, HEAD_R=20;
+  const SHW=24;                        // shoulder half-width from center
+  const HIP_L=CX-14, HIP_R=CX+14;    // hip joint world-x
+  const ARM_L=44, FORE_L=36;
+  const THIGH_L=56, SHIN_L=50;
+  const AW=11, FW=9, TW=15, SW=12, NW=8;
+
+  // ── SMIL additive rotate animation ────────────────────────────────────
+  const animR = vals => {
+    const pts = String(vals).split(';');
+    if (pts.every(v => v.trim() === pts[0].trim())) return '';
+    return `<animateTransform attributeName="transform" type="rotate" additive="sum" begin="0s" values="${vals}" dur="${dur}" calcMode="spline" keySplines="${sp}" repeatCount="indefinite"/>`;
+  };
+
+  // Group: translate(tx,ty) [+ static rotate if uniform] + animated rotate
+  const G = (tx, ty, rotVals, children) => {
+    const pts = String(rotVals || '0').split(';').map(v => v.trim());
+    const isStatic = pts.every(v => v === pts[0]);
+    const baseRot  = (isStatic && pts[0] !== '0') ? ` rotate(${pts[0]})` : '';
+    return `<g transform="translate(${tx},${ty})${baseRot}">${animR(rotVals)}${children}</g>`;
+  };
+
+  // ── Primitives ──────────────────────────────────────────────────────────
+  const pill  = (w,h,f,sc,sw) => `<rect x="${-w/2}" y="0" width="${w}" height="${h}" rx="${w/2}" fill="${f}" stroke="${sc}" stroke-width="${sw}"/>`;
+  const pillU = (w,h,f,sc,sw) => `<rect x="${-w/2}" y="${-h}" width="${w}" height="${h}" rx="${w/2}" fill="${f}" stroke="${sc}" stroke-width="${sw}"/>`;
+  const jt = (r,y) => `<circle cx="0" cy="${y}" r="${r}" fill="#e2e8f0" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/>`;
+  const ac = (y,r) => `<circle cx="0" cy="${y}" r="${r}" fill="${accent2}44" stroke="${accent2}aa" stroke-width="1.8"/>`;
+
+  const SF = `url(#${skinId})`;
+  const LC = 'rgba(255,255,255,.90)';
+  const LS = 'rgba(255,255,255,.22)';
+
+  // ── Build segments ──────────────────────────────────────────────────────
+
+  // Forearms → upper arms (inside torso group → follow torso tilt)
+  const frL = G(0, ARM_L, ad.forearmL, pill(FW,FORE_L,LC,LS,1) + ac(FORE_L,5.5));
+  const frR = G(0, ARM_L, ad.forearmR, pill(FW,FORE_L,LC,LS,1) + ac(FORE_L,5.5));
+  const uaL = G(-SHW,-TORSO_H, ad.upperArmL, pill(AW,ARM_L,LC,LS,1) + jt(5,ARM_L) + frL);
+  const uaR = G( SHW,-TORSO_H, ad.upperArmR, pill(AW,ARM_L,LC,LS,1) + jt(5,ARM_L) + frR);
+
+  // Torso body (upward), neck, head, eyes
+  const body  = pillU(TW,TORSO_H,SF,'rgba(255,255,255,.18)',1);
+  const neck  = `<rect x="${-NW/2}" y="${-TORSO_H-NECK_H}" width="${NW}" height="${NECK_H}" rx="${NW/2}" fill="${SF}"/>`;
+  const hcY   = -TORSO_H - NECK_H - HEAD_R;
+  const head  = `<circle cx="0" cy="${hcY}" r="${HEAD_R}" fill="${SF}" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>`;
+  const eyes  = `<circle cx="-6" cy="${hcY+6}" r="2.5" fill="rgba(15,23,42,.6)"/><circle cx="6" cy="${hcY+6}" r="2.5" fill="rgba(15,23,42,.6)"/>`;
+
+  // Torso group (arms inside so they follow torso tilt naturally)
+  const torso = G(CX, HIP_Y, ad.torso, uaL + uaR + body + neck + head + eyes);
+
+  // Shins → thighs (world-space: legs don't follow torso)
+  const snL = G(0,THIGH_L, ad.shinL, pill(SW,SHIN_L,LC,LS,1) + ac(SHIN_L,7));
+  const snR = G(0,THIGH_L, ad.shinR, pill(SW,SHIN_L,LC,LS,1) + ac(SHIN_L,7));
+  const lgL = G(HIP_L,HIP_Y, ad.thighL, pill(TW,THIGH_L,LC,LS,1) + jt(6,THIGH_L) + snL);
+  const lgR = G(HIP_R,HIP_Y, ad.thighR, pill(TW,THIGH_L,LC,LS,1) + jt(6,THIGH_L) + snR);
+
+  // Render: legs behind, torso+arms+head in front
+  return lgL + lgR + torso;
+}
+
+// dead data — not referenced
 const _EX_FRAMES = {
-  // ── SQUAT (front view): upright → deep squat, knees out, arms forward ──
   squat: {
     dur: "1.35s",
     a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
@@ -1877,93 +2020,9 @@ const _EX_FRAMES = {
   }
 };
 
-function _buildAnimFigure(key, accent2, skinId = "skin") {
-  const fr = _EX_FRAMES[key] || _EX_FRAMES.squat;
-  const dur = fr.dur;
-  const ks = "0.45 0 0.55 1;0.45 0 0.55 1";
-  const [hAx, hAy] = fr.a.h;
-  const [hBx, hBy] = fr.b.h;
 
-  const mk = (attr, a, b) => (String(a) === String(b)) ? '' :
-    `<animate attributeName="${attr}" values="${a};${b};${a}" dur="${dur}" repeatCount="indefinite" calcMode="spline" keySplines="${ks}"/>`;
-
-  // Extract start/end coords from a path string "M x y Q ..."
-  const pStart = (d) => { const m = String(d||'').match(/M\s*([\d.-]+)\s+([\d.-]+)/); return m ? [+m[1],+m[2]] : null; };
-  const pEnd   = (d) => { const nums = (String(d||'').match(/-?[\d.]+/g)||[]); return nums.length >= 2 ? [+nums[nums.length-2],+nums[nums.length-1]] : null; };
-
-  // Animated circle helper (joint, foot, hand)
-  const dot = (ax,ay,bx,by,r,fill,stroke,sw=1.5) =>
-    (ax == null || bx == null) ? '' :
-    `<circle cx="${ax}" cy="${ay}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}">${mk('cx',ax,bx)}${mk('cy',ay,by)}</circle>`;
-
-  // Joint positions
-  const [leAx,leAy] = pStart(fr.a.l[1]) || [0,0];  const [leBx,leBy] = pStart(fr.b.l[1]) || [leAx,leAy];  // L elbow
-  const [reAx,reAy] = pStart(fr.a.l[3]) || [0,0];  const [reBx,reBy] = pStart(fr.b.l[3]) || [reAx,reAy];  // R elbow
-  const [lkAx,lkAy] = pStart(fr.a.l[5]) || [0,0];  const [lkBx,lkBy] = pStart(fr.b.l[5]) || [lkAx,lkAy];  // L knee
-  const [rkAx,rkAy] = pStart(fr.a.l[7]) || [0,0];  const [rkBx,rkBy] = pStart(fr.b.l[7]) || [rkAx,rkAy];  // R knee
-  const lfA = pEnd(fr.a.l[5]);  const lfB = pEnd(fr.b.l[5]) || lfA;  // L foot
-  const rfA = pEnd(fr.a.l[7]);  const rfB = pEnd(fr.b.l[7]) || rfA;  // R foot
-  const lwA = pEnd(fr.a.l[1]);  const lwB = pEnd(fr.b.l[1]) || lwA;  // L wrist
-  const rwA = pEnd(fr.a.l[3]);  const rwB = pEnd(fr.b.l[3]) || rwA;  // R wrist
-
-  // Limbs — left side slightly lighter, right side white, legs wider
-  const colL = "rgba(255,255,255,.58)";
-  const colR = "#f0f9ff";
-  const strokes = [colL,colL,colR,colR, colL,colL,colR,colR];
-  const widths  = ["8","7","8","7","10","9","10","9"];
-  const limbs = fr.a.l.map((dA, i) => {
-    const dB = fr.b.l[i];
-    if (!dB) return `<path d="${dA}" stroke="${strokes[i]}" stroke-width="${widths[i]}" stroke-linecap="round" fill="none"/>`;
-    return `<path d="${dA}" stroke="${strokes[i]}" stroke-width="${widths[i]}" stroke-linecap="round" fill="none">${mk('d',dA,dB)}</path>`;
-  }).join('');
-
-  // Torso
-  const torso = `<path d="${fr.a.t}" fill="url(#${skinId})" opacity=".98">${mk('d',fr.a.t,fr.b.t)}</path>`;
-
-  // Collar accent
-  let collar = '';
-  if (key !== 'push' && key !== 'core') {
-    const colA = `M${hAx-14} ${hAy+26} Q${hAx} ${hAy+18} ${hAx+14} ${hAy+26}`;
-    const colB = `M${hBx-14} ${hBy+26} Q${hBx} ${hBy+18} ${hBx+14} ${hBy+26}`;
-    collar = `<path d="${colA}" fill="none" stroke="${accent2}" stroke-width="2.4" opacity=".9">${mk('d',colA,colB)}</path>`;
-  }
-
-  // Head (on top of torso)
-  const head = `<circle cx="${hAx}" cy="${hAy}" r="22" fill="url(#${skinId})" stroke="rgba(255,255,255,.75)" stroke-width="1.5">${mk('cx',hAx,hBx)}${mk('cy',hAy,hBy)}</circle>`;
-  // Face dot — gives a human feel
-  const faceAx = hAx + 6, faceAy = hAy + 4, faceBx = hBx + 6, faceBy = hBy + 4;
-  const face = `<circle cx="${faceAx}" cy="${faceAy}" r="3.5" fill="rgba(30,41,59,.5)">${mk('cx',faceAx,faceBx)}${mk('cy',faceAy,faceBy)}</circle>`;
-
-  // Joints — elbow, knee (rendered on top of limbs)
-  const elbowL = dot(leAx,leAy,leBx,leBy, 5.5, '#e2e8f0', 'rgba(255,255,255,.45)');
-  const elbowR = dot(reAx,reAy,reBx,reBy, 5.5, '#e2e8f0', 'rgba(255,255,255,.45)');
-  const kneeL  = dot(lkAx,lkAy,lkBx,lkBy, 6.5, '#e2e8f0', 'rgba(255,255,255,.45)');
-  const kneeR  = dot(rkAx,rkAy,rkBx,rkBy, 6.5, '#e2e8f0', 'rgba(255,255,255,.45)');
-
-  // Feet — colored with accent, stands out
-  const footL = lfA ? dot(lfA[0],lfA[1], lfB[0],lfB[1], 8.5, `${accent2}44`, `${accent2}bb`, 2) : '';
-  const footR = rfA ? dot(rfA[0],rfA[1], rfB[0],rfB[1], 8.5, `${accent2}44`, `${accent2}bb`, 2) : '';
-
-  // Hands — small neutral dots
-  const handL = lwA ? dot(lwA[0],lwA[1], lwB[0],lwB[1], 5.5, 'rgba(255,255,255,.4)', 'rgba(255,255,255,.5)') : '';
-  const handR = rwA ? dot(rwA[0],rwA[1], rwB[0],rwB[1], 5.5, 'rgba(255,255,255,.4)', 'rgba(255,255,255,.5)') : '';
-
-  // Render: limbs behind torso, joints/hands/feet on top
-  return limbs + torso + collar + head + face + elbowL + elbowR + kneeL + kneeR + footL + footR + handL + handR;
-}
-
-// (legacy stub kept for reference — replaced by _EX_FRAMES)
-const _LIMB_ANIM = {
+const _LIMB_ANIM_UNUSED = {
   squat: [
-    ["M152 112 Q134 128 122 144","M152 112 Q138 124 128 136"],
-    ["M122 144 Q114 152 106 168","M128 136 Q124 142 120 150"],
-    ["M208 112 Q228 128 242 142","M208 112 Q222 124 232 136"],
-    ["M242 142 Q252 150 258 168","M232 136 Q236 142 240 150"],
-    ["M162 156 Q146 172 138 196","M162 156 Q138 180 122 196"],
-    ["M138 196 Q136 214 146 236","M122 196 Q112 212 124 234"],
-    ["M198 156 Q214 172 222 196","M198 156 Q222 180 238 196"],
-    ["M222 196 Q224 214 214 236","M238 196 Q248 212 236 234"]
-  ],
   lunge: [
     ["M156 112 Q142 128 134 148","M156 112 Q148 124 142 138"],
     ["M134 148 Q128 160 120 176","M142 138 Q136 150 132 164"],
@@ -2057,7 +2116,7 @@ const _LIMB_ANIM = {
 };
 
 function _buildAnimLimbs(key, dur) {
-  const defs = _LIMB_ANIM[key] || _LIMB_ANIM.squat;
+  const defs = _LIMB_ANIM_UNUSED[key] || _LIMB_ANIM_UNUSED.squat;
   const strokes = [
     "rgba(255,255,255,.62)","rgba(255,255,255,.62)",
     "#f8fafc","#f8fafc",
@@ -2808,6 +2867,7 @@ async function shareRecipe() {
 
 function setFeedFilter(filter) {
   FEED_FILTER = filter;
+  FEED_OFFSET  = 0;
   document.querySelectorAll(".feed-filter-btn").forEach(b => b.classList.toggle("on", b.dataset.filter === filter));
   loadFeed();
   renderCommunityOverview(FEED_SOCIAL_STATE.stats);
@@ -3623,7 +3683,7 @@ window.setSleepGoal = setSleepGoal;
 window.toggleFriendsSection = toggleFriendsSection;
 window.loadSommeil = loadSommeil;
 
-async function loadFeed(silent = false) {
+async function loadFeed(silent = false, appendMore = false) {
   const el = document.getElementById("feed");
   if (!el) return;
   // On silent refresh, only update if no posts are showing yet (avoid jarring rerender while user reads)
@@ -3637,11 +3697,14 @@ async function loadFeed(silent = false) {
       if (latestId && firstCard && firstCard.id === `post-${latestId}`) return; // no new posts
     } catch { return; }
   }
+  const PAGE = 20;
+  const offset = appendMore ? FEED_OFFSET : 0;
+  if (!appendMore) FEED_OFFSET = 0;
   try {
     let query = SB.from("community_posts")
       .select("id,user_id,content,kudos,image_url,visibility,created_at")
       .order("created_at", { ascending: false })
-      .limit(25);
+      .range(offset, offset + PAGE - 1);
 
     if (FEED_FILTER === "mine") {
       query = query.eq("user_id", U.id);
@@ -3711,7 +3774,7 @@ async function loadFeed(silent = false) {
 
     const AVATAR_COLORS = ["#2563eb","#7c3aed","#0891b2","#059669","#dc2626","#d97706","#db2777","#0d9488"];
 
-    el.innerHTML = data.map(post => {
+    const _postsHtml = data.map(post => {
       const me = U && post.user_id === U.id;
       const liked = LIKED.has(post.id);
       const date = timeAgo(post.created_at);
@@ -3889,6 +3952,22 @@ async function loadCommunityRecipes() {
           </div>
         </div>`;
     }).filter(Boolean).join("");
+    if (appendMore) {
+      document.getElementById("feed-more-btn")?.remove();
+      el.insertAdjacentHTML("beforeend", _postsHtml);
+    } else {
+      el.innerHTML = _postsHtml;
+    }
+    FEED_OFFSET = offset + data.length;
+    if (data.length === PAGE) {
+      const _moreBtn = document.createElement("button");
+      _moreBtn.id = "feed-more-btn";
+      _moreBtn.className = "btn btn-g btn-full";
+      _moreBtn.style.cssText = "margin-top:12px;font-size:.82rem";
+      _moreBtn.textContent = "Charger plus";
+      _moreBtn.onclick = () => loadFeed(false, true);
+      el.appendChild(_moreBtn);
+    }
   } catch (e) {
     el.innerHTML = `<div class="meal-info" style="color:var(--red)">Erreur: ${escapeHtml(e.message)}</div>`;
   }
