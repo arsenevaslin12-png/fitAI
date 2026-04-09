@@ -379,6 +379,34 @@ body.light .community-recipe-card{background:rgba(15,23,42,.02);border-color:rgb
 .coach-verdict-warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);color:#fde68a}
 .coach-verdict-bad{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#fca5a5}
 .bc-coach-body{font-size:.78rem;color:var(--text2);line-height:1.6;margin-bottom:12px}
+/* ── Recovery Score badge ── */
+.rec-score-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:.67rem;font-weight:900;background:color-mix(in srgb,var(--rc,#a78bfa) 14%,transparent);border:1px solid color-mix(in srgb,var(--rc,#a78bfa) 35%,transparent);color:var(--rc,#a78bfa)}
+.rec-mini-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;font-size:.63rem;font-weight:800;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);margin-left:6px}
+/* ── E1RM card ── */
+.e1rm-row{display:grid;grid-template-columns:1fr auto auto;gap:6px 10px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.e1rm-row:last-child{border-bottom:none}
+.e1rm-name{font-size:.78rem;font-weight:800;color:var(--text);grid-column:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.e1rm-meta{font-size:.65rem;color:var(--muted);grid-column:1}
+.e1rm-val{font-size:.92rem;font-weight:900;color:#a78bfa;grid-column:2;grid-row:1/3;text-align:right;white-space:nowrap}
+.e1rm-spark{grid-column:3;grid-row:1/3;display:flex;align-items:center}
+/* E1RM workout input */
+.wt-perf-log{margin-top:8px;padding:10px 12px;border-radius:14px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.25)}
+.wt-perf-log-title{font-size:.65rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#818cf8;margin-bottom:8px}
+.wt-perf-inputs{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end}
+.wt-perf-inputs input{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:7px 10px;font-size:.8rem;color:var(--text);width:100%;font-family:inherit}
+.wt-perf-inputs input::placeholder{color:var(--muted)}
+.wt-perf-lbl{font-size:.6rem;color:var(--muted);font-weight:700;margin-bottom:3px}
+/* HR Zones */
+.hr-zones-list{display:flex;flex-direction:column;gap:5px}
+.hr-zone-row{display:grid;grid-template-columns:10px 24px 90px 80px 1fr;align-items:center;gap:8px;padding:5px 0}
+.hr-zone-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.hr-zone-n{font-size:.72rem;font-weight:900}
+.hr-zone-name{font-size:.75rem;font-weight:800;color:var(--text)}
+.hr-zone-range{font-size:.7rem;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums}
+.hr-zone-use{font-size:.67rem;color:var(--muted);line-height:1.3}
+.hr-stat-pill{display:flex;flex-direction:column;align-items:center;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);min-width:72px}
+.hr-stat-val{font-size:1.1rem;font-weight:900;color:#60a5fa;line-height:1}
+.hr-stat-lbl{font-size:.58rem;font-weight:700;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.05em;text-align:center}
 /* Goal buttons */
 .sleep-goal-btn{padding:5px 12px;border-radius:20px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:var(--muted);font-size:.72rem;font-weight:700;cursor:pointer;transition:all .15s}
 .sleep-goal-btn.on{background:rgba(139,92,246,.25);border-color:#a78bfa;color:#f0f9ff}
@@ -3885,6 +3913,21 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
           <div id="weight-chart-wrap"></div>
         </div>
 
+        <!-- ── E1RM — FORCE ESTIMÉE ── -->
+        <div class="card" style="border-color:rgba(167,139,250,.18);background:linear-gradient(160deg,rgba(10,16,32,.98),rgba(8,12,28,.98))">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div class="card-title" style="margin:0">💪 Force estimée (E1RM)</div>
+            <span style="font-size:.62rem;color:var(--muted);font-weight:700">Mis à jour pendant les séances</span>
+          </div>
+          <div id="e1rm-card-body"><span style="font-size:.78rem;color:var(--muted)">Aucune donnée — logue tes charges pendant une séance.</span></div>
+        </div>
+
+        <!-- ── ZONES FC ── -->
+        <div class="card" style="border-color:rgba(96,165,250,.15);background:linear-gradient(160deg,rgba(10,16,32,.98),rgba(8,12,28,.98))">
+          <div class="card-title" style="margin-bottom:12px">❤️ Zones de fréquence cardiaque</div>
+          <div id="hr-zones-card-body"><span style="font-size:.78rem;color:var(--muted)">Chargement…</span></div>
+        </div>
+
         <!-- ── TROPHÉES DU PROFIL ── -->
         <div class="card" id="achievements-card" style="border-color:rgba(167,139,250,.14);background:linear-gradient(160deg,rgba(10,16,32,.98),rgba(8,12,28,.98))">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -4123,7 +4166,18 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
         </div>
       </div>
       <div class="wt-rest-label">secondes de repos</div>
-      <button class="btn btn-g btn-sm" onclick="skipRestTimer()" style="margin:0 auto;display:block">⏭ Passer</button>
+      <!-- E1RM performance logger (appears during rest) -->
+      <button onclick="wtTogglePerfBox()" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);border-radius:20px;padding:5px 14px;font-size:.68rem;font-weight:800;color:#a5b4fc;cursor:pointer;margin:8px auto 0;display:block">📊 Logger ma charge</button>
+      <div id="wt-perf-box" class="wt-perf-log" style="display:none">
+        <div class="wt-perf-log-title">Enregistrer la performance</div>
+        <div class="wt-perf-inputs">
+          <div><div class="wt-perf-lbl">Charge (kg)</div><input type="number" id="wt-perf-weight" placeholder="ex: 80" min="1" max="500" step="0.5"/></div>
+          <div><div class="wt-perf-lbl">Reps</div><input type="number" id="wt-perf-reps" placeholder="ex: 8" min="1" max="50" step="1"/></div>
+          <button class="btn btn-p btn-sm" onclick="wtLogPerf()" style="align-self:flex-end">✓</button>
+        </div>
+        <div style="font-size:.62rem;color:var(--muted);margin-top:5px">E1RM calculé automatiquement (Epley × Brzycki)</div>
+      </div>
+      <button class="btn btn-g btn-sm" onclick="skipRestTimer()" style="margin:8px auto 0;display:block">⏭ Passer</button>
     </div>
 
     <!-- Actions -->

@@ -277,6 +277,18 @@ async function loadCoachContext(force = false) {
     coach_tone: getCoachTonePreference()
   };
 
+  // Enrich with local analytics (recovery, E1RM, adaptive TDEE, weight trend)
+  try {
+    const rec = computeRecoveryScore();
+    if (rec.score > 0) { coachProfile.recovery_score = rec.score; coachProfile.recovery_label = rec.label; }
+    const tdeeAdapt = estimateAdaptiveTDEE();
+    if (tdeeAdapt) coachProfile.adaptive_tdee = tdeeAdapt.tdee + ' kcal (mesuré sur ' + tdeeAdapt.days + 'j)';
+    const wt = getWeightTrend();
+    if (wt) coachProfile.weight_trend = (wt.weeklyRate > 0 ? '+' : '') + wt.weeklyRate + ' kg/sem (' + wt.direction + ')';
+    const topLifts = getTopE1RMs(3);
+    if (topLifts.length) coachProfile.top_lifts = topLifts.map(l => l.name + ': ' + l.best + 'kg E1RM').join(', ');
+  } catch (_) {}
+
   const ctx = { goalContext, coachProfile, insights: { currentStreak, recentSessions7d, todayProtein, todayKcal, bestScanScore, lastScanSummary, moodLabel } };
   DataCache.set(cacheKey, ctx, 45000);
   return ctx;
@@ -4779,6 +4791,10 @@ async function loadProfile() {
     renderWeightChart();
     renderTdeeCard(parseFloat(data?.weight) || 0, parseFloat(data?.height) || 0, parseInt(data?.age) || 0, goal?.type || '');
 
+    // Render new analytics cards
+    renderE1RMCard();
+    renderHRZonesCard();
+
     // Update XP ring + level chip + trophy counts in profile
     _updateProfileXpDisplay();
   } catch (e) { console.error("[Profile] Load error:", e); }
@@ -4879,7 +4895,9 @@ function renderTdeeCard(weight, height, age, goalType) {
         <span class="psp-lbl">Poids actuel</span>
       </div>
     </div>
-    <div style="font-size:.65rem;color:var(--muted);line-height:1.5">Estimation Mifflin-St Jeor · activité modérée · ${protein * 4 + carbs * 4 + fat * 9} kcal total macros</div>`;
+    <div style="font-size:.65rem;color:var(--muted);line-height:1.5">Estimation Mifflin-St Jeor · activité modérée · ${protein * 4 + carbs * 4 + fat * 9} kcal total macros</div>
+    ${(() => { try { const at = estimateAdaptiveTDEE(); if (!at) return ''; const diff = at.tdee - targetKcal; const c = diff > 100 ? '#f97316' : diff < -100 ? '#22c55e' : '#a78bfa'; return `<div style="margin-top:8px;padding:8px 12px;border-radius:12px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.18)"><span style="font-size:.62rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#a78bfa">TDEE Adaptatif (mesuré)</span><br><span style="font-size:.88rem;font-weight:900;color:${c}">${at.tdee} kcal</span><span style="font-size:.65rem;color:var(--muted);margin-left:6px">${at.weeklyRate > 0 ? '▲' : at.weeklyRate < 0 ? '▼' : '→'} ${at.weeklyRate > 0 ? '+' : ''}${at.weeklyRate} kg/sem · basé sur ${at.days}j de logs</span></div>`; } catch { return ''; } })()}
+  `;
 }
 
 function _updateProfileXpDisplay() {
@@ -5960,39 +5978,53 @@ function updateCoachCard(streak, totalWorkouts) {
   const titleEl = document.getElementById("db-coach-title");
   const subEl   = document.getElementById("db-coach-sub");
   const btnEl   = document.getElementById("db-coach-btn");
+  const metaEl  = document.getElementById("db-coach-meta");
   if (!titleEl || !subEl) return;
 
+  // Recovery score drives the suggestion
+  const rec = computeRecoveryScore();
   let title, sub, btnLabel;
 
-  if (streak >= 7) {
-    title = `${streak} jours de streak`;
-    sub   = "Impressionnant ! Maintenez le rythme — demandez au coach votre séance du jour.";
-    btnLabel = "Continuer le streak";
+  if (rec.score < 40) {
+    title    = "Priorité : récupération";
+    sub      = rec.advice + (streak > 0 ? ` · Streak actif : ${streak}j.` : "");
+    btnLabel = "Mobilité / repos actif";
+  } else if (streak >= 7) {
+    title    = `${streak} jours de streak`;
+    sub      = rec.advice;
+    btnLabel = "Maintenir le streak";
   } else if (streak >= 3) {
-    title = `Streak de ${streak} jours`;
-    sub   = "Vous êtes lancé — ne cassez pas la dynamique maintenant.";
+    title    = `Streak ${streak}j — ${rec.label}`;
+    sub      = rec.advice;
     btnLabel = "Séance du jour";
   } else if (streak === 2) {
-    title = "2 jours d'affilée";
-    sub   = "Bonne lancée ! Une séance de plus et le streak commence à compter.";
-    btnLabel = "Continuer";
+    title    = "2 jours d'affilée";
+    sub      = rec.advice;
+    btnLabel = "Continuer l'élan";
   } else if (totalWorkouts === 0) {
-    title = "Première séance ?";
-    sub   = "Le coach IA génère un programme sur-mesure en quelques secondes.";
+    title    = "Première séance ?";
+    sub      = "Le coach IA génère un programme sur-mesure en quelques secondes.";
     btnLabel = "Démarrer maintenant";
   } else if (streak === 0 && totalWorkouts > 0) {
-    title = "Reprenez l'entraînement";
-    sub   = `${totalWorkouts} séance${totalWorkouts > 1 ? "s" : ""} au compteur — il est temps de reprendre.`;
+    title    = "Relancer l'élan";
+    sub      = rec.advice;
     btnLabel = "Relancer une séance";
   } else {
-    title = "Séance du jour";
-    sub   = "Demandez au coach une séance adaptée à votre humeur et vos objectifs.";
-    btnLabel = "Démarrer";
+    title    = "Séance du jour";
+    sub      = rec.advice;
+    btnLabel = "Lancer une séance";
   }
 
   titleEl.textContent = title;
   subEl.textContent   = sub;
   if (btnEl) btnEl.textContent = "▶ " + btnLabel;
+  if (metaEl) {
+    const weightTrend  = getWeightTrend();
+    const trendBadge   = weightTrend
+      ? `<span class="rec-mini-badge" style="color:${weightTrend.direction==='down'?'#22c55e':weightTrend.direction==='up'?'#f97316':'#a78bfa'}">⚖️ ${weightTrend.current}kg ${weightTrend.weeklyRate !== 0 ? (weightTrend.weeklyRate > 0 ? '+' : '') + weightTrend.weeklyRate + 'kg/sem' : 'stable'}</span>`
+      : '';
+    metaEl.innerHTML = `<span class="rec-score-badge" style="--rc:${rec.color}">● ${rec.score}/100 · ${rec.label}</span>${trendBadge}`;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -11244,6 +11276,275 @@ window.progRegenerate   = progRegenerate;
 window.progToggleDay    = progToggleDay;
 window.progToggleExDone = progToggleExDone;
 window.progStartWorkout = progStartWorkout;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── RECOVERY SCORE  (no wearable required)
+//    Formula: sleep 40% + mood 30% + hydration 20% + energy 10%
+//    Inspired by WHOOP + Firstbeat recovery index
+// ══════════════════════════════════════════════════════════════════════════════
+function computeRecoveryScore() {
+  const lastSleep = (_getSleepLog() || []).slice(-1)[0] || {};
+  const sleepH  = Math.min(9, Number(lastSleep.hours) || 0);
+  const sleepQ  = Number(lastSleep.quality) || 3;
+  const energy  = Number(lastSleep.energy) || 0;
+
+  const moodRaw   = parseInt(localStorage.getItem('fitai_mood') || '0');
+  const moodDate  = localStorage.getItem('fitai_mood_date');
+  const moodValid = moodDate === new Date().toDateString() && moodRaw > 0;
+  const mood = moodValid ? moodRaw : 3;
+
+  const water       = getWaterData().count || 0;
+  const waterTarget = getWaterTarget();
+
+  const sleepScore  = (Math.min(sleepH, 8) / 8) * 0.6 + (sleepQ / 5) * 0.4;
+  const moodScore   = mood / 5;
+  const hydraScore  = Math.min(1, water / Math.max(1, waterTarget));
+  const energyScore = energy > 0 ? energy / 5 : sleepQ / 5;
+
+  const raw   = 0.40 * sleepScore + 0.30 * moodScore + 0.20 * hydraScore + 0.10 * energyScore;
+  const score = Math.round(raw * 100);
+  const color = score >= 80 ? '#22c55e' : score >= 65 ? '#22d3ee' : score >= 45 ? '#f59e0b' : '#ef4444';
+  const label = score >= 80 ? 'Optimal' : score >= 65 ? 'Bon' : score >= 45 ? 'Modéré' : 'Récupération';
+  const advice = score >= 80
+    ? 'Récupération maximale — pousse fort aujourd\'hui.'
+    : score >= 65
+      ? 'Bonne forme — séance habituelle recommandée.'
+      : score >= 45
+        ? 'Récupération partielle — réduis l\'intensité de 10-15%.'
+        : 'Déficit de récup — mobilité ou repos actif prioritaire.';
+  return { score, color, label, advice, sleepH, sleepQ, mood, water, waterTarget };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── E1RM TRACKER  (Epley × Brzycki ensemble)
+//    Epley: best for 6–12 reps  |  Brzycki: best for 1–6 reps
+//    Reference: Strength-Journeys meta-analysis (2022)
+// ══════════════════════════════════════════════════════════════════════════════
+const E1RM_KEY = 'fitai_e1rm_v1';
+
+function calcE1RM(weight, reps) {
+  const w = Number(weight), r = Number(reps);
+  if (!w || !r || r < 1) return w || 0;
+  if (r === 1) return w;
+  const epley   = w * (1 + 0.0333 * r);
+  const brzycki = r <= 12 ? w / (1.0278 - 0.0278 * r) : epley;
+  return Math.round((epley + brzycki) / 2);
+}
+
+function logE1RM(exerciseName, weight, reps) {
+  if (!exerciseName || !weight || !reps) return null;
+  const data  = JSON.parse(localStorage.getItem(E1RM_KEY) || '{}');
+  const today = new Date().toISOString().slice(0, 10);
+  const e1rm  = calcE1RM(weight, reps);
+  const k     = String(exerciseName).toLowerCase().trim();
+  if (!data[k]) data[k] = [];
+  const idx = data[k].findIndex(e => e.date === today);
+  if (idx >= 0) { if (e1rm > data[k][idx].e1rm) data[k][idx] = { date: today, e1rm, weight: +weight, reps: +reps }; }
+  else data[k].push({ date: today, e1rm, weight: +weight, reps: +reps });
+  data[k] = data[k].sort((a, b) => a.date.localeCompare(b.date)).slice(-52);
+  localStorage.setItem(E1RM_KEY, JSON.stringify(data));
+  return e1rm;
+}
+
+function getE1RMHistory(exerciseName) {
+  const data = JSON.parse(localStorage.getItem(E1RM_KEY) || '{}');
+  return data[String(exerciseName).toLowerCase().trim()] || [];
+}
+
+function getTopE1RMs(n = 5) {
+  const data = JSON.parse(localStorage.getItem(E1RM_KEY) || '{}');
+  const results = [];
+  for (const [name, entries] of Object.entries(data)) {
+    if (!entries.length) continue;
+    const best   = entries.reduce((m, e) => e.e1rm > m.e1rm ? e : m, entries[0]);
+    const recent = entries.slice(-3);
+    const trend  = recent.length >= 2 ? recent[recent.length - 1].e1rm - recent[0].e1rm : 0;
+    results.push({ name, best: best.e1rm, weight: best.weight, reps: best.reps, date: best.date, trend, entries: entries.slice(-8) });
+  }
+  return results.sort((a, b) => b.best - a.best).slice(0, n);
+}
+
+function renderE1RMCard() {
+  const el = document.getElementById('e1rm-card-body');
+  if (!el) return;
+  const lifts = getTopE1RMs(6);
+  if (!lifts.length) {
+    el.innerHTML = '<div style="font-size:.78rem;color:var(--muted);padding:4px 0">Enregistre tes charges pendant une séance pour suivre ta progression.</div>';
+    return;
+  }
+  el.innerHTML = lifts.map(l => {
+    const trendArrow = l.trend > 2 ? `<span style="color:#22c55e;font-weight:900;font-size:.75rem"> ↑+${l.trend}kg</span>` : l.trend < -2 ? `<span style="color:#f87171;font-size:.75rem"> ↓${l.trend}kg</span>` : '';
+    const sparkData = l.entries.map((e, i) => ({ value: e.e1rm, label: String(i + 1) }));
+    const sparkMin = Math.min(...l.entries.map(e => e.e1rm));
+    const sparkMax = Math.max(...l.entries.map(e => e.e1rm));
+    const sparkH = 28;
+    const sparkW = l.entries.length * 14;
+    const pts = l.entries.map((e, i) => {
+      const x = sparkMax === sparkMin ? sparkW / 2 : (i / (l.entries.length - 1)) * sparkW;
+      const y = sparkMax === sparkMin ? sparkH / 2 : sparkH - ((e.e1rm - sparkMin) / (sparkMax - sparkMin)) * sparkH;
+      return `${x},${y}`;
+    }).join(' ');
+    const spark = l.entries.length > 1
+      ? `<svg viewBox="0 0 ${sparkW} ${sparkH}" style="width:${sparkW}px;height:${sparkH}px;overflow:visible"><polyline points="${pts}" fill="none" stroke="#a78bfa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+      : '';
+    const cap = l.name.length > 22 ? l.name.slice(0, 20) + '…' : l.name;
+    return `<div class="e1rm-row">
+      <div class="e1rm-name">${escapeHtml(cap)}${trendArrow}</div>
+      <div class="e1rm-meta">${l.weight}kg × ${l.reps} reps</div>
+      <div class="e1rm-val">${l.best}<span style="font-size:.6rem;color:var(--muted);font-weight:700"> kg E1RM</span></div>
+      <div class="e1rm-spark">${spark}</div>
+    </div>`;
+  }).join('');
+}
+
+function wtLogPerf() {
+  const wEl = document.getElementById('wt-perf-weight');
+  const rEl = document.getElementById('wt-perf-reps');
+  if (!wEl || !rEl) return;
+  const w = parseFloat(wEl.value), r = parseInt(rEl.value);
+  if (!w || !r) return toast('Saisis charge et reps.', 'err');
+  const block = _wtCurrentBlock();
+  const exName = block?.ex?.n || '';
+  if (!exName) return;
+  const e1rm = logE1RM(exName, w, r);
+  if (e1rm) {
+    toast(`E1RM estimé : ${e1rm} kg — enregistré !`, 'ok');
+    wEl.value = ''; rEl.value = '';
+    const perfBox = document.getElementById('wt-perf-box');
+    if (perfBox) perfBox.style.display = 'none';
+  }
+}
+window.wtLogPerf = wtLogPerf;
+
+function wtTogglePerfBox() {
+  const box = document.getElementById('wt-perf-box');
+  if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+}
+window.wtTogglePerfBox = wtTogglePerfBox;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── ADAPTIVE TDEE  (linear regression on weight + calorie log)
+//    Source: nSuns adaptive TDEE method — weight_change × 7700 kcal/kg
+// ══════════════════════════════════════════════════════════════════════════════
+function _linReg(xs, ys) {
+  const n = xs.length;
+  if (n < 2) return { slope: 0, intercept: ys[0] || 0 };
+  const xm = xs.reduce((s, v) => s + v, 0) / n;
+  const ym = ys.reduce((s, v) => s + v, 0) / n;
+  let num = 0, den = 0;
+  xs.forEach((x, i) => { num += (x - xm) * (ys[i] - ym); den += (x - xm) ** 2; });
+  return { slope: den > 0 ? num / den : 0, intercept: ym };
+}
+
+function estimateAdaptiveTDEE() {
+  const log = getWeightLog().slice(-14);
+  if (log.length < 5) return null;
+  const days = [];
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const ds = d.toISOString().slice(0, 10);
+    const meals = JSON.parse(localStorage.getItem(`fitai_meals_${ds}`) || '[]');
+    const kcal  = meals.reduce((s, m) => s + (Number(m.calories) || 0), 0);
+    if (kcal >= 800 && kcal <= 6000) days.push(kcal);
+  }
+  if (days.length < 4) return null;
+  const avgCals  = days.reduce((s, v) => s + v, 0) / days.length;
+  const xs       = log.map((_, i) => i);
+  const ys       = log.map(e => e.weight || e.kg || 0).filter(v => v > 0);
+  if (ys.length < 5) return null;
+  const { slope }  = _linReg(xs.slice(0, ys.length), ys);
+  const tdee       = Math.round(avgCals - slope * 7700);
+  const weeklyRate = +(slope * 7).toFixed(2);
+  return {
+    tdee: Math.max(1000, Math.min(6000, tdee)),
+    weeklyRate,
+    avgCals: Math.round(avgCals),
+    days: days.length,
+    direction: weeklyRate > 0.1 ? 'up' : weeklyRate < -0.1 ? 'down' : 'stable'
+  };
+}
+
+function getWeightTrend() {
+  const log = getWeightLog();
+  if (log.length < 3) return null;
+  const recent   = log.slice(-7);
+  const xs       = recent.map((_, i) => i);
+  const ys       = recent.map(e => e.weight || e.kg || 0).filter(v => v > 0);
+  if (ys.length < 2) return null;
+  const { slope } = _linReg(xs.slice(0, ys.length), ys);
+  const latest    = log[log.length - 1];
+  return {
+    current:     latest.weight || latest.kg,
+    weeklyRate:  +(slope * 7).toFixed(2),
+    totalChange: +((latest.weight || latest.kg || 0) - (log[0].weight || log[0].kg || 0)).toFixed(1),
+    direction:   slope > 0.015 ? 'up' : slope < -0.015 ? 'down' : 'stable'
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── HEART RATE ZONES  (Maffetone MAF + Karvonen HRR)
+//    Tanaka maxHR: 211 − 0.64×age  (more accurate than 220−age for adults)
+//    Friel LTHR: ~88% maxHR
+// ══════════════════════════════════════════════════════════════════════════════
+function getHRZones(age, restingHR = 55) {
+  if (!age || age < 10 || age > 100) return null;
+  const maxHR  = Math.round(211 - 0.64 * age);
+  const hrr    = maxHR - restingHR;
+  const kz     = p => Math.round(restingHR + hrr * p);
+  return {
+    maxHR, maf: Math.max(100, 180 - age), lthr: Math.round(maxHR * 0.88),
+    zones: [
+      { n: 1, name: 'Récupération', color: '#60a5fa', lo: restingHR,  hi: kz(0.50), use: 'Récup active, marche.' },
+      { n: 2, name: 'Endurance',    color: '#4ade80', lo: kz(0.50),   hi: kz(0.62), use: 'Zone aérobie de base. Conversation facile.' },
+      { n: 3, name: 'Tempo',        color: '#fbbf24', lo: kz(0.62),   hi: kz(0.75), use: 'Effort soutenu, phrases courtes.' },
+      { n: 4, name: 'Seuil',        color: '#f97316', lo: kz(0.75),   hi: kz(0.87), use: 'Fractionné et intervalles. Pénible.' },
+      { n: 5, name: 'VO₂max',       color: '#f43f5e', lo: kz(0.87),   hi: maxHR,    use: 'Sprint court. Pas tenable >3-4 min.' }
+    ]
+  };
+}
+
+function renderHRZonesCard() {
+  const el = document.getElementById('hr-zones-card-body');
+  if (!el) return;
+  const age = USER_AGE || (U && U.user_metadata?.age);
+  if (!age) {
+    el.innerHTML = '<div style="font-size:.78rem;color:var(--muted)">Renseigne ton âge dans le profil pour calculer tes zones FC.</div>';
+    return;
+  }
+  const hr = getHRZones(age);
+  if (!hr) { el.innerHTML = '<div style="color:var(--muted);font-size:.78rem">Données insuffisantes.</div>'; return; }
+  el.innerHTML = `
+    <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <div class="hr-stat-pill"><div class="hr-stat-val">${hr.maxHR}</div><div class="hr-stat-lbl">FC max</div></div>
+      <div class="hr-stat-pill"><div class="hr-stat-val">${hr.maf}</div><div class="hr-stat-lbl">MAF (cardio base)</div></div>
+      <div class="hr-stat-pill"><div class="hr-stat-val">${hr.lthr}</div><div class="hr-stat-lbl">LTHR (seuil)</div></div>
+    </div>
+    <div class="hr-zones-list">
+      ${hr.zones.map(z => `
+        <div class="hr-zone-row">
+          <div class="hr-zone-dot" style="background:${z.color}"></div>
+          <div class="hr-zone-n" style="color:${z.color}">Z${z.n}</div>
+          <div class="hr-zone-name">${z.name}</div>
+          <div class="hr-zone-range">${z.lo}–${z.hi} bpm</div>
+          <div class="hr-zone-use">${z.use}</div>
+        </div>`).join('')}
+    </div>
+    <div style="margin-top:10px;font-size:.7rem;color:var(--muted);line-height:1.5">
+      <strong style="color:#60a5fa">MAF ${hr.maf} bpm</strong> — fréquence aérobie optimale (Maffetone).
+      Reste sous cette valeur 80% du temps pour maximiser ton endurance de base et ta récupération.
+    </div>`;
+}
+window.renderHRZonesCard = renderHRZonesCard;
+
+// Expose new functions globally
+window.calcE1RM         = calcE1RM;
+window.logE1RM          = logE1RM;
+window.getE1RMHistory   = getE1RMHistory;
+window.getTopE1RMs      = getTopE1RMs;
+window.renderE1RMCard   = renderE1RMCard;
+window.computeRecoveryScore  = computeRecoveryScore;
+window.estimateAdaptiveTDEE  = estimateAdaptiveTDEE;
+window.getWeightTrend        = getWeightTrend;
 
 document.addEventListener("DOMContentLoaded", boot);
 
