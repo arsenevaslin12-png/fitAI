@@ -1193,7 +1193,7 @@ async function renderWeekActivity() {
       .gte("created_at", monday.toISOString());
 
     // Map session dates to day index (0=Mon … 6=Sun)
-    const DAY_HEIGHTS = [22, 28, 32, 26, 30, 34, 20]; // varied heights for active days
+    const DAY_HEIGHTS = [32, 42, 48, 36, 44, 50, 28]; // varied heights for active days
     const activeDays = new Set((data || []).map(s => (new Date(s.created_at).getDay() + 6) % 7));
     const todayIdx = (today.getDay() + 6) % 7;
 
@@ -1204,10 +1204,10 @@ async function renderWeekActivity() {
       const isActive = activeDays.has(i);
       const isToday = i === todayIdx;
       el.classList.toggle("active", isActive);
-      el.classList.toggle("today", isToday && !isActive);
+      el.classList.toggle("today", isToday);
       const bar = el.querySelector(".db-day-bar");
       if (bar) {
-        const h = isActive ? DAY_HEIGHTS[i] : (isToday ? 14 : 5);
+        const h = isActive ? DAY_HEIGHTS[i] : (isToday ? 18 : 5);
         // Small delay so CSS transition fires
         setTimeout(() => { bar.style.height = h + "px"; }, 80 + i * 40);
       }
@@ -1790,8 +1790,10 @@ const _EX_ANIM = {
     dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
     torso:'0;0;0', thighL:'0;0;0', thighR:'0;0;0',
     shinL:'0;0;0', shinR:'0;0;0',
-    upperArmL:'-68;-152;-68', upperArmR:'68;152;68',
-    forearmL:'74;0;74', forearmR:'-74;0;-74'
+    // upperArm -72° = arms at shoulder height (≈ horizontal); -155° = arms extended overhead
+    // forearm -88° relative to upper arm = forearm pointing up (bar at shoulder) → -5° = fully extended
+    upperArmL:'-72;-155;-72', upperArmR:'72;155;72',
+    forearmL:'-88;-5;-88', forearmR:'88;5;88'
   },
   calf: {
     dur:'1.0s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
