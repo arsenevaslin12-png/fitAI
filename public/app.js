@@ -647,9 +647,12 @@ async function doAuth() {
           // Show resend button
           const msgEl = document.getElementById("auth-msg");
           if (msgEl) {
+            // Remove any previous resend button to avoid accumulation on repeated attempts
+            msgEl.nextElementSibling?.dataset?.resend && msgEl.nextElementSibling.remove();
             const resendBtn = document.createElement("button");
             resendBtn.className = "btn btn-g btn-sm";
             resendBtn.style.cssText = "margin-top:10px;width:100%";
+            resendBtn.dataset.resend = "1";
             resendBtn.textContent = "Renvoyer l'email de confirmation";
             resendBtn.onclick = async () => {
               resendBtn.disabled = true;
@@ -736,6 +739,8 @@ function gotoTab(name) {
 
   // Stop feed auto-refresh when leaving community tab
   if (name !== "community") _stopFeedRefresh();
+  // Clear barcode search debounce when leaving nutrition tab
+  if (name !== "nutrition") { clearTimeout(_bcSearchDebounce); _bcSearchDebounce = null; }
 
   if (name === "dashboard") loadDashboard();
   if (name === "goal") loadGoal();

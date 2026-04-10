@@ -5,6 +5,18 @@
 const TIMEOUT = 25000;
 const MODELS = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
 
+// Rate limiting: max 5 plan generations per user per hour
+const _planRateBuckets = new Map();
+function checkPlanRateLimit(userId) {
+  const now = Date.now();
+  const prev = _planRateBuckets.get(userId) || [];
+  const recent = prev.filter(ts => now - ts < 3_600_000); // 1 hour window
+  if (recent.length >= 5) return false;
+  recent.push(now);
+  _planRateBuckets.set(userId, recent);
+  return true;
+}
+
 let _AI = null;
 function getAI() {
   if (_AI) return _AI;
@@ -226,6 +238,10 @@ module.exports = async function handler(req, res) {
     userId = user.id;
   } catch (e) {
     return sendJson(res, 401, { ok: false, error: "AUTH_FAILED", requestId });
+  }
+
+  if (!checkPlanRateLimit(userId)) {
+    return sendJson(res, 429, { ok: false, error: "Limite atteinte : 5 générations de programme par heure. Réessaie plus tard.", requestId });
   }
 
   try {
