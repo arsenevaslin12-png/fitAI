@@ -1802,14 +1802,14 @@ const _EX_ANIM = {
     upperArmL:'26;-38;26', upperArmR:'-38;26;-38',
     forearmL:'-26;18;-26', forearmR:'18;-26;18'
   },
-  // PRESS / DÉVELOPPÉ: bras montent de l'épaule jusqu'au-dessus de la tête
+  // PRESS / DÉVELOPPÉ: départ barre épaules (bras ~horizontaux), fin overhead
   press: {
-    dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;0;0',
+    dur:'1.5s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
+    torso:'0;-5;0',
     thighL:'0;0;0', thighR:'0;0;0',
     shinL:'0;0;0',  shinR:'0;0;0',
-    upperArmL:'-70;-148;-70', upperArmR:'70;148;70',
-    forearmL:'-84;-6;-84',    forearmR:'84;6;84'
+    upperArmL:'-88;-158;-88', upperArmR:'88;158;88',
+    forearmL:'-88;-8;-88',    forearmR:'88;8;88'
   },
   // CALF RAISE: talons se lèvent légèrement
   calf: {
@@ -1832,70 +1832,89 @@ const _EX_ANIM = {
 };
 
 function _buildAnimFigure(key, accent2, skinId) {
-  const ad  = _EX_ANIM[key] || _EX_ANIM.squat;
-  const dur = ad.dur;
-  const sp  = ad.sp;
+  const ad = _EX_ANIM[key] || _EX_ANIM.squat;
   if (!skinId) skinId = 'skin';
 
   // ── Anatomy (viewBox 360×280) ──────────────────────────────────────────
   const CX=180, HIP_Y=162;
   const TORSO_H=60, NECK_H=12, HEAD_R=20;
-  const SHW=24;                        // shoulder half-width from center
-  const HIP_L=CX-14, HIP_R=CX+14;    // hip joint world-x
+  const SHW=24;
+  const HIP_L=CX-14, HIP_R=CX+14;
   const ARM_L=44, FORE_L=36;
   const THIGH_L=56, SHIN_L=50;
   const AW=11, FW=9, TW=15, SW=12, NW=8;
 
-  // ── SMIL additive rotate animation ────────────────────────────────────
-  const animR = vals => {
-    const pts = String(vals).split(';');
-    if (pts.every(v => v.trim() === pts[0].trim())) return '';
-    return `<animateTransform attributeName="transform" type="rotate" additive="sum" begin="0s" values="${vals}" dur="${dur}" calcMode="spline" keySplines="${sp}" repeatCount="indefinite"/>`;
-  };
-
-  // Group: translate(tx,ty) [+ static rotate if uniform] + animated rotate
-  const G = (tx, ty, rotVals, children) => {
-    const pts = String(rotVals || '0').split(';').map(v => v.trim());
-    const isStatic = pts.every(v => v === pts[0]);
-    const baseRot  = (isStatic && pts[0] !== '0') ? ` rotate(${pts[0]})` : '';
-    return `<g transform="translate(${tx},${ty})${baseRot}">${animR(rotVals)}${children}</g>`;
-  };
-
   // ── Primitives ──────────────────────────────────────────────────────────
   const pill  = (w,h,f,sc,sw) => `<rect x="${-w/2}" y="0" width="${w}" height="${h}" rx="${w/2}" fill="${f}" stroke="${sc}" stroke-width="${sw}"/>`;
   const pillU = (w,h,f,sc,sw) => `<rect x="${-w/2}" y="${-h}" width="${w}" height="${h}" rx="${w/2}" fill="${f}" stroke="${sc}" stroke-width="${sw}"/>`;
-  const jt = (r,y) => `<circle cx="0" cy="${y}" r="${r}" fill="rgba(255,255,255,.55)" stroke="rgba(255,255,255,.25)" stroke-width="1"/>`;
-
+  const jt    = (r,y)         => `<circle cx="0" cy="${y}" r="${r}" fill="rgba(255,255,255,.55)" stroke="rgba(255,255,255,.25)" stroke-width="1"/>`;
   const SF = `url(#${skinId})`;
   const LC = 'rgba(255,255,255,.88)';
   const LS = 'rgba(255,255,255,.18)';
 
+  // ── CSS animations (remplace SMIL — fonctionne sur Safari iOS et tous navigateurs) ──
+  // SVG elements: transform-origin:0 0 = origine du système local = pivot articulaire ✓
+  const dur  = ad.dur || '1.4s';
+  const ease = 'cubic-bezier(0.45,0,0.55,1)';
+  const pfx  = key;
+
+  const kv     = s => String(s||'0;0;0').split(';').map(Number);
+  const isAnim = s => { const v=kv(s); return !v.every(x=>x===v[0]); };
+
+  const gcss = (cn, vals) => {
+    const v = kv(vals);
+    if (!isAnim(vals)) {
+      return v[0] === 0 ? '' : `.${cn}{transform:rotate(${v[0]}deg);transform-origin:0 0}`;
+    }
+    return `.${cn}{transform-origin:0 0;animation:${cn} ${dur} ${ease} infinite}` +
+           `@keyframes ${cn}{0%,100%{transform:rotate(${v[0]}deg)}50%{transform:rotate(${v[1]}deg)}}`;
+  };
+
+  const C = {
+    to :`${pfx}-to`,
+    thl:`${pfx}-thl`, thr:`${pfx}-thr`,
+    snl:`${pfx}-snl`, snr:`${pfx}-snr`,
+    ual:`${pfx}-ual`, uar:`${pfx}-uar`,
+    frl:`${pfx}-frl`, frr:`${pfx}-frr`,
+  };
+
+  const css = `<style>`
+    + gcss(C.to,  ad.torso)
+    + gcss(C.thl, ad.thighL)    + gcss(C.thr, ad.thighR)
+    + gcss(C.snl, ad.shinL)     + gcss(C.snr, ad.shinR)
+    + gcss(C.ual, ad.upperArmL) + gcss(C.uar, ad.upperArmR)
+    + gcss(C.frl, ad.forearmL)  + gcss(C.frr, ad.forearmR)
+    + `</style>`;
+
+  const W = (cn, html) => `<g class="${cn}">${html}</g>`;
+
   // ── Build segments ──────────────────────────────────────────────────────
 
-  // Forearms → upper arms (inside torso group → follow torso tilt)
-  const frL = G(0, ARM_L, ad.forearmL, pill(FW,FORE_L,LC,LS,1));
-  const frR = G(0, ARM_L, ad.forearmR, pill(FW,FORE_L,LC,LS,1));
-  const uaL = G(-SHW,-TORSO_H, ad.upperArmL, pill(AW,ARM_L,LC,LS,1) + jt(4,ARM_L) + frL);
-  const uaR = G( SHW,-TORSO_H, ad.upperArmR, pill(AW,ARM_L,LC,LS,1) + jt(4,ARM_L) + frR);
+  // Forearms — pivot = coude (origine locale = coude)
+  const frL = `<g transform="translate(0,${ARM_L})">${W(C.frl, pill(FW,FORE_L,LC,LS,1))}</g>`;
+  const frR = `<g transform="translate(0,${ARM_L})">${W(C.frr, pill(FW,FORE_L,LC,LS,1))}</g>`;
 
-  // Torso body (upward), neck, head, eyes
-  const body  = pillU(TW,TORSO_H,SF,'rgba(255,255,255,.18)',1);
-  const neck  = `<rect x="${-NW/2}" y="${-TORSO_H-NECK_H}" width="${NW}" height="${NECK_H}" rx="${NW/2}" fill="${SF}"/>`;
-  const hcY   = -TORSO_H - NECK_H - HEAD_R;
-  const head  = `<circle cx="0" cy="${hcY}" r="${HEAD_R}" fill="${SF}" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>`;
-  const eyes  = `<circle cx="-6" cy="${hcY+6}" r="2.5" fill="rgba(15,23,42,.6)"/><circle cx="6" cy="${hcY+6}" r="2.5" fill="rgba(15,23,42,.6)"/>`;
+  // Bras — pivot = épaule (origine locale = épaule)
+  const uaL = `<g transform="translate(${-SHW},${-TORSO_H})">${W(C.ual, pill(AW,ARM_L,LC,LS,1)+jt(4,ARM_L)+frL)}</g>`;
+  const uaR = `<g transform="translate(${SHW},${-TORSO_H})">${W(C.uar, pill(AW,ARM_L,LC,LS,1)+jt(4,ARM_L)+frR)}</g>`;
 
-  // Torso group (arms inside so they follow torso tilt naturally)
-  const torso = G(CX, HIP_Y, ad.torso, uaL + uaR + body + neck + head + eyes);
+  // Torse — pivot = hanche (dessine vers le haut depuis y=0)
+  const body = pillU(TW,TORSO_H,SF,'rgba(255,255,255,.18)',1);
+  const neck = `<rect x="${-NW/2}" y="${-TORSO_H-NECK_H}" width="${NW}" height="${NECK_H}" rx="${NW/2}" fill="${SF}"/>`;
+  const hcY  = -TORSO_H-NECK_H-HEAD_R;
+  const head = `<circle cx="0" cy="${hcY}" r="${HEAD_R}" fill="${SF}" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>`;
+  const eyes = `<circle cx="-6" cy="${hcY+6}" r="2.5" fill="rgba(15,23,42,.6)"/><circle cx="6" cy="${hcY+6}" r="2.5" fill="rgba(15,23,42,.6)"/>`;
+  const torso = `<g transform="translate(${CX},${HIP_Y})">${W(C.to, uaL+uaR+body+neck+head+eyes)}</g>`;
 
-  // Shins → thighs (world-space: legs don't follow torso)
-  const snL = G(0,THIGH_L, ad.shinL, pill(SW,SHIN_L,LC,LS,1));
-  const snR = G(0,THIGH_L, ad.shinR, pill(SW,SHIN_L,LC,LS,1));
-  const lgL = G(HIP_L,HIP_Y, ad.thighL, pill(TW,THIGH_L,LC,LS,1) + jt(5,THIGH_L) + snL);
-  const lgR = G(HIP_R,HIP_Y, ad.thighR, pill(TW,THIGH_L,LC,LS,1) + jt(5,THIGH_L) + snR);
+  // Tibias — pivot = genou (dans le groupe cuisse)
+  const snL = `<g transform="translate(0,${THIGH_L})">${W(C.snl, pill(SW,SHIN_L,LC,LS,1))}</g>`;
+  const snR = `<g transform="translate(0,${THIGH_L})">${W(C.snr, pill(SW,SHIN_L,LC,LS,1))}</g>`;
 
-  // Render: legs behind, torso+arms+head in front
-  return lgL + lgR + torso;
+  // Cuisses — pivot = hanche (origine locale = hanche)
+  const lgL = `<g transform="translate(${HIP_L},${HIP_Y})">${W(C.thl, pill(TW,THIGH_L,LC,LS,1)+jt(5,THIGH_L)+snL)}</g>`;
+  const lgR = `<g transform="translate(${HIP_R},${HIP_Y})">${W(C.thr, pill(TW,THIGH_L,LC,LS,1)+jt(5,THIGH_L)+snR)}</g>`;
+
+  return css + lgL + lgR + torso;
 }
 
 // dead data — not referenced
