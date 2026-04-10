@@ -1852,8 +1852,12 @@ function _buildAnimFigure(key, accent2, skinId) {
   const LC = 'rgba(255,255,255,.88)';
   const LS = 'rgba(255,255,255,.18)';
 
-  // ── CSS animations (remplace SMIL — fonctionne sur Safari iOS et tous navigateurs) ──
-  // SVG elements: transform-origin:0 0 = origine du système local = pivot articulaire ✓
+  // ── CSS animations ────────────────────────────────────────────────────────
+  // Règle de pivot SVG :
+  //   • Membres (jambe, tibia, bras, avant-bras) : le contenu part de y=0 (articulation)
+  //     vers le bas → fill-box, transform-origin:50% 0% = sommet de la bounding-box = pivot ✓
+  //   • Torse : contenu 100 % au-dessus de y=0 (tête/tronc vers le haut, bras séparés)
+  //     → fill-box, transform-origin:50% 100% = bas de la bounding-box = hanche ✓
   const dur  = ad.dur || '1.4s';
   const ease = 'cubic-bezier(0.45,0,0.55,1)';
   const pfx  = key;
@@ -1861,12 +1865,16 @@ function _buildAnimFigure(key, accent2, skinId) {
   const kv     = s => String(s||'0;0;0').split(';').map(Number);
   const isAnim = s => { const v=kv(s); return !v.every(x=>x===v[0]); };
 
-  const gcss = (cn, vals) => {
-    const v = kv(vals);
+  // isTorso=true → pivot au bas (50% 100%) ; false → pivot au haut (50% 0%)
+  const gcss = (cn, vals, isTorso) => {
+    const v   = kv(vals);
+    const org = isTorso
+      ? 'transform-box:fill-box;transform-origin:50% 100%'
+      : 'transform-box:fill-box;transform-origin:50% 0%';
     if (!isAnim(vals)) {
-      return v[0] === 0 ? '' : `.${cn}{transform:rotate(${v[0]}deg);transform-origin:0 0}`;
+      return v[0] === 0 ? '' : `.${cn}{transform:rotate(${v[0]}deg);${org}}`;
     }
-    return `.${cn}{transform-origin:0 0;animation:${cn} ${dur} ${ease} infinite}` +
+    return `.${cn}{${org};animation:${cn} ${dur} ${ease} infinite}` +
            `@keyframes ${cn}{0%,100%{transform:rotate(${v[0]}deg)}50%{transform:rotate(${v[1]}deg)}}`;
   };
 
@@ -1879,42 +1887,51 @@ function _buildAnimFigure(key, accent2, skinId) {
   };
 
   const css = `<style>`
-    + gcss(C.to,  ad.torso)
-    + gcss(C.thl, ad.thighL)    + gcss(C.thr, ad.thighR)
-    + gcss(C.snl, ad.shinL)     + gcss(C.snr, ad.shinR)
-    + gcss(C.ual, ad.upperArmL) + gcss(C.uar, ad.upperArmR)
-    + gcss(C.frl, ad.forearmL)  + gcss(C.frr, ad.forearmR)
+    + gcss(C.to,  ad.torso,     true)   // torse : pivot bas = hanche
+    + gcss(C.thl, ad.thighL,    false)  // cuisses : pivot haut = hanche
+    + gcss(C.thr, ad.thighR,    false)
+    + gcss(C.snl, ad.shinL,     false)  // tibias : pivot haut = genou
+    + gcss(C.snr, ad.shinR,     false)
+    + gcss(C.ual, ad.upperArmL, false)  // bras : pivot haut = épaule
+    + gcss(C.uar, ad.upperArmR, false)
+    + gcss(C.frl, ad.forearmL,  false)  // avant-bras : pivot haut = coude
+    + gcss(C.frr, ad.forearmR,  false)
     + `</style>`;
 
   const W = (cn, html) => `<g class="${cn}">${html}</g>`;
 
   // ── Build segments ──────────────────────────────────────────────────────
+  // Les bras sont HORS du groupe CSS du torse pour que la bounding-box
+  // du torse reste entièrement au-dessus de y=0 → 50% 100% = hanche exacte.
 
-  // Forearms — pivot = coude (origine locale = coude)
+  // Avant-bras (pivot = coude = y=0 dans le groupe translate(0,ARM_L))
   const frL = `<g transform="translate(0,${ARM_L})">${W(C.frl, pill(FW,FORE_L,LC,LS,1))}</g>`;
   const frR = `<g transform="translate(0,${ARM_L})">${W(C.frr, pill(FW,FORE_L,LC,LS,1))}</g>`;
 
-  // Bras — pivot = épaule (origine locale = épaule)
+  // Bras haut (pivot = épaule = y=0 dans translate(-SHW,-TORSO_H))
   const uaL = `<g transform="translate(${-SHW},${-TORSO_H})">${W(C.ual, pill(AW,ARM_L,LC,LS,1)+jt(4,ARM_L)+frL)}</g>`;
   const uaR = `<g transform="translate(${SHW},${-TORSO_H})">${W(C.uar, pill(AW,ARM_L,LC,LS,1)+jt(4,ARM_L)+frR)}</g>`;
 
-  // Torse — pivot = hanche (dessine vers le haut depuis y=0)
+  // Torse : SEULEMENT tronc+cou+tête (tout au-dessus de y=0 = hanche)
+  // → 50% 100% = bas du bbox = y≈0 = hanche ✓
   const body = pillU(TW,TORSO_H,SF,'rgba(255,255,255,.18)',1);
   const neck = `<rect x="${-NW/2}" y="${-TORSO_H-NECK_H}" width="${NW}" height="${NECK_H}" rx="${NW/2}" fill="${SF}"/>`;
   const hcY  = -TORSO_H-NECK_H-HEAD_R;
   const head = `<circle cx="0" cy="${hcY}" r="${HEAD_R}" fill="${SF}" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>`;
   const eyes = `<circle cx="-6" cy="${hcY+6}" r="2.5" fill="rgba(15,23,42,.6)"/><circle cx="6" cy="${hcY+6}" r="2.5" fill="rgba(15,23,42,.6)"/>`;
-  const torso = `<g transform="translate(${CX},${HIP_Y})">${W(C.to, uaL+uaR+body+neck+head+eyes)}</g>`;
 
-  // Tibias — pivot = genou (dans le groupe cuisse)
+  // Groupe hanche : bras + torse CSS séparés pour que bbox torse = au-dessus y=0
+  const hipGroup = `<g transform="translate(${CX},${HIP_Y})">${uaL}${uaR}${W(C.to, body+neck+head+eyes)}</g>`;
+
+  // Tibias (pivot = genou = y=0 dans translate(0,THIGH_L), à l'intérieur du groupe cuisse)
   const snL = `<g transform="translate(0,${THIGH_L})">${W(C.snl, pill(SW,SHIN_L,LC,LS,1))}</g>`;
   const snR = `<g transform="translate(0,${THIGH_L})">${W(C.snr, pill(SW,SHIN_L,LC,LS,1))}</g>`;
 
-  // Cuisses — pivot = hanche (origine locale = hanche)
+  // Cuisses (pivot = hanche = y=0 dans translate(HIP_L,HIP_Y))
   const lgL = `<g transform="translate(${HIP_L},${HIP_Y})">${W(C.thl, pill(TW,THIGH_L,LC,LS,1)+jt(5,THIGH_L)+snL)}</g>`;
   const lgR = `<g transform="translate(${HIP_R},${HIP_Y})">${W(C.thr, pill(TW,THIGH_L,LC,LS,1)+jt(5,THIGH_L)+snR)}</g>`;
 
-  return css + lgL + lgR + torso;
+  return css + lgL + lgR + hipGroup;
 }
 
 // dead data — not referenced
@@ -2117,7 +2134,7 @@ function _exerciseDemoSvg(label = '') {
   const shadowCy = picked.key === 'push' ? 198 : picked.key === 'core' ? 240 : 246;
 
   return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 280" width="100%" height="100%">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 280" width="100%" height="100%" overflow="hidden">
       <defs>
         <linearGradient id="${bgId}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#081122"/><stop offset="100%" stop-color="#13213b"/></linearGradient>
         <linearGradient id="${glowId}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${picked.accent}" stop-opacity=".28"/><stop offset="100%" stop-color="${picked.accent2}" stop-opacity=".12"/></linearGradient>
