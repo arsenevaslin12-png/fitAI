@@ -8862,15 +8862,15 @@ function _renderBarcodeResult(product, code) {
         </div>
         <div>
           <div class="bc-coach-title">Analyse Coach IA</div>
-          <div class="bc-coach-sub">Personnalisée selon ton objectif</div>
+          <div id="bc-ai-status" class="bc-coach-sub">Personnalisation en cours…</div>
         </div>
         <button id="bc-fav-btn-${escapeAttr(code)}" onclick="toggleBcFavorite('${escapeAttr(code)}')" class="bc-fav-btn" title="Favoris">${isFav ? "★" : "☆"}</button>
       </div>
-      <div class="coach-verdict coach-verdict-${coach.verdictType}">${escapeHtml(coach.verdict)}</div>
-      <div class="bc-coach-body">${escapeHtml(coach.analysis)}</div>
+      <div id="bc-ai-verdict" class="coach-verdict coach-verdict-${coach.verdictType}">${escapeHtml(coach.verdict)}</div>
+      <div id="bc-ai-body" class="bc-coach-body">${escapeHtml(coach.analysis)}</div>
       <div class="coach-action-box">
         <div class="coach-action-label">→ Action recommandée</div>
-        <div class="coach-action-text">${escapeHtml(coach.action)}</div>
+        <div id="bc-ai-action" class="coach-action-text">${escapeHtml(coach.action)}</div>
       </div>
     </div>
 
@@ -8904,6 +8904,69 @@ function _renderBarcodeResult(product, code) {
   // Fetch better alternatives async (only if score < 60)
   if (score < 60) fetchBcAlternatives(_bcCurrentProduct);
   else { const a = document.getElementById("bc-alternatives"); if (a) a.style.display = "none"; }
+
+  // Load AI-powered personalized coach analysis async (replaces rule-based text)
+  _loadAiProductCoach(product, score);
+}
+
+async function _loadAiProductCoach(product, score) {
+  const verdictEl = document.getElementById("bc-ai-verdict");
+  const bodyEl    = document.getElementById("bc-ai-body");
+  const actionEl  = document.getElementById("bc-ai-action");
+  const statusEl  = document.getElementById("bc-ai-status");
+  if (!verdictEl || !bodyEl || !actionEl) return;
+
+  try {
+    const token = await getToken();
+    if (!token) {
+      if (statusEl) statusEl.textContent = "Personnalisée selon ton objectif";
+      return;
+    }
+
+    // Show subtle loading state
+    if (statusEl) statusEl.textContent = "Analyse IA en cours…";
+    bodyEl.style.opacity = "0.5";
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 16000);
+    const r = await fetch("/api/coach-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ product }),
+      signal: ctrl.signal
+    });
+    clearTimeout(timer);
+
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const json = await r.json();
+    if (!json.ok || !json.data?.verdict) throw new Error("invalid_response");
+
+    const d = json.data;
+
+    // Swap verdict class
+    verdictEl.className = `coach-verdict coach-verdict-${d.verdictType || "neutral"}`;
+    verdictEl.textContent = d.verdict;
+
+    // Fade in new body + action
+    bodyEl.style.transition = "opacity .4s";
+    bodyEl.style.opacity = "0";
+    actionEl.style.transition = "opacity .4s";
+    actionEl.style.opacity = "0";
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        bodyEl.textContent = d.analysis;
+        actionEl.textContent = d.action;
+        bodyEl.style.opacity = "1";
+        actionEl.style.opacity = "1";
+        if (statusEl) { statusEl.textContent = "Personnalisée par IA"; statusEl.classList.add("ai-ready"); }
+      });
+    });
+  } catch {
+    // Keep rule-based analysis on any error — reset opacity if it was dimmed
+    if (bodyEl) bodyEl.style.opacity = "1";
+    if (statusEl) statusEl.textContent = "Personnalisée selon ton objectif";
+  }
 }
 
 window.openBarcodeCamera = openBarcodeCamera;
