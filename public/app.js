@@ -1732,353 +1732,102 @@ function exerciseCuePack(ex = {}) {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Animated Exercise Figure v2 — segment-based, joint-rotation (SMIL additive)
-// Each key defines per-segment angle keyframes (degrees, SVG convention: + = CW)
-// Pivots: torso @ hip, thigh @ hip joint, shin @ knee, upperArm @ shoulder, forearm @ elbow
-// ─────────────────────────────────────────────────────────────────────────────
-const _EX_ANIM = {
-  // SQUAT (vue face): jambes s'écartent, genoux fléchissent.
-  // shinL ≈ +thighL_angle pour que la jambe inférieure reste verticale → pas de croisement
-  squat: {
-    dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;6;0',
-    thighL:'0;-24;0', thighR:'0;24;0',
-    shinL:'0;28;0',  shinR:'0;-28;0',
-    upperArmL:'-42;-42;-42', upperArmR:'42;42;42',
-    forearmL:'88;88;88', forearmR:'-88;-88;-88'
-  },
-  // LUNGE: une jambe avant (thighL avance), une arrière (thighR recule)
-  lunge: {
-    dur:'1.2s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;4;0',
-    thighL:'-6;-38;-6', thighR:'10;36;10',
-    shinL:'0;52;0',    shinR:'-26;-6;-26',
-    upperArmL:'-14;-14;-14', upperArmR:'14;14;14',
-    forearmL:'20;20;20', forearmR:'-20;-20;-20'
-  },
-  // PUSH-UP: torse en planche (~60°), bras plient puis poussent
-  push: {
-    dur:'1.4s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'60;56;60',
-    thighL:'22;22;22', thighR:'22;22;22',
-    shinL:'-8;-8;-8',  shinR:'-8;-8;-8',
-    upperArmL:'-58;-48;-58', upperArmR:'-58;-48;-58',
-    forearmL:'78;94;78', forearmR:'78;94;78'
-  },
-  // PULL / TIRAGE: bras partent haute puis tirent vers les épaules
-  pull: {
-    dur:'1.3s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;-3;0',
-    thighL:'-8;-8;-8', thighR:'8;8;8',
-    shinL:'16;20;16',  shinR:'-16;-20;-16',
-    upperArmL:'-146;-112;-146', upperArmR:'146;112;146',
-    forearmL:'10;50;10', forearmR:'-10;-50;-10'
-  },
-  // HINGE / DEADLIFT: torse s'incline en avant puis remonte
-  hinge: {
-    dur:'1.5s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;-40;0',
-    thighL:'-4;-16;-4', thighR:'4;16;4',
-    shinL:'0;12;0',     shinR:'0;-12;0',
-    upperArmL:'-6;-6;-6', upperArmR:'6;6;6',
-    forearmL:'16;16;16', forearmR:'-16;-16;-16'
-  },
-  // CORE / MOUNTAIN CLIMBER: un genou ramène vers la poitrine en alternance
-  core: {
-    dur:'1.35s', sp:'0.5 0 0.5 1;0.5 0 0.5 1',
-    torso:'-4;4;-4',
-    thighL:'-52;-4;-52', thighR:'4;52;4',
-    shinL:'48;4;48',     shinR:'4;-48;4',
-    upperArmL:'-20;10;-20', upperArmR:'10;-20;10',
-    forearmL:'0;0;0', forearmR:'0;0;0'
-  },
-  // CARDIO / COURSE: jambes alternent rapidement
-  cardio: {
-    dur:'0.62s', sp:'0.5 0 0.5 1;0.5 0 0.5 1',
-    torso:'-4;4;-4',
-    thighL:'-32;16;-32', thighR:'16;-32;16',
-    shinL:'50;6;50',     shinR:'6;50;6',
-    upperArmL:'26;-38;26', upperArmR:'-38;26;-38',
-    forearmL:'-26;18;-26', forearmR:'18;-26;18'
-  },
-  // PRESS / DÉVELOPPÉ: départ barre épaules (bras ~horizontaux), fin overhead
-  press: {
-    dur:'1.5s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;-5;0',
-    thighL:'0;0;0', thighR:'0;0;0',
-    shinL:'0;0;0',  shinR:'0;0;0',
-    upperArmL:'-88;-158;-88', upperArmR:'88;158;88',
-    forearmL:'-88;-8;-88',    forearmR:'88;8;88'
-  },
-  // CALF RAISE: talons se lèvent légèrement
-  calf: {
-    dur:'1.0s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;0;0',
-    thighL:'0;0;0', thighR:'0;0;0',
-    shinL:'0;-10;0', shinR:'0;10;0',
-    upperArmL:'-14;-14;-14', upperArmR:'14;14;14',
-    forearmL:'22;22;22', forearmR:'-22;-22;-22'
-  },
-  // MOBILITY / ÉTIREMENT: bras s'ouvrent en arc
-  mobility: {
-    dur:'2.2s', sp:'0.45 0 0.55 1;0.45 0 0.55 1',
-    torso:'0;-14;0',
-    thighL:'0;-12;0', thighR:'0;12;0',
-    shinL:'0;8;0',   shinR:'0;-8;0',
-    upperArmL:'-18;-88;-18', upperArmR:'18;88;18',
-    forearmL:'12;2;12', forearmR:'-12;-2;-12'
-  }
-};
+// Keep old name as alias so any stale reference doesn't crash
+function _buildAnimFigure(key, accent2, skinId) { return _buildStaticFigure(key, skinId); }
 
-function _buildAnimFigure(key, accent2, skinId) {
-  const ad = _EX_ANIM[key] || _EX_ANIM.squat;
+// Exercise figure — two-pose animation using SMIL <animate> on SVG attribute values
+// No CSS transforms, no transform-origin, no transform-box — works on all browsers incl. Safari iOS
+// Each exercise has A-pose (start) and B-pose (peak of movement); SMIL interpolates between them
+function _buildStaticFigure(key, skinId) {
   if (!skinId) skinId = 'skin';
-
-  // ── Anatomy (viewBox 360×280) ──────────────────────────────────────────
-  const CX=180, HIP_Y=162;
-  const TORSO_H=60, NECK_H=12, HEAD_R=20;
-  const SHW=24;
-  const HIP_L=CX-14, HIP_R=CX+14;
-  const ARM_L=44, FORE_L=36;
-  const THIGH_L=56, SHIN_L=50;
-  const AW=11, FW=9, TW=15, SW=12, NW=8;
-
-  // ── Primitives ──────────────────────────────────────────────────────────
-  const pill  = (w,h,f,sc,sw) => `<rect x="${-w/2}" y="0" width="${w}" height="${h}" rx="${w/2}" fill="${f}" stroke="${sc}" stroke-width="${sw}"/>`;
-  const pillU = (w,h,f,sc,sw) => `<rect x="${-w/2}" y="${-h}" width="${w}" height="${h}" rx="${w/2}" fill="${f}" stroke="${sc}" stroke-width="${sw}"/>`;
-  const jt    = (r,y)         => `<circle cx="0" cy="${y}" r="${r}" fill="rgba(255,255,255,.55)" stroke="rgba(255,255,255,.25)" stroke-width="1"/>`;
   const SF = `url(#${skinId})`;
-  const LC = 'rgba(255,255,255,.88)';
-  const LS = 'rgba(255,255,255,.18)';
+  const W  = 'rgba(255,255,255,.90)';
+  const WD = 'rgba(255,255,255,.72)';
+  const JC = 'rgba(255,255,255,.58)';
 
-  // ── CSS animations ────────────────────────────────────────────────────────
-  // Règle de pivot SVG :
-  //   • Membres (jambe, tibia, bras, avant-bras) : le contenu part de y=0 (articulation)
-  //     vers le bas → fill-box, transform-origin:50% 0% = sommet de la bounding-box = pivot ✓
-  //   • Torse : contenu 100 % au-dessus de y=0 (tête/tronc vers le haut, bras séparés)
-  //     → fill-box, transform-origin:50% 100% = bas de la bounding-box = hanche ✓
-  const dur  = ad.dur || '1.4s';
-  const ease = 'cubic-bezier(0.45,0,0.55,1)';
-  const pfx  = key;
-
-  const kv     = s => String(s||'0;0;0').split(';').map(Number);
-  const isAnim = s => { const v=kv(s); return !v.every(x=>x===v[0]); };
-
-  // isTorso=true → pivot au bas (50% 100%) ; false → pivot au haut (50% 0%)
-  const gcss = (cn, vals, isTorso) => {
-    const v   = kv(vals);
-    const org = isTorso
-      ? 'transform-box:fill-box;transform-origin:50% 100%'
-      : 'transform-box:fill-box;transform-origin:50% 0%';
-    if (!isAnim(vals)) {
-      return v[0] === 0 ? '' : `.${cn}{transform:rotate(${v[0]}deg);${org}}`;
-    }
-    return `.${cn}{${org};animation:${cn} ${dur} ${ease} infinite}` +
-           `@keyframes ${cn}{0%,100%{transform:rotate(${v[0]}deg)}50%{transform:rotate(${v[1]}deg)}}`;
+  // Two-pose animation data: A = start/end position, B = mid position
+  // Attributes: hx/hy=head, sx/sy=shoulders, px/py=hips,
+  //             lk/rk=knees, la/ra=ankles, le/re=elbows, lw/rw=wrists
+  // Uses SMIL <animate> on individual attribute values — NO CSS transforms, NO transform-origin
+  const POSES = {
+    squat: { dur:'1.2s',
+      A:{hx:180,hy:88,  sx:180,sy:116,px:180,py:164,lkx:174,lky:208,rkx:186,rky:208,lax:170,lay:248,rax:190,ray:248,lex:154,ley:148,rex:206,rey:148,lwx:136,lwy:168,rwx:224,rwy:168},
+      B:{hx:180,hy:103, sx:178,sy:131,px:180,py:179,lkx:148,lky:210,rkx:212,rky:210,lax:154,lay:248,rax:206,ray:248,lex:152,ley:163,rex:208,rey:163,lwx:130,lwy:179,rwx:230,rwy:179}},
+    lunge: { dur:'1.3s',
+      A:{hx:180,hy:88,  sx:178,sy:118,px:180,py:165,lkx:174,lky:208,rkx:186,rky:208,lax:170,lay:248,rax:190,ray:248,lex:154,ley:148,rex:206,rey:148,lwx:138,lwy:168,rwx:222,rwy:168},
+      B:{hx:180,hy:92,  sx:178,sy:122,px:180,py:169,lkx:150,lky:207,rkx:204,rky:213,lax:143,lay:248,rax:212,ray:248,lex:154,ley:148,rex:206,rey:148,lwx:138,lwy:168,rwx:222,rwy:168}},
+    push: { dur:'1.4s',
+      A:{hx:173,hy:94,  sx:175,sy:120,px:180,py:166,lkx:174,lky:207,rkx:186,rky:207,lax:172,lay:244,rax:188,ray:244,lex:146,ley:131,rex:202,rey:131,lwx:118,lwy:142,rwx:230,rwy:142},
+      B:{hx:175,hy:101, sx:175,sy:123,px:180,py:166,lkx:174,lky:207,rkx:186,rky:207,lax:172,lay:244,rax:188,ray:244,lex:153,ley:139,rex:196,rey:139,lwx:133,lwy:149,rwx:216,rwy:149}},
+    pull: { dur:'1.3s',
+      A:{hx:180,hy:88,  sx:180,sy:118,px:180,py:165,lkx:174,lky:208,rkx:186,rky:208,lax:170,lay:248,rax:190,ray:248,lex:148,ley:80, rex:212,rey:80, lwx:136,lwy:50, rwx:224,rwy:50},
+      B:{hx:180,hy:93,  sx:180,sy:121,px:180,py:169,lkx:174,lky:210,rkx:186,rky:210,lax:170,lay:248,rax:190,ray:248,lex:156,ley:104,rex:204,rey:104,lwx:140,lwy:80, rwx:220,rwy:80}},
+    hinge: { dur:'1.5s',
+      A:{hx:180,hy:88,  sx:180,sy:118,px:180,py:165,lkx:174,lky:208,rkx:186,rky:208,lax:170,lay:248,rax:190,ray:248,lex:158,ley:148,rex:202,rey:148,lwx:148,lwy:168,rwx:212,rwy:168},
+      B:{hx:152,hy:100, sx:156,sy:122,px:182,py:169,lkx:172,lky:211,rkx:192,rky:211,lax:170,lay:248,rax:192,ray:248,lex:148,ley:151,rex:176,rey:149,lwx:140,lwy:175,rwx:184,rwy:173}},
+    core: { dur:'0.9s',
+      A:{hx:178,hy:88,  sx:178,sy:116,px:178,py:165,lkx:174,lky:208,rkx:186,rky:208,lax:170,lay:248,rax:190,ray:248,lex:158,ley:136,rex:198,rey:136,lwx:146,lwy:154,rwx:210,rwy:154},
+      B:{hx:178,hy:88,  sx:178,sy:116,px:178,py:165,lkx:162,lky:186,rkx:186,rky:208,lax:158,lay:228,rax:190,ray:248,lex:158,ley:136,rex:198,rey:136,lwx:146,lwy:154,rwx:210,rwy:154}},
+    cardio: { dur:'0.6s',
+      A:{hx:178,hy:88,  sx:178,sy:116,px:178,py:163,lkx:150,lky:195,rkx:200,rky:205,lax:142,lay:236,rax:208,ray:240,lex:200,ley:138,rex:154,rey:138,lwx:214,lwy:154,rwx:140,rwy:154},
+      B:{hx:178,hy:88,  sx:178,sy:116,px:178,py:163,lkx:200,lky:195,rkx:152,rky:205,lax:208,lay:236,rax:144,ray:240,lex:154,ley:138,rex:200,rey:138,lwx:140,lwy:154,rwx:214,rwy:154}},
+    press: { dur:'1.5s',
+      A:{hx:180,hy:88,  sx:180,sy:118,px:180,py:165,lkx:174,lky:208,rkx:186,rky:208,lax:170,lay:248,rax:190,ray:248,lex:150,ley:120,rex:210,rey:120,lwx:142,lwy:120,rwx:218,rwy:120},
+      B:{hx:180,hy:88,  sx:180,sy:118,px:180,py:165,lkx:174,lky:208,rkx:186,rky:208,lax:170,lay:248,rax:190,ray:248,lex:154,ley:100,rex:206,rey:100,lwx:148,lwy:66, rwx:212,rwy:66}},
+    calf: { dur:'1.0s',
+      A:{hx:180,hy:92,  sx:180,sy:120,px:180,py:167,lkx:174,lky:210,rkx:186,rky:210,lax:170,lay:248,rax:190,ray:248,lex:156,ley:146,rex:204,rey:146,lwx:148,lwy:162,rwx:212,rwy:162},
+      B:{hx:180,hy:80,  sx:180,sy:108,px:180,py:155,lkx:174,lky:198,rkx:186,rky:198,lax:170,lay:236,rax:190,ray:236,lex:156,ley:134,rex:204,rey:134,lwx:148,lwy:150,rwx:212,rwy:150}},
+    mobility: { dur:'2.0s',
+      A:{hx:180,hy:88,  sx:180,sy:118,px:180,py:165,lkx:174,lky:208,rkx:186,rky:208,lax:170,lay:248,rax:190,ray:248,lex:156,ley:140,rex:204,rey:140,lwx:138,lwy:156,rwx:222,rwy:156},
+      B:{hx:180,hy:88,  sx:180,sy:118,px:180,py:165,lkx:170,lky:212,rkx:190,rky:212,lax:166,lay:248,rax:194,ray:248,lex:124,ley:126,rex:236,rey:126,lwx:92, lwy:142,rwx:268,rwy:142}}
   };
 
-  const C = {
-    to :`${pfx}-to`,
-    thl:`${pfx}-thl`, thr:`${pfx}-thr`,
-    snl:`${pfx}-snl`, snr:`${pfx}-snr`,
-    ual:`${pfx}-ual`, uar:`${pfx}-uar`,
-    frl:`${pfx}-frl`, frr:`${pfx}-frr`,
-  };
+  const pd = POSES[key] || POSES.squat;
+  const A = pd.A, B = pd.B, dur = pd.dur;
+  const ks = '0.45 0 0.55 1', kt = '0;0.5;1';
 
-  const css = `<style>`
-    + gcss(C.to,  ad.torso,     true)   // torse : pivot bas = hanche
-    + gcss(C.thl, ad.thighL,    false)  // cuisses : pivot haut = hanche
-    + gcss(C.thr, ad.thighR,    false)
-    + gcss(C.snl, ad.shinL,     false)  // tibias : pivot haut = genou
-    + gcss(C.snr, ad.shinR,     false)
-    + gcss(C.ual, ad.upperArmL, false)  // bras : pivot haut = épaule
-    + gcss(C.uar, ad.upperArmR, false)
-    + gcss(C.frl, ad.forearmL,  false)  // avant-bras : pivot haut = coude
-    + gcss(C.frr, ad.forearmR,  false)
-    + `</style>`;
+  // SMIL <animate> on a single attribute (omitted if A===B)
+  const at = (attr, va, vb) => va === vb ? '' :
+    `<animate attributeName="${attr}" values="${va};${vb};${va}" keyTimes="${kt}" calcMode="spline" keySplines="${ks};${ks}" dur="${dur}" repeatCount="indefinite"/>`;
 
-  const W = (cn, html) => `<g class="${cn}">${html}</g>`;
+  // Animated line
+  const AL = (x1A,y1A,x2A,y2A, x1B,y1B,x2B,y2B, sw, c) =>
+    `<line x1="${x1A}" y1="${y1A}" x2="${x2A}" y2="${y2A}" stroke="${c||W}" stroke-width="${sw}" stroke-linecap="round">` +
+    at('x1',x1A,x1B)+at('y1',y1A,y1B)+at('x2',x2A,x2B)+at('y2',y2A,y2B)+'</line>';
 
-  // ── Build segments ──────────────────────────────────────────────────────
-  // Les bras sont HORS du groupe CSS du torse pour que la bounding-box
-  // du torse reste entièrement au-dessus de y=0 → 50% 100% = hanche exacte.
+  // Animated circle
+  const AC = (cxA,cyA, cxB,cyB, r, f, extra) =>
+    `<circle cx="${cxA}" cy="${cyA}" r="${r}" fill="${f}"${extra||''}>` +
+    at('cx',cxA,cxB)+at('cy',cyA,cyB)+'</circle>';
 
-  // Avant-bras (pivot = coude = y=0 dans le groupe translate(0,ARM_L))
-  const frL = `<g transform="translate(0,${ARM_L})">${W(C.frl, pill(FW,FORE_L,LC,LS,1))}</g>`;
-  const frR = `<g transform="translate(0,${ARM_L})">${W(C.frr, pill(FW,FORE_L,LC,LS,1))}</g>`;
-
-  // Bras haut (pivot = épaule = y=0 dans translate(-SHW,-TORSO_H))
-  const uaL = `<g transform="translate(${-SHW},${-TORSO_H})">${W(C.ual, pill(AW,ARM_L,LC,LS,1)+jt(4,ARM_L)+frL)}</g>`;
-  const uaR = `<g transform="translate(${SHW},${-TORSO_H})">${W(C.uar, pill(AW,ARM_L,LC,LS,1)+jt(4,ARM_L)+frR)}</g>`;
-
-  // Torse : SEULEMENT tronc+cou+tête (tout au-dessus de y=0 = hanche)
-  // → 50% 100% = bas du bbox = y≈0 = hanche ✓
-  const body = pillU(TW,TORSO_H,SF,'rgba(255,255,255,.18)',1);
-  const neck = `<rect x="${-NW/2}" y="${-TORSO_H-NECK_H}" width="${NW}" height="${NECK_H}" rx="${NW/2}" fill="${SF}"/>`;
-  const hcY  = -TORSO_H-NECK_H-HEAD_R;
-  const head = `<circle cx="0" cy="${hcY}" r="${HEAD_R}" fill="${SF}" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>`;
-  const eyes = `<circle cx="-6" cy="${hcY+6}" r="2.5" fill="rgba(15,23,42,.6)"/><circle cx="6" cy="${hcY+6}" r="2.5" fill="rgba(15,23,42,.6)"/>`;
-
-  // Groupe hanche : bras + torse CSS séparés pour que bbox torse = au-dessus y=0
-  const hipGroup = `<g transform="translate(${CX},${HIP_Y})">${uaL}${uaR}${W(C.to, body+neck+head+eyes)}</g>`;
-
-  // Tibias (pivot = genou = y=0 dans translate(0,THIGH_L), à l'intérieur du groupe cuisse)
-  const snL = `<g transform="translate(0,${THIGH_L})">${W(C.snl, pill(SW,SHIN_L,LC,LS,1))}</g>`;
-  const snR = `<g transform="translate(0,${THIGH_L})">${W(C.snr, pill(SW,SHIN_L,LC,LS,1))}</g>`;
-
-  // Cuisses (pivot = hanche = y=0 dans translate(HIP_L,HIP_Y))
-  const lgL = `<g transform="translate(${HIP_L},${HIP_Y})">${W(C.thl, pill(TW,THIGH_L,LC,LS,1)+jt(5,THIGH_L)+snL)}</g>`;
-  const lgR = `<g transform="translate(${HIP_R},${HIP_Y})">${W(C.thr, pill(TW,THIGH_L,LC,LS,1)+jt(5,THIGH_L)+snR)}</g>`;
-
-  return css + lgL + lgR + hipGroup;
+  return (
+    // Legs (drawn first, behind torso)
+    AL(A.px-10,A.py,A.lkx,A.lky, B.px-10,B.py,B.lkx,B.lky, 9) +
+    AL(A.lkx,A.lky,A.lax,A.lay,  B.lkx,B.lky,B.lax,B.lay,  8,WD) +
+    AL(A.px+10,A.py,A.rkx,A.rky, B.px+10,B.py,B.rkx,B.rky, 9) +
+    AL(A.rkx,A.rky,A.rax,A.ray,  B.rkx,B.rky,B.rax,B.ray,  8,WD) +
+    // Feet
+    AL(A.lax,A.lay,A.lax-6,A.lay+4, B.lax,B.lay,B.lax-6,B.lay+4, 6,WD) +
+    AL(A.rax,A.ray,A.rax+6,A.ray+4, B.rax,B.ray,B.rax+6,B.ray+4, 6,WD) +
+    // Torso
+    AL(A.sx,A.sy,A.px,A.py, B.sx,B.sy,B.px,B.py, 11) +
+    // Arms
+    AL(A.sx-8,A.sy+5,A.lex,A.ley, B.sx-8,B.sy+5,B.lex,B.ley, 7) +
+    AL(A.lex,A.ley,A.lwx,A.lwy,   B.lex,B.ley,B.lwx,B.lwy,   5,WD) +
+    AL(A.sx+8,A.sy+5,A.rex,A.rey, B.sx+8,B.sy+5,B.rex,B.rey, 7) +
+    AL(A.rex,A.rey,A.rwx,A.rwy,   B.rex,B.rey,B.rwx,B.rwy,   5,WD) +
+    // Joint dots
+    AC(A.lex,A.ley,B.lex,B.ley, 4,JC) + AC(A.rex,A.rey,B.rex,B.rey, 4,JC) +
+    AC(A.lkx,A.lky,B.lkx,B.lky, 5,JC) + AC(A.rkx,A.rky,B.rkx,B.rky, 5,JC) +
+    // Head (skin-filled circle + stroke ring)
+    AC(A.hx,A.hy,B.hx,B.hy, 18,SF,' stroke="rgba(255,255,255,.5)" stroke-width="1.5"') +
+    // Eyes (follow head)
+    AC(A.hx-6,A.hy+6,B.hx-6,B.hy+6, 2.5,'rgba(15,23,42,.6)') +
+    AC(A.hx+6,A.hy+6,B.hx+6,B.hy+6, 2.5,'rgba(15,23,42,.6)')
+  );
 }
 
-// dead data — not referenced
-const _EX_FRAMES = {
-  squat: {
-    dur: "1.35s",
-    a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
-      l:["M163 90 Q150 108 145 126","M145 126 Q141 143 140 160",
-         "M197 90 Q210 108 215 126","M215 126 Q219 143 220 160",
-         "M165 154 Q164 177 163 200","M163 200 Q162 222 162 244",
-         "M195 154 Q196 177 197 200","M197 200 Q198 222 198 244"] },
-    b: { h:[180,112], t:"M152 130 L208 130 L209 174 L151 174 Z",
-      l:["M152 132 Q133 132 122 140","M122 140 Q113 146 106 152",
-         "M208 132 Q227 132 238 140","M238 140 Q247 146 254 152",
-         "M152 176 Q134 190 120 204","M120 204 Q123 224 128 244",
-         "M208 176 Q226 190 240 204","M240 204 Q237 224 232 244"] }
-  },
-  // ── PUSH-UP (front view): plank → chest near floor, elbows out ──
-  push: {
-    dur: "1.4s",
-    a: { h:[180,78], t:"M163 98 L197 98 L197 152 L163 152 Z",
-      l:["M163 100 Q146 112 130 124","M130 124 Q124 136 118 148",
-         "M197 100 Q214 112 230 124","M230 124 Q236 136 242 148",
-         "M165 154 Q164 177 163 200","M163 200 Q162 222 162 244",
-         "M195 154 Q196 177 197 200","M197 200 Q198 222 198 244"] },
-    b: { h:[180,98], t:"M163 118 L197 118 L197 170 L163 170 Z",
-      l:["M163 120 Q144 128 126 136","M126 136 Q121 147 118 158",
-         "M197 120 Q216 128 234 136","M234 136 Q239 147 242 158",
-         "M165 172 Q164 195 163 216","M163 216 Q162 230 162 244",
-         "M195 172 Q196 195 197 216","M197 216 Q198 230 198 244"] }
-  },
-  // ── PULL-UP (front view): dead hang arms up → chin pulled up, elbows wide ──
-  pull: {
-    dur: "1.3s",
-    a: { h:[180,84], t:"M163 104 L197 104 L197 158 L163 158 Z",
-      l:["M163 106 Q154 88 148 70","M148 70 Q146 58 144 46",
-         "M197 106 Q206 88 212 70","M212 70 Q214 58 216 46",
-         "M165 160 Q164 182 163 204","M163 204 Q161 224 160 244",
-         "M195 160 Q196 182 197 204","M197 204 Q199 224 200 244"] },
-    b: { h:[180,58], t:"M163 76 L197 76 L197 130 L163 130 Z",
-      l:["M163 78 Q143 70 128 70","M128 70 Q136 59 144 48",
-         "M197 78 Q217 70 232 70","M232 70 Q224 59 216 48",
-         "M165 132 Q164 153 163 174","M163 174 Q162 196 162 218",
-         "M195 132 Q196 153 197 174","M197 174 Q198 196 198 218"] }
-  },
-  // ── HIP HINGE / RDL (front view): upright → torso tilted 45°, arms hang ──
-  hinge: {
-    dur: "1.5s",
-    a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
-      l:["M163 90 Q155 112 150 132","M150 132 Q146 150 144 166",
-         "M197 90 Q205 112 210 132","M210 132 Q214 150 216 166",
-         "M165 154 Q164 177 163 200","M163 200 Q162 222 162 244",
-         "M195 154 Q196 177 197 200","M197 200 Q198 222 198 244"] },
-    b: { h:[192,94], t:"M174 108 L210 108 L206 158 L170 158 Z",
-      l:["M174 110 Q166 132 160 152","M160 152 Q156 170 154 186",
-         "M210 110 Q218 132 224 152","M224 152 Q228 170 230 186",
-         "M170 160 Q166 180 164 202","M164 202 Q163 222 163 244",
-         "M200 160 Q200 180 198 202","M198 202 Q197 222 197 244"] }
-  },
-  // ── CRUNCH / CORE (front view): neutral → torso curls forward, arms reach knees ──
-  core: {
-    dur: "1.8s",
-    a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
-      l:["M163 90 Q155 108 150 126","M150 126 Q146 144 144 160",
-         "M197 90 Q205 108 210 126","M210 126 Q214 144 216 160",
-         "M165 154 Q164 177 163 200","M163 200 Q162 222 162 244",
-         "M195 154 Q196 177 197 200","M197 200 Q198 222 198 244"] },
-    b: { h:[180,88], t:"M161 106 L199 106 L198 154 L162 154 Z",
-      l:["M161 108 Q162 128 162 148","M162 148 Q162 158 162 168",
-         "M199 108 Q198 128 198 148","M198 148 Q198 158 198 168",
-         "M163 156 Q158 172 152 188","M152 188 Q148 204 152 220",
-         "M197 156 Q202 172 208 188","M208 188 Q212 204 208 220"] }
-  },
-  // ── RUNNING (front view): stride A → stride B (arm/leg swap) ──
-  cardio: {
-    dur: "0.65s",
-    a: { h:[180,66], t:"M163 86 L197 86 L196 148 L164 148 Z",
-      l:["M163 88 Q152 72 148 58","M148 58 Q145 46 144 36",
-         "M197 88 Q208 104 212 120","M212 120 Q214 134 214 148",
-         "M165 150 Q172 170 182 192","M182 192 Q188 208 190 228",
-         "M195 150 Q188 168 178 182","M178 182 Q170 196 166 214"] },
-    b: { h:[180,66], t:"M163 86 L197 86 L196 148 L164 148 Z",
-      l:["M163 88 Q174 104 178 120","M178 120 Q180 134 180 148",
-         "M197 88 Q186 72 182 58","M182 58 Q179 46 178 36",
-         "M165 150 Q158 168 148 182","M148 182 Q140 196 136 214",
-         "M195 150 Q202 170 212 192","M212 192 Q218 208 220 228"] }
-  },
-  // ── SHOULDER PRESS (front view): bar at shoulders → fully overhead ──
-  press: {
-    dur: "1.4s",
-    a: { h:[180,66], t:"M163 86 L197 86 L196 148 L164 148 Z",
-      l:["M163 88 Q142 88 122 88","M122 88 Q118 72 120 58",
-         "M197 88 Q218 88 238 88","M238 88 Q242 72 240 58",
-         "M165 150 Q164 174 163 198","M163 198 Q162 220 162 244",
-         "M195 150 Q196 174 197 198","M197 198 Q198 220 198 244"] },
-    b: { h:[180,66], t:"M163 86 L197 86 L196 148 L164 148 Z",
-      l:["M163 88 Q152 72 148 58","M148 58 Q145 40 144 24",
-         "M197 88 Q208 72 212 58","M212 58 Q215 40 216 24",
-         "M165 150 Q164 174 163 198","M163 198 Q162 220 162 244",
-         "M195 150 Q196 174 197 198","M197 198 Q198 220 198 244"] }
-  },
-  // ── CALF RAISE (front view): flat feet → full tiptoe, body slightly higher ──
-  calf: {
-    dur: "1.0s",
-    a: { h:[180,68], t:"M163 88 L197 88 L196 150 L164 150 Z",
-      l:["M163 90 Q152 110 146 130","M146 130 Q142 148 140 166",
-         "M197 90 Q208 110 214 130","M214 130 Q218 148 220 166",
-         "M165 152 Q164 176 163 200","M163 200 Q162 222 162 244",
-         "M195 152 Q196 176 197 200","M197 200 Q198 222 198 244"] },
-    b: { h:[180,60], t:"M163 80 L197 80 L196 142 L164 142 Z",
-      l:["M163 82 Q152 102 146 122","M146 122 Q142 140 140 158",
-         "M197 82 Q208 102 214 122","M214 122 Q218 140 220 158",
-         "M165 144 Q164 167 163 190","M163 190 Q164 214 170 234",
-         "M195 144 Q196 167 197 190","M197 190 Q196 214 190 234"] }
-  },
-  // ── LUNGE (front view): standing → deep forward lunge, R leg extended back ──
-  lunge: {
-    dur: "1.2s",
-    a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
-      l:["M163 90 Q150 108 144 126","M144 126 Q140 142 138 158",
-         "M197 90 Q210 108 216 126","M216 126 Q220 142 222 158",
-         "M165 154 Q164 177 163 200","M163 200 Q162 222 162 244",
-         "M195 154 Q196 177 197 200","M197 200 Q198 222 198 244"] },
-    b: { h:[174,84], t:"M158 102 L192 102 L193 162 L157 162 Z",
-      l:["M158 104 Q144 108 134 114","M134 114 Q126 120 122 130",
-         "M192 104 Q206 110 218 118","M218 118 Q228 126 234 138",
-         "M158 164 Q140 178 126 196","M126 196 Q118 214 120 236",
-         "M192 164 Q214 172 244 180","M244 180 Q268 186 292 204"] }
-  },
-  // ── MOBILITY / STRETCH (front view): neutral → arms sweep wide, legs wider ──
-  mobility: {
-    dur: "2.2s",
-    a: { h:[180,68], t:"M163 88 L197 88 L196 152 L164 152 Z",
-      l:["M163 90 Q152 108 146 126","M146 126 Q142 142 140 158",
-         "M197 90 Q208 108 214 126","M214 126 Q218 142 220 158",
-         "M165 154 Q162 178 158 204","M158 204 Q156 224 156 244",
-         "M195 154 Q198 178 202 204","M202 204 Q204 224 204 244"] },
-    b: { h:[180,66], t:"M163 86 L197 86 L196 150 L164 150 Z",
-      l:["M163 88 Q134 82 108 78","M108 78 Q90 76 76 78",
-         "M197 88 Q226 82 252 78","M252 78 Q270 76 284 78",
-         "M165 152 Q160 176 154 202","M154 202 Q151 222 150 244",
-         "M195 152 Q200 176 206 202","M206 202 Q209 222 210 244"] }
-  }
-};
-
-
-
+// _EX_FRAMES removed (dead code)
 function _exerciseDemoSvg(label = '') {
   const t = String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const variants = [
