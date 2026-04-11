@@ -211,6 +211,27 @@ function makeProfileSummary(profile = {}, goalContext = {}) {
     recent_sessions_7d: Number(profile.recent_sessions_7d || 0) || null,
     best_scan_score: Number(profile.best_scan_score || 0) || null,
     last_scan_summary: normalizeText(profile.last_scan_summary || ""),
+    last_scan_detail: profile.last_scan_detail && typeof profile.last_scan_detail === "object"
+      ? {
+          score: Number(profile.last_scan_detail.score || 0) || null,
+          posture: Number(profile.last_scan_detail.posture || 0) || null,
+          symmetry: Number(profile.last_scan_detail.symmetry || 0) || null,
+          bodyfat_range: normalizeText(profile.last_scan_detail.bodyfat_range || "", 30),
+          fitness_category: normalizeText(profile.last_scan_detail.fitness_category || "", 30),
+          muscle_mass_level: normalizeText(profile.last_scan_detail.muscle_mass_level || "", 30),
+          level_label: normalizeText(profile.last_scan_detail.level_label || "", 40),
+          body_composition: normalizeText(profile.last_scan_detail.body_composition || "", 200),
+          muscle_definition: normalizeText(profile.last_scan_detail.muscle_definition || "", 200),
+          strengths: Array.isArray(profile.last_scan_detail.strengths) ? profile.last_scan_detail.strengths.slice(0, 3).map(s => normalizeText(String(s), 120)) : [],
+          improvements: Array.isArray(profile.last_scan_detail.improvements) ? profile.last_scan_detail.improvements.slice(0, 3).map(s => normalizeText(String(s), 120)) : [],
+          training_focus: Array.isArray(profile.last_scan_detail.training_focus) ? profile.last_scan_detail.training_focus.slice(0, 3).map(s => normalizeText(String(s), 100)) : [],
+          exercise_examples: Array.isArray(profile.last_scan_detail.exercise_examples) ? profile.last_scan_detail.exercise_examples.slice(0, 3).map(s => normalizeText(String(s), 80)) : [],
+          weak_points: Array.isArray(profile.last_scan_detail.weak_points) ? profile.last_scan_detail.weak_points.slice(0, 3).map(s => normalizeText(String(s), 80)) : [],
+          strong_points: Array.isArray(profile.last_scan_detail.strong_points) ? profile.last_scan_detail.strong_points.slice(0, 3).map(s => normalizeText(String(s), 80)) : [],
+          posture_recommendations: Array.isArray(profile.last_scan_detail.posture_recommendations) ? profile.last_scan_detail.posture_recommendations.slice(0, 2).map(s => normalizeText(String(s), 120)) : [],
+          date: normalizeText(profile.last_scan_detail.date || "", 20)
+        }
+      : null,
     nutrition_summary: normalizeText(profile.nutrition_summary || ""),
     recent_meal_pattern: normalizeText(profile.recent_meal_pattern || ""),
     recent_workouts: Array.isArray(profile.recent_workouts) ? profile.recent_workouts.map((x) => normalizeText(x)).filter(Boolean).slice(0, 4) : [],
@@ -224,8 +245,32 @@ function buildContextSnapshot(p) {
   const lines = [];
   if (p.current_streak != null) lines.push(`- Streak actif: ${p.current_streak} jour(s)`);
   if (p.recent_sessions_7d != null) lines.push(`- Séances sur 7 jours: ${p.recent_sessions_7d}`);
-  if (p.best_scan_score != null) lines.push(`- Meilleur score de scan récent: ${p.best_scan_score}/100`);
-  if (p.last_scan_summary) lines.push(`- Dernier scan: ${p.last_scan_summary}`);
+  if (p.recent_workouts?.length) lines.push(`- Dernières séances: ${p.recent_workouts.join(", ")}`);
+
+  // ── Body scan detail (richest data available) ──────────────────────────────
+  const scan = p.last_scan_detail;
+  if (scan && scan.score) {
+    const scanLines = [];
+    scanLines.push(`- Dernier body scan${scan.date ? ` (${scan.date})` : ""}: score ${scan.score}/100${scan.level_label ? ` — ${scan.level_label}` : ""}`);
+    if (scan.posture != null) scanLines.push(`  • Posture: ${scan.posture}/100`);
+    if (scan.symmetry != null) scanLines.push(`  • Symétrie: ${scan.symmetry}/100`);
+    if (scan.bodyfat_range) scanLines.push(`  • Masse grasse estimée: ${scan.bodyfat_range}`);
+    if (scan.fitness_category) scanLines.push(`  • Catégorie fitness: ${scan.fitness_category}`);
+    if (scan.body_composition) scanLines.push(`  • Composition observée: ${scan.body_composition}`);
+    if (scan.muscle_definition) scanLines.push(`  • Définition musculaire: ${scan.muscle_definition}`);
+    if (scan.strengths?.length) scanLines.push(`  • Points forts identifiés: ${scan.strengths.join(" · ")}`);
+    if (scan.improvements?.length) scanLines.push(`  • Axes d'amélioration: ${scan.improvements.join(" · ")}`);
+    if (scan.weak_points?.length) scanLines.push(`  • Zones faibles: ${scan.weak_points.join(", ")}`);
+    if (scan.strong_points?.length) scanLines.push(`  • Zones fortes: ${scan.strong_points.join(", ")}`);
+    if (scan.training_focus?.length) scanLines.push(`  • Focus entraînement recommandé: ${scan.training_focus.join(", ")}`);
+    if (scan.exercise_examples?.length) scanLines.push(`  • Exercices clés: ${scan.exercise_examples.join(", ")}`);
+    if (scan.posture_recommendations?.length) scanLines.push(`  • Conseils posture: ${scan.posture_recommendations.join(" | ")}`);
+    lines.push(scanLines.join("\n"));
+  } else if (p.best_scan_score) {
+    lines.push(`- Meilleur score de scan: ${p.best_scan_score}/100`);
+    if (p.last_scan_summary) lines.push(`- Dernier scan focus: ${p.last_scan_summary}`);
+  }
+
   if (p.nutrition_summary) lines.push(`- Nutrition cible: ${p.nutrition_summary}`);
   if (p.recent_meal_pattern) lines.push(`- Repas récents: ${p.recent_meal_pattern}`);
   if (p.coach_tone) lines.push(`- Ton attendu du coach: ${p.coach_tone}`);

@@ -516,22 +516,32 @@ function normalizeAnalysisOutput(parsed, modelName = MODEL, previousAnalysis = n
     calibratedPhysical = Math.max(calibratedPhysical, 91);
   }
 
-  const strengths = uniqStrings([
-    ...toArray(p.strengths),
-    ...toArray(muscleBalance?.strong_points),
-    ...deriveStrengths(derivedScores, seed)
-  ], 3);
-  const improvements = uniqStrings([
-    ...toArray(p.areas_for_improvement),
-    ...toArray(muscleBalance?.weak_points),
-    ...deriveImprovements(derivedScores, postureAnalysis, muscleBalance, qualityIssues, bodyfatProxy, seed)
-  ], 4);
+  // Use Gemini's output as the primary source; only supplement with static pools
+  // when Gemini returned fewer than the minimum useful number of items.
+  const geminiStrengths = uniqStrings([...toArray(p.strengths), ...toArray(muscleBalance?.strong_points)], 5);
+  const strengths = geminiStrengths.length >= 2
+    ? geminiStrengths.slice(0, 3)
+    : uniqStrings([...geminiStrengths, ...deriveStrengths(derivedScores, seed)], 3);
+
+  const geminiImprovements = uniqStrings([...toArray(p.areas_for_improvement), ...toArray(muscleBalance?.weak_points)], 6);
+  const improvements = geminiImprovements.length >= 2
+    ? geminiImprovements.slice(0, 4)
+    : uniqStrings([...geminiImprovements, ...deriveImprovements(derivedScores, postureAnalysis, muscleBalance, qualityIssues, bodyfatProxy, seed)], 4);
 
   const reco = p.personalized_recommendations || {};
   const derivedReco = deriveRecommendations(derivedScores, improvements, bodyfatProxy, seed);
-  const trainingFocus = uniqStrings([...toArray(reco.training_focus), ...toArray(reco.training), ...derivedReco.training_focus], 3);
-  const nutritionFocus = uniqStrings([...toArray(reco.nutrition), ...derivedReco.nutrition], 3);
-  const exerciseExamples = uniqStrings([...toArray(reco.exercise_examples), ...derivedReco.exercise_examples], 4);
+  const geminiTraining = uniqStrings([...toArray(reco.training_focus), ...toArray(reco.training)], 5);
+  const trainingFocus = geminiTraining.length >= 2
+    ? geminiTraining.slice(0, 3)
+    : uniqStrings([...geminiTraining, ...derivedReco.training_focus], 3);
+  const geminiNutrition = toArray(reco.nutrition);
+  const nutritionFocus = geminiNutrition.length >= 1
+    ? uniqStrings(geminiNutrition, 3)
+    : uniqStrings(derivedReco.nutrition, 3);
+  const geminiExercises = toArray(reco.exercise_examples);
+  const exerciseExamples = geminiExercises.length >= 2
+    ? uniqStrings(geminiExercises, 4)
+    : uniqStrings([...geminiExercises, ...derivedReco.exercise_examples], 4);
 
   // ── Build ai_feedback using Gemini's actual personalized text ────────────────
   // Gemini generates specific descriptions per photo — use them as the backbone.

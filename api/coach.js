@@ -120,7 +120,10 @@ async function handleCoach(req, res) {
       : [],
     today_kcal: Number(body.profile.today_kcal || 0) || null,
     today_protein: Number(body.profile.today_protein || 0) || null,
-    coach_tone: sanitizeInput(body.profile.coach_tone || "", 20)
+    coach_tone: sanitizeInput(body.profile.coach_tone || "", 20),
+    last_scan_detail: body.profile.last_scan_detail && typeof body.profile.last_scan_detail === "object"
+      ? body.profile.last_scan_detail
+      : undefined
   } : {};
 
   const goalContext = body.goalContext && typeof body.goalContext === "object" ? {

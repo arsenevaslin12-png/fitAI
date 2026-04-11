@@ -224,7 +224,7 @@ async function loadCoachContext(force = false) {
     sbSafeSingle(SB.from('profiles').select('display_name,weight,height,age').eq('id', U.id).maybeSingle()),
     sbSafeSingle(SB.from('user_streaks').select('current_streak,total_workouts').eq('user_id', U.id).maybeSingle()),
     sbSafeList(SB.from('workout_sessions').select('plan,created_at').eq('user_id', U.id).gte('created_at', weekAgoIso).order('created_at', { ascending: false }).limit(6)),
-    sbSafeList(SB.from('body_scans').select('physical_score,created_at,extended_analysis,ai_feedback').eq('user_id', U.id).order('created_at', { ascending: false }).limit(3)),
+    sbSafeList(SB.from('body_scans').select('physical_score,posture_score,symmetry_score,bodyfat_proxy,created_at,extended_analysis,ai_feedback').eq('user_id', U.id).order('created_at', { ascending: false }).limit(3)),
     sbSafeList(SB.from('meals').select('name,calories,protein').eq('user_id', U.id).eq('date', today)),
     sbSafeList(SB.from('meals').select('name,calories,protein,date').eq('user_id', U.id).gte('date', today.slice(0,8) + '01').limit(12))
   ]);
@@ -272,6 +272,25 @@ async function loadCoachContext(force = false) {
     recent_sessions_7d: recentSessions7d || undefined,
     best_scan_score: bestScanScore || undefined,
     last_scan_summary: lastScanSummary || undefined,
+    last_scan_detail: lastScan ? {
+      score: lastScan.physical_score || null,
+      posture: lastScan.posture_score || lastScan.extended_analysis?.score_breakdown?.posture || null,
+      symmetry: lastScan.symmetry_score || lastScan.extended_analysis?.score_breakdown?.symmetry || null,
+      bodyfat_range: lastScan.extended_analysis?.estimated_metrics?.bodyfat_range || null,
+      fitness_category: lastScan.extended_analysis?.estimated_metrics?.fitness_category || null,
+      muscle_mass_level: lastScan.extended_analysis?.estimated_metrics?.muscle_mass_level || null,
+      level_label: lastScan.extended_analysis?.level_label || null,
+      body_composition: lastScan.extended_analysis?.body_composition || null,
+      muscle_definition: lastScan.extended_analysis?.muscle_definition_text || null,
+      strengths: (lastScan.extended_analysis?.strengths || []).slice(0, 3),
+      improvements: (lastScan.extended_analysis?.areas_for_improvement || []).slice(0, 3),
+      training_focus: (lastScan.extended_analysis?.personalized_recommendations?.training_focus || []).slice(0, 3),
+      exercise_examples: (lastScan.extended_analysis?.personalized_recommendations?.exercise_examples || []).slice(0, 3),
+      weak_points: (lastScan.extended_analysis?.muscle_balance?.weak_points || []).slice(0, 3),
+      strong_points: (lastScan.extended_analysis?.muscle_balance?.strong_points || []).slice(0, 3),
+      posture_recommendations: (lastScan.extended_analysis?.posture_analysis?.recommendations || []).slice(0, 2),
+      date: lastScan.created_at ? new Date(lastScan.created_at).toLocaleDateString('fr-FR') : null
+    } : undefined,
     nutrition_summary: nutritionSummary || undefined,
     recent_meal_pattern: recentMealPattern || undefined,
     today_kcal: todayKcal > 0 ? todayKcal : undefined,
@@ -302,28 +321,29 @@ function buildCoachLocalFallback(prompt, ctx = {}) {
   const streak = Number(ctx.coachProfile?.current_streak || 0);
   const scanNote = ctx.coachProfile?.last_scan_summary ? `Ton dernier scan pointe surtout : ${ctx.coachProfile.last_scan_summary}.` : '';
   const nutritionNote = ctx.coachProfile?.nutrition_summary ? `Côté nutrition, tu en es à ${ctx.coachProfile.nutrition_summary}.` : '';
+  const offlineBadge = `<div class="coach-offline-badge">⚡ Suggestion hors ligne — réponse IA dès reconnexion</div>`;
   if (/flemme|pas envie|motivation|discipline|j'ai la flemme|j ai la flemme/.test(t)) {
-    return `<div class="coach-card-head"><span class="coach-card-kicker">Coach mental</span><strong>OK ${escapeHtml(name)}, on ne cherche pas la séance parfaite, on protège l'élan.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">La flemme n'est pas le problème. Le vrai risque, c'est de laisser une journée moyenne casser ton rythme.</p><div class="coach-h2">Pourquoi</div><p class="coach-p">${escapeHtml(streak > 0 ? `Tu as déjà ${streak} jour(s) de régularité.` : `Tu n'as pas besoin d'une grosse séance pour garder le cap.`)} ${escapeHtml(scanNote)} ${escapeHtml(nutritionNote)}</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>mets juste ta tenue maintenant</li><li>fais 6 min de marche active ou 2 exercices faciles</li><li>si l'énergie remonte, tu continues 10 min de plus</li></ul>`;
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Coach mental</span><strong>OK ${escapeHtml(name)}, on ne cherche pas la séance parfaite, on protège l'élan.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">La flemme n'est pas le problème. Le vrai risque, c'est de laisser une journée moyenne casser ton rythme.</p><div class="coach-h2">Pourquoi</div><p class="coach-p">${escapeHtml(streak > 0 ? `Tu as déjà ${streak} jour(s) de régularité.` : `Tu n'as pas besoin d'une grosse séance pour garder le cap.`)} ${escapeHtml(scanNote)} ${escapeHtml(nutritionNote)}</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>mets juste ta tenue maintenant</li><li>fais 6 min de marche active ou 2 exercices faciles</li><li>si l'énergie remonte, tu continues 10 min de plus</li></ul>${offlineBadge}`;
   }
   if (/fatigu|mal dormi|courbature|épuis|epuis|recup|repos|claqué|claque/.test(t)) {
-    return `<div class="coach-card-head"><span class="coach-card-kicker">Récupération</span><strong>Aujourd'hui on adapte, on ne force pas.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">Je te conseille une journée légère : mobilité, marche, technique propre, mais pas de séance dure.</p><div class="coach-h2">Pourquoi</div><p class="coach-p">Quand la récup est basse, pousser plus fort rapporte rarement plus. Tu veux garder le mouvement, pas t'écraser.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>8 à 12 min de marche</li><li>2 mouvements mobilité</li><li>un repas protéiné propre ce soir</li></ul>`;
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Récupération</span><strong>Aujourd'hui on adapte, on ne force pas.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">Je te conseille une journée légère : mobilité, marche, technique propre, mais pas de séance dure.</p><div class="coach-h2">Pourquoi</div><p class="coach-p">Quand la récup est basse, pousser plus fort rapporte rarement plus. Tu veux garder le mouvement, pas t'écraser.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>8 à 12 min de marche</li><li>2 mouvements mobilité</li><li>un repas protéiné propre ce soir</li></ul>${offlineBadge}`;
   }
   if (/séance|seance|workout|exercice|musculation|cardio|hiit|full.?body|jambe|dos|pec|abdos|bras|épaule/.test(t)) {
     const eq = ctx.coachProfile?.equipment || 'poids du corps';
-    return `<div class="coach-card-head"><span class="coach-card-kicker">Séance express</span><strong>Voici une séance adaptée à ton matériel.</strong></div><div class="coach-h2">Circuit 20 min — ${escapeHtml(eq)}</div><ul class="coach-list"><li>Échauffement : 3 min de marche rapide ou jumping jacks</li><li>Bloc 1 (3×12) : Squat + pompes + gainage 30s</li><li>Bloc 2 (3×12) : Fentes + rowing corps + mountain climbers</li><li>Retour au calme : 2 min étirements ciblés</li></ul><div class="coach-inline-tip">💡 Réessaie quand la connexion revient pour un plan personnalisé à ton objectif.</div>`;
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Séance express</span><strong>Voici une séance adaptée à ton matériel.</strong></div><div class="coach-h2">Circuit 20 min — ${escapeHtml(eq)}</div><ul class="coach-list"><li>Échauffement : 3 min de marche rapide ou jumping jacks</li><li>Bloc 1 (3×12) : Squat + pompes + gainage 30s</li><li>Bloc 2 (3×12) : Fentes + rowing corps + mountain climbers</li><li>Retour au calme : 2 min étirements ciblés</li></ul>${offlineBadge}`;
   }
   if (/manger|repas|nutrition|calorie|prot|glucide|macro|régime|diet|alimentation|recette/.test(t)) {
     const kcal = ctx.coachProfile?.today_kcal || 0;
     const prot = ctx.coachProfile?.today_protein || 0;
-    return `<div class="coach-card-head"><span class="coach-card-kicker">Nutrition</span><strong>Quelques règles simples pour aujourd'hui.</strong></div><div class="coach-h2">Principes clés</div><ul class="coach-list"><li>Priorité aux protéines : 1,6-2g par kg de poids corporel</li><li>Légumes à chaque repas pour la satiété et les micronutriments</li><li>Hydratation : 35ml par kg de poids par jour minimum</li>${kcal ? `<li>Tu as consommé ${kcal} kcal et ${prot}g de protéines aujourd'hui</li>` : ''}</ul><div class="coach-inline-tip">💡 Reconnecte-toi pour un plan nutritionnel personnalisé.</div>`;
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Nutrition</span><strong>Quelques règles simples pour aujourd'hui.</strong></div><div class="coach-h2">Principes clés</div><ul class="coach-list"><li>Priorité aux protéines : 1,6-2g par kg de poids corporel</li><li>Légumes à chaque repas pour la satiété et les micronutriments</li><li>Hydratation : 35ml par kg de poids par jour minimum</li>${kcal ? `<li>Tu as consommé ${kcal} kcal et ${prot}g de protéines aujourd'hui</li>` : ''}</ul>${offlineBadge}`;
   }
   if (/poids|maigrir|grossir|masse|sèche|seche|perte|objectif|goal/.test(t)) {
-    return `<div class="coach-card-head"><span class="coach-card-kicker">Objectif</span><strong>La régularité bat l'intensité.</strong></div><div class="coach-h2">Stratégie</div><p class="coach-p">Quelle que soit ta cible — perte de poids, prise de masse ou sèche — la clé est la cohérence sur 8-12 semaines minimum.</p><div class="coach-h2">Les 3 leviers</div><ul class="coach-list"><li>Déficit ou surplus calorique maîtrisé (±300-500 kcal/j)</li><li>Protéines suffisantes pour préserver ou construire le muscle</li><li>Sommeil 7-9h : c'est là que le corps se transforme</li></ul>${streak > 0 ? `<p class="coach-p" style="margin-top:8px">Tu es sur une série de ${streak} jour(s) — c'est exactement le bon état d'esprit.</p>` : ''}`;
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Objectif</span><strong>La régularité bat l'intensité.</strong></div><div class="coach-h2">Stratégie</div><p class="coach-p">Quelle que soit ta cible — perte de poids, prise de masse ou sèche — la clé est la cohérence sur 8-12 semaines minimum.</p><div class="coach-h2">Les 3 leviers</div><ul class="coach-list"><li>Déficit ou surplus calorique maîtrisé (±300-500 kcal/j)</li><li>Protéines suffisantes pour préserver ou construire le muscle</li><li>Sommeil 7-9h : c'est là que le corps se transforme</li></ul>${streak > 0 ? `<p class="coach-p" style="margin-top:8px">Tu es sur une série de ${streak} jour(s) — c'est exactement le bon état d'esprit.</p>` : ''}${offlineBadge}`;
   }
   if (/sommeil|dormi|nuit|fatigue|énergie|energie|stress/.test(t)) {
-    return `<div class="coach-card-head"><span class="coach-card-kicker">Récupération</span><strong>Le sommeil est ta meilleure séance.</strong></div><div class="coach-h2">Pourquoi c'est crucial</div><p class="coach-p">70% de la récupération musculaire se fait la nuit. Moins de 7h = moins de testostérone, plus de cortisol, plus de faim.</p><div class="coach-h2">Ce soir</div><ul class="coach-list"><li>Écrans off 45 min avant de dormir</li><li>Chambre à 18-19°C idéalement</li><li>Même heure de coucher et de lever, même le week-end</li></ul>`;
+    return `<div class="coach-card-head"><span class="coach-card-kicker">Récupération</span><strong>Le sommeil est ta meilleure séance.</strong></div><div class="coach-h2">Pourquoi c'est crucial</div><p class="coach-p">70% de la récupération musculaire se fait la nuit. Moins de 7h = moins de testostérone, plus de cortisol, plus de faim.</p><div class="coach-h2">Ce soir</div><ul class="coach-list"><li>Écrans off 45 min avant de dormir</li><li>Chambre à 18-19°C idéalement</li><li>Même heure de coucher et de lever, même le week-end</li></ul>${offlineBadge}`;
   }
-  return `<div class="coach-card-head"><span class="coach-card-kicker">Coach express</span><strong>Je te donne l'action la plus utile maintenant.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">On va droit au but : adapte ta journée à ton énergie réelle et garde une action simple, propre et tenable.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>dis-moi ton temps dispo</li><li>ton matériel</li><li>ton niveau d'énergie sur 10</li></ul><div class="coach-inline-tip">💡 Le coach IA sera de retour dès que la connexion revient.</div>`;
+  return `<div class="coach-card-head"><span class="coach-card-kicker">Coach express</span><strong>Je te donne l'action la plus utile maintenant.</strong></div><div class="coach-h2">Réponse directe</div><p class="coach-p">On va droit au but : adapte ta journée à ton énergie réelle et garde une action simple, propre et tenable.</p><div class="coach-h2">Action du jour</div><ul class="coach-list"><li>dis-moi ton temps dispo</li><li>ton matériel</li><li>ton niveau d'énergie sur 10</li></ul>${offlineBadge}`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
