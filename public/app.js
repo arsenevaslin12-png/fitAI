@@ -10731,13 +10731,14 @@ function _progGetWeekly(goal) {
 }
 
 const PROG_STORAGE_KEY = "fitai_prog_v5_flexible";
+const PROG_AI_KEY = "fitai_prog_ai_v1"; // stores AI-generated sessions/phases separately
 const PROG_WEEK_KEY = "fitai_prog_week_v5";
 const PROG_LEGACY_STORAGE_KEYS = ["fitai_prog_v4_1w", "fitai_prog_v3_8w", "fitai_prog_v2", "fitai_prog_v1"];
 const PROG_LEGACY_WEEK_KEYS = ["fitai_prog_week_1w", "fitai_prog_week_8w", "fitai_prog_week"];
 
 function _normalizeProgData(raw) {
   if (!raw || typeof raw !== "object") return null;
-  return {
+  const base = {
     goal: raw.goal || raw.type || "remise_en_forme",
     level: raw.level || "beginner",
     equipment: raw.equipment || raw.text || "",
@@ -10746,6 +10747,15 @@ function _normalizeProgData(raw) {
     weeks: _sanitizeProgDuration(raw.weeks || raw.durationWeeks || raw.cycle_length_weeks || _progDuration || 8),
     version: raw.version || "flex-v1"
   };
+  // Preserve AI-generated program data if present
+  if (raw.sessions && typeof raw.sessions === "object") base.sessions = raw.sessions;
+  if (Array.isArray(raw.phases) && raw.phases.length > 0) base.phases = raw.phases;
+  if (raw.weekly_days && typeof raw.weekly_days === "object") base.weekly_days = raw.weekly_days;
+  if (raw.nutrition_note) base.nutrition_note = String(raw.nutrition_note).slice(0, 200);
+  if (raw.coach_intro) base.coach_intro = String(raw.coach_intro).slice(0, 300);
+  if (raw.title) base.title = String(raw.title).slice(0, 120);
+  if (raw.sessions_per_week) base.sessions_per_week = Number(raw.sessions_per_week) || 3;
+  return base;
 }
 
 function _loadStoredProg() {
@@ -10753,7 +10763,22 @@ function _loadStoredProg() {
     const current = localStorage.getItem(PROG_STORAGE_KEY);
     if (current) {
       const parsed = _normalizeProgData(JSON.parse(current));
-      if (parsed) return parsed;
+      if (parsed) {
+        // Merge AI sessions/phases from separate key if present
+        try {
+          const aiData = localStorage.getItem(PROG_AI_KEY);
+          if (aiData) {
+            const ai = JSON.parse(aiData);
+            if (ai.sessions) parsed.sessions = ai.sessions;
+            if (ai.phases) parsed.phases = ai.phases;
+            if (ai.weekly_days) parsed.weekly_days = ai.weekly_days;
+            if (ai.nutrition_note) parsed.nutrition_note = ai.nutrition_note;
+            if (ai.coach_intro) parsed.coach_intro = ai.coach_intro;
+            if (ai.title) parsed.title = ai.title;
+          }
+        } catch {}
+        return parsed;
+      }
     }
   } catch {}
   for (const key of PROG_LEGACY_STORAGE_KEYS) {
@@ -10830,9 +10855,29 @@ function loadProgramme() {
 }
 function _saveProg() {
   try {
-    _prog = _normalizeProgData({ ...(_prog || {}), weeks: _sanitizeProgDuration(_progDuration) }) || buildOfflineProgram();
-    _prog.weeks = _progDuration;
-    localStorage.setItem(PROG_STORAGE_KEY, JSON.stringify(_prog));
+    const full = _normalizeProgData({ ...(_prog || {}), weeks: _sanitizeProgDuration(_progDuration) }) || buildOfflineProgram();
+    full.weeks = _progDuration;
+    _prog = full;
+
+    // Save AI sessions/phases separately to avoid size issues with the base key
+    const aiData = {};
+    if (full.sessions) aiData.sessions = full.sessions;
+    if (full.phases) aiData.phases = full.phases;
+    if (full.weekly_days) aiData.weekly_days = full.weekly_days;
+    if (full.nutrition_note) aiData.nutrition_note = full.nutrition_note;
+    if (full.coach_intro) aiData.coach_intro = full.coach_intro;
+    if (full.title) aiData.title = full.title;
+
+    // Strip heavy AI data before saving base key
+    const baseData = { ...full };
+    delete baseData.sessions; delete baseData.phases;
+    delete baseData.weekly_days; delete baseData.nutrition_note;
+    delete baseData.coach_intro; delete baseData.title;
+
+    localStorage.setItem(PROG_STORAGE_KEY, JSON.stringify(baseData));
+    if (Object.keys(aiData).length > 0) {
+      localStorage.setItem(PROG_AI_KEY, JSON.stringify(aiData));
+    }
     localStorage.setItem(PROG_WEEK_KEY, String(Math.min(_getProgTotalWeeks(), Math.max(1, _progWeek))));
     localStorage.setItem(PROG_DURATION_KEY, String(_progDuration));
   } catch {}
@@ -10851,7 +10896,55 @@ function progSetDuration(weeks) {
   renderProgramme(1);
   toast(`Programme ${next} ${next > 1 ? 'semaines' : 'semaine'} sélectionné ✓`, 'ok');
 }
-function progRegenerate() { _prog = buildOfflineProgram(); _prog.weeks = _progDuration; _progWeek = 1; _saveProg(); renderProgramme(1); toast("Programme régénéré ✓", "ok"); }
+async function progRegenerate() {
+  const btn = document.getElementById("prog-regen-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "Génération IA…"; }
+  try {
+    const token = await getToken();
+    if (!token) { toast("Connexion requise pour générer un programme IA.", "err"); return; }
+
+    // Gather context from stored profile/goal
+    let goal = "remise_en_forme", level = "beginner", equipment = "", age = null, weight = null, height = null;
+    try {
+      const gc = localStorage.getItem("fitai_goal_ctx");
+      if (gc) { const o = JSON.parse(gc); goal = o.type || o.goal || goal; level = o.level || level; equipment = o.equipment || o.text || equipment; }
+      const pp = localStorage.getItem("fitai_profile");
+      if (pp) { const o = JSON.parse(pp); age = o.age || null; weight = o.weight || null; height = o.height || null; }
+    } catch {}
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 32000);
+    const r = await fetch("/api/generate-full-program", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ weeks: _progDuration, goal, level, equipment, age, weight, height, days_per_week: 3 }),
+      signal: ctrl.signal
+    });
+    clearTimeout(timer);
+    const json = await r.json();
+
+    if (!json.ok || !json.program) {
+      toast(json.detail || json.error || "Erreur génération programme.", "err");
+      return;
+    }
+
+    // Merge AI program into _prog
+    _prog = { ...buildOfflineProgram(), ...json.program, weeks: _progDuration };
+    _progWeek = 1;
+    _saveProg();
+    renderProgramme(1);
+
+    // Show nutrition note and intro as a toast/coach tip
+    if (json.program.coach_intro) toast(json.program.coach_intro, "ok", 5000);
+    else toast("Programme IA généré ✓", "ok");
+
+  } catch (e) {
+    if (e?.name === "AbortError") toast("Timeout — réessaie.", "err");
+    else toast("Erreur réseau lors de la génération.", "err");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "⚡ Générer avec IA"; }
+  }
+}
 
 function _progGoalLabel(goal) {
   return ({ prise_de_masse:"Prise de masse", hypertrophie:"Hypertrophie", perte_de_poids:"Perte de poids", seche:"Sèche", remise_en_forme:"Remise en forme", force:"Force", endurance:"Endurance", maintien:"Maintien" })[String(goal || "").toLowerCase()] || "Remise en forme";
@@ -11111,9 +11204,67 @@ function _renderProgChart(currentWeek) {
   svg.innerHTML = grid + marker + line(vols, "#2563eb") + line(ints, "#f97316") + xlabels;
 }
 
+// Find the AI phase matching the current week
+function _getAiPhase(weekNum) {
+  const phases = _prog?.phases;
+  if (!Array.isArray(phases)) return null;
+  for (const p of phases) {
+    if (Array.isArray(p.weeks) && p.weeks.includes(weekNum)) return p;
+  }
+  // Fallback: use last phase
+  return phases[phases.length - 1] || null;
+}
+
+// Build weekly schedule from AI weekly_days mapping
+function _buildAiWeekly() {
+  const wd = _prog?.weekly_days;
+  if (!wd || typeof wd !== "object") return null;
+  const icons = { upper:"💪", lower:"🦵", push:"💪", pull:"🏋️", legs:"🦵",
+    fullbody_a:"🔥", fullbody_b:"🔥", core:"🧘", upper_focus:"🏋️", hiit:"⚡", cardio:"🏃" };
+  const labels = { upper:"Upper body", lower:"Lower body", push:"Push", pull:"Pull",
+    legs:"Jambes", fullbody_a:"Full body A", fullbody_b:"Full body B", upper_focus:"Bras/Épaules", core:"Core", hiit:"HIIT", cardio:"Cardio" };
+  const days = [];
+  for (let d = 1; d <= 7; d++) {
+    const sessionKey = wd[String(d)];
+    if (sessionKey && sessionKey !== "rest") {
+      days.push({ d, type: sessionKey, icon: icons[sessionKey] || "💪", label: labels[sessionKey] || sessionKey });
+    } else {
+      days.push({ d, type: "rest", icon: "😴", label: "Repos" });
+    }
+  }
+  return days;
+}
+
+// Flatten all exercises from an AI session for the timer
+function _flattenAiSessionExercises(session) {
+  if (!session) return [];
+  const all = [];
+  if (Array.isArray(session.warmup)) {
+    session.warmup.forEach(e => all.push({ n: e.n || e.name || "", m: e.m || "Échauff.", r: `${e.reps || "10"} reps` }));
+  }
+  if (Array.isArray(session.blocks)) {
+    session.blocks.forEach(b => {
+      if (Array.isArray(b.exercises)) {
+        b.exercises.forEach(e => all.push({ n: e.n || e.name || "", m: e.m || "", r: null }));
+      }
+    });
+  }
+  if (session.finisher) {
+    all.push({ n: session.finisher.n || session.finisher.name || "", m: session.finisher.m || "", r: "max" });
+  }
+  return all;
+}
+
 function _renderProgDays(weekNum, params) {
   const cont = document.getElementById("prog-days-list");
   if (!cont || !_prog) return;
+
+  // ── AI-generated program path ────────────────────────────────────────────────
+  if (_prog.sessions && _prog.weekly_days) {
+    return _renderProgDaysAI(weekNum, params, cont);
+  }
+
+  // ── Static fallback path (existing PROG_EXERCISES system) ────────────────────
   const weekly = _progGetWeekly(_prog.goal);
   const eq = _prog.equipment || "";
   const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
@@ -11203,6 +11354,139 @@ function _renderProgDays(weekNum, params) {
         <span class="prog-day-num">${dayNames[item.d - 1]}</span>
         <span class="prog-day-icon" style="margin-left:4px">${item.icon}</span>
         <span class="prog-day-label">${item.label}</span>
+        ${isToday ? '<span class="prog-today-badge">Aujourd\'hui</span>' : ""}
+        ${doneProgressBadge}
+        ${!isRest ? `<span class="prog-expand-arrow" style="margin-left:auto;font-size:.6rem;color:var(--muted)">${isToday ? "▲" : "▼"}</span>` : ""}
+      </div>
+      <div class="prog-day-exercises" style="${exStyle}">${exHtml}${startBtn}</div>
+    </div>`;
+  }).join("");
+}
+
+// ── AI-powered program renderer ──────────────────────────────────────────────
+function _renderProgDaysAI(weekNum, params, cont) {
+  const weekly = _buildAiWeekly();
+  if (!weekly) { _renderProgDays(weekNum, params); return; } // safety fallback
+
+  const aiPhase = _getAiPhase(weekNum);
+  const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
+  const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const doneKey = `fitai_prog_done_${new Date().toISOString().slice(0, 10)}`;
+  let doneSets = {};
+  try { doneSets = JSON.parse(localStorage.getItem(doneKey) || "{}"); } catch {}
+
+  const muscleColors = {
+    Pecs:"#3b82f6","Pecs haut":"#60a5fa",Triceps:"#8b5cf6","Deltoïdes":"#14b8a6","Épaules":"#06b6d4",
+    Dos:"#2563eb",Biceps:"#6366f1",Ischio:"#f97316",Fessiers:"#f59e0b",Quadriceps:"#eab308",
+    Mollets:"#fb923c",Core:"#22d3ee",Abdos:"#34d399",Gainage:"#4ade80",Fullbody:"#e879f9",
+  };
+
+  // Phase context: sets/reps/rest from AI phases, fallback to params
+  const phase = aiPhase || {};
+  const pSets  = phase.sets  || params?.sets  || 3;
+  const pReps  = phase.reps  || params?.reps  || "8-12";
+  const pRest  = phase.rest_sec || params?.rest || 90;
+  const pRPE   = phase.rpe   || "7-8";
+  const restLabel = pRest >= 60 ? `${Math.floor(pRest/60)}min` : `${pRest}s`;
+  const isDeload = !!phase.deload;
+
+  cont.innerHTML = weekly.map((item, dayIdx) => {
+    const isToday = item.d === todayDow;
+    const isRest  = item.type === "rest";
+    const session = _prog.sessions[item.type];
+    const allExercises = _flattenAiSessionExercises(session);
+    const doneCount = isRest ? 0 : allExercises.filter((_, ei) => doneSets[`${dayIdx}_${ei}`]).length;
+
+    let exHtml = "";
+    if (isRest) {
+      exHtml = `<div class="prog-rest-msg">😴 Repos complet — récupération musculaire et mentale.</div>`;
+    } else if (!session) {
+      exHtml = `<div class="prog-rest-msg">Séance à venir.</div>`;
+    } else {
+      // Phase context pill
+      const phaseTag = isDeload
+        ? `<div style="margin-bottom:8px;padding:6px 10px;border-radius:10px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);font-size:.72rem;color:#fde68a">🔄 Semaine de déload — RPE ${pRPE}, récupération active</div>`
+        : `<div style="margin-bottom:8px;padding:6px 10px;border-radius:10px;background:rgba(37,99,235,.1);border:1px solid rgba(96,165,250,.2);font-size:.72rem;color:#dbeafe"><strong style="color:#93c5fd">${phase.name || "Séance"}</strong> · ${pSets} séries × ${pReps} reps · repos ${restLabel} · RPE ${pRPE}</div>`;
+
+      // Warmup block
+      let warmupHtml = "";
+      if (Array.isArray(session.warmup) && session.warmup.length > 0) {
+        warmupHtml = `<div style="margin-bottom:8px;font-size:.72rem;color:var(--text-muted);padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)">
+          🔥 Échauff. : ${session.warmup.map(e => `${escapeHtml(e.n || e.name || "")} ${e.reps ? `×${e.reps}` : ""}`).join("  ·  ")}
+        </div>`;
+      }
+
+      // Exercise blocks
+      let exIdx = session.warmup?.length || 0;
+      const blocksHtml = (session.blocks || []).map(block => {
+        const blockExHtml = (block.exercises || []).map((ex, bxIdx) => {
+          const globalIdx = exIdx++;
+          const isDone = doneSets[`${dayIdx}_${globalIdx}`];
+          const isPrimary = bxIdx === 0;
+          const mColor = muscleColors[ex.m] || "var(--muted)";
+          const detail = `${pSets}×${pReps} · ${restLabel} repos`;
+          return `<div class="prog-ex-row${isDone ? " done" : ""}${isPrimary ? " prog-ex-primary" : ""}">
+            <div class="prog-ex-check${isDone ? " checked" : ""}" onclick="progToggleExDone(event,${dayIdx},${globalIdx})">${isDone ? "✓" : ""}</div>
+            <div class="prog-ex-body">
+              <div class="prog-ex-name-row">
+                ${isPrimary ? `<span class="prog-ex-primary-tag">⭐ Principal</span>` : ""}
+                <span class="prog-ex-name">${escapeHtml(ex.n || ex.name || "")}</span>
+              </div>
+              <div class="prog-ex-sub-row">
+                <span class="prog-ex-detail">${detail}</span>
+                ${ex.note ? `<span class="prog-ex-tempo">${escapeHtml(ex.note)}</span>` : ""}
+                <span class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33">${escapeHtml(ex.m || "")}</span>
+              </div>
+              ${phase.progression ? `<div class="prog-ex-hint">${escapeHtml(phase.progression)}</div>` : ""}
+            </div>
+          </div>`;
+        }).join("");
+        return `<div style="margin-bottom:6px">
+          ${block.name ? `<div style="font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 4px">${escapeHtml(block.name)}</div>` : ""}
+          ${blockExHtml}
+        </div>`;
+      }).join("");
+
+      // Finisher
+      let finisherHtml = "";
+      if (session.finisher) {
+        const fin = session.finisher;
+        const finIdx = exIdx;
+        const isDone = doneSets[`${dayIdx}_${finIdx}`];
+        const mColor = muscleColors[fin.m] || "var(--muted)";
+        finisherHtml = `<div style="margin-top:8px;border-top:1px solid rgba(255,255,255,.06);padding-top:8px">
+          <div style="font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#f97316;margin-bottom:4px">🏁 FINISHER</div>
+          <div class="prog-ex-row${isDone ? " done" : ""}">
+            <div class="prog-ex-check${isDone ? " checked" : ""}" onclick="progToggleExDone(event,${dayIdx},${finIdx})">${isDone ? "✓" : ""}</div>
+            <div class="prog-ex-body">
+              <div class="prog-ex-name-row"><span class="prog-ex-name">${escapeHtml(fin.n || fin.name || "")}</span></div>
+              <div class="prog-ex-sub-row">
+                <span class="prog-ex-detail">1 × ${fin.reps || "max"}</span>
+                ${fin.note ? `<span class="prog-ex-tempo">${escapeHtml(fin.note)}</span>` : ""}
+                <span class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33">${escapeHtml(fin.m || "")}</span>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      }
+
+      exHtml = phaseTag + warmupHtml + blocksHtml + finisherHtml;
+    }
+
+    const exForTimer = JSON.stringify(allExercises);
+    const startBtn = !isRest
+      ? `<button class="prog-start-btn${isToday ? "" : " prog-start-btn-dim"}" onclick="event.stopPropagation();progStartWorkout(${dayIdx})" data-exlist='${exForTimer}'>${isToday ? "▶ Commencer la séance" : "▶ Lancer quand même"}</button>`
+      : "";
+    const doneProgressBadge = (!isRest && allExercises.length)
+      ? `<span class="prog-done-badge${doneCount === allExercises.length ? " complete" : ""}">${doneCount}/${allExercises.length}</span>`
+      : "";
+    const exStyle = isRest ? "margin-top:8px" : (isToday ? "" : "display:none");
+
+    return `<div class="prog-day-card${isToday ? " prog-day-today" : ""}${isRest ? " prog-day-rest" : ""}"${isRest ? "" : ` onclick="progToggleDay(this)"`}>
+      <div class="prog-day-header">
+        <span class="prog-day-num">${dayNames[item.d - 1]}</span>
+        <span class="prog-day-icon" style="margin-left:4px">${item.icon}</span>
+        <span class="prog-day-label">${escapeHtml(session?.name || item.label)}</span>
         ${isToday ? '<span class="prog-today-badge">Aujourd\'hui</span>' : ""}
         ${doneProgressBadge}
         ${!isRest ? `<span class="prog-expand-arrow" style="margin-left:auto;font-size:.6rem;color:var(--muted)">${isToday ? "▲" : "▼"}</span>` : ""}
