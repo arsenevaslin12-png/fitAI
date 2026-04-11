@@ -10828,7 +10828,11 @@ let _progDuration = 8;
 let _progWeek = 1;
 let _prog = null;
 
-function _getProgTotalWeeks() { return _getProgPhases().length; }
+function _getProgTotalWeeks() {
+  // AI program: use _prog.weeks if phases are available
+  if (_prog && Array.isArray(_prog.phases) && _prog.phases.length > 0 && _prog.weeks) return _prog.weeks;
+  return _getProgPhases().length;
+}
 function _syncProgDurationUI() {
   const title=document.getElementById("prog-title-main");
   const titleCard=document.getElementById("prog-title-card");
@@ -11027,33 +11031,105 @@ function _progDisplayExerciseCount(type, weekNum) {
 
 function renderProgramme(weekNum) {
   if (!_prog) { _prog = buildOfflineProgram(); _saveProg(); }
-  const phaseBundle = _getProgPhaseBundle(weekNum);
-  const phase = { ...phaseBundle, w: weekNum };
-  const params = phaseBundle.params || { sets:4, reps:"8-12", rest:90 };
 
-  // Subtitle
+  // ── Detect AI program vs static ──────────────────────────────────────────
+  const isAiProg = !!(Array.isArray(_prog.phases) && _prog.phases.length > 0 && _prog.sessions);
+  const totalWeeks = isAiProg ? (_prog.weeks || _progDuration) : _getProgTotalWeeks();
+
+  let phase, params;
+  if (isAiProg) {
+    const aiPhase = _getAiPhase(weekNum) || {};
+    phase = {
+      name: aiPhase.name || "Séance",
+      rpe: aiPhase.rpe || "7-8",
+      w: weekNum,
+      deload: !!aiPhase.deload,
+      tempo: aiPhase.tempo || null,
+      progression: aiPhase.progression || null,
+      load_guideline: aiPhase.load_guideline || null
+    };
+    params = { sets: aiPhase.sets || 3, reps: aiPhase.reps || "8-12", rest: aiPhase.rest_sec || 90 };
+  } else {
+    const phaseBundle = _getProgPhaseBundle(weekNum);
+    phase = { ...phaseBundle, w: weekNum };
+    params = phaseBundle.params || { sets:4, reps:"8-12", rest:90 };
+  }
+
+  // Subtitle — show AI title or generated label
   const sub = document.getElementById("prog-subtitle");
-  if (sub) sub.textContent = (_prog.name ? _prog.name + " · " : "") + _progGoalLabel(_prog.goal) + ` · cycle ${_progDuration} ${_progDuration > 1 ? "semaines" : "semaine"} · ${phase.name} · RPE ` + phase.rpe;
+  if (sub) {
+    const titlePart = isAiProg && _prog.title ? _prog.title : (_progGoalLabel(_prog.goal) + ` · ${_progDuration}sem`);
+    sub.textContent = `${titlePart} · ${phase.name} · RPE ${phase.rpe}`;
+  }
 
-  // Phase timeline
+  // Title card — show AI title if available
+  const titleCard = document.getElementById("prog-title-card");
+  if (titleCard && isAiProg && _prog.title) {
+    titleCard.textContent = `⚡ ${_prog.title}`;
+  }
+
+  // Phase timeline — use AI phases if available
   const strip = document.getElementById("prog-phases-strip");
   if (strip) {
-    strip.innerHTML = _getProgPhases().map((p, idx) => { const pWeek = idx + 1;
-      const active = pWeek === weekNum;
-      const past = pWeek < weekNum;
-      return `<div class="prog-tl-seg${active ? " active" : ""}${past ? " past" : ""}"
-        style="--pc:${p.color}" onclick="progSetWeek(${pWeek})" title="${p.name} — Semaine ${pWeek}">
-        <div class="prog-tl-bar"></div>
-        <span class="prog-tl-lbl">${p.short}</span>
-      </div>`;
-    }).join("");
+    if (isAiProg) {
+      // Build a flat week-by-week list from AI phases
+      const phaseColors = ["#3b82f6","#8b5cf6","#f59e0b","#22c55e","#f97316","#ec4899"];
+      const deloadColor = "#64748b";
+      const segHtml = [];
+      for (let w = 1; w <= totalWeeks; w++) {
+        const p = _getAiPhase(w);
+        if (!p) continue;
+        const active = w === weekNum;
+        const past = w < weekNum;
+        const color = p.deload ? deloadColor : (phaseColors[_prog.phases.indexOf(p) % phaseColors.length] || "#3b82f6");
+        const shortName = p.deload ? "🔄" : (p.name || "P").slice(0, 4);
+        segHtml.push(`<div class="prog-tl-seg${active ? " active" : ""}${past ? " past" : ""}"
+          style="--pc:${color}" onclick="progSetWeek(${w})" title="${p.name} — S${w}${p.deload ? " (déload)" : ""}">
+          <div class="prog-tl-bar"></div>
+          <span class="prog-tl-lbl">S${w}</span>
+        </div>`);
+      }
+      strip.innerHTML = segHtml.join("");
+    } else {
+      strip.innerHTML = _getProgPhases().map((p, idx) => { const pWeek = idx + 1;
+        const active = pWeek === weekNum;
+        const past = pWeek < weekNum;
+        return `<div class="prog-tl-seg${active ? " active" : ""}${past ? " past" : ""}"
+          style="--pc:${p.color}" onclick="progSetWeek(${pWeek})" title="${p.name} — Semaine ${pWeek}">
+          <div class="prog-tl-bar"></div>
+          <span class="prog-tl-lbl">${p.short}</span>
+        </div>`;
+      }).join("");
+    }
   }
 
   // Cycle progress bar
   const bar = document.getElementById("prog-cycle-bar");
   const lbl = document.getElementById("prog-cycle-label");
-  if (bar) bar.style.width = ((weekNum / _getProgTotalWeeks()) * 100) + "%";
-  if (lbl) lbl.textContent = `Semaine ${weekNum} / ${_getProgTotalWeeks()} — ${phase.name}`;
+  if (bar) bar.style.width = ((weekNum / totalWeeks) * 100) + "%";
+  if (lbl) lbl.textContent = `Semaine ${weekNum} / ${totalWeeks} — ${phase.name}${phase.deload ? " 🔄" : ""}`;
+
+  // AI coach intro & nutrition note — show only for AI programs
+  const introEl = document.getElementById("prog-ai-intro");
+  const introText = document.getElementById("prog-ai-intro-text");
+  const nutrEl = document.getElementById("prog-ai-nutrition");
+  const nutrText = document.getElementById("prog-ai-nutrition-text");
+  if (introEl && introText) {
+    if (isAiProg && _prog.coach_intro) {
+      introText.textContent = _prog.coach_intro;
+      introEl.style.display = "block";
+    } else {
+      introEl.style.display = "none";
+    }
+  }
+  if (nutrEl && nutrText) {
+    if (isAiProg && _prog.nutrition_note) {
+      nutrText.textContent = _prog.nutrition_note;
+      nutrEl.style.display = "block";
+    } else {
+      nutrEl.style.display = "none";
+    }
+  }
 
   // Today hero card
   const heroEl = document.getElementById("prog-today-hero");
@@ -11404,15 +11480,25 @@ function _renderProgDaysAI(weekNum, params, cont) {
       exHtml = `<div class="prog-rest-msg">Séance à venir.</div>`;
     } else {
       // Phase context pill
+      const pTempo = phase.tempo ? ` · tempo ${phase.tempo}` : "";
       const phaseTag = isDeload
-        ? `<div style="margin-bottom:8px;padding:6px 10px;border-radius:10px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);font-size:.72rem;color:#fde68a">🔄 Semaine de déload — RPE ${pRPE}, récupération active</div>`
-        : `<div style="margin-bottom:8px;padding:6px 10px;border-radius:10px;background:rgba(37,99,235,.1);border:1px solid rgba(96,165,250,.2);font-size:.72rem;color:#dbeafe"><strong style="color:#93c5fd">${phase.name || "Séance"}</strong> · ${pSets} séries × ${pReps} reps · repos ${restLabel} · RPE ${pRPE}</div>`;
+        ? `<div style="margin-bottom:10px;padding:8px 12px;border-radius:12px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);font-size:.72rem;color:#fde68a;line-height:1.5">🔄 <strong>Semaine de déload</strong> — ${pSets}×${pReps} · RPE ${pRPE} · Priorité technique, pas d'intensité</div>`
+        : `<div style="margin-bottom:10px;padding:8px 12px;border-radius:12px;background:rgba(37,99,235,.1);border:1px solid rgba(96,165,250,.2);font-size:.72rem;color:#dbeafe;line-height:1.5"><strong style="color:#93c5fd">${phase.name || "Séance"}</strong> · ${pSets}×${pReps}${pTempo} · repos ${restLabel} · RPE ${pRPE}${phase.load_guideline ? `<br><span style="color:#7dd3fc">${escapeHtml(phase.load_guideline)}</span>` : ""}</div>`;
 
-      // Warmup block
+      // Session focus label
+      const focusHtml = session.focus
+        ? `<div style="font-size:.66rem;color:#64748b;font-weight:600;margin-bottom:8px;letter-spacing:.03em">🎯 ${escapeHtml(session.focus)}</div>`
+        : "";
+
+      // Warmup block — show as individual expandable items
       let warmupHtml = "";
       if (Array.isArray(session.warmup) && session.warmup.length > 0) {
-        warmupHtml = `<div style="margin-bottom:8px;font-size:.72rem;color:var(--text-muted);padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)">
-          🔥 Échauff. : ${session.warmup.map(e => `${escapeHtml(e.n || e.name || "")} ${e.reps ? `×${e.reps}` : ""}`).join("  ·  ")}
+        const warmupItems = session.warmup.map(e =>
+          `<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:3px 8px;font-size:.68rem;color:#94a3b8;white-space:nowrap">${escapeHtml(e.n || e.name || "")}${e.reps ? `<strong style="color:#fb923c">×${e.reps}</strong>` : ""}${e.note ? `<em style="font-size:.62rem;color:#475569"> – ${escapeHtml(e.note)}</em>` : ""}</span>`
+        ).join("");
+        warmupHtml = `<div style="margin-bottom:10px">
+          <div style="font-size:.62rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin-bottom:5px">🔥 Échauffement</div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px">${warmupItems}</div>
         </div>`;
       }
 
@@ -11424,25 +11510,32 @@ function _renderProgDaysAI(weekNum, params, cont) {
           const isDone = doneSets[`${dayIdx}_${globalIdx}`];
           const isPrimary = bxIdx === 0;
           const mColor = muscleColors[ex.m] || "var(--muted)";
-          const detail = `${pSets}×${pReps} · ${restLabel} repos`;
+
+          // Use per-exercise sets/reps if specified, else fall back to phase defaults
+          const exSets = ex.sets || pSets;
+          const exReps = ex.reps || pReps;
+          const exTempo = ex.tempo || phase.tempo || null;
+          const exRest = ex.rest_sec ? (ex.rest_sec >= 60 ? `${Math.floor(ex.rest_sec/60)}min` : `${ex.rest_sec}s`) : restLabel;
+          const detail = `${exSets}×${exReps}`;
+
           return `<div class="prog-ex-row${isDone ? " done" : ""}${isPrimary ? " prog-ex-primary" : ""}">
             <div class="prog-ex-check${isDone ? " checked" : ""}" onclick="progToggleExDone(event,${dayIdx},${globalIdx})">${isDone ? "✓" : ""}</div>
             <div class="prog-ex-body">
               <div class="prog-ex-name-row">
-                ${isPrimary ? `<span class="prog-ex-primary-tag">⭐ Principal</span>` : ""}
+                ${isPrimary ? `<span class="prog-ex-primary-tag">⭐</span>` : ""}
                 <span class="prog-ex-name">${escapeHtml(ex.n || ex.name || "")}</span>
+                <span class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33;margin-left:auto">${escapeHtml(ex.m || "")}</span>
               </div>
               <div class="prog-ex-sub-row">
-                <span class="prog-ex-detail">${detail}</span>
-                ${ex.note ? `<span class="prog-ex-tempo">${escapeHtml(ex.note)}</span>` : ""}
-                <span class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33">${escapeHtml(ex.m || "")}</span>
+                <span class="prog-ex-detail">${detail} · ${exRest} repos${exTempo ? ` · tempo ${exTempo}` : ""}</span>
               </div>
-              ${phase.progression ? `<div class="prog-ex-hint">${escapeHtml(phase.progression)}</div>` : ""}
+              ${ex.load_note ? `<div class="prog-ex-load">${escapeHtml(ex.load_note)}</div>` : ""}
+              ${ex.note ? `<div class="prog-ex-hint">${escapeHtml(ex.note)}</div>` : ""}
             </div>
           </div>`;
         }).join("");
-        return `<div style="margin-bottom:6px">
-          ${block.name ? `<div style="font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 4px">${escapeHtml(block.name)}</div>` : ""}
+        return `<div class="prog-ex-block">
+          ${block.name ? `<div class="prog-block-name">${escapeHtml(block.name)}</div>` : ""}
           ${blockExHtml}
         </div>`;
       }).join("");
@@ -11453,24 +11546,31 @@ function _renderProgDaysAI(weekNum, params, cont) {
         const fin = session.finisher;
         const finIdx = exIdx;
         const isDone = doneSets[`${dayIdx}_${finIdx}`];
-        const mColor = muscleColors[fin.m] || "var(--muted)";
-        finisherHtml = `<div style="margin-top:8px;border-top:1px solid rgba(255,255,255,.06);padding-top:8px">
-          <div style="font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#f97316;margin-bottom:4px">🏁 FINISHER</div>
+        const mColor = muscleColors[fin.m] || "#f97316";
+        finisherHtml = `<div class="prog-finisher-block">
+          <div class="prog-finisher-label">🏁 FINISHER</div>
           <div class="prog-ex-row${isDone ? " done" : ""}">
             <div class="prog-ex-check${isDone ? " checked" : ""}" onclick="progToggleExDone(event,${dayIdx},${finIdx})">${isDone ? "✓" : ""}</div>
             <div class="prog-ex-body">
-              <div class="prog-ex-name-row"><span class="prog-ex-name">${escapeHtml(fin.n || fin.name || "")}</span></div>
-              <div class="prog-ex-sub-row">
-                <span class="prog-ex-detail">1 × ${fin.reps || "max"}</span>
-                ${fin.note ? `<span class="prog-ex-tempo">${escapeHtml(fin.note)}</span>` : ""}
-                <span class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33">${escapeHtml(fin.m || "")}</span>
+              <div class="prog-ex-name-row">
+                <span class="prog-ex-name">${escapeHtml(fin.n || fin.name || "")}</span>
+                <span class="prog-ex-muscle" style="color:${mColor};border-color:${mColor}33;margin-left:auto">${escapeHtml(fin.m || "")}</span>
               </div>
+              <div class="prog-ex-sub-row">
+                <span class="prog-ex-detail" style="color:#f97316">${fin.reps || "max reps"}</span>
+              </div>
+              ${fin.note ? `<div class="prog-ex-hint">${escapeHtml(fin.note)}</div>` : ""}
             </div>
           </div>
         </div>`;
       }
 
-      exHtml = phaseTag + warmupHtml + blocksHtml + finisherHtml;
+      // Phase progression hint (shown once per session, not on every exercise)
+      const progressionHint = phase.progression
+        ? `<div class="prog-phase-progression">📈 ${escapeHtml(phase.progression)}</div>`
+        : "";
+
+      exHtml = phaseTag + warmupHtml + blocksHtml + finisherHtml + progressionHint;
     }
 
     const exForTimer = JSON.stringify(allExercises);

@@ -1901,12 +1901,23 @@ html.workout-open,body.workout-open{overflow:hidden;height:100%}
 .prog-cn-cue{font-size:.73rem;font-style:italic;color:#a5b4fc;font-weight:600}
 /* ── PROGRAMME EXERCISE ROWS (enhanced) ── */
 .prog-ex-row.prog-ex-primary{background:rgba(99,102,241,.06);border-radius:10px;padding:6px 8px;margin:-2px 0}
-.prog-ex-primary-tag{font-size:.56rem;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#818cf8;background:rgba(99,102,241,.15);padding:2px 6px;border-radius:4px;white-space:nowrap}
-.prog-ex-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-.prog-ex-name-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.prog-ex-primary-tag{font-size:.72rem;color:#818cf8;flex-shrink:0}
+.prog-ex-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.prog-ex-name-row{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
+.prog-ex-name{font-size:.84rem;font-weight:700;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prog-ex-sub-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.prog-ex-detail{font-size:.7rem;color:var(--cyan);font-weight:700;white-space:nowrap}
 .prog-ex-tempo{font-size:.6rem;color:#94a3b8;font-weight:700;background:rgba(255,255,255,.05);padding:1px 6px;border-radius:4px;white-space:nowrap}
-.prog-ex-hint{font-size:.63rem;color:#818cf8;font-weight:700;margin-top:1px}
+.prog-ex-load{font-size:.65rem;color:#fbbf24;font-weight:600;background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.18);padding:2px 7px;border-radius:5px;margin-top:2px;line-height:1.4}
+.prog-ex-hint{font-size:.65rem;color:#94a3b8;font-style:italic;margin-top:1px;line-height:1.4}
+/* Blocks */
+.prog-ex-block{margin-bottom:8px}
+.prog-block-name{font-size:.62rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin:8px 0 4px;padding-left:2px}
+/* Finisher */
+.prog-finisher-block{margin-top:10px;border-top:1px solid rgba(249,115,22,.2);padding-top:8px}
+.prog-finisher-label{font-size:.62rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#f97316;margin-bottom:6px}
+/* Phase progression note */
+.prog-phase-progression{font-size:.68rem;color:#a5b4fc;background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.2);border-radius:8px;padding:7px 10px;margin-top:10px;line-height:1.5}
 .prog-warmup-note{font-size:.7rem;color:#fb923c;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);border-radius:8px;padding:7px 10px;margin-bottom:6px;line-height:1.4}
 /* ── COACH CHAT V2 ── */
 .chat-msg{display:flex;flex-direction:column;max-width:88%;animation:fadeSlide .25s ease}
@@ -2550,6 +2561,15 @@ body.light .daily-ch-row{background:rgba(255,255,255,.8);border-color:rgba(15,23
               <div class="progress-fill" id="prog-cycle-bar" style="width:12%;background:linear-gradient(90deg,#6366f1,#8b5cf6);transition:width .4s ease"></div>
             </div>
             <div id="prog-cycle-label" style="font-size:.7rem;color:var(--muted);margin-top:5px">Semaine 1 / 8</div>
+          </div>
+          <!-- AI coach intro & nutrition note (shown when AI program is active) -->
+          <div id="prog-ai-intro" style="display:none;margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2)">
+            <div style="font-size:.65rem;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#818cf8;margin-bottom:4px">⚡ Coach IA</div>
+            <div id="prog-ai-intro-text" style="font-size:.78rem;color:#c7d2fe;line-height:1.5"></div>
+          </div>
+          <div id="prog-ai-nutrition" style="display:none;margin-top:8px;padding:10px 12px;border-radius:12px;background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.2)">
+            <div style="font-size:.65rem;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#4ade80;margin-bottom:4px">🥗 Nutrition</div>
+            <div id="prog-ai-nutrition-text" style="font-size:.78rem;color:#bbf7d0;line-height:1.5"></div>
           </div>
         </div>
 
